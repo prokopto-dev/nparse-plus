@@ -1,0 +1,1372 @@
+{
+  "source": {
+    "file": "EQTool/Models/BuiltInTriggers.cs",
+    "commit": "fdd3f25a274defade4e6330c5b7724144a11000b"
+  },
+  "meta": {
+    "category": "Built In",
+    "notes": "Transcribed from BuiltInTriggers.cs (C# builds these in code, so this file is generated from a table embedded in the converter script). built_in_id is the stable identifier; the C# TriggerId is a Guid.NewGuid() minted at runtime and is intentionally omitted. All triggers are seeded disabled (trigger_enabled=false); EQTool auto-enables builtin:vp-hoskar-resto, builtin:dragon-roar, builtin:spell-worn-off and builtin:entered-zone on startup. Colors are WPF color names as-written. Encounter AOE triggers restrict to their zone short name and fire a CountDown timer; search patterns are .NET regexes (note (?<name>...) named groups).",
+    "counts": {
+      "named": 16,
+      "legacy": 15,
+      "encounter_aoes": 34,
+      "total": 65
+    }
+  },
+  "triggers": [
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:enraged",
+      "built_in_folder": "Encounters",
+      "trigger_enabled": false,
+      "trigger_name": "Enraged",
+      "search_text": "{npc} has become ENRAGED.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "{npc} is enraged",
+        "display_text": "{npc} ENRAGED",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:levitate-fading",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Levitate Fading",
+      "search_text": "You feel as if you are about to fall.",
+      "use_regex": false,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Levitate Fading",
+        "display_text": "Levitate Fading",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:invis-fading",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Invis Fading",
+      "search_text": "You feel yourself starting to appear.",
+      "use_regex": false,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Invisability Fading.",
+        "display_text": "Invisability Fading.",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:failed-feign",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Failed Feign",
+      "search_text": "{c} has fallen to the ground.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "{c} Failed Feign Death",
+        "display_text": "{c} Feign Failed Death!",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:group-invite",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Group Invite",
+      "search_text": "{name} invites you to join a group.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "{name} Invites you to a group",
+        "display_text": "{name} Invites you to a group",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:npc-gating",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "NPC Gating",
+      "search_text": "{npc} begins to cast the gate spell.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "{npc} begins to Gate",
+        "display_text": "{npc} begins to Gate",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:charm-break",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Charm Break",
+      "search_text": "Your charm spell has worn off.",
+      "use_regex": false,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Charm Break",
+        "display_text": "Charm Break",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:death-touch",
+      "built_in_folder": "Encounters",
+      "trigger_enabled": false,
+      "trigger_name": "Death Touch (Fright/Dread)",
+      "search_text": "^(?<npc>Fright|Dread) says,? '(?<target>[^' ]+)'",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "fear",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Death touch on {target}",
+        "display_text": "Death Touch: {target}",
+        "display_text_color": "White"
+      },
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "--DT-- '{target}'",
+        "minutes": 0,
+        "seconds": 45,
+        "duration_seconds": 45,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": false,
+        "bar_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:tells-you",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Tells You",
+      "search_text": "^(?<name>[\\w`]+)( tells you, '| -> {c}: )(?!I'll give you|Attacking |Welcome to my bank|Come back soon)",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "{name} sent a tell",
+        "display_text": "{name} sent a tell",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:exp-gained-0640",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Exp Timer",
+      "search_text": "^You gain (party )?experience",
+      "use_regex": true,
+      "category": "Built In",
+      "comments": "Note: Sending a tell to \".exp\", i.e. \"/t .exp\" will immediately terminate all timers of this type!\nBB fishers = 6:40 and 22:00, Chardok = 18:00, COM = 22:00, Crystal Caverns = 14:45, Droga = 20:30, Grobb = 24:00, Hole = 21:30, HS = 20:30, Kael = 28:00, Kedge = 22:00, Lower Guk = 28:00, MM = 23 min, North Felwithe guards = 24:00, Oasis specs = 16:30, OOT specs/sisters = 6:00, Paw = 22:00, Perma = 22:00, Seb Lair = 27:00, Skyfire = 13:00, Skyshrine = 30:00, TD = 12:00, TT = 6:40, Wars Woods brutes = 6:40, WK guards = 6:00, WL = 14:30, ",
+      "basic": {
+        "display_text_enabled": false,
+        "audio_type": "None",
+        "tts_text": ""
+      },
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "-- Exp Timer [{counter}] (.exp)",
+        "minutes": 6,
+        "seconds": 40,
+        "duration_seconds": 400,
+        "restart_behavior": "StartNewTimer",
+        "show_in_overlay": false,
+        "end_early_texts": [
+          {
+            "search_text": "^\\.exp",
+            "use_regex": true
+          }
+        ]
+      },
+      "timer_ending": {
+        "enabled": true,
+        "seconds": 30,
+        "output": {
+          "display_text_enabled": true,
+          "audio_type": "TextToSpeech",
+          "tts_text": "30 second warning",
+          "display_text": "30 second warning"
+        }
+      },
+      "timer_ended": {
+        "enabled": true,
+        "output": {
+          "display_text_enabled": true,
+          "audio_type": "TextToSpeech",
+          "tts_text": "Pop",
+          "display_text": "Pop [{counter}]"
+        }
+      },
+      "counter": {
+        "reset_enabled": true,
+        "minutes": 30
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:resist",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Resist",
+      "search_text": "^(?:You resist the|Your target resisted the) (?<spell>.+) spell[!.]",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Resisted",
+        "display_text": "Resisted: {spell}",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aow-lockout",
+      "built_in_folder": "Encounters/Kael",
+      "trigger_enabled": false,
+      "trigger_name": "Avatar of War Lockout",
+      "search_text": "The Avatar of War shouts 'Who dares defile my temple?! Come forth and face me!'",
+      "use_regex": false,
+      "category": "Built In",
+      "zone": "kael",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "The Avatar of War Lockout",
+        "minutes": 20,
+        "seconds": 0,
+        "duration_seconds": 1200,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": false,
+        "bar_color": "Magenta",
+        "icon_name": "Spirit of Wolf"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:vp-hoskar-resto",
+      "built_in_folder": "Encounters/VP",
+      "trigger_enabled": false,
+      "trigger_name": "Hoskar Resto",
+      "search_text": "(body begins to rot\\.|You resist the Diseased Cloud spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "veeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Word Of Resto",
+        "minutes": 0,
+        "seconds": 8,
+        "duration_seconds": 8,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Diseased Cloud"
+      },
+      "timer_ended": {
+        "enabled": true,
+        "output": {
+          "display_text_enabled": true,
+          "audio_type": "TextToSpeech",
+          "tts_text": "Resto Now",
+          "display_text": "Resto Now",
+          "display_text_color": "Gold"
+        }
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:dragon-roar",
+      "built_in_folder": "Encounters",
+      "trigger_enabled": false,
+      "trigger_name": "Dragon Roar",
+      "search_text": "(You flee in terror\\.|You resist the Dragon Roar spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Dragon Roar",
+        "minutes": 0,
+        "seconds": 36,
+        "duration_seconds": 36,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Dragon Roar"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:spell-worn-off",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Spell Worn Off",
+      "search_text": "^Your (?<spell>[\\w ]+) spell has worn off\\.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "{spell} faded",
+        "display_text": "{spell} faded",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:entered-zone",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Entered Zone",
+      "search_text": "^You have entered (?!an Arena|an area)(?<zone>.+)\\.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "You zoned into {zone}",
+        "display_text": "You zoned into {zone}",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:spell-interrupted",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Spell Interrupted",
+      "search_text": "^Your spell is interrupted.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Interrupted",
+        "display_text": "Spell Interrupted",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:spell-fizzle",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Spell Fizzle",
+      "search_text": "^Your spell fizzles!",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Fizzle",
+        "display_text": "Spell Fizzles",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:backstabber",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Backstabber",
+      "search_text": "^{backstabber} backstabs {target} for {damage} points of damage.",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Backstabber",
+        "display_text": "{backstabber} backstabs {target} for {damage}",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:corpse-need-consent",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Corpse Need Consent",
+      "search_text": "^You do not have consent to summon that corpse",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Need Consent",
+        "display_text": "Need Consent",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:corpse-out-of-range",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Corpse Out of Range",
+      "search_text": "^The corpse is too far away to summon",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Corpse out of range",
+        "display_text": "Corpse OOR",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:select-a-target",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Select a Target",
+      "search_text": "^(You must first select a target for this spell)|(You must first click on the being you wish to attack)",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Select a target",
+        "display_text": "Select a target",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:insufficient-mana",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Insufficient Mana",
+      "search_text": "^Insufficient Mana to cast this spell!",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "out of mana",
+        "display_text": "OOM",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:target-out-of-range",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Target Out of Range",
+      "search_text": "^Your target is out of range",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Out of range",
+        "display_text": "Target out of range",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:spell-did-not-take-hold",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Spell Did Not Take Hold",
+      "search_text": "^Your spell did not take hold",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Spell did not take hold",
+        "display_text": "Spell did not take hold",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:must-be-standing",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Must be standing to cast",
+      "search_text": "^(You must be standing)|(You are too distracted to cast a spell now)",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "stand up",
+        "display_text": "Stand up!",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:dispelled",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Dispelled",
+      "search_text": "^You feel a bit dispelled",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "dispelled",
+        "display_text": "You have been dispelled",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:regen-faded",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Regen Faded",
+      "search_text": "^You have stopped regenerating",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "re-gen faded",
+        "display_text": "===== Regen faded =====",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:cant-see-target",
+      "built_in_folder": "Combat",
+      "trigger_enabled": false,
+      "trigger_name": "Can't See Target",
+      "search_text": "^You can't see your target",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "Can't see target",
+        "display_text": "Can't see target",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:sense-heading",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Sense Heading",
+      "search_text": "^You think you are heading {direction}",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "{direction}",
+        "display_text": "Direction = {direction}",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:sense-heading-failed",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Sense Heading Failed",
+      "search_text": "^You have no idea what direction you are facing",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "no idea",
+        "display_text": "No idea",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:dn-stun-breath",
+      "built_in_folder": "Encounters/DN",
+      "trigger_enabled": false,
+      "trigger_name": "Stun Breath",
+      "search_text": "(Your eardrums rupture\\.|staggers with intense pain\\.|You resist the Stun Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "necropolis",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Stun Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Gold",
+        "icon_name": "Stun Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:pog-cloud-of-silence",
+      "built_in_folder": "Encounters/POG",
+      "trigger_enabled": false,
+      "trigger_name": "Cloud of Silence",
+      "search_text": "(You are in a cloud of silence\\.|is surrounded by a cloud of silence\\.)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "growthplane",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Cloud of Silence",
+        "minutes": 3,
+        "seconds": 0,
+        "duration_seconds": 180,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": false,
+        "bar_color": "Orange",
+        "icon_name": "Cloud of Silence"
+      },
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Cloud of Silence",
+        "display_text": "Cloud of Silence",
+        "display_text_color": "Red"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:tov-rain-of-molten-lava",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Rain of Molten Lava",
+      "search_text": "(Lava sears your skin\\.|skin is seared by lava\\.|You resist the Rain of Molten Lava spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Rain of Molten Lava",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Rain of Molten Lava"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:tov-wave-of-heat",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Wave of Heat",
+      "search_text": "(A blast of heat sears your skin\\.|skin sears\\.|You resist the Wave of Heat spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Wave of Heat",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Wave of Heat"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:tov-wave-of-cold",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Wave of Cold",
+      "search_text": "(A blast of cold freezes your skin\\.|skin freezes\\.|You resist the Wave of Cold spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Wave of Cold",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "DeepSkyBlue",
+        "icon_name": "Wave of Cold"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:tov-frost-breath",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Frost Breath - TOV",
+      "search_text": "(body freezes as the frost hits you\\.|body freezes as the frost hits them\\.|You resist the Frost Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Frost Breath - TOV",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "DeepSkyBlue",
+        "icon_name": "Frost Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:vox-frost-breath",
+      "built_in_folder": "Encounters/VOX",
+      "trigger_enabled": false,
+      "trigger_name": "Frost Breath - Perma",
+      "search_text": "(body freezes as the frost hits you\\.|body freezes as the frost hits them\\.|You resist the Frost Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "permafrost",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Frost Breath - Perma",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "DeepSkyBlue",
+        "icon_name": "Frost Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:tov-silver-breath",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Silver Breath - TOV",
+      "search_text": "(You feel your skin freeze\\.|skin freezes\\.|You resist the Silver Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Silver Breath - TOV",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Silver Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:ww-silver-breath",
+      "built_in_folder": "Encounters/WW",
+      "trigger_enabled": false,
+      "trigger_name": "Silver Breath - WW",
+      "search_text": "(You feel your skin freeze\\.|skin freezes\\.|You resist the Silver Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "westwastes",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Silver Breath - WW",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Silver Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:dreadlands:freezing-breath",
+      "built_in_folder": "Encounters/Dreadlands",
+      "trigger_enabled": false,
+      "trigger_name": "Freezing Breath",
+      "search_text": "(An icy cold shoots through your body|is slowed by the freezing blast\\.|You resist the Freezing Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "dreadlands",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Freezing Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Freezing Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:emeraldjungle:ceticious-cloud",
+      "built_in_folder": "Encounters/Emerald Jungle",
+      "trigger_enabled": false,
+      "trigger_name": "Ceticious Cloud",
+      "search_text": "(Your legs lock in pain as you choke on the noxious poison\\.|doubles over in pain as the noxious poison|You resist the Ceticious Cloud spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "emeraldjungle",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Ceticious Cloud",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Ceticious Cloud"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:growthplane:silver-breath",
+      "built_in_folder": "Encounters/POG",
+      "trigger_enabled": false,
+      "trigger_name": "Silver Breath - POG",
+      "search_text": "(You feel your skin freeze\\.|skin freezes\\.|You resist the Silver Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "growthplane",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Silver Breath - POG",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Silver Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:sebilis:blinding-fear",
+      "built_in_folder": "Encounters/Sebilis",
+      "trigger_enabled": false,
+      "trigger_name": "Blinding Fear",
+      "search_text": "(You freeze in terror\\.|You resist the Blinding Fear spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "sebilis",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Blinding Fear",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Blinding Fear"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:sebilis:poison-breath",
+      "built_in_folder": "Encounters/Sebilis",
+      "trigger_enabled": false,
+      "trigger_name": "Poison Breath",
+      "search_text": "(A green mist seeps in to your skin\\.|You resist the Poison Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "sebilis",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Poison Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Poison Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:skyfire:immolating-breath",
+      "built_in_folder": "Encounters/Skyfire",
+      "trigger_enabled": false,
+      "trigger_name": "Immolating Breath",
+      "search_text": "(Your flesh is seared from your bones\\.|flesh is seared\\.|You resist the Immolating Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "skyfire",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Immolating Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Immolating Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:skyshrine:mind-cloud",
+      "built_in_folder": "Encounters/Skyshrine",
+      "trigger_enabled": false,
+      "trigger_name": "Mind Cloud",
+      "search_text": "(A cloud of pain covers you\\.|is covered by a cloud of pain\\.|You resist the Mind Cloud spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "skyshrine",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Mind Cloud",
+        "minutes": 2,
+        "seconds": 0,
+        "duration_seconds": 120,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Mind Cloud"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:skyshrine:ice-breath",
+      "built_in_folder": "Encounters/Skyshrine",
+      "trigger_enabled": false,
+      "trigger_name": "Ice Breath",
+      "search_text": "(Shards of magical ice rend you\\.|cut by shards of magical ice\\.|You resist the Ice Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "skyshrine",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Ice Breath",
+        "minutes": 2,
+        "seconds": 0,
+        "duration_seconds": 120,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Ice Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:soldungb:lava-breath",
+      "built_in_folder": "Encounters/Sol B",
+      "trigger_enabled": false,
+      "trigger_name": "Lava Breath - Sol B",
+      "search_text": "(Your body combusts as the lava hits you\\.|body combusts as the lava hits them\\.|You resist the Lava Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "soldungb",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Lava Breath - Sol B",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Lava Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:lava-breath",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Lava Breath - TOV",
+      "search_text": "(Your body combusts as the lava hits you\\.|body combusts as the lava hits them\\.|You resist the Lava Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Lava Breath - TOV",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Lava Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:cloud-of-disempowerment",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Cloud of Disempowerment",
+      "search_text": "(You feel your skin freeze\\.|skin freezes\\.|You resist the Cloud of Disempowerment spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Cloud of Disempowerment",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Cloud of Disempowerment"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:electric-blast",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Electric Blast",
+      "search_text": "(Your body is electrified as lightning strikes you\\.|body is electrified as the lightning strikes\\.|You resist the Electric Blast spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Electric Blast",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Electric Blast"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:cloud-of-fear",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Cloud of Fear",
+      "search_text": "(Your mind is wracked by fear\\.|looks very afraid\\.|You resist the Cloud of Fear spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Cloud of Fear",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Cloud of Fear"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:bellowing-winds",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Bellowing Winds",
+      "search_text": "(You begin to spin\\.|begins to spin\\.|You resist the Bellowing Winds spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Bellowing Winds",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Bellowing Winds"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:tsunami",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Tsunami",
+      "search_text": "(A tsunami crushes you\\.|is crushed by a wall of water\\.|You resist the Tsunami spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Tsunami",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Tsunami"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:wave-of-flame",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Wave of Flame",
+      "search_text": "(You feel your skin burn\\.|skin burns\\.|You resist the Wave of Flame spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Wave of Flame",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Wave of Flame"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:scream-of-chaos",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Scream of Chaos",
+      "search_text": "(You experience chaotic weightlessness\\.|rises chaotically into the air\\.|You resist the Scream of Chaos spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Scream of Chaos",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Scream of Chaos"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:chaos-breath",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Chaos Breath - TOV",
+      "search_text": "(You experience chaotic weightlessness\\.|rises chaotically into the air\\.|You resist the Chaos Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Chaos Breath - TOV",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Chaos Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:ancient-breath",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Ancient Breath",
+      "search_text": "(Your life force drains away\\.|You resist the Ancient Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Ancient Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Ancient Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:templeveeshan:diseased-cloud",
+      "built_in_folder": "Encounters/TOV",
+      "trigger_enabled": false,
+      "trigger_name": "Diseased Cloud - TOV",
+      "search_text": "(body begins to rot\\.|You resist the Diseased Cloud spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "templeveeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Diseased Cloud - TOV",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Diseased Cloud"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:veeshan:mesmerizing-breath",
+      "built_in_folder": "Encounters/VP",
+      "trigger_enabled": false,
+      "trigger_name": "Mesmerizing Breath",
+      "search_text": "(You are in a cloud of silence\\.|is surrounded by a cloud of silence\\.|You resist the Mesmerizing Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "veeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Mesmerizing Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Mesmerizing Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:veeshan:chaos-breath",
+      "built_in_folder": "Encounters/VP",
+      "trigger_enabled": false,
+      "trigger_name": "Chaos Breath - VP",
+      "search_text": "(You experience chaotic weightlessness\\.|rises chaotically into the air\\.|You resist the Chaos Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "veeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Chaos Breath - VP",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Chaos Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:veeshan:stun-breath",
+      "built_in_folder": "Encounters/VP",
+      "trigger_enabled": false,
+      "trigger_name": "Stun Breath - VP",
+      "search_text": "(Your eardrums rupture\\.|staggers with intense pain\\.|You resist the Stun Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "veeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Stun Breath - VP",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Stun Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:veeshan:stream-of-acid",
+      "built_in_folder": "Encounters/VP",
+      "trigger_enabled": false,
+      "trigger_name": "Stream of Acid",
+      "search_text": "(Your body burns as the acid hits you\\.|body burns as the acid hits them\\.|You resist the Stream of Acid spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "veeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Stream of Acid",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Stream of Acid"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:aoe:veeshan:lightning-breath",
+      "built_in_folder": "Encounters/VP",
+      "trigger_enabled": false,
+      "trigger_name": "Lightning Breath",
+      "search_text": "(Your body is electrified as the lightning strikes you\\.|body is electrified as the lightning strikes\\.|You resist the Lightning Breath spell!)",
+      "use_regex": true,
+      "category": "Built In",
+      "zone": "veeshan",
+      "timer": {
+        "timer_type": "CountDown",
+        "timer_name": "Lightning Breath",
+        "minutes": 0,
+        "seconds": 12,
+        "duration_seconds": 12,
+        "restart_behavior": "RestartTimer",
+        "show_in_overlay": true,
+        "bar_color": "Orange",
+        "icon_name": "Lightning Breath"
+      }
+    }
+  ]
+}

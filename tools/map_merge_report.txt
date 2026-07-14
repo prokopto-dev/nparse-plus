@@ -1,0 +1,10 @@
+map file comparison: nparse (data/maps/map_files) vs EQTool (EQTool/map_files)
+nparse files:  456
+eqtool files:  456
+
+identical:      456
+differs:        0
+only in nparse: 0
+only in eqtool: 0
+
+NOTE: nparse's map set stays authoritative; no files were modified.

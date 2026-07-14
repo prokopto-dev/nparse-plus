@@ -1,0 +1,35 @@
+{
+  "source": {
+    "file": "EQTool/Models/EQSpells.cs",
+    "commit": "fdd3f25a274defade4e6330c5b7724144a11000b"
+  },
+  "meta": {
+    "notes": "spells_that_need_counts: spells whose casts are counted per target (EQSpells.SpellsThatNeedCounts). bard_spells_that_need_resists: bard AOE songs for which resist/hit summaries are produced (EQSpells.BardSpellsThatNeedResists)."
+  },
+  "spells_that_need_counts": [
+    "Mana Sieve",
+    "LowerElement",
+    "Concussion",
+    "Flame Lick",
+    "Jolt",
+    "Cinder Jolt",
+    "Rage of Vallon",
+    "Waves of the Deep Sea",
+    "Anarchy",
+    "Breath of the Sea",
+    "Frostbite",
+    "Judgment of Ice",
+    "Storm Strike",
+    "Shrieking Howl",
+    "Static Strike",
+    "Rage of Zek",
+    "Blinding Luminance",
+    "Flash of Light"
+  ],
+  "bard_spells_that_need_resists": [
+    "Chords of Dissonance",
+    "Denon's Disruptive Discord",
+    "Selo's Chords of Cessation",
+    "Selo's Assonant Strane"
+  ]
+}

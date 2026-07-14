@@ -1,0 +1,3522 @@
+{
+  "aliases": {
+    "zone_name_mapper": {
+      "ak'anon": "akanon",
+      "arena": "arena",
+      "befallen": "befallen",
+      "blackburrow": "blackburrow",
+      "butcherblock mountains": "butcher",
+      "cabilis east": "cabeast",
+      "cabilis west": "cabwest",
+      "castle mistmoore": "mistmoore",
+      "castle of mistmoore": "mistmoore",
+      "chardok": "chardok",
+      "city of thurgadin": "thurgadina",
+      "cobalt scar": "cobaltscar",
+      "crushbone": "crushbone",
+      "crystal caverns": "crystal",
+      "dagnor's cauldron": "cauldron",
+      "dalnir": "dalnir",
+      "domain of frost": "myriah",
+      "dragon necropolis": "necropolis",
+      "dreadlands": "dreadlands",
+      "east commonlands": "ecommons",
+      "east freeport": "freporte",
+      "eastern plains of karana": "eastkarana",
+      "eastern wastelands": "eastwastes",
+      "erud's crossing": "erudsxing",
+      "erudin": "erudnext",
+      "erudin palace": "erudnint",
+      "estate of unrest": "unrest",
+      "everfrost": "everfrost",
+      "field of bone": "fieldofbone",
+      "firiona vie": "firiona",
+      "frontier mountains": "frontiermtns",
+      "gorge of king xorbb": "beholder",
+      "great divide": "greatdivide",
+      "greater faydark": "gfaydark",
+      "grobb": "grobb",
+      "guk": "guktop",
+      "halas": "halas",
+      "high keep": "highkeep",
+      "highpass hold": "highpass",
+      "howling stones": "charasis",
+      "iceclad ocean": "iceclad",
+      "icewell keep": "thurgadinb",
+      "infected paw": "paw",
+      "innothule swamp": "innothule",
+      "kael drakkel": "kael",
+      "kaesora": "kaesora",
+      "karnor's castle": "karnor",
+      "kedge keep": "kedge",
+      "kerra isle": "kerraridge",
+      "kithicor woods": "kithicor",
+      "kurn's tower": "kurn",
+      "lair of the splitpaw": "paw",
+      "lake of ill omen": "lakeofillomen",
+      "lake rathetear": "lakerathe",
+      "lavastorm mountains": "lavastorm",
+      "lesser faydark": "lfaydark",
+      "lost temple of cazic-thule": "cazicthule",
+      "lost temple of cazicthule": "cazicthule",
+      "mines of nurga": "nurga",
+      "misty thicket": "misty",
+      "nagafen's lair": "soldungb",
+      "najena": "najena",
+      "neriak - 3rd gate": "neriakc",
+      "neriak - commons": "neriakb",
+      "neriak - foreign quarter": "neriaka",
+      "neriak commons": "neriakb",
+      "neriak foreign quarter": "neriaka",
+      "neriak third gate": "neriakc",
+      "north freeport": "freportn",
+      "north kaladim": "kaladimb",
+      "north qeynos": "qeynos2",
+      "northern desert of ro": "nro",
+      "northern felwithe": "felwithea",
+      "northern plains of karana": "northkarana",
+      "oasis of marr": "oasis",
+      "ocean of tears": "oot",
+      "oggok": "oggok",
+      "old sebilis": "sebilis",
+      "oops, all icebones!": "towerfrost",
+      "paineel": "paineel",
+      "permafrost caverns": "permafrost",
+      "plane of air": "airplane",
+      "plane of fear": "fearplane",
+      "plane of growth": "growthplane",
+      "plane of hate": "hateplane",
+      "plane of mischief": "mischiefplane",
+      "qeynos aqueduct system": "qcat",
+      "qeynos hills": "qeytoqrg",
+      "rathe mountains": "rathemtn",
+      "rivervale": "rivervale",
+      "ruins of old guk": "gukbottom",
+      "ruins of sebilis": "sebilis",
+      "runnyeye citadel": "runnyeye",
+      "sirens grotto": "sirens",
+      "skyfire mountains": "skyfire",
+      "skyshrine": "skyshrine",
+      "sleepers tomb": "sleeper",
+      "solusek's eye": "soldunga",
+      "south kaladim": "kaladima",
+      "south qeynos": "qeynos",
+      "southern desert of ro": "sro",
+      "southern felwithe": "felwitheb",
+      "southern plains of karana": "southkarana",
+      "steamfont mountains": "steamfont",
+      "stonebrunt mountains": "stonebrunt",
+      "surefall glade": "qrg",
+      "swamp of no hope": "swampofnohope",
+      "temple of droga": "droga",
+      "temple of solusek ro": "soltemple",
+      "temple of veeshan": "templeveeshan",
+      "the burning wood": "burningwood",
+      "the city of mist": "citymist",
+      "the emerald jungle": "emeraldjungle",
+      "the feerrott": "feerrott",
+      "the hole": "hole",
+      "the nektulos forest": "nektulos",
+      "the overthere": "overthere",
+      "the wakening lands": "wakening",
+      "timorous deep": "timorous",
+      "tower of frozen shadow": "frozenshadow",
+      "toxxulia forest": "tox",
+      "trakanon's teeth": "trakanon",
+      "veeshan's peak": "veeshan",
+      "velketor's labyrinth": "velketor",
+      "warrens": "warrens",
+      "warsliks woods": "warslikswood",
+      "west commonlands": "commons",
+      "west freeport": "freportw",
+      "western plains of karana": "qey2hh1",
+      "western wastes": "westwastes"
+    },
+    "zone_who_mapper": {
+      "burning woods": "the burning wood",
+      "cazic-thule": "lost temple of cazic-thule",
+      "city of mist": "the city of mist",
+      "clan crushbone": "crushbone",
+      "clan runnyeye": "runnyeye citadel",
+      "east cabilis": "cabilis east",
+      "east karana": "eastern plains of karana",
+      "eastern wastes": "eastern wastelands",
+      "everfrost peaks": "everfrost",
+      "felwithe": "northern felwithe",
+      "highkeep": "high keep",
+      "kael drakkal": "kael drakkel",
+      "kaladim": "south kaladim",
+      "kithicor forest": "kithicor woods",
+      "lower guk": "ruins of old guk",
+      "mountains of rathe": "rathe mountains",
+      "nektulos forest": "the nektulos forest",
+      "north karana": "northern plains of karana",
+      "north ro": "northern desert of ro",
+      "permafrost keep": "permafrost caverns",
+      "plane of sky": "plane of air",
+      "qeynos catacombs": "qeynos aqueduct system",
+      "siren's grotto": "sirens grotto",
+      "sleeper's tomb": "sleepers tomb",
+      "south karana": "southern plains of karana",
+      "south ro": "southern desert of ro",
+      "the field of bone": "field of bone",
+      "the plane of hate": "plane of hate",
+      "the ruins of old paineel": "the hole",
+      "the wakening land": "the wakening lands",
+      "the warrens": "warrens",
+      "thurgadin": "city of thurgadin",
+      "upper guk": "guk",
+      "warsliks wood": "warsliks woods",
+      "west cabilis": "cabilis west",
+      "west karana": "western plains of karana"
+    }
+  },
+  "boats": [
+    {
+      "announcement_to_dock_in_seconds": 119,
+      "boat": "BarrelBarge",
+      "end_point": "timorous",
+      "pretty_name": "Oasis arrival",
+      "start_announcement": "Rack Stonebelly shouts, 'Da Barrel Barge will be here soon soon!'",
+      "start_point": "oasis",
+      "trip_time_in_seconds": 779.75
+    },
+    {
+      "announcement_to_dock_in_seconds": 510,
+      "boat": "BarrelBarge",
+      "end_point": "oasis",
+      "pretty_name": "TD from Oasis arrival",
+      "start_announcement": "",
+      "start_point": "timorous",
+      "trip_time_in_seconds": 778.75
+    },
+    {
+      "announcement_to_dock_in_seconds": 1975,
+      "boat": "BloatedBelly",
+      "end_point": "timorous",
+      "pretty_name": "Overthere arrival",
+      "start_announcement": "Rack Stonebelly shouts, 'Da Bloated Belly be leaving da Overdere now!'",
+      "start_point": "overthere",
+      "trip_time_in_seconds": 2025
+    },
+    {
+      "announcement_to_dock_in_seconds": 0,
+      "boat": "MaidensVoyage",
+      "end_point": "firiona",
+      "pretty_name": "BB to FV Transfer arrival",
+      "start_announcement": "Glisse Bluesea shouts 'The Maiden's Voyage is now ready to be boarded. Please form an orderly line to the shuttles, and remember, no pushing!",
+      "start_point": "butcher",
+      "trip_time_in_seconds": 1230
+    },
+    {
+      "announcement_to_dock_in_seconds": 771,
+      "boat": "MaidensVoyage",
+      "end_point": "butcher",
+      "pretty_name": "FV Transfer to BB arrival",
+      "start_announcement": "Glisse Bluesea shouts 'The Maiden's Voyage has departed the outpost at Firiona Vie. Please be ready to board the shuttles shortly, if you desire to make the journey to Kunark.",
+      "start_point": "firiona",
+      "trip_time_in_seconds": 1230
+    },
+    {
+      "announcement_to_dock_in_seconds": 0,
+      "boat": "NroIcecladBoat",
+      "end_point": "iceclad",
+      "pretty_name": "NRo arrival",
+      "start_announcement": "Frankel the Pirate says 'Thar she be mates. All aboard thats goin aboard!'",
+      "start_point": "nro",
+      "trip_time_in_seconds": 519
+    },
+    {
+      "announcement_to_dock_in_seconds": 307,
+      "boat": "NroIcecladBoat",
+      "end_point": "nro",
+      "pretty_name": "Iceclad from NRo arrival",
+      "start_announcement": "",
+      "start_point": "iceclad",
+      "trip_time_in_seconds": 519
+    }
+  ],
+  "kael_faction_mobs": [
+    "Bygloirn Omorden",
+    "Dagron Stonecutter",
+    "Barlek Stonefist",
+    "Gragek Mjlorkigar",
+    "Kelenek Bluadfeth",
+    "Veldern Blackhammer",
+    "Kragek Thunderforge",
+    "Stoem Lekbar",
+    "Bjarorm Mjlorn",
+    "Ulkar Jollkarek",
+    "Vylleam Vyaeltor",
+    "Jaglorm Ygorr",
+    "Yeeldan Spiritcaller"
+  ],
+  "meta": {
+    "default_respawn_seconds": 400,
+    "notes": "Spawn-time lookup order (ZoneSpawnTimes.GetSpawnTime in Zones.cs): exact case-insensitive match in npc_spawn_times, then case-insensitive substring match in npc_contains_spawn_times, then the zone's respawn_seconds, then the global default of 400 seconds (6:40). Zone-name resolution (Zones.TranslateToMapName): lower-case/trim the input, apply aliases.zone_who_mapper (/who long names), then aliases.zone_name_mapper ('You have entered' long names -> short names), then require the result to be a key of zones. Empty-string placeholder entries in NotableNPCs were dropped."
+  },
+  "source": {
+    "commit": "fdd3f25a274defade4e6330c5b7724144a11000b",
+    "file": "EQToolShared/Zones.cs"
+  },
+  "zones": {
+    "airplane": {
+      "name": "airplane",
+      "notable_npcs": [
+        "Thunder Spirit Princess",
+        "Noble Dojorn",
+        "Protector of Sky",
+        "Gorgalosk",
+        "Keeper of Souls",
+        "The Spiroc Lord",
+        "The Spiroc Guardian",
+        "Bazzt Zzzt",
+        "Sister of the Spire",
+        "Eye of Veeshan"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 28800,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "akanon": {
+      "name": "akanon",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "arena": {
+      "name": "arena",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 0,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "befallen": {
+      "name": "befallen",
+      "notable_npcs": [
+        "Boondin Babbinsbort",
+        "Commander Windstream",
+        "An Elf Skeleton",
+        "Gynok Moltor",
+        "Priest Amiaz",
+        "Skeleton Lrodd",
+        "The Thaumaturgist"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "An Elf Skeleton",
+          "seconds": 400
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1140,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "beholder": {
+      "name": "beholder",
+      "notable_npcs": [
+        "King Xorbb",
+        "Lord Syrkl",
+        "Lord Sviir",
+        "Lord Soptyvr",
+        "SpinFlint",
+        "Brahhm",
+        "Yymp the Infernal",
+        "Qlei",
+        "Goblin Alchect"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "blackburrow": {
+      "name": "blackburrow",
+      "notable_npcs": [
+        "Lord Elgnub",
+        "Master Brewer",
+        "Refugee Splitpaw",
+        "a gnoll commander",
+        "Splitpaw Commander"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "burningwood": {
+      "name": "burningwood",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "butcher": {
+      "name": "butcher",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [
+        {
+          "name": "Guard Armandin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Belg",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Burr",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Clendin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Dunil",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Dunn",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Gabel",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Gonin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Grae",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Haendar",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Haldin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Hartt",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Kizzburr",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Kyte",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Mandin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Norin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Rundul",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Rylin",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Sornn",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Srinn",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Zyburr",
+          "seconds": 1120
+        },
+        {
+          "name": "Guard Zyburr",
+          "seconds": 1120
+        },
+        {
+          "name": "Peg Leg",
+          "seconds": 400
+        },
+        {
+          "name": "Keldyn Dunfire",
+          "seconds": 400
+        },
+        {
+          "name": "Margyl Darklin",
+          "seconds": 400
+        },
+        {
+          "name": "Crytil Dunfire",
+          "seconds": 400
+        },
+        {
+          "name": "Qued",
+          "seconds": 400
+        },
+        {
+          "name": "Barma Dunfire",
+          "seconds": 400
+        }
+      ],
+      "npc_spawn_times": [
+        {
+          "name": "Nyzil Bloodforge",
+          "seconds": 400
+        },
+        {
+          "name": "Durkis Battlemore",
+          "seconds": 400
+        },
+        {
+          "name": "Walnan",
+          "seconds": 400
+        },
+        {
+          "name": "Happ Findlefinn",
+          "seconds": 400
+        },
+        {
+          "name": "Atwin Keladryn",
+          "seconds": 400
+        },
+        {
+          "name": "Balen Kalgunn",
+          "seconds": 400
+        },
+        {
+          "name": "Thar Kelgand",
+          "seconds": 400
+        },
+        {
+          "name": "Alun Bilgum",
+          "seconds": 1320
+        },
+        {
+          "name": "Darm Dundam",
+          "seconds": 1320
+        },
+        {
+          "name": "Doran Glosglen",
+          "seconds": 1320
+        },
+        {
+          "name": "Ganbar Dundam",
+          "seconds": 1320
+        },
+        {
+          "name": "Gann Dunbull",
+          "seconds": 1320
+        },
+        {
+          "name": "Gibi Bilgum",
+          "seconds": 1320
+        },
+        {
+          "name": "Glorin Binfurr",
+          "seconds": 1320
+        },
+        {
+          "name": "Magnus Boran",
+          "seconds": 1320
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 900,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "cabeast": {
+      "name": "cabeast",
+      "notable_npcs": [
+        "Vessel Drozlin"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "cabwest": {
+      "name": "cabwest",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "cauldron": {
+      "name": "cauldron",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "cazicthule": {
+      "name": "cazicthule",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "charasis": {
+      "name": "charasis",
+      "notable_npcs": [
+        "Sentient Bile",
+        "The Crypt Excavator",
+        "The Crypt Feaster",
+        "The Crypt Keeper",
+        "Drusella Sathir",
+        "Embalming Fluid",
+        "The Golem Master",
+        "Reanimated Plaguebone",
+        "Skeletal Procurator",
+        "The Skeleton Sepulcher",
+        "The Spectre Spiritualist",
+        "The Undertaker Lord"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Drusella Sathir",
+          "seconds": 86400
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1230,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "chardok": {
+      "name": "chardok",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Kennel Master Al`ele",
+          "seconds": 1200
+        },
+        {
+          "name": "an apprentice kennelmaster",
+          "seconds": 1200
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1080,
+      "show_all_map_levels": false,
+      "zone_level_height": 30
+    },
+    "citymist": {
+      "name": "citymist",
+      "notable_npcs": [
+        "a black reaver",
+        "an army behemoth",
+        "Captain of the Guard",
+        "a human skeleton",
+        "Lhranc",
+        "Lord Ghiosk",
+        "Lord Rak`Ashiir",
+        "Neh`Ashiir",
+        "spectral courier",
+        "Wraith of Jaxion"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "a black reaver",
+          "seconds": 7200
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "cobaltscar": {
+      "name": "cobaltscar",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1200,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "commons": {
+      "name": "commons",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "a shadowed man",
+          "seconds": 600
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "crushbone": {
+      "name": "crushbone",
+      "notable_npcs": [
+        "Orc Taskmaster",
+        "Orc Trainer",
+        "Orc Warlord",
+        "Ambassador DVinn",
+        "Lord Darish",
+        "Rondo Dunfire",
+        "Retlon Brenclog",
+        "Emperor Crush",
+        "The Prophet"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Retlon Brenclog",
+          "seconds": 180
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 540,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "crystal": {
+      "name": "crystal",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 885,
+      "show_all_map_levels": false,
+      "zone_level_height": 20
+    },
+    "dalnir": {
+      "name": "dalnir",
+      "notable_npcs": [
+        "Coerced Channeler",
+        "Coerced Crusader",
+        "Coerced Penkeeper",
+        "a coerced revenant",
+        "a coerced smith",
+        "Kly Imprecator",
+        "The Kly Overseer",
+        "The Kly",
+        "Spectral Crusader",
+        "an undead blacksmith",
+        "lumpy goo"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 720,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "dreadlands": {
+      "name": "dreadlands",
+      "notable_npcs": [
+        "Gorenaire",
+        "A dread widow",
+        "a mountain giant patriarch",
+        "a wulfare lonewolf",
+        "wraithbone champion"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "A Tundra Yeti",
+          "seconds": 960
+        },
+        {
+          "name": "A Glacier Yeti",
+          "seconds": 960
+        }
+      ],
+      "npcs_that_aoe": [
+        {
+          "name": "Gorenaire",
+          "spell_effects": [
+            "Dragon Roar",
+            "Freezing Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "droga": {
+      "name": "droga",
+      "notable_npcs": [
+        "a goblin bodyguard",
+        "Chief Rokgus",
+        "a goblin canyoneer",
+        "a maddened Burynai",
+        "Soothsayer Dregzak",
+        "An angry goblin",
+        "Warlord Skargus"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1230,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "eastkarana": {
+      "name": "eastkarana",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 360,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "eastwastes": {
+      "name": "eastwastes",
+      "notable_npcs": [
+        "Boridain Glacierbane",
+        "Gloradin Coldheart",
+        "Chief Ry`Gorr",
+        "Corbin Blackwell",
+        "Ekelng Thunderstone",
+        "Firbrand the Black",
+        "Oracle of Ry'Gorr",
+        "Fjloaren Icebane",
+        "Garadain Glacierbane",
+        "Ghrek Squatnot",
+        "Tain Hammerfrost",
+        "Warden Bruke"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "ecommons": {
+      "name": "ecommons",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "emeraldjungle": {
+      "name": "emeraldjungle",
+      "notable_npcs": [
+        "Engorged Soulsipper",
+        "Severilous",
+        "Totem Fiendling"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [
+        {
+          "name": "Severilous",
+          "spell_effects": [
+            "Dragon Roar",
+            "Ceticious Cloud"
+          ]
+        }
+      ],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "erudnext": {
+      "name": "erudnext",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [
+        {
+          "name": "shark",
+          "seconds": 400
+        }
+      ],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "erudnint": {
+      "name": "erudnint",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [
+        {
+          "name": "shark",
+          "seconds": 400
+        }
+      ],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "erudsxing": {
+      "name": "erudsxing",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "everfrost": {
+      "name": "everfrost",
+      "notable_npcs": [
+        "Karg IceBear",
+        "Lich of Miragul",
+        "Megan",
+        "Tundra Jack",
+        "Iceberg",
+        "Snowflake",
+        "Sulon McMoor",
+        "Redwind",
+        "Martar IceBear",
+        "Dark Assassin",
+        "Corrupted wooly"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "fearplane": {
+      "name": "fearplane",
+      "notable_npcs": [
+        "Fright",
+        "Dread",
+        "Terror",
+        "Dracoliche",
+        "Cazic Thule"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 28800,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "feerrott": {
+      "name": "feerrott",
+      "notable_npcs": [
+        "Annaelia Wylassi",
+        "Aqaar Aluram",
+        "Cyndreela",
+        "Dark Assassin",
+        "Eleann Morkul",
+        "Oknoggin Stonesmacker",
+        "Roror",
+        "Spanner Scrapsnatcher"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "felwithea": {
+      "name": "felwithea",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "felwitheb": {
+      "name": "felwitheb",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "fieldofbone": {
+      "name": "fieldofbone",
+      "notable_npcs": [
+        "A scaled prowler",
+        "A skeletal jester",
+        "Burynaibane Spider",
+        "Carrion Queen",
+        "Gharg Oberbord",
+        "Iksar Dakoit",
+        "Jairnel Marfury",
+        "Kerosh Blackhand",
+        "Targishin",
+        "The Tangrin",
+        "a burynai cutter",
+        "a scourgetail scorpion"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "firiona": {
+      "name": "firiona",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "freporte": {
+      "name": "freporte",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": false,
+      "zone_level_height": 15
+    },
+    "freportn": {
+      "name": "freportn",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "freportw": {
+      "name": "freportw",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "frontiermtns": {
+      "name": "frontiermtns",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "frozenshadow": {
+      "name": "frozenshadow",
+      "notable_npcs": [
+        "Large Undead Gnoll",
+        "Xalgoti",
+        "Zorglim the Dead",
+        "Enraged Shadowbeast",
+        "Amontehepna",
+        "Narmak Berreka",
+        "maggot infested flesh",
+        "Eugie",
+        "Isopca",
+        "Lerty",
+        "Nosja",
+        "Otdd",
+        "Pelpa",
+        "Priest Majes Medory",
+        "Tihgren",
+        "Varjie",
+        "Vyakna",
+        "enraged relative",
+        "lucid spirit of Abrams",
+        "Vhal'Sera"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1200,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "gfaydark": {
+      "name": "gfaydark",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Captain Silverwind",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Fayfear",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Briarstorm",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Brookrock",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Crystalwind",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Dayblaze",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Eaglesong",
+          "seconds": 1440
+        },
+        {
+          "name": "Captain Fayfield",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Fireblight",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Frostfallen",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Marshmoor",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Moonwind",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Nitegazer",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Noonshadow",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Oakwillow",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Orcflayer",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Pinebramble",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Pineshade",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Rainstrider",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Starstrike",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Streamtree",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Sunblaze",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Sunweaver",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Tangleroot",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Treestrider",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Valewatcher",
+          "seconds": 1440
+        },
+        {
+          "name": "Liutenant Leafstalker",
+          "seconds": 1440
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 425,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "greatdivide": {
+      "name": "greatdivide",
+      "notable_npcs": [
+        "Sentry Badain",
+        "Bekerak Coldbones",
+        "Blizzent",
+        "Bloodmaw",
+        "Captain Stonefist",
+        "Drakkel Blood Wolf",
+        "Fergul Frostsky",
+        "Gralk Dwarfkiller",
+        "Icetooth",
+        "Korf Brokenhammer",
+        "Relik",
+        "Shardtooth",
+        "Shardwurm Broodmother",
+        "Shardwurm Matriarch",
+        "a Tizmak Spiritcaller",
+        "Vluudeen",
+        "Vores the Hunter",
+        "Yaka Razorhoof"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 640,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "grobb": {
+      "name": "grobb",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "growthplane": {
+      "name": "growthplane",
+      "notable_npcs": [
+        "Ancient Totem",
+        "Ail the Elder",
+        "Fayl Everstrong",
+        "Farstride Unicorn",
+        "Prince Thirneg",
+        "Galiel Spirithoof",
+        "Grahl Strongback",
+        "A Phase Puma",
+        "Ordro",
+        "Sarik the Fang",
+        "Treah Greenroot",
+        "Undogo Digolo",
+        "Tunare"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "a protector of growth",
+          "seconds": 1440
+        },
+        {
+          "name": "Tunare",
+          "seconds": 1
+        }
+      ],
+      "npcs_that_aoe": [
+        {
+          "name": "Ail the Elder",
+          "spell_effects": [
+            "Cloud of Silence",
+            "Silver Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 43200,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "gukbottom": {
+      "name": "gukbottom",
+      "notable_npcs": [
+        "a basalt gargoyle",
+        "Raster of Guk",
+        "a frenzied ghoul",
+        "a froglok crusader",
+        "a froglok herbalist",
+        "the froglok king",
+        "a froglok noble",
+        "a yun priest",
+        "a froglok tactician",
+        "the ghoul arch magus",
+        "a ghoul assassin",
+        "a ghoul cavalier",
+        "a ghoul executioner",
+        "the ghoul lord",
+        "a ghoul ritualist",
+        "a ghoul sage",
+        "a ghoul savant",
+        "a ghoul scribe",
+        "a ghoul sentinel",
+        "a ghoul supplier",
+        "a huge water elemental",
+        "a minotaur elder",
+        "a minotaur patriarch",
+        "a reanimated hand",
+        "Slaythe the Slayer"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1680,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "guktop": {
+      "name": "guktop",
+      "notable_npcs": [
+        "a froglok gaz squire",
+        "a froglok idealist",
+        "a froglok realist",
+        "a froglok necromancer",
+        "a froglok scryer",
+        "a froglok summoner",
+        "a froglok nokta shaman",
+        "a froglok shin knight",
+        "the froglok shin lord",
+        "Tempus",
+        "a giant heart spider"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 990,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "halas": {
+      "name": "halas",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "hateplane": {
+      "name": "hateplane",
+      "notable_npcs": [
+        "Ashenbone Broodmaster",
+        "Avatar of Abhorrence",
+        "Coercer T`vala",
+        "Grandmaster R`Tal",
+        "High Priest M`kari",
+        "Lord of Ire",
+        "Lord of Loathing",
+        "Magi P`Tasa",
+        "Master of Spite",
+        "Mistress of Scorn",
+        "Maestro of Rancor",
+        "Innoruuk"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 28800,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "highkeep": {
+      "name": "highkeep",
+      "notable_npcs": [
+        "Captain Boshinko",
+        "Mistress Anna",
+        "Osargen",
+        "Princess Lenia"
+      ],
+      "npc_contains_spawn_times": [
+        {
+          "name": "Goblin",
+          "seconds": 600
+        }
+      ],
+      "npc_spawn_times": [
+        {
+          "name": "Guard Chopin",
+          "seconds": 180
+        },
+        {
+          "name": "Guard Blayle",
+          "seconds": 180
+        },
+        {
+          "name": "A noble",
+          "seconds": 360
+        },
+        {
+          "name": "Isabella Cellus",
+          "seconds": 360
+        },
+        {
+          "name": "Captain Boshinko",
+          "seconds": 360
+        },
+        {
+          "name": "Dyrna Nlith",
+          "seconds": 360
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1080,
+      "show_all_map_levels": false,
+      "zone_level_height": 6
+    },
+    "highpass": {
+      "name": "highpass",
+      "notable_npcs": [
+        "Cyrla Shadowstepper",
+        "Dyllin Starsine",
+        "Hagnis Shralok",
+        "Recfek Shralok",
+        "Vopuk Shralok",
+        "Vexven Mucktail",
+        "Grenix Mucktail",
+        "Barn Bloodstone"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Vexven Mucktail",
+          "seconds": 1320
+        },
+        {
+          "name": "Grenix Mucktail",
+          "seconds": 1320
+        },
+        {
+          "name": "Greth Truksorn",
+          "seconds": 900
+        },
+        {
+          "name": "Dalishea",
+          "seconds": 900
+        },
+        {
+          "name": "Brenon",
+          "seconds": 900
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 300,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "hole": {
+      "name": "hole",
+      "notable_npcs": [
+        "Bejeweled Elemental",
+        "Commander Yarik",
+        "Caradon",
+        "Dartain the Lost",
+        "Ghost of Kindle",
+        "Ghost of Glohnor",
+        "Gibartik",
+        "High Scale Kirn",
+        "Initiate Sirlis",
+        "Irslak the Wretched",
+        "Jaeil the Wretched",
+        "Keeper of the Tombs",
+        "Kejar the Mighty",
+        "Master Yael",
+        "Niltoth the Unholy",
+        "Nortlav the Scalekeeper",
+        "Polzin Mrid",
+        "a ratman guard",
+        "Rocksoul",
+        "Schnozz the Flighty",
+        "Stonegrinder Minion",
+        "Stonesoul the Unmoving",
+        "Ulrik the Devout"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1290,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "iceclad": {
+      "name": "iceclad",
+      "notable_npcs": [
+        "Balix Misteyes",
+        "Corudoth",
+        "Garou",
+        "Lodizal",
+        "Midnight",
+        "Pulsating Icestorm",
+        "Stormfeather"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Ergrez Shortpaw",
+          "seconds": 360
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "innothule": {
+      "name": "innothule",
+      "notable_npcs": [
+        "Bunk Oden",
+        "Jojoojojgogogoguna",
+        "Jyle Windstorm",
+        "Jojongua",
+        "Zimbittle",
+        "a troll slayer",
+        "Spore Guardian",
+        "Lynuga"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "kael": {
+      "name": "kael",
+      "notable_npcs": [
+        "The Avatar of War",
+        "The Statue of Rallos Zek",
+        "Derakor the Vindicator",
+        "King Tormax",
+        "Bjrakor the Cold",
+        "Captain Bvellos",
+        "Gkrean Prophet of Tallon",
+        "Semkak Prophet of Vallon",
+        "Gorul Longshanks",
+        "Keldor Dek`Torek",
+        "Noble Helssen",
+        "Slaggak the Trainer",
+        "Staff Sergeant Drioc",
+        "Vkjor",
+        "Wenglawks Kkeak",
+        "Bygloirn Omorden",
+        "Dagron Stonecutter",
+        "Barlek Stonefist",
+        "Gragek Mjlorkigar",
+        "Kelenek Bluadfeth",
+        "Veldern Blackhammer",
+        "Kragek Thunderforge",
+        "Stoem Lekbar",
+        "Bjarorm Mjlorn",
+        "Ulkar Jollkarek",
+        "Vylleam Vyaeltor",
+        "Jaglorm Ygorr",
+        "Yeeldan Spiritcaller"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Keldor Dek`Torek",
+          "seconds": 64800
+        },
+        {
+          "name": "Derakor the Vindicator",
+          "seconds": 25200
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1680,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "kaesora": {
+      "name": "kaesora",
+      "notable_npcs": [
+        "Hungered Ravener",
+        "failed crypt raider",
+        "Frenzied Strathbone",
+        "Reaver of Xalgoz",
+        "spectral guardian",
+        "spectral librarian",
+        "Strathbone Runelord",
+        "tortured librarian",
+        "Warder of Xalgoz",
+        "Xalgoz"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1080,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "kaladima": {
+      "name": "kaladima",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "King Kazon Stormhammer",
+          "seconds": 400
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "kaladimb": {
+      "name": "kaladimb",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "karnor": {
+      "name": "karnor",
+      "notable_npcs": [
+        "Caller of Sathir",
+        "A construct",
+        "Construct of Sathir",
+        "a cursed hand",
+        "a drolvarg captain",
+        "A Drolvarg Pawbuster",
+        "a Drolvarg warlord",
+        "Hangnail",
+        "a human skeleton",
+        "Knight of Sathir",
+        "Sentry of Sathir",
+        "Skeletal Berserker",
+        "Skeletal Captain",
+        "Skeletal Caretaker",
+        "Skeletal Scryer",
+        "skeletal warlord",
+        "Spectral Turnkey",
+        "Undead Jailor",
+        "Venril Sathir",
+        "Venril Sathir Remains",
+        "Verix Kyloxs Remains"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1620,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "kedge": {
+      "name": "kedge",
+      "notable_npcs": [
+        "Phinigel Autropos",
+        "Cauldronboil",
+        "Cauldronbubble",
+        "Coralyn Kelpmaiden",
+        "Estrella of Gloomwater",
+        "Fierce Impaler",
+        "a ferocious cauldron shark",
+        "Frenzied Cauldron Shark",
+        "Golden Haired Mermaid",
+        "Stiletto Fang Piranha",
+        "Seahorse Patriarch",
+        "Seahorse Matriarch",
+        "Shellara Ebbhunter",
+        "Undertow",
+        "Swirlspine"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "kerraridge": {
+      "name": "kerraridge",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1065,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "kithicor": {
+      "name": "kithicor",
+      "notable_npcs": [
+        "Ged Twigborn",
+        "Mildin Whistler",
+        "Chief Gan`Shralok",
+        "Recfek Shralok",
+        "and the other Shralok Orcs",
+        "Thumper",
+        "Irin Lunis",
+        "Leaf Falldim",
+        "Kithicor",
+        "Eenot",
+        "Kobb",
+        "Giz X`Tin"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "kurn": {
+      "name": "kurn",
+      "notable_npcs": [
+        "Bargynn",
+        "Burynai Forager",
+        "fingered skeleton",
+        "an odd mole",
+        "a skeletal cook",
+        "thick boned skeleton",
+        "undead crusader",
+        "an undead jester"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1100,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "lakeofillomen": {
+      "name": "lakeofillomen",
+      "notable_npcs": [
+        "a sarnak courier",
+        "Professor Akabao",
+        "Chancellor of Di`Zok",
+        "Lord Gorelik",
+        "Advisor Sh'Orok"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "a bloodgill goblin",
+          "seconds": 780
+        },
+        {
+          "name": "Chancellor of Di`Zok",
+          "seconds": 7200
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "lakerathe": {
+      "name": "lakerathe",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "lavastorm": {
+      "name": "lavastorm",
+      "notable_npcs": [
+        "Deep Lava Basilisk",
+        "Eejag",
+        "Hykallen",
+        "A lesser nightmare",
+        "Sir Lindeal",
+        "a warbone monk",
+        "a warbone spearman"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "a shadowed man",
+          "seconds": 360
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "lfaydark": {
+      "name": "lfaydark",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "a brownie guard",
+          "seconds": 960
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "mischiefplane": {
+      "name": "mischiefplane",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 4210,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "mistmoore": {
+      "name": "mistmoore",
+      "notable_npcs": [
+        "an advisor",
+        "an avenging caitiff",
+        "Black Dire",
+        "Butler Syncall",
+        "a cloaked dhampyre",
+        "a deathly usher",
+        "Enynti",
+        "Garton Viswin",
+        "a glyphed ghoul",
+        "an imp familiar",
+        "Lasna Cheroon",
+        "Maid Issis",
+        "Mayong Mistmoore",
+        "Mynthi Davissi",
+        "Princess Cherista",
+        "Ssynthi",
+        "Xicotl"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "an Advisor",
+          "seconds": 14400
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "misty": {
+      "name": "misty",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "najena": {
+      "name": "najena",
+      "notable_npcs": [
+        "Akksstaff",
+        "BoneCracker",
+        "Drelzna",
+        "Ekeros",
+        "Linara Parlone",
+        "Moosh",
+        "Najena",
+        "Officer Grush",
+        "Rathyl",
+        "Rathyl reincarnate",
+        "Trazdon",
+        "a visiting priestess",
+        "The Widowmistress"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1140,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "necropolis": {
+      "name": "necropolis",
+      "notable_npcs": [
+        "Zlandicar",
+        "A Paebala Spirit Talker",
+        "Dominator Yisaki",
+        "Garzicor's Wraith",
+        "Jaled Dar`s Shade",
+        "Neb",
+        "Queen Raltaas",
+        "Seeker Bulava",
+        "Vaniki",
+        "Vilefang",
+        "Warmaster Utvara"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [
+        {
+          "name": "Zlandicar",
+          "spell_effects": [
+            "Dragon Roar",
+            "Stun Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 1620,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "nektulos": {
+      "name": "nektulos",
+      "notable_npcs": [
+        "Leatherfoot Deputy",
+        "Leatherfoot Medic",
+        "Kirak Vil"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "neriaka": {
+      "name": "neriaka",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Jacker",
+          "seconds": 480
+        },
+        {
+          "name": "Oosa Shadowthumper",
+          "seconds": 480
+        },
+        {
+          "name": "Karnan",
+          "seconds": 480
+        },
+        {
+          "name": "Uglan",
+          "seconds": 400
+        },
+        {
+          "name": "Mrak",
+          "seconds": 480
+        },
+        {
+          "name": "Capee",
+          "seconds": 400
+        },
+        {
+          "name": "Svunsa",
+          "seconds": 400
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "neriakb": {
+      "name": "neriakb",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "neriakc": {
+      "name": "neriakc",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Nallar Q`Tentu",
+          "seconds": 400
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "northkarana": {
+      "name": "northkarana",
+      "notable_npcs": [
+        "Xanuusus",
+        "Ashenpaw",
+        "Zahal the Vile",
+        "GrimFeather",
+        "Swiftclaw",
+        "Lieutenant Midraim",
+        "The Silver Griffon",
+        "Timbur the Tiny",
+        "Korvik the Cursed"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 360,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "nro": {
+      "name": "nro",
+      "notable_npcs": [
+        "Dorn B`Dynn",
+        "Dunedigger",
+        "Rahotep"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Guard Fintran",
+          "seconds": 700
+        },
+        {
+          "name": "Guard Stoutman",
+          "seconds": 700
+        },
+        {
+          "name": "Guard Brendyl",
+          "seconds": 700
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "nurga": {
+      "name": "nurga",
+      "notable_npcs": [
+        "Overseer Dlubish",
+        "A Sleeping Ogre",
+        "Trunt"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1230,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "oasis": {
+      "name": "oasis",
+      "notable_npcs": [
+        "Cazel",
+        "Hatar",
+        "Lockjaw",
+        "Young Ronin"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "A Spectre",
+          "seconds": 990
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "oggok": {
+      "name": "oggok",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1440,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "oot": {
+      "name": "oot",
+      "notable_npcs": [
+        "Capt Surestout",
+        "Nerbilik",
+        "Oracle of K`Arnon",
+        "Boog Mudtoe",
+        "Gornit",
+        "Sentry Xyrin",
+        "Gull Skytalon",
+        "Allizewsaur",
+        "Ancient Cyclops",
+        "Brawn",
+        "Quag Maelstrom",
+        "Seplawishinl Bladeblight",
+        "Soarin Brightfeather",
+        "tainted seafury cyclops",
+        "corrupted seafury cyclops",
+        "Wiltin Windwalker",
+        "A Goblin"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Guardian of K`Arnon",
+          "seconds": 1320
+        },
+        {
+          "name": "Gull Skytalon",
+          "seconds": 28800
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 360,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "overthere": {
+      "name": "overthere",
+      "notable_npcs": [
+        "Admiral Tylix",
+        "Captain Rottgrime",
+        "General V`Deers",
+        "Impaler Tzilug",
+        "Tourmaline",
+        "Corundium",
+        "Stishovite",
+        "Tektite",
+        "A Cliff Golem"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "paineel": {
+      "name": "paineel",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Guard Ackin",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Buldoral",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Abrebla",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Captain Latorl",
+          "seconds": 1440
+        },
+        {
+          "name": "Guard Hetorzuz",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Ishvlor",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Korlack",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Lehlufa",
+          "seconds": 360
+        },
+        {
+          "name": "Guard Lecknar",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Mertanor",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Lesunra",
+          "seconds": 360
+        },
+        {
+          "name": "Guard Pendleir",
+          "seconds": 360
+        },
+        {
+          "name": "Guard Perelin",
+          "seconds": 360
+        },
+        {
+          "name": "Guard Yerlash",
+          "seconds": 360
+        },
+        {
+          "name": "Guard Polzdurn",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Pomnares",
+          "seconds": 360
+        },
+        {
+          "name": "Guard Potren",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Sheltuin",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Tynaryn",
+          "seconds": 1500
+        },
+        {
+          "name": "Guard Yerlash",
+          "seconds": 1500
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 630,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "paw": {
+      "name": "paw",
+      "notable_npcs": [
+        "Brother Hayle",
+        "The Ishva Mal",
+        "Kurrpok Splitpaw",
+        "Tesch Val Kadvem",
+        "Tesch Val Deval`Nmak",
+        "Nisch Val Torash Mashk",
+        "Rosch Val L'Vlor"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "The Ishva Mal",
+          "seconds": 1680
+        },
+        {
+          "name": "An Ishva Lteth gnoll",
+          "seconds": 1680
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "permafrost": {
+      "name": "permafrost",
+      "notable_npcs": [
+        "Lady Vox",
+        "Priest of Nagafen",
+        "High Priest Zaharn",
+        "A goblin alchemist (Permafrost)",
+        "King Thex'Ka IV",
+        "Goblin Archeologist",
+        "Goblin Patriarch",
+        "Goblin Preacher",
+        "Goblin Jail Master",
+        "Goblin Scryer",
+        "Elite Honor Guard",
+        "Injured Polar Bear",
+        "Ice Goblin Champion",
+        "Ice Giant Diplomat"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [
+        {
+          "name": "Lady Vox",
+          "spell_effects": [
+            "Dragon Roar",
+            "Frost Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "qcat": {
+      "name": "qcat",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "A Spectre",
+          "seconds": 1440
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 720,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "qey2hh1": {
+      "name": "qey2hh1",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Guard Ason",
+          "seconds": 360
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "qeynos": {
+      "name": "qeynos",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "qeynos2": {
+      "name": "qeynos2",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "qeytoqrg": {
+      "name": "qeytoqrg",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "qrg": {
+      "name": "qrg",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "rathemtn": {
+      "name": "rathemtn",
+      "notable_npcs": [
+        "Ankhefenmut",
+        "Findlegrob",
+        "Sindlegrob",
+        "Bindlegrob",
+        "Blackwing",
+        "Broog Bloodbeard",
+        "Brother Zephyl",
+        "Grazhak the Berserker",
+        "Hasten Bootstrutter",
+        "Maldyn the Unkempt",
+        "monstrous zombie",
+        "Mortificator Syythrak",
+        "Oculys Ogrefiend",
+        "Petrifin",
+        "Quid Rilstone",
+        "Rharzar",
+        "Shardwing",
+        "Tarskuk",
+        "Theodast Wuggmump",
+        "Zazamoukh"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Kindra Farseer",
+          "seconds": 1200
+        },
+        {
+          "name": "Tabien the Goodly",
+          "seconds": 7200
+        },
+        {
+          "name": "Cynthia",
+          "seconds": 350
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "rivervale": {
+      "name": "rivervale",
+      "notable_npcs": [
+        "Ankhefenmut",
+        "Findlegrob",
+        "Sindlegrob",
+        "Bindlegrob",
+        "Blackwing",
+        "Broog Bloodbeard",
+        "Brother Zephyl",
+        "Grazhak the Berserker",
+        "Hasten Bootstrutter",
+        "Maldyn the Unkempt",
+        "monstrous zombie",
+        "Mortificator Syythrak",
+        "Oculys Ogrefiend",
+        "Petrifin",
+        "Quid Rilstone",
+        "Rharzar",
+        "Shardwing",
+        "Tarskuk",
+        "Theodast Wuggmump",
+        "Zazamoukh"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "runnyeye": {
+      "name": "runnyeye",
+      "notable_npcs": [
+        "Borxx",
+        "an Evil Eye prisoner",
+        "Sludge Dankmire",
+        "A Goblin Captain",
+        "Goblin Warlord",
+        "The Goblin King",
+        "Slime Elemental",
+        "Gelatinous Cube"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "sebilis": {
+      "name": "sebilis",
+      "notable_npcs": [
+        "Arch Duke Iatol",
+        "Baron Yosig",
+        "blood of chottal",
+        "Brogg",
+        "crypt caretaker",
+        "Emperor Chottal",
+        "frenzied pox scarab",
+        "Froggy",
+        "froglok armorer",
+        "froglok armsman",
+        "froglok chef",
+        "froglok commander",
+        "froglok ostiary",
+        "froglok pickler",
+        "froglok repairer",
+        "Gangrenous scarab",
+        "Gruplinort",
+        "Harbinger Freglor",
+        "Hierophant Prime Grekal",
+        "myconid spore king",
+        "a necrosis scarab",
+        "sebilite protector",
+        "Tolapumj",
+        "Trakanon"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "Tolapumj",
+          "seconds": 9900
+        },
+        {
+          "name": "Sebilite protector",
+          "seconds": 9900
+        }
+      ],
+      "npcs_that_aoe": [
+        {
+          "name": "Trakanon",
+          "spell_effects": [
+            "Blinding Fear",
+            "Poison Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 1620,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "sirens": {
+      "name": "sirens",
+      "notable_npcs": [
+        "Elna Kelpweaver",
+        "Fellspine",
+        "Helsia Mindreaver",
+        "Mistress Latazura",
+        "Priestess Sercema",
+        "Shimmering Sea Spirit",
+        "Ulth the Enraged"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1680,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "skyfire": {
+      "name": "skyfire",
+      "notable_npcs": [
+        "Black Scar",
+        "Eldrig the Old",
+        "Faerie of Dismay",
+        "Felia Goldenwing",
+        "Guardian of Felia",
+        "Jennus Lyklobar",
+        "a lava walker",
+        "a shadow drake",
+        "a soul devourer",
+        "Talendor",
+        "a wandering wurm",
+        "a wurm spirit"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [
+        {
+          "name": "Talendor",
+          "spell_effects": [
+            "Dragon Roar",
+            "Immolating Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 780,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "skyshrine": {
+      "name": "skyshrine",
+      "notable_npcs": [
+        "Ziglark Whisperwing",
+        "Lord Yelinak"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [
+        {
+          "name": "Lord Yelinak",
+          "spell_effects": [
+            "Mind Cloud",
+            "Ice breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 1800,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "sleeper": {
+      "name": "sleeper",
+      "notable_npcs": [
+        "Kerafyrm",
+        "The Progenitor",
+        "The Final Arbiter",
+        "Master of the Guard",
+        "Hraashna the Warder",
+        "Nanzata the Warder",
+        "Tukaarak the Warder",
+        "Ventani the Warder"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 28800,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "soldunga": {
+      "name": "soldunga",
+      "notable_npcs": [
+        "Captain Bipnubble",
+        "CWG Model EXG",
+        "Fire Goblin Bartender",
+        "Inferno Goblin Captain",
+        "Fire Goblin Drunkard",
+        "Goblin High Shaman",
+        "Solusek Goblin King",
+        "Gabbie Mardoddle",
+        "flame goblin foreman",
+        "Inferno Goblin Torturer",
+        "Kindle",
+        "Kobold predator",
+        "lava elemental",
+        "Lord Gimblox",
+        "Lynada the Exiled",
+        "Marfen Binkdirple",
+        "Reckless Efreeti",
+        "Singe"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1080,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "soldungb": {
+      "name": "soldungb",
+      "notable_npcs": [
+        "death beetle",
+        "Efreeti Lord Djarn",
+        "guano harvester",
+        "King Tranix",
+        "kobold champion",
+        "kobold noble",
+        "kobold priest",
+        "Lord Nagafen",
+        "Midghh the Dark",
+        "Magi Rokyl",
+        "noxious spider",
+        "Solusek kobold king",
+        "stone spider",
+        "Targin the Rock",
+        "Warlord Skarlon",
+        "Zordak Ragefire"
+      ],
+      "npc_contains_spawn_times": [
+        {
+          "name": "Fire Giant",
+          "seconds": 28800
+        }
+      ],
+      "npc_spawn_times": [
+        {
+          "name": "King Tranix",
+          "seconds": 28800
+        },
+        {
+          "name": "Warlord Skarlon",
+          "seconds": 28800
+        },
+        {
+          "name": "Magi Rokyl",
+          "seconds": 28800
+        }
+      ],
+      "npcs_that_aoe": [
+        {
+          "name": "Lord Nagafen",
+          "spell_effects": [
+            "Dragon Roar",
+            "Lava Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "soltemple": {
+      "name": "soltemple",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 300,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "southkarana": {
+      "name": "southkarana",
+      "notable_npcs": [
+        "Baenar Swiftsong",
+        "Brother Drash",
+        "Brother Qwinn",
+        "Coloth Meadowgreen",
+        "Cracktusk",
+        "Ghanex Drah",
+        "Gnashmaw",
+        "Gnawfang",
+        "Grizzleknot",
+        "Groi Gutblade",
+        "Knari Morawk",
+        "Krak Windchaser",
+        "Kroldir Thunderhoof",
+        "Lord Grimrot",
+        "Marik Clubthorn",
+        "Mroon",
+        "Narra Tanith",
+        "Quillmane",
+        "Sentry Alechin",
+        "Synger Foxfyre",
+        "Undead Cyclops",
+        "Vhalen Nostrolo"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "High Shaman Phido",
+          "seconds": 1320
+        },
+        {
+          "name": "a treant",
+          "seconds": 240
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 360,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "sro": {
+      "name": "sro",
+      "notable_npcs": [
+        "Ancient Cyclops",
+        "Erg Bluntbruiser",
+        "Ortallius",
+        "Rathmana Allin",
+        "Sandgiant Husam",
+        "Scrounge",
+        "Terrorantula",
+        "Young Ronin"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "steamfont": {
+      "name": "steamfont",
+      "notable_npcs": [
+        "Feddi Dooger",
+        "A Kobold Missionary",
+        "Meldrath The Malignant",
+        "Minotaur Hero",
+        "Minotaur Lord",
+        "Renux Herkanor",
+        "Nilit's contraption"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "stonebrunt": {
+      "name": "stonebrunt",
+      "notable_npcs": [
+        "Arglar the Tormentor",
+        "Ghost of Ridossan",
+        "Giang Yin",
+        "a heretic invader",
+        "Hurglak the Destroyer",
+        "Mirabai",
+        "Miranda",
+        "Khonza Ayssla",
+        "Mrowro Wirewhisker",
+        "Old Ghostback",
+        "Prowler of the Jungle",
+        "Rognarog the Infuriated",
+        "Saemey Wirewhisker",
+        "Slyder the Ancient",
+        "Snowbeast"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 670,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "swampofnohope": {
+      "name": "swampofnohope",
+      "notable_npcs": [
+        "Bloodgorge",
+        "an escaped froglok",
+        "Deadeye",
+        "Dreesix Ghoultongue",
+        "Dugroz",
+        "Fakraa the Forsaken",
+        "Fangor",
+        "Frayk",
+        "Froglok Repairer",
+        "Froszik the Impaler",
+        "Grik the Exiled",
+        "Grimewurm",
+        "Grizshnok",
+        "Soblohg",
+        "Two Tails",
+        "Ulump Pujluk",
+        "Venomwing"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "templeveeshan": {
+      "name": "templeveeshan",
+      "notable_npcs": [
+        "Casalen",
+        "Dozekar the Cursed",
+        "Essedera",
+        "Grozzmel",
+        "Krigara",
+        "Lepethida",
+        "Midayor",
+        "Tavekalem",
+        "Ymmeln",
+        "Gozzrem",
+        "Lendiniara the Keeper",
+        "Telkorenar",
+        "Cekenar",
+        "Dagarn the Destroyer",
+        "Eashen of the Sky",
+        "Ikatiar the Venom",
+        "Jorlleag",
+        "Lady Mirenilla",
+        "Lady Nevederia",
+        "Lord Feshlak",
+        "Lord Koi'Doken",
+        "Lord Kreizenn",
+        "Lord Vyemm",
+        "Sevalak",
+        "Vulak`Aerr",
+        "Zlexak"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "A crimson claw hatchling",
+          "seconds": 360
+        },
+        {
+          "name": "A shard wyvern hatchling",
+          "seconds": 360
+        },
+        {
+          "name": "A skyseeker hatchling",
+          "seconds": 360
+        },
+        {
+          "name": "An ebon wing hatchling",
+          "seconds": 360
+        },
+        {
+          "name": "An emerald eye hatchling",
+          "seconds": 360
+        }
+      ],
+      "npcs_that_aoe": [
+        {
+          "name": "Dozekar the Cursed",
+          "spell_effects": [
+            "Silver Breath"
+          ]
+        },
+        {
+          "name": "Gozzrem",
+          "spell_effects": [
+            "Frost Breath"
+          ]
+        },
+        {
+          "name": "Lendiniara the Keeper",
+          "spell_effects": [
+            "Silver Breath"
+          ]
+        },
+        {
+          "name": "Telkorenar",
+          "spell_effects": [
+            "Lava Breath"
+          ]
+        },
+        {
+          "name": "Aaryonar",
+          "spell_effects": [
+            "Cloud of Disempowerment"
+          ]
+        },
+        {
+          "name": "Cekenar",
+          "spell_effects": [
+            "Electric Blast"
+          ]
+        },
+        {
+          "name": "Dagarn the Destroyer",
+          "spell_effects": [
+            "Wave of Heat"
+          ]
+        },
+        {
+          "name": "Eashen of the Sky",
+          "spell_effects": [
+            "Rain of Molten Lava",
+            "Wave of Cold"
+          ]
+        },
+        {
+          "name": "Jorlleag",
+          "spell_effects": [
+            "Frost Breath"
+          ]
+        },
+        {
+          "name": "Lady Mirenilla",
+          "spell_effects": [
+            "Cloud of Fear"
+          ]
+        },
+        {
+          "name": "Lady Nevederia",
+          "spell_effects": [
+            "Bellowing Winds"
+          ]
+        },
+        {
+          "name": "Lord Feshlak",
+          "spell_effects": [
+            "Wave of Cold"
+          ]
+        },
+        {
+          "name": "Lord Koi'Doken",
+          "spell_effects": [
+            "Tsunami"
+          ]
+        },
+        {
+          "name": "Lord Kreizenn",
+          "spell_effects": [
+            "Wave of Flame"
+          ]
+        },
+        {
+          "name": "Lord Vyemm",
+          "spell_effects": [
+            "Scream of Chaos"
+          ]
+        },
+        {
+          "name": "Sevalak",
+          "spell_effects": [
+            "Chaos Breath"
+          ]
+        },
+        {
+          "name": "Vulak`Aerr",
+          "spell_effects": [
+            "Ancient Breath"
+          ]
+        },
+        {
+          "name": "Zlexak",
+          "spell_effects": [
+            "Diseased Cloud"
+          ]
+        }
+      ],
+      "respawn_seconds": 4400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "thurgadina": {
+      "name": "thurgadina",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 420,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "thurgadinb": {
+      "name": "thurgadinb",
+      "notable_npcs": [
+        "Dain Frostreaver IV,",
+        "Glucose",
+        "Grizznot"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 420,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "timorous": {
+      "name": "timorous",
+      "notable_npcs": [
+        "Faydedar",
+        "The Great Oowomp",
+        "Halara",
+        "an Iksar master",
+        "Ugrak da Raider",
+        "Xiblin Fizzlebik",
+        "Alrik Farsight"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 720,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "tox": {
+      "name": "tox",
+      "notable_npcs": [],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "trakanon": {
+      "name": "trakanon",
+      "notable_npcs": [
+        "Bloodeye",
+        "Champion Arlek",
+        "Champion Thenrin",
+        "Commander Sils",
+        "Crusader Zoglic",
+        "Doom",
+        "Dragontail",
+        "Dreadlord Fanrik",
+        "Ebon Lotus",
+        "Emperor Ganak",
+        "Fallen Iksar",
+        "Ffroaak",
+        "froglok forager",
+        "froglok hunter",
+        "Hangman",
+        "Harbinger Dronik",
+        "Harbinger Josk",
+        "A human skeleton",
+        "Klok Denris",
+        "Knight Dragol",
+        "Pained Soul",
+        "Sigra",
+        "Silvermane",
+        "Squire Glik",
+        "Stonebeak",
+        "Throkkok",
+        "Thruke",
+        "Titail Sinok",
+        "Trakanasaurus Rex",
+        "Vessel Fryn"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "unrest": {
+      "name": "unrest",
+      "notable_npcs": [
+        "Garanel Rucksif",
+        "a priest of najena",
+        "Khrix Fritchoff",
+        "Khrix's Abomination",
+        "Torklar Battlemaster",
+        "Shadowpincer",
+        "reclusive ghoul magus"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1320,
+      "show_all_map_levels": false,
+      "zone_level_height": 4
+    },
+    "veeshan": {
+      "name": "veeshan",
+      "notable_npcs": [
+        "Druushk",
+        "Hoshkar",
+        "Nexona",
+        "Phara Dar",
+        "Silverwing",
+        "Xygoz"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [
+        {
+          "name": "Xygoz",
+          "spell_effects": [
+            "Mesmerizing Breath"
+          ]
+        },
+        {
+          "name": "Silverwing",
+          "spell_effects": [
+            "Chaos Breath"
+          ]
+        },
+        {
+          "name": "Phara Dar",
+          "spell_effects": [
+            "Stun Breath"
+          ]
+        },
+        {
+          "name": "Nexona",
+          "spell_effects": [
+            "Stream of Acid"
+          ]
+        },
+        {
+          "name": "Hoshkar",
+          "spell_effects": [
+            "Diseased Cloud"
+          ]
+        },
+        {
+          "name": "Druushk",
+          "spell_effects": [
+            "Lightning Breath"
+          ]
+        }
+      ],
+      "respawn_seconds": 4320,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "velketor": {
+      "name": "velketor",
+      "notable_npcs": [
+        "Lord Doljonijiarnimorinar",
+        "Velketor the Sorcerer",
+        "A Frenzied Velium Broodling",
+        "A Frenzied Velium Stalker",
+        "Bled",
+        "Bledrek",
+        "Crystal Eyes",
+        "Crystal Fang",
+        "Errkak Icepaw",
+        "Failed Experiment",
+        "Gregendek Icepaw",
+        "Jelek Icepaw",
+        "Kalik Icepaw",
+        "Kerd",
+        "Kerdelb",
+        "Khelkar Icepaw",
+        "Laryk Icepaw",
+        "Leljemor",
+        "Marlek Icepaw",
+        "Meljemor",
+        "Rijoely",
+        "Rowwek Icepaw",
+        "The Brood Master",
+        "The Brood Mother",
+        "Tijoely",
+        "Tpos Icepaw",
+        "Ular Icepaw",
+        "Velketor's Experiment",
+        "Venar Icepaw"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 1970,
+      "show_all_map_levels": false,
+      "zone_level_height": 10
+    },
+    "wakening": {
+      "name": "wakening",
+      "notable_npcs": [
+        "Wuoshi",
+        "A Storm Giant Foreman",
+        "A storm giant surveyor",
+        "Corrupted Faun",
+        "Corrupted Panther",
+        "Countess Silveana",
+        "Eysa Florawhisper",
+        "Frostgiant Overseer",
+        "Grand Vizier Poolakacha`tei",
+        "Korzak Stonehammer",
+        "Lady Gelistial",
+        "Lieutenant Krofer",
+        "Lord Gossimerwind",
+        "Lord Prismwing",
+        "Phenocryst",
+        "Priest Bjek",
+        "Priest Delar",
+        "Priest Grenk",
+        "Rolandal",
+        "Shamus Aghllsews",
+        "a corrupted unicorn",
+        "a storm giant architect"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "A storm giant surveyor",
+          "seconds": 420
+        },
+        {
+          "name": "A tar goo",
+          "seconds": 870
+        },
+        {
+          "name": "A suit of sentient armor",
+          "seconds": 870
+        },
+        {
+          "name": "A faerie dragon",
+          "seconds": 420
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "warrens": {
+      "name": "warrens",
+      "notable_npcs": [
+        "Cave Bat Lord",
+        "Foodmaster Rargnar",
+        "Grodl Ripclaw",
+        "High Shaman Drogik",
+        "Huntmaster Furgrl",
+        "Jailer Mkrarrg",
+        "King Gragnar",
+        "a kobold fisherman",
+        "Krode the Diviner",
+        "Lorekeeper Roggik",
+        "The Mighty Bear Paw",
+        "Muglwump",
+        "Packmaster Dledsh",
+        "Prince Bragnar",
+        "Smithy Rrarrgin",
+        "Trainer Daxgrr",
+        "Warlord Drrig",
+        "Grodl Ripclaw"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "King Gragnar",
+          "seconds": 2880
+        },
+        {
+          "name": "High Shaman Drogik",
+          "seconds": 2880
+        },
+        {
+          "name": "Lorekeeper Roggik",
+          "seconds": 2880
+        },
+        {
+          "name": "Trainer Daxgrr",
+          "seconds": 1200
+        },
+        {
+          "name": "Cave Bat Lord",
+          "seconds": 2880
+        },
+        {
+          "name": "Foodmaster Rargnar",
+          "seconds": 1200
+        },
+        {
+          "name": "Huntmaster Furgrl",
+          "seconds": 2880
+        },
+        {
+          "name": "The Muglwump",
+          "seconds": 2100
+        },
+        {
+          "name": "Packmaster Dledsh",
+          "seconds": 960
+        },
+        {
+          "name": "Prince Bragnar",
+          "seconds": 3420
+        },
+        {
+          "name": "Smithy Rrarrgin",
+          "seconds": 1200
+        },
+        {
+          "name": "Warlord Drrig",
+          "seconds": 780
+        }
+      ],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "warslikswood": {
+      "name": "warslikswood",
+      "notable_npcs": [
+        "A shady goblin",
+        "Grachnist the Destroyer",
+        "Pit Fighter Dob",
+        "Ssolet Dnaas",
+        "Iksar Knight",
+        "Iksar Bandit Lord"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [],
+      "npcs_that_aoe": [],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    },
+    "westwastes": {
+      "name": "westwastes",
+      "notable_npcs": [
+        "Atpaev",
+        "Ayillish",
+        "Bratavar",
+        "Bufa",
+        "Cargalia",
+        "Del Sapara",
+        "Derasinal",
+        "Draazak",
+        "Entariz",
+        "Esorpa of the Ring",
+        "Gafala",
+        "Gangel",
+        "Glati",
+        "Harla Dar",
+        "Hechaeva",
+        "Honvar",
+        "Ionat",
+        "Jen Sapara",
+        "Kar Sapara",
+        "Karkona",
+        "Klandicar",
+        "Linbrak",
+        "Makala",
+        "Mazi",
+        "Melalafen",
+        "Myga",
+        "Neordla",
+        "Nintal",
+        "Onava",
+        "Pantrilla",
+        "Quoza",
+        "Sivar",
+        "Sontalak",
+        "Uiliak",
+        "Vitaela",
+        "Von",
+        "Vraptin",
+        "Yal",
+        "Yeldema",
+        "Zil Sapara",
+        "Icehackle",
+        "Makil Rargon",
+        "Mraaka",
+        "Scout Charisa",
+        "Strong Horn",
+        "Tantor",
+        "The Dragon Sage",
+        "Tranala",
+        "Tsiraka",
+        "a Kromzek Captain"
+      ],
+      "npc_contains_spawn_times": [],
+      "npc_spawn_times": [
+        {
+          "name": "An elder wyvern",
+          "seconds": 1800
+        },
+        {
+          "name": "Amcilla",
+          "seconds": 30600
+        },
+        {
+          "name": "Atpaev",
+          "seconds": 30600
+        },
+        {
+          "name": "Bufa",
+          "seconds": 30600
+        },
+        {
+          "name": "Crial",
+          "seconds": 30600
+        },
+        {
+          "name": "Gangel",
+          "seconds": 30600
+        },
+        {
+          "name": "Honvar",
+          "seconds": 30600
+        },
+        {
+          "name": "Linbrak",
+          "seconds": 30600
+        },
+        {
+          "name": "Makala",
+          "seconds": 30600
+        },
+        {
+          "name": "Onava",
+          "seconds": 30600
+        },
+        {
+          "name": "Quoza",
+          "seconds": 30600
+        },
+        {
+          "name": "Sivar",
+          "seconds": 30600
+        },
+        {
+          "name": "Uiliak",
+          "seconds": 30600
+        },
+        {
+          "name": "Yal",
+          "seconds": 30600
+        },
+        {
+          "name": "Ayillish",
+          "seconds": 28800
+        },
+        {
+          "name": "Derasinel",
+          "seconds": 28800
+        },
+        {
+          "name": "Draazak",
+          "seconds": 28800
+        },
+        {
+          "name": "Entariz",
+          "seconds": 28800
+        },
+        {
+          "name": "Harla Dar",
+          "seconds": 10800
+        },
+        {
+          "name": "Ionat",
+          "seconds": 28800
+        },
+        {
+          "name": "Jen Sapara",
+          "seconds": 28800
+        },
+        {
+          "name": "Kar Sapara",
+          "seconds": 28800
+        },
+        {
+          "name": "Karkona",
+          "seconds": 28800
+        },
+        {
+          "name": "Lord Gossimerwind",
+          "seconds": 400
+        },
+        {
+          "name": "A Faerie Dragon",
+          "seconds": 400
+        }
+      ],
+      "npcs_that_aoe": [
+        {
+          "name": "Klandicar",
+          "spell_effects": [
+            "Silver Breath",
+            "Dragon Roar"
+          ]
+        }
+      ],
+      "respawn_seconds": 400,
+      "show_all_map_levels": true,
+      "zone_level_height": 10
+    }
+  }
+}
