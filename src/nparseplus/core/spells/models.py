@@ -30,6 +30,7 @@ class Spell(BaseModel):
     spell_type: SpellType = SpellType.SINGLE  # field 98 (target type)
     class_levels: dict[PlayerClass, int] = {}  # fields 104+ (min level per class)
     spell_icon: int = 0  # field 144
+    descr_number: int = 0  # field 157 (DescrNumber; kept raw — file has out-of-enum values)
     benefit_detriment: SpellBenefitDetriment = SpellBenefitDetriment.BENEFICIAL
 
     @property
