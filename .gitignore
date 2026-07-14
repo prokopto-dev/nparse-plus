@@ -67,3 +67,6 @@ docs/_build/
 wiki/
 old/
 nparse.config.json
+
+# nparseplus
+run-nparse.sh

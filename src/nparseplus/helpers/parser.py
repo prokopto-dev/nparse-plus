@@ -1,9 +1,15 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QStyle,
-    QPushButton, QVBoxLayout, QWidget)
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
 
-from nParse.helpers import config
+from nparseplus.helpers import config
 
 
 class ParserWindow(QWidget):
@@ -27,7 +33,7 @@ class ParserWindow(QWidget):
 
     def __init__(self, **kwargs):
         if not self.name:
-            self.name = kwargs.get("name", None)
+            self.name = kwargs.get("name")
             if not self.name:
                 raise AttributeError(
                     "'name' is a required attribute that must be set via **kwargs or in the partent class."
@@ -39,7 +45,7 @@ class ParserWindow(QWidget):
         self._auto_hide_menu = config.data.get(self.name, {}).get("auto_hide_menu", True)
         self._clickthrough = config.data.get(self.name, {}).get("clickthrough", True)
         self._frameless = config.data.get(self.name, {}).get("frameless", True)
-        self._geometry = config.data.get(self.name, {}).get("geometry", [0,0,200,400])
+        self._geometry = config.data.get(self.name, {}).get("geometry", [0, 0, 200, 400])
         self._toggled = config.data.get(self.name, {}).get("toggled", True)
         self._window_flush = config.data.get("general", {}).get("window_flush", True)
         self._window_opacity = config.data.get(self.name, {}).get("opacity", 80)
@@ -129,9 +135,11 @@ class ParserWindow(QWidget):
             self.show()
 
     def _save_geometry(self):
-        config.data[self.name]['geometry'] = [
-            self.geometry().x(), self.geometry().y(),
-            self.geometry().width(), self.geometry().height()
+        config.data[self.name]["geometry"] = [
+            self.geometry().x(),
+            self.geometry().y(),
+            self.geometry().width(),
+            self.geometry().height(),
         ]
         config.save()
 
@@ -160,9 +168,11 @@ class ParserWindow(QWidget):
             self._set_flags()
             self.show()
             config.data[self.name]["frameless"] = False
-            config.data[self.name]['geometry'] = [
-                current_geometry.x(), current_geometry.y(),
-                current_geometry.width(), current_geometry.height()
+            config.data[self.name]["geometry"] = [
+                current_geometry.x(),
+                current_geometry.y(),
+                current_geometry.width(),
+                current_geometry.height(),
             ]
             config.save()
         else:
@@ -173,19 +183,21 @@ class ParserWindow(QWidget):
             self._set_flags()
             self.show()
             config.data[self.name]["frameless"] = True
-            config.data[self.name]['geometry'] = [
-                current_geometry.x(), current_geometry.y(),
-                current_geometry.width(), current_geometry.height()
+            config.data[self.name]["geometry"] = [
+                current_geometry.x(),
+                current_geometry.y(),
+                current_geometry.width(),
+                current_geometry.height(),
             ]
             config.save()
 
     def toggle(self):
         if self.isVisible():
             self.hide()
-            config.data[self.name]['toggled'] = False
+            config.data[self.name]["toggled"] = False
         else:
             self.show()
-            config.data[self.name]['toggled'] = True
+            config.data[self.name]["toggled"] = True
         config.save()
 
     # Overrides QWidget to handle this event
@@ -193,7 +205,7 @@ class ParserWindow(QWidget):
         if config.APP_EXIT:
             return
         # This is triggered if the user closes from the taskbar or from the X if the window is framed
-        config.data[self.name]['toggled'] = False
+        config.data[self.name]["toggled"] = False
         config.save()
 
     # Overrides QWidget to handle this event

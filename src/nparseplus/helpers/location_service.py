@@ -1,15 +1,17 @@
-from datetime import datetime
 import json
+from datetime import datetime
 
-from PySide6.QtCore import QObject, QUrl, Signal, QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtWebSockets import QWebSocket
+from PySide6.QtWidgets import QApplication
 
-from nParse.helpers import config, to_real_xy
-from nParse.parsers.maps.mapclasses import MapPoint
+from nparseplus.helpers import config, to_real_xy
+from nparseplus.parsers.maps.mapclasses import MapPoint
+
 
 class LocationSharingSignals(QObject):
     textMessageReceived = Signal(str)
+
 
 class LocationSharingService(QObject):
     character_name = None
@@ -38,7 +40,7 @@ class LocationSharingService(QObject):
                 self.group_key = key
         else:
             self.group_key = config.data["sharing"]["group_key"]
-        
+
         # Set self.host from config
         self.host = config.data["sharing"]["url"]
 
@@ -61,7 +63,9 @@ class LocationSharingService(QObject):
 
         # Setup signals
         QApplication.instance().aboutToQuit.connect(self.stop)
-        QApplication.instance()._signals["logreader"].character_updated.connect(self.character_updated)
+        QApplication.instance()._signals["logreader"].character_updated.connect(
+            self.character_updated
+        )
         QApplication.instance()._signals["maps"].new_zone.connect(self.zone_updated)
         QApplication.instance()._signals["maps"].location.connect(self.share_location)
         QApplication.instance()._signals["maps"].death.connect(self.share_death)
@@ -79,11 +83,15 @@ class LocationSharingService(QObject):
 
         # Disconnect signals
         QApplication.instance().aboutToQuit.disconnect(self.stop)
-        QApplication.instance()._signals["logreader"].character_updated.disconnect(self.character_updated)
+        QApplication.instance()._signals["logreader"].character_updated.disconnect(
+            self.character_updated
+        )
         QApplication.instance()._signals["maps"].new_zone.disconnect(self.zone_updated)
         QApplication.instance()._signals["maps"].location.disconnect(self.share_location)
         QApplication.instance()._signals["maps"].death.disconnect(self.share_death)
-        QApplication.instance()._signals["locationsharing"].textMessageReceived.disconnect(self.parse)
+        QApplication.instance()._signals["locationsharing"].textMessageReceived.disconnect(
+            self.parse
+        )
 
         # Set self.running to false
         self.running = False
@@ -91,13 +99,13 @@ class LocationSharingService(QObject):
     def config_updated(self):
         # Handle performing character name override when saving a new name from settings
         # Use Override Name if sharing is anabled
-        if (
-            config.data["sharing"]["enabled"]
-            and config.data["sharing"]["player_name_override"]
-        ):
+        if config.data["sharing"]["enabled"] and config.data["sharing"]["player_name_override"]:
             self.character_name = config.data["sharing"]["player_name"]
         # Use the name from the logreader if available
-        elif QApplication.instance()._log_reader and QApplication.instance()._log_reader.character_name:
+        elif (
+            QApplication.instance()._log_reader
+            and QApplication.instance()._log_reader.character_name
+        ):
             self.character_name = QApplication.instance()._log_reader.character_name
             # Update config so if the user starts up and has not zoned, we use the correct name
             if config.data["sharing"]["player_name"] != self.character_name:
@@ -144,12 +152,12 @@ class LocationSharingService(QObject):
     # Websocket Error
     def websocket_error(self, message):
         pass
-    
+
     # Websocket Discconected
     def websocket_disconnected(self):
         if config.data.get("sharing", {}).get("enabled", False):
-            reconnect_delay  = int(config.data.get("sharing", {}).get("reconnect_delay", 5) * 1000)
-            _ = QTimer().singleShot(reconnect_delay , self.websocket_reconnect )
+            reconnect_delay = int(config.data.get("sharing", {}).get("reconnect_delay", 5) * 1000)
+            _ = QTimer().singleShot(reconnect_delay, self.websocket_reconnect)
 
     # Websocket reconnect logic
     def websocket_reconnect(self):
@@ -169,20 +177,27 @@ class LocationSharingService(QObject):
             if message.get("locations", {}).get(self.zone_name.lower(), False):
                 # Interate through players in the zone
                 for player in message["locations"][self.zone_name.lower()]:
-                    #Process any players that are not us
+                    # Process any players that are not us
                     if player.lower() != self.character_name.lower():
                         p_data = message["locations"][self.zone_name.lower()][player]
                         p_timestamp = datetime.fromisoformat(str(p_data["timestamp"]))
-                        p_point = MapPoint(x=int(p_data["x"]), y=int(p_data["y"]), z=int(p_data["z"]))
-                        #Add the player map point to the map
-                        QApplication.instance()._parsers_dict["maps"]._map.add_player(player, p_timestamp, p_point)
+                        p_point = MapPoint(
+                            x=int(p_data["x"]), y=int(p_data["y"]), z=int(p_data["z"])
+                        )
+                        # Add the player map point to the map
+                        QApplication.instance()._parsers_dict["maps"]._map.add_player(
+                            player, p_timestamp, p_point
+                        )
 
                 # Remove players that aren't in the zone
                 players_to_remove = []
                 # Check players in the currently loaded QT map
                 for player in QApplication.instance()._parsers_dict["maps"]._map._data.players:
                     # if the player is no longre in the zone and not ourselves, append them to be removed
-                    if player not in message["locations"][self.zone_name.lower()] and player != "__you__":
+                    if (
+                        player not in message["locations"][self.zone_name.lower()]
+                        and player != "__you__"
+                    ):
                         players_to_remove.append(player)
                 for player in players_to_remove:
                     QApplication.instance()._parsers_dict["maps"]._map.remove_player(player)
@@ -194,7 +209,9 @@ class LocationSharingService(QObject):
                     w_data = message["waypoints"][self.zone_name.lower()][waypoint]
                     w_point = MapPoint(x=int(w_data["x"]), y=int(w_data["y"]), z=int(w_data["z"]))
                     w_icon = w_data.get("icon", "corpse")
-                    QApplication.instance()._parsers_dict["maps"]._map.add_waypoint(waypoint, w_point, w_icon)
+                    QApplication.instance()._parsers_dict["maps"]._map.add_waypoint(
+                        waypoint, w_point, w_icon
+                    )
 
             # Remove waypoints that aren't in the zone
             waypoints_to_remove = []
@@ -219,13 +236,11 @@ class LocationSharingService(QObject):
             "z": self.z,
             "zone": self.zone_name,
             "player": self.character_name,
-            "timestamp": timestamp_string
+            "timestamp": timestamp_string,
         }
 
         # Construct the message frame
-        message = {"type": "location",
-                "group_key": self.group_key,
-                "location": share_payload}
+        message = {"type": "location", "group_key": self.group_key, "location": share_payload}
 
         # Send the message
         print("Sending: %s" % message)
@@ -254,13 +269,11 @@ class LocationSharingService(QObject):
                 "player": self.character_name,
                 "timestamp": timestamp_string,
                 "timeout": 60,
-                "icon": "corpse"
+                "icon": "corpse",
             }
 
             # Construct the message frame
-            message = {"type": "waypoint",
-                "group_key": self.group_key,
-                "location": share_payload}
+            message = {"type": "waypoint", "group_key": self.group_key, "location": share_payload}
 
             # Send the message
             self.websocket.sendTextMessage(json.dumps(message))

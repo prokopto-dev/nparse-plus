@@ -25,8 +25,7 @@ LAST_SENT = {}
 # Subclassing dict allows this object to seamlessly json-encode.
 class PlayerLocation(dict):
     def __init__(self, x, y, z, zone, player, timestamp):
-        super(PlayerLocation, self).__init__(
-            x=x, y=y, z=z, zone=zone, player=player, timestamp=timestamp)
+        super().__init__(x=x, y=y, z=z, zone=zone, player=player, timestamp=timestamp)
         self.x = x
         self.y = y
         self.z = z
@@ -46,10 +45,11 @@ def location_event(group_key, zone_name):
         for key, data in WAYPOINT_LOCS[group_key][zone].items():
             waypoints[zone][f"{key[0]}:{key[1]}"] = data
 
-    return (
-        {"type": "state",
-         "locations": {zone_name: PLAYER_LOCS.get(group_key, {}).get(zone_name, {})},
-         "waypoints": waypoints})
+    return {
+        "type": "state",
+        "locations": {zone_name: PLAYER_LOCS.get(group_key, {}).get(zone_name, {})},
+        "waypoints": waypoints,
+    }
 
 
 def users_event():
@@ -85,9 +85,11 @@ async def notify_location(websocket, group_key, zone_name):
     logging.warning("Notifying locations for %s (%s): %s" % (group_key, zone_name, message))
     if PLAYERS:
         keyed_players = [
-            user for user in PLAYERS
+            user
+            for user in PLAYERS
             # if user != websocket and
-            if PLAYERS[user][1] == group_key]
+            if PLAYERS[user][1] == group_key
+        ]
         if keyed_players:
             websockets.broadcast(keyed_players, message)
 
@@ -96,8 +98,7 @@ async def notify_users(websocket):
     message = users_event()
     logging.warning("Notifying players: %s" % message)
     if PLAYERS and len(PLAYERS) > 1:
-        await asyncio.wait([user.send(message) for user in PLAYERS
-                            if user != websocket])
+        await asyncio.wait([user.send(message) for user in PLAYERS if user != websocket])
 
 
 async def register(websocket, player_name=None, group_key=None):
@@ -115,8 +116,8 @@ async def unregister(websocket):
 
 
 async def update_data_for_player(websocket, data, group_key):
-    zone_name = data.pop('zone', 'unknown').lower()
-    player_name = data.pop('player', 'unknown').capitalize()
+    zone_name = data.pop("zone", "unknown").lower()
+    player_name = data.pop("player", "unknown").capitalize()
 
     old_player_name = PLAYERS[websocket][0]
     old_group_key = PLAYERS[websocket][1]
@@ -125,8 +126,7 @@ async def update_data_for_player(websocket, data, group_key):
     if old_player_name != player_name or old_group_key != group_key:
         await remove_player_from_zones(old_player_name, group_key=old_group_key)
     else:
-        await remove_player_from_zones(player_name, group_key=group_key,
-                                       except_zone=zone_name)
+        await remove_player_from_zones(player_name, group_key=group_key, except_zone=zone_name)
 
     if group_key not in PLAYER_LOCS:
         PLAYER_LOCS[group_key] = {}
@@ -138,10 +138,10 @@ async def update_data_for_player(websocket, data, group_key):
 
 
 async def update_data_for_waypoint(websocket, data, group_key):
-    zone_name = data.pop('zone', 'unknown').lower()
-    player_name = data.pop('player', 'unknown').capitalize()
+    zone_name = data.pop("zone", "unknown").lower()
+    player_name = data.pop("player", "unknown").capitalize()
     try:
-        timeout = int(data.pop('timeout'))
+        timeout = int(data.pop("timeout"))
     except (TypeError, KeyError):
         timeout = 60
     expiry = (datetime.datetime.now() + datetime.timedelta(minutes=timeout)).timestamp()
@@ -170,20 +170,19 @@ async def update_loc(websocket: websockets.WebSocketServerProtocol):
     try:
         async for message in websocket:
             data = json.loads(message)
-            group_key = data.pop('group_key', 'public')
-            if data['type'] == "location":
-                data = data['location']
-                zone_name = data.get('zone', 'unknown').lower()
+            group_key = data.pop("group_key", "public")
+            if data["type"] == "location":
+                data = data["location"]
+                zone_name = data.get("zone", "unknown").lower()
                 await update_data_for_player(websocket, data, group_key=group_key)
                 await notify_location(websocket, group_key, zone_name)
-            elif data['type'] == "waypoint":
-                data = data['location']
-                zone_name = data.get('zone', 'unknown').lower()
+            elif data["type"] == "waypoint":
+                data = data["location"]
+                zone_name = data.get("zone", "unknown").lower()
                 await update_data_for_waypoint(websocket, data, group_key=group_key)
                 await notify_location(websocket, group_key, zone_name)
     except ws_exc.ConnectionClosedError:
-        logging.warning(
-            "Player disconnected: %s" % websocket.remote_address[0])
+        logging.warning("Player disconnected: %s" % websocket.remote_address[0])
     finally:
         await unregister(websocket)
 
