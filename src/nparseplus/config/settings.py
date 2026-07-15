@@ -12,11 +12,13 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
-from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from nparseplus.config.paths import ensure_config_dir, settings_path
+
+# Triggers persist in the engine's own (Qt-free) schema — one model, no drift.
+from nparseplus.core.triggers.model import Trigger
 
 SCHEMA_VERSION = 1
 
@@ -98,57 +100,6 @@ class DiscordSettings(BaseModel):
     channel: str = ""
 
 
-class TriggerOutput(BaseModel):
-    text: str = ""
-    tts: str = ""
-
-
-class TriggerTimer(BaseModel):
-    name: str = ""
-    duration_seconds: int = 0
-    color: str = ""
-    icon: str | None = None
-
-
-class TriggerEnding(BaseModel):
-    seconds: int = 0
-    text: str = ""
-    tts: str = ""
-
-
-class TriggerCounter(BaseModel):
-    enabled: bool = False
-    reset_seconds: int | None = None
-
-
-class TriggerModel(BaseModel):
-    trigger_id: UUID = Field(default_factory=uuid4)
-    enabled: bool = True
-    name: str
-    folder: str = ""
-    comments: str = ""
-    # Short zone key (e.g. "gfaydark"); None means the trigger fires in any zone.
-    zone: str | None = None
-    use_regex: bool = True
-    search_text: str
-    basic: TriggerOutput | None = None
-    timer: TriggerTimer | None = None
-    timer_ending: TriggerEnding | None = None
-    timer_ended: TriggerOutput | None = None
-    counter: TriggerCounter | None = None
-    built_in_id: str | None = None
-    customized: bool = False
-
-    @field_validator("zone")
-    @classmethod
-    def _normalize_zone(cls, value: str | None) -> str | None:
-        """Zones are stored as short zone keys; blank means unrestricted."""
-        if value is None:
-            return None
-        value = value.strip().lower()
-        return value or None
-
-
 class YouSpell(BaseModel):
     name: str
     seconds_left: int
@@ -179,9 +130,9 @@ class Settings(BaseModel):
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
     players: list[PlayerInfo] = Field(default_factory=list)
-    triggers: list[TriggerModel] = Field(default_factory=list)
+    triggers: list[Trigger] = Field(default_factory=list)
     # Raw legacy custom timers ([name, matchtext, "hh:mm:ss"]) kept verbatim so a
-    # legacy import is lossless even after conversion to TriggerModel entries.
+    # legacy import is lossless even after conversion to Trigger entries.
     custom_timers: list[list[str]] = Field(default_factory=list)
 
 

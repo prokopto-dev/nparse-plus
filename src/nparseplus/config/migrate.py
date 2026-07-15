@@ -21,10 +21,9 @@ from nparseplus.config.settings import (
     Settings,
     SharingSettings,
     SpellWindowSettings,
-    TriggerModel,
-    TriggerTimer,
     WindowState,
 )
+from nparseplus.core.triggers.model import Trigger, TriggerTimer
 
 LEGACY_FILENAME = "nparse.config.json"
 
@@ -197,7 +196,7 @@ def _window_state(section: dict[str, Any]) -> WindowState:
     return state
 
 
-def _custom_timer_to_trigger(entry: Any) -> TriggerModel | None:
+def _custom_timer_to_trigger(entry: Any) -> Trigger | None:
     """Convert a legacy [name, matchtext, "hh:mm:ss"] custom timer to a trigger."""
     if not (
         isinstance(entry, list)
@@ -214,12 +213,13 @@ def _custom_timer_to_trigger(entry: Any) -> TriggerModel | None:
     # Legacy match text is literal apart from '*' wildcards: escape it, then
     # turn each (escaped) '*' into the '.*' it stood for.
     search_text = re.escape(matchtext).replace(r"\*", ".*")
-    return TriggerModel(
-        name=name,
-        folder=LEGACY_TRIGGER_FOLDER,
+    return Trigger(
+        trigger_name=name,
+        trigger_enabled=True,
+        category=LEGACY_TRIGGER_FOLDER,
         use_regex=True,
         search_text=search_text,
-        timer=TriggerTimer(name=name, duration_seconds=duration),
+        timer=TriggerTimer(timer_name=name, seconds=duration),
     )
 
 

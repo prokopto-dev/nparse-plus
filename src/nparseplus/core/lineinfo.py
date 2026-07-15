@@ -35,7 +35,7 @@ def parse_line(raw: str, line_number: int, now: datetime | None = None) -> LineI
     content. Falls back to ``now`` (or wall clock) when the timestamp is
     malformed, mirroring EQTool's tolerance of corrupt lines.
     """
-    raw = raw.rstrip("\r\n")
+    raw = raw.rstrip("\r\n").lstrip("﻿")  # EQ logs may open with a BOM
     if len(raw) <= _TS_LEN or raw[0] != "[":
         return None
     end = raw.find("]")

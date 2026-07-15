@@ -147,14 +147,15 @@ def test_migrate_custom_timers_to_triggers(tmp_path: Path) -> None:
     assert settings is not None
     assert len(settings.triggers) == 2
     jboots, ring8 = settings.triggers
-    assert jboots.name == "Journeyman Boots"
+    assert jboots.trigger_name == "Journeyman Boots"
+    assert jboots.trigger_enabled is True
     assert jboots.use_regex is True
     assert jboots.search_text == r"Your\ feet\ feel\ quick\."
     assert jboots.timer is not None
-    assert jboots.timer.duration_seconds == 18 * 60
+    assert jboots.timer.duration == 18 * 60
     assert ring8.search_text == r".*\ has\ been\ slain\ by\ .*"
     assert ring8.timer is not None
-    assert ring8.timer.duration_seconds == 30
+    assert ring8.timer.duration == 30
     # Raw legacy entries are preserved for lossless import.
     assert settings.custom_timers == [
         ["Journeyman Boots", "Your feet feel quick.", "00:18:00"],

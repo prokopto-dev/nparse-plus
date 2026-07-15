@@ -43,6 +43,8 @@ class LogDriver:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_switch_check = 0.0
+        # Called every loop iteration on the driver thread (timer ticking etc.).
+        self.on_tick: list[Callable[[datetime], None]] = []
 
     @property
     def active_path(self) -> Path | None:
@@ -73,6 +75,9 @@ class LogDriver:
                 if self._tail is not None:
                     for line in self._tail.poll():
                         self._pipeline.process(line)
+                now = datetime.now()
+                for tick in self.on_tick:
+                    tick(now)
             except Exception:
                 logger.exception("log driver iteration failed")
             self._stop.wait(POLL_INTERVAL_S)

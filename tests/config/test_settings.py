@@ -9,13 +9,12 @@ from nparseplus.config.settings import (
     DebouncedSaver,
     PlayerInfo,
     Settings,
-    TriggerModel,
-    TriggerTimer,
     WindowState,
     get_player,
     load_settings,
     save_settings,
 )
+from nparseplus.core.triggers.model import Trigger, TriggerTimer
 
 
 def test_defaults_roundtrip(tmp_path: Path) -> None:
@@ -34,10 +33,10 @@ def test_populated_roundtrip(tmp_path: Path) -> None:
     original.windows["maps"] = WindowState(geometry=(10, 20, 300, 400), opacity=0.8, shown=True)
     original.players.append(PlayerInfo(name="Xantik", server="green", level=54))
     original.triggers.append(
-        TriggerModel(
-            name="Journeyman Boots",
+        Trigger(
+            trigger_name="Journeyman Boots",
             search_text="Your feet feel quick\\.",
-            timer=TriggerTimer(name="JBoots", duration_seconds=1080),
+            timer=TriggerTimer(timer_name="JBoots", minutes=18),
         )
     )
     save_settings(original, path)

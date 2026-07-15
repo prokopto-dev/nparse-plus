@@ -172,6 +172,15 @@ class TimersService:
 
     # -- removals --------------------------------------------------------------
 
+    def remove_row(self, row: Row) -> bool:
+        """Remove one specific row (identity match). Returns True if present."""
+        try:
+            self._rows.remove(row)
+        except ValueError:
+            return False
+        self._notify()
+        return True
+
     def try_remove_unambiguous_self(self, spell_names: Iterable[str]) -> bool:
         """Remove the single YOU_GROUP row matching any name (else do nothing)."""
         names = [n.casefold() for n in spell_names]
