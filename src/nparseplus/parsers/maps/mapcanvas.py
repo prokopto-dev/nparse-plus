@@ -1,11 +1,13 @@
 # testing
+import math
 import os
 import traceback
 
 import pathvalidate
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (
+    QGraphicsEllipseItem,
     QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
@@ -25,6 +27,7 @@ from nparseplus.parsers.maps.mapclasses import (
     WayPoint,
 )
 from nparseplus.parsers.maps.mapdata import ICON_MAP, MAP_FILES_PATHLIB, MapData
+from nparseplus.parsers.maps.zfade import fade_opacity
 
 
 class MapCanvas(QGraphicsView):
@@ -52,8 +55,15 @@ class MapCanvas(QGraphicsView):
         self._path_recording_name = ""
         self._path_file = None
         self._path_last_loc = None
+        self._flash_item = None
+        self._flash_ticks = 0
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setInterval(100)
+        self._flash_timer.timeout.connect(self._flash_pulse)
+        self.map_loaded_callback = None  # set by the Maps window
 
     def load_map(self, map_name, keep_loc=False):
+        self.clear_flash()
         old_player_data = None
         try:
             try:
@@ -69,6 +79,7 @@ class MapCanvas(QGraphicsView):
             self._data = map_data
             self._scene.clear()
             self._z_index = 0
+            self._pen_state = None  # force pen-width refresh for the new map
             self._draw()
             rect = self._scene.sceneRect()
             rect.adjust(
@@ -88,6 +99,8 @@ class MapCanvas(QGraphicsView):
             config.save()
             if keep_loc and old_player_data:
                 self.add_player("__you__", old_player_data.timestamp, old_player_data.location)
+            if self.map_loaded_callback:
+                self.map_loaded_callback()
 
     def _draw(self):
         for z in self._data.keys():
@@ -112,6 +125,7 @@ class MapCanvas(QGraphicsView):
         self.scale(self._scale, self._scale)
 
         # lines and points of interest
+        use_z_layers = config.data["maps"]["use_z_layers"]
         current_z_level = self._data.geometry.z_groups[self._z_index]
         closest_z_levels = set()
         for x in [i for i in [self._z_index - 1, self._z_index + 1] if i > -1]:
@@ -120,71 +134,98 @@ class MapCanvas(QGraphicsView):
             except:
                 pass
 
-        for z in self._data.keys():
-            alpha = current_alpha
-            if config.data["maps"]["use_z_layers"]:
-                if z == current_z_level:
+        # Smooth EQTool-style z fading (default when z layers are off):
+        # fade each z-band by its distance from the player's z.
+        you = self._data.players.get("__you__", None)
+        smooth_fade = (
+            not use_z_layers
+            and not self._data.show_all_map_levels
+            and bool(self._data.zone_level_height)
+            and you is not None
+        )
+        player_z = you.location.z if you else None
+
+        # Per-line pen updates are only needed when the scale or layer mode
+        # changes — never on a plain player-location update (bands only).
+        pen_state = (self._scale, use_z_layers, current_z_level, config.data["maps"]["line_width"])
+        update_pens = getattr(self, "_pen_state", None) != pen_state
+        self._pen_state = pen_state
+
+        for band_key in self._data.keys():
+            band = self._data[band_key]
+            z_group = band["z_group"]
+            if use_z_layers:
+                if z_group == current_z_level:
                     alpha = current_alpha
-                elif z in closest_z_levels:
+                elif z_group in closest_z_levels:
                     alpha = closest_alpha
                 else:
                     alpha = other_alpha
+            elif smooth_fade:
+                alpha = fade_opacity(abs(band["center_z"] - player_z), self._data.zone_level_height)
+            else:
+                alpha = 1.0
             # lines
-            bolded = 0.5 if config.data["maps"]["use_z_layers"] else 0.0
-            for path in self._data[z]["paths"].childItems():
-                if z == current_z_level or not config.data["maps"]["use_z_layers"]:
-                    pen = path.pen()
-                    pen.setWidth(
-                        int(
-                            max(
-                                config.data["maps"]["line_width"] + bolded,
-                                (config.data["maps"]["line_width"] + bolded) / self._scale,
+            bolded = 0.5 if use_z_layers else 0.0
+            if update_pens:
+                for path in band["paths"].childItems():
+                    if z_group == current_z_level or not use_z_layers:
+                        pen = path.pen()
+                        pen.setWidth(
+                            int(
+                                max(
+                                    config.data["maps"]["line_width"] + bolded,
+                                    (config.data["maps"]["line_width"] + bolded) / self._scale,
+                                )
                             )
                         )
-                    )
-                    path.setPen(pen)
-                else:
-                    pen = path.pen()
-                    pen.setWidth(
-                        int(
-                            max(
-                                config.data["maps"]["line_width"] - 0.8,
-                                (config.data["maps"]["line_width"] - 0.8) / self._scale,
+                        path.setPen(pen)
+                    else:
+                        pen = path.pen()
+                        pen.setWidth(
+                            int(
+                                max(
+                                    config.data["maps"]["line_width"] - 0.8,
+                                    (config.data["maps"]["line_width"] - 0.8) / self._scale,
+                                )
                             )
                         )
-                    )
-                    path.setPen(pen)
+                        path.setPen(pen)
 
-            self._data[z]["paths"].setOpacity(alpha)
+            band["paths"].setOpacity(alpha)
 
-            # points of interest
-            for p in self._data[z]["poi"]:
+            # points of interest (per-item opacity by their own z)
+            for p in band["poi"]:
                 p.update_(min(5, self.to_scale()))
                 if not config.data["maps"]["show_poi"]:
                     p.text.setOpacity(0)
-                elif config.data["maps"]["use_z_layers"]:
-                    if z == current_z_level:
+                elif use_z_layers:
+                    if z_group == current_z_level:
                         p.text.setOpacity(current_alpha)
                     else:
                         p.text.setOpacity(other_alpha)
+                elif smooth_fade:
+                    p.text.setOpacity(
+                        fade_opacity(abs(p.location.z - player_z), self._data.zone_level_height)
+                    )
                 else:
-                    p.text.setOpacity(current_alpha)
+                    p.text.setOpacity(1.0)
 
-        # players
+        # players (always fully opaque unless z layers are on)
         for player in self._data.players.values():
             player.update_(self.to_scale())
-            if config.data["maps"]["use_z_layers"]:
+            if use_z_layers:
                 if player.z_level == current_z_level:
                     player.setOpacity(current_alpha)
                 else:
                     player.setOpacity(other_alpha)
             else:
-                player.setOpacity(current_alpha)
+                player.setOpacity(1.0)
 
         # waypoint
         if self._data.way_point:
             self._data.way_point.update_(self.to_scale())
-            if config.data["maps"]["use_z_layers"]:
+            if use_z_layers:
                 self._data.way_point.pixmap.setOpacity(
                     current_alpha
                     if (self._data.way_point.location.z == current_z_level)
@@ -197,29 +238,30 @@ class MapCanvas(QGraphicsView):
                     self._data.way_point.line.setOpacity(other_alpha)
 
             else:
-                self._data.way_point.pixmap.setOpacity(current_alpha)
+                self._data.way_point.pixmap.setOpacity(1.0)
+                self._data.way_point.line.setOpacity(1.0)
 
         # user waypoints
         for waypoint in self._data.waypoints.values():
             waypoint.update_(self.to_scale())
-            if config.data["maps"]["use_z_layers"]:
+            if use_z_layers:
                 if waypoint.z_level == current_z_level:
                     waypoint.setOpacity(current_alpha)
                 else:
                     waypoint.setOpacity(other_alpha)
             else:
-                waypoint.setOpacity(current_alpha)
+                waypoint.setOpacity(1.0)
 
         # spawns
         for spawn in self._data.spawns:
             spawn.setScale(self.to_scale())
             spawn.realign(self.to_scale())
-            if config.data["maps"]["use_z_layers"]:
+            if use_z_layers:
                 spawn.setOpacity(
                     current_alpha if (spawn.location.z == current_z_level) else other_alpha
                 )
             else:
-                spawn.setOpacity(current_alpha)
+                spawn.setOpacity(1.0)
 
         # grid lines
         if config.data["maps"]["show_grid"]:
@@ -575,7 +617,7 @@ class MapCanvas(QGraphicsView):
                 print("Failed to write loc to pathfile: %s" % e)
 
             # Also add line to the active map
-            z_group = self._data.get_closest_z_group(loc[2])
+            band = self._ensure_band_in_scene(loc[2])
             color = MapData.color_transform(QColor(255, 0, 0))
             map_line = QGraphicsPathItem()
             map_line.setPen(QPen(color, config.data["maps"]["line_width"]))
@@ -583,7 +625,8 @@ class MapCanvas(QGraphicsView):
             map_path.moveTo(self._path_last_loc[0], self._path_last_loc[1])
             map_path.lineTo(loc[0], loc[1])
             map_line.setPath(map_path)
-            self._data[z_group]["paths"].addToGroup(map_line)
+            band["paths"].addToGroup(map_line)
+            self._pen_state = None  # new line item needs a pen refresh
             self.update_()
 
         # Update past loc to current loc
@@ -600,9 +643,58 @@ class MapCanvas(QGraphicsView):
             print("Failed to write point to pathfile: %s" % e)
 
         # Also add point to the active map
-        z_group = self._data.get_closest_z_group(loc[2])
+        band = self._ensure_band_in_scene(loc[2])
         color = MapData.color_transform(QColor(255, 0, 0))
         map_poi = MapPoint(x=loc[0], y=loc[1], z=loc[2], color=color, size=3, text=desc)
-        self._data[z_group]["poi"].append(PointOfInterest(location=map_poi))
-        self._draw()
+        poi = PointOfInterest(location=map_poi)
+        band["poi"].append(poi)
+        self._scene.addItem(poi.text)
         self.update_()
+
+    def _ensure_band_in_scene(self, z):
+        """Band entry for z; adds a newly created band's group to the scene."""
+        band_key = self._data.band_key_for_z(z)
+        created = band_key not in self._data
+        band = self._data.ensure_band(z)
+        if created:
+            self._scene.addItem(band["paths"])
+        return band
+
+    # NPC finder support ---------------------------------------------------
+
+    def flash_location(self, x, y):
+        """Center on a point and flash-highlight it for ~3 seconds."""
+        self.clear_flash()
+        self.centerOn(x, y)
+        radius = 15.0 * self.to_scale()
+        item = QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
+        pen = QPen(QColor(255, 215, 0), 3)
+        pen.setCosmetic(True)
+        item.setPen(pen)
+        item.setBrush(Qt.BrushStyle.NoBrush)
+        item.setPos(x, y)
+        item.setZValue(30)
+        item.setOpacity(1.0)  # always fully opaque
+        self._scene.addItem(item)
+        self._flash_item = item
+        self._flash_ticks = 0
+        self._flash_timer.start()
+
+    def clear_flash(self):
+        self._flash_timer.stop()
+        if self._flash_item is not None:
+            try:
+                self._scene.removeItem(self._flash_item)
+            except RuntimeError:
+                pass  # scene already cleared the item
+            self._flash_item = None
+
+    def _flash_pulse(self):
+        self._flash_ticks += 1
+        if self._flash_ticks >= 30 or self._flash_item is None:
+            self.clear_flash()
+            return
+        try:
+            self._flash_item.setScale(1.0 + 0.4 * abs(math.sin(self._flash_ticks * 0.45)))
+        except RuntimeError:
+            self.clear_flash()

@@ -6,8 +6,10 @@ from collections import Counter
 from PySide6.QtGui import QColor, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItemGroup, QGraphicsPathItem
 
+from nparseplus.core.zones import load_zone_database
 from nparseplus.helpers import config
 from nparseplus.parsers.maps.mapclasses import MapGeometry, MapLine, MapPoint, PointOfInterest
+from nparseplus.parsers.maps.zfade import band_center, band_key_for, band_width_for
 
 MAP_KEY_FILE = "data/maps/map_keys.ini"
 MAP_KEY_FILE_WHO = "data/maps/map_keys_who.ini"
@@ -29,13 +31,35 @@ class MapData(dict):
         self.way_point = None
         self.grid = None
 
+        # Per-zone fading parameters (EQTool zone database)
+        self.short_zone_key = None
+        self.zone_level_height = None
+        self.show_all_map_levels = False
+        self.band_width = band_width_for(None)
+
         if self.zone is not None:
             self._load()
+
+    def _resolve_zone_params(self, map_file_name):
+        """Bridge the map-file key to the zone database's short zone key."""
+        try:
+            zone_db = load_zone_database()
+        except Exception:
+            return
+        short_key = zone_db.short_name(self.zone) or map_file_name
+        self.short_zone_key = short_key
+        zone_info = zone_db.get(short_key)
+        if zone_info is not None:
+            self.zone_level_height = zone_info.zone_level_height
+            self.show_all_map_levels = zone_info.show_all_map_levels
+        self.band_width = band_width_for(self.zone_level_height)
 
     def _load(self):
         # Get list of all map files for current zone
         map_file_name = MapData.get_zone_dict()[self.zone.strip().lower()]
         maps = MAP_FILES_PATHLIB.glob(f"**/{map_file_name}*.txt")
+
+        self._resolve_zone_params(map_file_name)
 
         all_x, all_y, all_z = [], [], []
 
@@ -164,37 +188,41 @@ class MapData(dict):
         if last_value[1] > 50:
             z_groups.append(last_value[0])
 
+        # Degenerate maps (too few lines per level) can produce no groups;
+        # fall back to one group per distinct z so lookups always succeed.
+        if not z_groups:
+            z_groups = sorted(counter)
+
         self._z_groups = z_groups
 
-        # Create QGraphicsPathItem for lines seperately to retain colors
+        # Create QGraphicsPathItem for lines separately per fine z-band,
+        # keyed (band, color) to retain colors within each band.
         temp_dict = {}
         for l in self.raw["lines"]:
             lz = min(l.z1, l.z2)
-            lz = self.get_closest_z_group(lz)
-            if not temp_dict.get(lz):
-                temp_dict[lz] = {"paths": {}}
+            band_key = band_key_for(lz, self.band_width)
+            if not temp_dict.get(band_key):
+                temp_dict[band_key] = {"paths": {}}
             lc = l.color.getRgb()
-            if not temp_dict[lz]["paths"].get(lc, None):
+            if not temp_dict[band_key]["paths"].get(lc, None):
                 path_item = QGraphicsPathItem()
                 path_item.setPen(QPen(l.color, config.data["maps"]["line_width"]))
-                temp_dict[lz]["paths"][lc] = path_item
-            path = temp_dict[lz]["paths"][lc].path()
+                temp_dict[band_key]["paths"][lc] = path_item
+            path = temp_dict[band_key]["paths"][lc].path()
             path.moveTo(l.x1, l.y1)
             path.lineTo(l.x2, l.y2)
-            temp_dict[lz]["paths"][lc].setPath(path)
+            temp_dict[band_key]["paths"][lc].setPath(path)
 
-        # Group QGraphicsPathItems into QGraphicsItemGroups and update self
-        for z in temp_dict:
-            item_group = QGraphicsItemGroup()
-            for _, path in temp_dict[z]["paths"].items():
-                item_group.addToGroup(path)
-            self[z] = {"paths": None, "poi": []}
-            self[z]["paths"] = item_group
+        # Group QGraphicsPathItems into per-band QGraphicsItemGroups so a
+        # player-location update only needs one setOpacity per band.
+        for band_key in temp_dict:
+            entry = self._new_band(band_key)
+            for _, path in temp_dict[band_key]["paths"].items():
+                entry["paths"].addToGroup(path)
 
-        # Create Points of Interest
+        # Create Points of Interest (per-item opacity is applied by z later)
         for p in self.raw["poi"]:
-            z = self.get_closest_z_group(p.z)
-            self[z]["poi"].append(PointOfInterest(location=p))
+            self.ensure_band(p.z)["poi"].append(PointOfInterest(location=p))
 
         self.geometry = MapGeometry(
             lowest_x=lowest_x,
@@ -222,6 +250,29 @@ class MapData(dict):
             if lower_index > -1:
                 closest = self._z_groups[lower_index]
         return closest
+
+    def _new_band(self, band_key):
+        self[band_key] = {
+            "paths": QGraphicsItemGroup(),
+            "poi": [],
+            "center_z": band_center(band_key, self.band_width),
+            "z_group": self.get_closest_z_group(band_center(band_key, self.band_width)),
+        }
+        return self[band_key]
+
+    def band_key_for_z(self, z):
+        return band_key_for(z, self.band_width)
+
+    def ensure_band(self, z):
+        """Band entry containing z, created on demand."""
+        band_key = self.band_key_for_z(z)
+        if band_key not in self:
+            self._new_band(band_key)
+        return self[band_key]
+
+    def poi_entries(self):
+        """POI labels as (text, x, y, z) tuples for the NPC search index."""
+        return [(p.text, p.x, p.y, p.z) for p in self.raw["poi"]]
 
     @staticmethod
     def get_zone_dict():

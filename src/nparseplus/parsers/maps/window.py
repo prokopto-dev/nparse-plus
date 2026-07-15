@@ -2,9 +2,18 @@
 
 import re
 
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QPushButton
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, Signal
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+)
 
+from nparseplus.core.npc_search import NpcSearchIndex, normalize_name, search_all_zones
+from nparseplus.core.zones import load_zone_database
 from nparseplus.helpers import config, to_real_xy
 from nparseplus.helpers.parser import ParserWindow
 from nparseplus.parsers.maps.mapcanvas import MapCanvas
@@ -12,6 +21,28 @@ from nparseplus.parsers.maps.mapclasses import MapPoint
 from nparseplus.parsers.maps.mapdata import MapData
 
 ZONE_MATCHER = re.compile(r"There (is|are) \d+ players? in (?P<zone>.+)\.")
+
+SEARCH_BOX_STYLE = (
+    "QLineEdit { background-color: #050505; color: white; border: none;"
+    " border-radius: 3px; padding: 2px 4px; font-size: 12px; }"
+)
+SEARCH_RESULTS_STYLE = (
+    "QListWidget { background-color: black; color: rgb(200, 200, 200);"
+    " border: 1px solid #333; font-size: 12px; }"
+    " QListWidget::item { padding: 2px; }"
+    " QListWidget::item:selected, QListWidget::item:hover { background: darkgreen;"
+    " color: white; }"
+)
+
+
+def format_respawn(seconds):
+    """Respawn seconds -> mm:ss (or h:mm:ss for long spawns)."""
+    if seconds is None:
+        return "?"
+    seconds = int(seconds)
+    if seconds >= 3600:
+        return f"{seconds // 3600}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+    return f"{seconds // 60}:{seconds % 60:02d}"
 
 
 class MapsSignals(QObject):
@@ -30,9 +61,41 @@ class Maps(ParserWindow):
         super().__init__()
         # interface
         self._map = MapCanvas()
+        self._map.map_loaded_callback = self._rebuild_search_index
         self.content.addWidget(self._map, 1)
+        # NPC finder state
+        try:
+            self._zone_db = load_zone_database()
+        except Exception:
+            self._zone_db = None
+        self._search_index = None
+        self._transient_timer = QTimer(self)
+        self._transient_timer.setSingleShot(True)
+        self._transient_timer.timeout.connect(self._hide_search_results)
         # buttons
         button_layout = QHBoxLayout()
+        # NPC/label search box
+        self._search_box = QLineEdit()
+        self._search_box.setObjectName("MapSearchBox")
+        self._search_box.setPlaceholderText("Find NPC/label…")
+        self._search_box.setFixedWidth(130)
+        self._search_box.setStyleSheet(SEARCH_BOX_STYLE)
+        self._search_box.textChanged.connect(self._search_text_changed)
+        button_layout.addWidget(self._search_box)
+        # notable NPCs quick list
+        self._npc_button = QPushButton("☰ NPCs")
+        self._npc_button.setCheckable(True)
+        self._npc_button.setToolTip("Notable NPCs in this zone")
+        self._npc_button.setStyleSheet("QPushButton { min-width: 50px; }")
+        self._npc_button.clicked.connect(self._toggle_npc_list)
+        button_layout.addWidget(self._npc_button)
+        # results dropdown (child overlay, styled like the dark menu)
+        self._search_results = QListWidget(self)
+        self._search_results.setObjectName("MapSearchResults")
+        self._search_results.setStyleSheet(SEARCH_RESULTS_STYLE)
+        self._search_results.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._search_results.itemClicked.connect(self._search_hit_selected)
+        self._search_results.hide()
         show_poi = QPushButton("\u272a")
         show_poi.setCheckable(True)
         show_poi.setChecked(config.data["maps"]["show_poi"])
@@ -133,3 +196,108 @@ class Maps(ParserWindow):
     ):
         config.data["maps"]["show_mouse_location"] = not config.data["maps"]["show_mouse_location"]
         config.save()
+
+    # NPC finder -----------------------------------------------------------
+
+    def _rebuild_search_index(self):
+        self._hide_search_results()
+        map_data = self._map._data
+        if map_data is None:
+            self._search_index = None
+            return
+        self._search_index = NpcSearchIndex(
+            zone_key=map_data.short_zone_key,
+            labels=map_data.poi_entries(),
+            zones=self._zone_db,
+        )
+
+    def _search_text_changed(self, text):
+        if self._npc_button.isChecked():
+            self._npc_button.setChecked(False)
+        query = text.strip()
+        if len(query) < 2:
+            self._hide_search_results()
+            return
+        hits = self._search_index.search(query) if self._search_index else []
+        current_zone = self._search_index.zone_key if self._search_index else None
+        cross = []
+        if self._zone_db is not None:
+            seen = {normalize_name(hit.name) for hit in hits}
+            cross = [
+                hit
+                for hit in search_all_zones(query, self._zone_db)
+                if hit.zone_key != current_zone and normalize_name(hit.name) not in seen
+            ][:15]
+        if not hits and not cross:
+            self._show_transient("No matches")
+            return
+        self._search_results.clear()
+        for hit in hits:
+            if hit.location is not None:
+                label = f"✪ {hit.name} — {format_respawn(hit.respawn_seconds)}"
+            else:
+                label = f"{hit.name} — {format_respawn(hit.respawn_seconds)} (no location)"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, hit)
+            self._search_results.addItem(item)
+        for hit in cross:
+            item = QListWidgetItem(f"{hit.name} — elsewhere: {hit.zone_display}")
+            item.setData(Qt.ItemDataRole.UserRole, hit)
+            self._search_results.addItem(item)
+        self._show_search_results()
+
+    def _search_hit_selected(self, item):
+        hit = item.data(Qt.ItemDataRole.UserRole)
+        if hit is None:
+            return  # transient message row
+        if hit.kind == "zone-notable":
+            self._show_transient(
+                f"{hit.name} — in {hit.zone_display} — respawn "
+                f"{format_respawn(hit.respawn_seconds)}"
+            )
+        elif hit.location is not None:
+            self._map.flash_location(hit.location[0], hit.location[1])
+            self._hide_search_results()
+        else:
+            self._show_transient(
+                f"{hit.name} — no location known — respawn {format_respawn(hit.respawn_seconds)}"
+            )
+
+    def _toggle_npc_list(self, checked):
+        if not checked:
+            self._hide_search_results()
+            return
+        notables = self._search_index.notables() if self._search_index else []
+        if not notables:
+            self._show_transient("No notable NPCs for this zone")
+            return
+        self._search_results.clear()
+        for hit in notables:
+            item = QListWidgetItem(f"{hit.name} — {format_respawn(hit.respawn_seconds)}")
+            item.setData(Qt.ItemDataRole.UserRole, hit)
+            self._search_results.addItem(item)
+        self._show_search_results()
+
+    def _show_transient(self, message):
+        self._search_results.clear()
+        item = QListWidgetItem(message)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        self._search_results.addItem(item)
+        self._show_search_results()
+        self._transient_timer.start(2500)
+
+    def _show_search_results(self):
+        self._transient_timer.stop()
+        top_left = self._search_box.mapTo(self, QPoint(0, self._search_box.height() + 2))
+        rows = self._search_results.count()
+        height = min(24 * rows + 6, 220)
+        width = max(self._search_box.width() + 90, 220)
+        self._search_results.setGeometry(top_left.x(), top_left.y(), width, height)
+        self._search_results.raise_()
+        self._search_results.show()
+
+    def _hide_search_results(self):
+        self._transient_timer.stop()
+        self._search_results.hide()
+        if self._npc_button.isChecked():
+            self._npc_button.setChecked(False)
