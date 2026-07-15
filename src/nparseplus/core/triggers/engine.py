@@ -18,7 +18,7 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from nparseplus.core.bus import EventBus, Unsubscribe
@@ -80,8 +80,11 @@ class _PendingOverlayReset:
     foreground: str
 
 
-def _utcnow() -> datetime:
-    return datetime.now(UTC)
+def _now() -> datetime:
+    # Naive local time — the whole pipeline (log timestamps, driver ticks,
+    # TimersService) uses naive local datetimes; mixing in aware values makes
+    # comparisons raise TypeError.
+    return datetime.now()
 
 
 @dataclass
@@ -90,7 +93,7 @@ class TriggerEngine:
     player: ActivePlayer
     speaker: Speaker
     timers: TimerSink
-    clock: Callable[[], datetime] = _utcnow
+    clock: Callable[[], datetime] = _now
     sound_player: Callable[[str], None] | None = None
 
     _triggers: list[Trigger] = field(default_factory=list, init=False)
