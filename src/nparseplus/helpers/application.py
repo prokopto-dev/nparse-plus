@@ -1,11 +1,13 @@
 import os
 import webbrowser
+from pathlib import Path
 
 from packaging.version import Version
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QSystemTrayIcon
 
+from nparseplus.core.events import LineEvent
 from nparseplus.helpers import config, get_version, logreader, resource_path
 from nparseplus.helpers.location_service import LocationSharingService, LocationSharingSignals
 from nparseplus.helpers.logreader import LogReaderSignals
@@ -29,10 +31,30 @@ else:
 
 
 class NomnsParse(QApplication):
-    """Application Control."""
+    """Application Control.
 
-    def __init__(self, *args):
+    TRANSITIONAL (M1): when constructed with ``backend=...`` (the new Qt-free
+    core from ``nparseplus.composition``) this app runs in a dual-config
+    hybrid mode:
+      - log lines come from the backend's LogDriver via the QtEventBridge
+        (``attach_backend_ui``) instead of the legacy QFileSystemWatcher
+        log reader,
+      - the legacy 'spells' parser window is NOT built — the new
+        ``SpellTimerWindow`` replaces it,
+      - maps + discord windows keep running off the legacy
+        ``nparse.config.json`` while the new pydantic Settings drives the
+        backend. The maps UI gets rebuilt (and the legacy config retired)
+        next milestone.
+    """
+
+    def __init__(self, *args, backend=None):
         super().__init__(*args)
+
+        # New-core backend (None = pure legacy mode).
+        self._backend = backend
+        self._bridge = None
+        self._spell_window = None
+        self._save_new_settings = None
 
         # Updates
         self._toggled = False
@@ -72,18 +94,35 @@ class NomnsParse(QApplication):
             )
 
     def _load_parsers(self):
-        self._parsers_dict = {
-            "maps": Maps(),
-            "spells": Spells(),
-            "discord": Discord(),
-        }
-        self._parsers = [
-            self._parsers_dict["maps"],
-            self._parsers_dict["spells"],
-            self._parsers_dict["discord"],
-        ]
+        # Backend mode: the legacy spells window is replaced by the new
+        # SpellTimerWindow, so keep it out of the parser list entirely.
+        self._parsers_dict = {"maps": Maps()}
+        if self._backend is None:
+            self._parsers_dict["spells"] = Spells()
+        self._parsers_dict["discord"] = Discord()
+        self._parsers = list(self._parsers_dict.values())
+
+    def attach_backend_ui(self, bridge, spell_window, save_new_settings=None):
+        """Backend mode wiring (called by nparseplus.app.create_app):
+        feed LineEvents from the Qt bridge into the legacy parse path and
+        hook up the new spell timer window for the tray menu."""
+        self._bridge = bridge
+        self._spell_window = spell_window
+        self._save_new_settings = save_new_settings
+        bridge.event_received.connect(self._on_backend_event)
+
+    def _on_backend_event(self, event):
+        # Delivered on the GUI thread (queued signal). The legacy windows
+        # expect (timestamp, text-without-timestamp) tuples.
+        if self._toggled and isinstance(event, LineEvent):
+            self._parse((event.timestamp, event.line))
 
     def _toggle(self):
+        if self._backend is not None:
+            # Backend mode: lines arrive via the bridge (attach_backend_ui);
+            # _toggled just gates whether they reach the legacy windows.
+            self._toggled = not self._toggled
+            return
         if not self._toggled:
             try:
                 config.verify_paths()
@@ -140,6 +179,12 @@ class NomnsParse(QApplication):
             toggle.setChecked(config.data[parser.name]["toggled"])
             parser_toggles.add(toggle)
 
+        spell_timers_action = None
+        if self._spell_window is not None:
+            spell_timers_action = menu.addAction("Spell Timers")
+            spell_timers_action.setCheckable(True)
+            spell_timers_action.setChecked(self._spell_window.isVisible())
+
         menu.addSeparator()
         settings_action = menu.addAction("Settings")
         discord_conf_action = menu.addAction("Configure Discord")
@@ -158,7 +203,18 @@ class NomnsParse(QApplication):
             if dir_path:
                 config.data["general"]["eq_log_dir"] = dir_path
                 config.save()
-                self._toggle()
+                if self._backend is not None:
+                    # Point the new-core log driver at the directory and
+                    # persist it to the new Settings as well.
+                    self._backend.driver.set_log_dir(Path(dir_path))
+                    self._backend.settings.general.eq_log_dir = Path(dir_path)
+                    if self._save_new_settings is not None:
+                        self._save_new_settings()
+                else:
+                    self._toggle()
+
+        elif spell_timers_action is not None and action == spell_timers_action:
+            self._spell_window.toggle()
 
         elif action == settings_action:
             self._settings._set_values()
