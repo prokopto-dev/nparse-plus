@@ -13,13 +13,30 @@ from pathlib import Path
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.bus import EventBus
+from nparseplus.core.dps import FightTracker
 from nparseplus.core.driver import LogDriver
+from nparseplus.core.handlers.bard_count import BardCountHandler
+from nparseplus.core.handlers.boat import BoatHandler
+from nparseplus.core.handlers.complete_heal import CompleteHealCommsHandler, CompleteHealHandler
+from nparseplus.core.handlers.con import ConHandler, MobInfoState
+from nparseplus.core.handlers.death_loop import DeathLoopHandler
+from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandler
+from nparseplus.core.handlers.dps import DpsHandler
+from nparseplus.core.handlers.fte import FTEHandler
+from nparseplus.core.handlers.group_leader import GroupLeaderHandler
+from nparseplus.core.handlers.mend_wounds import MendWoundsHandler
+from nparseplus.core.handlers.pet import PetHandler
+from nparseplus.core.handlers.quake import QuakeHandler
+from nparseplus.core.handlers.random_roll import RandomRollHandler
+from nparseplus.core.handlers.ring_war import RingWarHandler
+from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
+from nparseplus.core.pets import PlayerPet, load_pets
 from nparseplus.core.pipeline import LogPipeline
 from nparseplus.core.player import ActivePlayer
-from nparseplus.core.spells.spells_us import SpellBook, load_spell_book
+from nparseplus.core.spells.spells_us import SpellBook, load_master_npc_list, load_spell_book
 from nparseplus.core.timers import TimerRow, TimersService
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.chat_commands import CustomTimerChatCommands
@@ -75,6 +92,9 @@ class Backend:
     trigger_engine: TriggerEngine
     pipeline: LogPipeline
     driver: LogDriver
+    fights: FightTracker
+    mob_info: MobInfoState
+    player_pet: PlayerPet
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -120,10 +140,36 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         settings.triggers = synced
     engine.set_triggers(synced)
     chat_commands = CustomTimerChatCommands(bus, sink)
-    spell_handler = SpellTimerHandler(bus, player, spells, timers)
+
+    fights = FightTracker()
+    mob_info = MobInfoState()
+    pets = load_pets()
+    player_pet = PlayerPet()
+    npcs = load_master_npc_list()
+
+    handlers: list[object] = [
+        SpellTimerHandler(bus, player, spells, timers),
+        DpsHandler(bus, player, fights),
+        SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
+        RandomRollHandler(bus, player, timers),
+        FTEHandler(bus, player, timers, speaker=speaker),
+        QuakeHandler(bus, player, speaker=speaker),
+        RingWarHandler(bus, player, timers),
+        BoatHandler(bus, player, timers, zones),
+        PetHandler(bus, player, pets, player_pet=player_pet),
+        ConHandler(bus, player, zones, player_pet=player_pet, mob_info=mob_info),
+        DisciplineCooldownHandler(bus, player, timers),
+        MendWoundsHandler(bus, player, timers),
+        CompleteHealCommsHandler(bus, player, npcs=npcs),
+        CompleteHealHandler(bus, player, speaker=speaker),
+        BardCountHandler(bus, player, speaker=speaker, timers=timers),
+        DeathLoopHandler(bus, player, speaker=speaker),
+        GroupLeaderHandler(bus, player),
+    ]
 
     driver.on_tick.append(timers.tick)
     driver.on_tick.append(engine.tick)
+    driver.on_tick.append(fights.tick)
 
     return Backend(
         settings=settings,
@@ -135,5 +181,8 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         trigger_engine=engine,
         pipeline=pipeline,
         driver=driver,
-        _retained=[chat_commands, spell_handler, sink],
+        fights=fights,
+        mob_info=mob_info,
+        player_pet=player_pet,
+        _retained=[chat_commands, sink, *handlers],
     )
