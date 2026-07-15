@@ -55,6 +55,12 @@ class MapsSignals(QObject):
     stop_recording = Signal()
 
 
+class WikiSearchBridge(QObject):
+    """Marshals P99-wiki worker-thread results onto the GUI thread."""
+
+    results_ready = Signal(str, list)  # (query, list[WikiNpc])
+
+
 class Maps(ParserWindow):
     def __init__(self):
         self.name = "maps"
@@ -96,6 +102,10 @@ class Maps(ParserWindow):
         self._search_results.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._search_results.itemClicked.connect(self._search_hit_selected)
         self._search_results.hide()
+        # P99 wiki lookup (lazy client; results marshalled back via signal).
+        self._wiki_client = None
+        self._wiki_bridge = WikiSearchBridge()
+        self._wiki_bridge.results_ready.connect(self._wiki_results_ready)
         show_poi = QPushButton("\u272a")
         show_poi.setCheckable(True)
         show_poi.setChecked(config.data["maps"]["show_poi"])
@@ -228,9 +238,6 @@ class Maps(ParserWindow):
                 for hit in search_all_zones(query, self._zone_db)
                 if hit.zone_key != current_zone and normalize_name(hit.name) not in seen
             ][:15]
-        if not hits and not cross:
-            self._show_transient("No matches")
-            return
         self._search_results.clear()
         for hit in hits:
             if hit.location is not None:
@@ -244,12 +251,62 @@ class Maps(ParserWindow):
             item = QListWidgetItem(f"{hit.name} — elsewhere: {hit.zone_display}")
             item.setData(Qt.ItemDataRole.UserRole, hit)
             self._search_results.addItem(item)
+        wiki_row = QListWidgetItem(f"🌐 Search P99 wiki for '{query}'…")
+        wiki_row.setData(Qt.ItemDataRole.UserRole, ("wiki-search", query))
+        self._search_results.addItem(wiki_row)
         self._show_search_results()
+
+    def _start_wiki_search(self, query):
+        import threading
+
+        if self._wiki_client is None:
+            from nparseplus.net.p99wiki import P99WikiClient
+
+            self._wiki_client = P99WikiClient(zones=self._zone_db)
+        self._show_transient(f"Searching P99 wiki for '{query}'…")
+        client, bridge = self._wiki_client, self._wiki_bridge
+
+        def work():
+            bridge.results_ready.emit(query, client.find_npcs(query))
+
+        threading.Thread(target=work, name="wiki-search", daemon=True).start()
+
+    def _wiki_results_ready(self, query, npcs):
+        if self._search_box.text().strip() != query:
+            return  # user typed something else meanwhile
+        if not npcs:
+            self._show_transient(f"No wiki results for '{query}'")
+            return
+        self._search_results.clear()
+        current_zone = self._search_index.zone_key if self._search_index else None
+        for npc in npcs:
+            here = " (here)" if npc.zone_short and npc.zone_short == current_zone else ""
+            level = f" — lvl {npc.level}" if npc.level else ""
+            item = QListWidgetItem(f"wiki: {npc.name} — {npc.zone_display or '?'}{here}{level}")
+            item.setData(Qt.ItemDataRole.UserRole, npc)
+            self._search_results.addItem(item)
+        self._show_search_results()
+
+    def _wiki_hit_selected(self, npc):
+        current_zone = self._search_index.zone_key if self._search_index else None
+        if npc.map_location is not None and npc.zone_short == current_zone:
+            self._map.flash_location(*npc.map_location)
+            self._hide_search_results()
+            return
+        where = npc.zone_display or "unknown zone"
+        loc = f" at loc ({npc.location[0]:g}, {npc.location[1]:g})" if npc.location else ""
+        self._show_transient(f"{npc.name} — in {where}{loc}")
 
     def _search_hit_selected(self, item):
         hit = item.data(Qt.ItemDataRole.UserRole)
         if hit is None:
             return  # transient message row
+        if isinstance(hit, tuple) and hit[0] == "wiki-search":
+            self._start_wiki_search(hit[1])
+            return
+        if not hasattr(hit, "kind"):  # WikiNpc result
+            self._wiki_hit_selected(hit)
+            return
         if hit.kind == "zone-notable":
             self._show_transient(
                 f"{hit.name} — in {hit.zone_display} — respawn "
