@@ -28,6 +28,7 @@ dependencies = [
   "packaging>=24.0",
   "colorhash>=2.0",
   "pathvalidate>=3.2",
+  "websocket-client>=1.8",
 ]
 
 [project.urls]

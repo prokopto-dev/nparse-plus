@@ -232,7 +232,19 @@ class RemoteEvent(BaseModel):
 
 class DragonRoarRemoteEvent(RemoteEvent):
     spell_name: str
+    # Roar location in wire (raw /loc) order, like RemotePlayer — the map
+    # adapter owns the transform. None unless the sender knew all of X/Y/Z.
     location: Loc | None = None
+    server: int | None = None
+
+
+class CustomTimerReceivedRemoteEvent(RemoteEvent):
+    """SignalrCustomTimer pushed by the PigParse server (Kael pull timers)."""
+
+    name: str
+    duration_in_seconds: int
+    spell_name_icon: str | None = None
+    server: int | None = None
 
 
 class RemotePlayer(BaseModel):
