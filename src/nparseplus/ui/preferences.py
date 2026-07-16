@@ -7,6 +7,7 @@ maps/discord appearance options until the maps window is rebuilt.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSlider,
     QSpinBox,
@@ -30,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import Settings, WindowState
+from nparseplus.core import visionfix
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "preferences"
@@ -165,8 +168,26 @@ class PreferencesWindow(OverlayWindowBase):
         self._sharing_mode.addItems(["pigparse", "nparse", "off"])
         self._sharing_mode.setCurrentText(settings.sharing.mode)
         sharing_form.addRow("Location sharing", self._sharing_mode)
-        sharing_box = QGroupBox("Sharing (network lands in M3)", self)
+        sharing_box = QGroupBox("Sharing (applies after restart)", self)
         sharing_box.setLayout(sharing_form)
+
+        # --- Night Vision fix -------------------------------------------------
+        visionfix_form = QFormLayout()
+        self._visionfix_status = QLabel("", self)
+        self._visionfix_status.setWordWrap(True)
+        visionfix_form.addRow(self._visionfix_status)
+        visionfix_buttons = QHBoxLayout()
+        self._visionfix_apply = QPushButton("Apply fix", self)
+        self._visionfix_apply.clicked.connect(self._apply_visionfix)
+        self._visionfix_revert = QPushButton("Revert", self)
+        self._visionfix_revert.clicked.connect(self._revert_visionfix)
+        visionfix_buttons.addWidget(self._visionfix_apply)
+        visionfix_buttons.addWidget(self._visionfix_revert)
+        visionfix_form.addRow(visionfix_buttons)
+        visionfix_box = QGroupBox("Night Vision fix", self)
+        visionfix_box.setLayout(visionfix_form)
+        self._install_dir.edit.textChanged.connect(lambda _text: self._refresh_visionfix_status())
+        self._refresh_visionfix_status()
 
         self._restart_note = QLabel(
             "TTS voice/volume and overlay durations apply after restart.", self
@@ -182,12 +203,83 @@ class PreferencesWindow(OverlayWindowBase):
         layout.addWidget(overlay_box)
         layout.addWidget(archive_box)
         layout.addWidget(sharing_box)
+        layout.addWidget(visionfix_box)
         layout.addStretch(1)
         layout.addWidget(self._restart_note)
         layout.addWidget(apply_button)
         self.setLayout(layout)
 
         self.restore_visibility()
+
+    # -- Night Vision fix ---------------------------------------------------------
+
+    def _visionfix_dir(self) -> Path | None:
+        """The install dir as currently shown in the picker (unapplied ok)."""
+        text = self._install_dir.path()
+        return Path(text).expanduser() if text else None
+
+    def _refresh_visionfix_status(self) -> None:
+        eq_dir = self._visionfix_dir()
+        reason = visionfix.preflight(eq_dir)
+        if reason is not None:
+            self._visionfix_status.setText(reason)
+            self._visionfix_apply.setEnabled(False)
+            self._visionfix_revert.setEnabled(False)
+            return
+        assert eq_dir is not None
+        has_backup = visionfix.backup_exists(eq_dir)
+        self._visionfix_status.setText(
+            "Applied (backup present — revert available)."
+            if has_backup
+            else "Replaces night-blind shaders/sky textures. Files are backed up first."
+        )
+        self._visionfix_apply.setEnabled(True)
+        self._visionfix_revert.setEnabled(has_backup)
+
+    def _eq_running(self) -> bool:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-if", "eqgame"], capture_output=True, timeout=5, check=False
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _apply_visionfix(self) -> None:
+        eq_dir = self._visionfix_dir()
+        if self._eq_running():
+            answer = QMessageBox.warning(
+                self,
+                "EverQuest looks like it is running",
+                "Apply anyway? The game must be restarted to pick up the fix.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        try:
+            written = visionfix.apply_visionfix(eq_dir)
+        except Exception as exc:
+            QMessageBox.critical(self, "Night Vision fix failed", str(exc))
+        else:
+            QMessageBox.information(
+                self,
+                "Night Vision fix applied",
+                f"{written} files written (originals backed up to "
+                f"{visionfix.BACKUP_DIR_NAME}/). Restart EQ to see the fix.",
+            )
+        self._refresh_visionfix_status()
+
+    def _revert_visionfix(self) -> None:
+        eq_dir = self._visionfix_dir()
+        try:
+            restored = visionfix.revert_visionfix(eq_dir)
+        except Exception as exc:
+            QMessageBox.critical(self, "Revert failed", str(exc))
+        else:
+            QMessageBox.information(
+                self, "Night Vision fix reverted", f"{restored} original files restored."
+            )
+        self._refresh_visionfix_status()
 
     # -- actions -----------------------------------------------------------------
 
