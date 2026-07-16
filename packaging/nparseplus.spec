@@ -58,7 +58,9 @@ a = Analysis(  # noqa: F821
 pyz = PYZ(a.pure)  # noqa: F821
 
 splash_args = []
-if sys.platform != "darwin":  # pyi_splash is unsupported on macOS
+# Splash is Windows-only: unsupported on macOS, and it needs tkinter, which
+# the uv-managed Python on the Linux CI runners doesn't ship.
+if sys.platform == "win32":
     splash = Splash(  # noqa: F821
         str(ROOT / "splash.png"),
         binaries=a.binaries,

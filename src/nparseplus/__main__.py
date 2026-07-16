@@ -4,9 +4,10 @@ import sys
 
 
 def main() -> int:
-    # PyInstaller splash screen, if present (unsupported on macOS — and the
-    # mere import prints a traceback there, so don't try).
-    if sys.platform != "darwin":
+    # PyInstaller splash screen — bundled on Windows only (unsupported on
+    # macOS, no tkinter on the Linux build runners), and the mere import
+    # prints a traceback when the bootloader has no splash, so don't try.
+    if sys.platform == "win32":
         try:
             import pyi_splash
 
