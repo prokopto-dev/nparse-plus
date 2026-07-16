@@ -37,12 +37,16 @@ from nparseplus.core.parsers.registry import build_parser_chain
 from nparseplus.core.pets import PlayerPet, load_pets
 from nparseplus.core.pipeline import LogPipeline
 from nparseplus.core.player import ActivePlayer
+from nparseplus.core.sharing import SharingClient, SharingCoordinator
 from nparseplus.core.spells.spells_us import SpellBook, load_master_npc_list, load_spell_book
 from nparseplus.core.timers import TimerRow, TimersService
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.chat_commands import CustomTimerChatCommands
 from nparseplus.core.triggers.engine import TriggerEngine
 from nparseplus.core.zones import ZoneDatabase, load_zone_database
+from nparseplus.net.pigparse_api import PigParseApiClient
+from nparseplus.net.pigparse_hub import PigParseHubClient
+from nparseplus.net.worker import NetWorker
 
 TRIGGER_TIMER_GROUP = "Timers"
 
@@ -96,14 +100,26 @@ class Backend:
     fights: FightTracker
     mob_info: MobInfoState
     player_pet: PlayerPet
+    sharing: SharingCoordinator
+    sharing_client: SharingClient | None = None
+    pigparse_api: PigParseApiClient | None = None
+    net_worker: NetWorker | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
     def start(self) -> None:
+        if self.net_worker is not None:
+            self.net_worker.start()
+        if self.sharing_client is not None:
+            self.sharing_client.start()
         self.driver.start()
 
     def stop(self) -> None:
         self.driver.stop()
+        if self.sharing_client is not None:
+            self.sharing_client.stop()
+        if self.net_worker is not None:
+            self.net_worker.stop()
 
 
 def _spells_path(settings: Settings) -> Path:
@@ -180,10 +196,33 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         get_threshold_mb=lambda: settings.general.log_archive_size_mb,
     )
 
+    # Sharing: the coordinator always exists (it is the mode gate); the
+    # network client and REST plumbing only when a sharing mode is on.
+    sharing = SharingCoordinator(
+        bus=bus,
+        player=player,
+        settings=settings,
+        timers=timers,
+        last_you_activity=lambda: pipeline.last_you_activity,
+    )
+    sharing_client: SharingClient | None = None
+    pigparse_api: PigParseApiClient | None = None
+    net_worker: NetWorker | None = None
+    if settings.sharing.mode == "pigparse":
+        sharing_client = PigParseHubClient(
+            url=settings.sharing.pigparse_hub_url,
+            on_inbound=sharing.enqueue_inbound,
+        )
+        pigparse_api = PigParseApiClient(settings.sharing.pigparse_api_url)
+        net_worker = NetWorker(deliver=sharing.enqueue_inbound)
+    # (the "nparse" websocket mode lands with the M3 fallback step)
+    sharing.set_client(sharing_client)
+
     driver.on_tick.append(timers.tick)
     driver.on_tick.append(engine.tick)
     driver.on_tick.append(fights.tick)
     driver.on_tick.append(archiver.tick)
+    driver.on_tick.append(sharing.tick)
 
     return Backend(
         settings=settings,
@@ -198,5 +237,9 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         fights=fights,
         mob_info=mob_info,
         player_pet=player_pet,
+        sharing=sharing,
+        sharing_client=sharing_client,
+        pigparse_api=pigparse_api,
+        net_worker=net_worker,
         _retained=[chat_commands, sink, *handlers],
     )

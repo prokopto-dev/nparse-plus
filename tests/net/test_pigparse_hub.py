@@ -13,8 +13,8 @@ from nparseplus.core.events import (
     OtherPlayerLocationReceivedRemoteEvent,
     PlayerDisconnectReceivedRemoteEvent,
 )
+from nparseplus.core.geometry import Loc
 from nparseplus.net.pigparse_hub import CONNECT_FAIL_WAIT_S, PigParseHubClient
-from nparseplus.net.pigparse_models import WireDragonRoar, WirePlayer
 
 CAMEL_PLAYER = {
     "name": "Soandso",
@@ -134,24 +134,59 @@ def test_no_join_without_server() -> None:
     assert not any(entry.startswith("send:") for entry in h.log)
 
 
+def _send_test_location(client: PigParseHubClient) -> None:
+    client.send_location(
+        name="Soandso",
+        guild_name="Bregan D'Aerth",
+        server=0,
+        zone="gfaydark",
+        sharing=0,
+        # "Your Location is 111, 222, 3" -> Loc(x=222, y=111, z=3)
+        loc=Loc(x=222.0, y=111.0, z=3.0),
+    )
+
+
 def test_sends_dropped_unless_connected() -> None:
     h = Harness(plan=[])
-    wire = WirePlayer.model_validate(CAMEL_PLAYER)
-    h.client.send_location(wire)  # never started: silently dropped
-    h.client.send_dragon_roar(WireDragonRoar(spell_name="Dragon Roar"))
+    _send_test_location(h.client)  # never started: silently dropped
+    h.client.send_dragon_roar(
+        spell_name="Dragon Roar", guild_name=None, server=0, zone="gfaydark", sharing=0, loc=None
+    )
     assert h.transports == []
 
 
-def test_send_location_serializes_pascal_case() -> None:
+def test_send_location_serializes_pascal_case_with_axis_swap() -> None:
     h = Harness(plan=["hold"])
     transport = h.client._connect_once()
     assert transport is not None
-    h.client.send_location(WirePlayer.model_validate(CAMEL_PLAYER))
+    _send_test_location(h.client)
     target, args = transport.sent[-1]
     assert target == "PlayerLocationEvent"
     assert args[0]["Name"] == "Soandso"
     assert args[0]["Zone"] == "gfaydark"
+    # EQTool wire order is the raw /loc print order: X=first=111, Y=second=222.
+    assert (args[0]["X"], args[0]["Y"], args[0]["Z"]) == (111.0, 222.0, 3.0)
     assert "name" not in args[0]
+    transport.close()
+
+
+def test_send_dragon_roar_serializes_pascal_case() -> None:
+    h = Harness(plan=["hold"])
+    transport = h.client._connect_once()
+    assert transport is not None
+    h.client.send_dragon_roar(
+        spell_name="Dragon Roar",
+        guild_name="",
+        server=0,
+        zone="permafrost",
+        sharing=0,
+        loc=Loc(x=222.0, y=111.0, z=3.0),
+    )
+    target, args = transport.sent[-1]
+    assert target == "DragonRoarEvent"
+    assert args[0]["SpellName"] == "Dragon Roar"
+    assert args[0]["GuildName"] is None  # blank guild -> null like C#
+    assert (args[0]["X"], args[0]["Y"], args[0]["Z"]) == (111.0, 222.0, 3.0)
     transport.close()
 
 

@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nparseplus.core.enums import Server
+
 _LOG_NAME = re.compile(r"^eqlog_(?P<char>[A-Za-z]+)_(?P<server>[A-Za-z0-9]+)\.txt$")
 
 # On first attach, back up this far and look for the last session start so we
@@ -26,6 +28,19 @@ def parse_log_filename(path: Path | str) -> tuple[str, str] | None:
     if not m:
         return None
     return m.group("char"), m.group("server")
+
+
+def server_from_log_token(token: str) -> Server:
+    """Filename server token -> Server enum (ActivePlayerInfo.cs:45).
+
+    The C# is exact and case-sensitive: P1999PVP -> Red, P1999Green ->
+    Green, anything else (project1999, quarm, ...) -> Blue.
+    """
+    if token == "P1999PVP":
+        return Server.RED
+    if token == "P1999Green":
+        return Server.GREEN
+    return Server.BLUE
 
 
 def find_active_log(log_dir: Path) -> Path | None:

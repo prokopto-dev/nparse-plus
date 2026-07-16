@@ -40,7 +40,13 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.geometry import Loc
 from nparseplus.net import hubproto
-from nparseplus.net.pigparse_models import WireCustomTimer, WireDragonRoar, WirePlayer
+from nparseplus.net.pigparse_models import (
+    WireCustomTimer,
+    WireDragonRoar,
+    WirePlayer,
+    wire_dragon_roar_from_loc,
+    wire_player_from_loc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,11 +242,49 @@ class PigParseHubClient:
         if changed and server is not None and self._connected.is_set():
             self._invoke("JoinServerGroup", [server])
 
-    def send_location(self, player: WirePlayer) -> None:
-        self._invoke("PlayerLocationEvent", [player.wire_dump()])
+    def send_location(
+        self,
+        *,
+        name: str,
+        guild_name: str | None,
+        server: int,
+        zone: str,
+        sharing: int,
+        loc: Loc,
+        tracking_distance: float | None = None,
+    ) -> None:
+        """Core-native SharingClient surface; wire conversion (and the axis
+        swap) happens in pigparse_models."""
+        wire = wire_player_from_loc(
+            name=name,
+            guild_name=guild_name,
+            server=server,
+            zone=zone,
+            sharing=sharing,
+            loc=loc,
+            tracking_distance=tracking_distance,
+        )
+        self._invoke("PlayerLocationEvent", [wire.wire_dump()])
 
-    def send_dragon_roar(self, roar: WireDragonRoar) -> None:
-        self._invoke("DragonRoarEvent", [roar.wire_dump()])
+    def send_dragon_roar(
+        self,
+        *,
+        spell_name: str,
+        guild_name: str | None,
+        server: int,
+        zone: str,
+        sharing: int,
+        loc: Loc | None,
+    ) -> None:
+        wire = wire_dragon_roar_from_loc(
+            spell_name=spell_name,
+            guild_name=guild_name,
+            server=server,
+            zone=zone,
+            sharing=sharing,
+            loc=loc,
+        )
+        self._invoke("DragonRoarEvent", [wire.wire_dump()])
 
     def _invoke(self, target: str, arguments: list[Any]) -> None:
         """C# guard: invocations are silently dropped unless connected."""

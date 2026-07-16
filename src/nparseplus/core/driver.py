@@ -16,7 +16,12 @@ from pathlib import Path
 
 from nparseplus.core.bus import EventBus
 from nparseplus.core.events import AfterPlayerChangedEvent, BeforePlayerChangedEvent
-from nparseplus.core.logfile import LogTail, find_active_log, parse_log_filename
+from nparseplus.core.logfile import (
+    LogTail,
+    find_active_log,
+    parse_log_filename,
+    server_from_log_token,
+)
 from nparseplus.core.pipeline import LogPipeline
 from nparseplus.core.player import ActivePlayer
 
@@ -93,11 +98,11 @@ class LogDriver:
         parsed = parse_log_filename(newest)
         if not parsed:
             return
-        char_name, _server = parsed
+        char_name, server_token = parsed
         ts = datetime.now()
         if self._player.is_configured:
             self._bus.publish(BeforePlayerChangedEvent(timestamp=ts))
-        self._player.reset_for(char_name, None)
+        self._player.reset_for(char_name, server_from_log_token(server_token))
         self._tail = LogTail.attach(newest)
         self._bus.publish(AfterPlayerChangedEvent(timestamp=ts))
         logger.info("tailing %s (character: %s)", newest.name, char_name)

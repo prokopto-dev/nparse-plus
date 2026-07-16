@@ -125,6 +125,29 @@ class WireDragonRoar(WireModel):
     z: Annotated[float | None, _wire_alias("Z")] = None
 
 
+def wire_dragon_roar_from_loc(
+    *,
+    spell_name: str,
+    guild_name: str | None,
+    server: int,
+    zone: str,
+    sharing: int,
+    loc: Loc | None,
+) -> WireDragonRoar:
+    """Outbound roar payload; same axis swap as ``wire_player_from_loc``
+    (EQTool fills X/Y/Z from its LastPlayer, which is raw /loc order)."""
+    return WireDragonRoar(
+        spell_name=spell_name,
+        guild_name=guild_name or None,
+        sharing=sharing,
+        server=server,
+        zone=zone,
+        x=loc.y if loc else None,
+        y=loc.x if loc else None,
+        z=loc.z if loc else None,
+    )
+
+
 class WireCustomTimer(WireModel):
     """SignalrCustomTimer (EQToolShared/HubModels/CustomTimer.cs)."""
 

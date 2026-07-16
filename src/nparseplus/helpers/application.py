@@ -172,6 +172,9 @@ class NomnsParse(QApplication):
             new_version_text = f"Version: {CURRENT_VERSION}"
 
         check_version_action = menu.addAction(new_version_text)
+        if self._backend is not None and getattr(self._backend, "sharing", None) is not None:
+            sharing_status_action = menu.addAction(f"Sharing: {self._backend.sharing.status}")
+            sharing_status_action.setEnabled(False)
         menu.addSeparator()
         get_eq_dir_action = menu.addAction("Select EQ Logs Directory")
         menu.addSeparator()

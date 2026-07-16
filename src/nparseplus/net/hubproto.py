@@ -89,7 +89,9 @@ def negotiate(hub_url: str, http: httpx.Client | None = None) -> str:
     if not token:
         raise HandshakeError(f"negotiate returned no connection token: {payload!r}")
     transports = {
-        t.get("transport") for t in payload.get("availableTransports", []) if isinstance(t, dict)
+        str(t.get("transport"))
+        for t in payload.get("availableTransports", [])
+        if isinstance(t, dict)
     }
     if transports and "WebSockets" not in transports:
         raise HandshakeError(f"server offers no WebSockets transport: {sorted(transports)}")
