@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from queue import Empty, SimpleQueue
 from typing import TYPE_CHECKING, Protocol
 
+from nparseplus.config.settings import find_player
 from nparseplus.core.enums import MapLocationSharing
 from nparseplus.core.events import (
     CampEvent,
@@ -41,6 +42,7 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.geometry import Loc
 from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
+from nparseplus.core.player import tracking_distance
 from nparseplus.core.timers import TimerRow
 
 if TYPE_CHECKING:
@@ -292,6 +294,9 @@ class SharingCoordinator:
             zone=self.player.zone,
             sharing=int(self._sharing_wire_value()),
             loc=loc,
+            tracking_distance=tracking_distance(
+                self.player.player_class, self.player.tracking_skill
+            ),
         )
         self._last_loc = loc
         self._last_send_time = when
@@ -316,10 +321,7 @@ class SharingCoordinator:
 
     def _player_info(self) -> PlayerInfo | None:
         """The persistent per-character profile, if one exists (read-only)."""
-        if self.player.server is None:
+        server_key = self.player.server_key
+        if server_key is None:
             return None
-        server_key = self.player.server.name.lower()
-        for info in self.settings.players:
-            if info.name == self.player.name and info.server == server_key:
-                return info
-        return None
+        return find_player(self.settings, self.player.name, server_key)

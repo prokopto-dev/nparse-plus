@@ -18,7 +18,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nparseplus.composition import Backend, build_backend
-from nparseplus.config.settings import Settings, WindowState, load_settings, save_settings
+from nparseplus.config.settings import (
+    DebouncedSaver,
+    Settings,
+    WindowState,
+    load_settings,
+    save_settings,
+)
 
 
 class _OverlayPositioner:
@@ -93,7 +99,14 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         if env_path:
             settings_file = Path(env_path)
     settings = load_settings(settings_file)
-    backend = build_backend(settings)
+
+    def _save_settings_now() -> None:
+        save_settings(settings, settings_file)
+
+    # Driver-thread handlers persist per-character profile changes through
+    # this (thread-safe, coalesced); the GUI's save() below writes directly.
+    saver = DebouncedSaver(_save_settings_now)
+    backend = build_backend(settings, request_save=saver.request_save)
 
     # Legacy imports come last: helpers.application loads nparse.config.json
     # from the CWD at import time and pulls in Qt.
@@ -123,7 +136,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     )
 
     def save() -> None:
-        save_settings(settings, settings_file)
+        _save_settings_now()
 
     bridge = QtEventBridge(backend.bus)
     spell_window = SpellTimerWindow(backend, on_save=save)
@@ -161,6 +174,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         },
     )
     app.aboutToQuit.connect(backend.stop)
+    app.aboutToQuit.connect(saver.flush)
 
     # Persist the settled settings immediately: on a fresh install nothing
     # else may write settings.json this session, and the app itself creates

@@ -188,6 +188,21 @@ def test_roar_without_prior_location_has_no_loc() -> None:
     assert rig.client.roars[0]["loc"] is None
 
 
+def test_location_carries_tracking_distance_for_trackable_class() -> None:
+    from nparseplus.core.enums import PlayerClass
+
+    rig = Rig()
+    rig.player.player_class = PlayerClass.DRUID
+    rig.player.tracking_skill = 100
+    rig.push_location()
+    assert rig.client.locations[0]["tracking_distance"] == 2000.0
+
+    rig2 = Rig()
+    rig2.player.player_class = PlayerClass.WARRIOR
+    rig2.push_location()
+    assert rig2.client.locations[0]["tracking_distance"] is None
+
+
 def test_player_name_override_is_used() -> None:
     rig = Rig()
     rig.settings.sharing.player_name_override = "Anonymoose"

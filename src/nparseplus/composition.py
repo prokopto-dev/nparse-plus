@@ -27,6 +27,7 @@ from nparseplus.core.handlers.fte import FTEHandler
 from nparseplus.core.handlers.group_leader import GroupLeaderHandler
 from nparseplus.core.handlers.mend_wounds import MendWoundsHandler
 from nparseplus.core.handlers.pet import PetHandler
+from nparseplus.core.handlers.player_profile import PlayerProfileHandler
 from nparseplus.core.handlers.quake import QuakeHandler
 from nparseplus.core.handlers.random_roll import RandomRollHandler
 from nparseplus.core.handlers.ring_war import RingWarHandler
@@ -135,14 +136,16 @@ def _spells_path(settings: Settings) -> Path:
     return Path("data/spells/spells_us.txt")  # bundled fallback (repo/app root)
 
 
-def build_backend(settings: Settings, speaker=None) -> Backend:
+def build_backend(settings: Settings, speaker=None, request_save=None) -> Backend:
+    """``request_save`` is the app's DebouncedSaver.request_save (thread-safe);
+    driver-thread handlers use it to persist per-character profile changes."""
     bus = EventBus()
     player = ActivePlayer()
     zones = load_zone_database()
     spells = load_spell_book(_spells_path(settings))
     timers = TimersService()
 
-    ctx = ParseContext(bus=bus, player=player, spells=spells, zones=zones)
+    ctx = ParseContext(bus=bus, player=player, spells=spells, zones=zones, settings=settings)
     pipeline = LogPipeline(build_parser_chain(), ctx)
     driver = LogDriver(Path(settings.general.eq_log_dir), pipeline, bus, player)
 
@@ -208,6 +211,7 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
 
     handlers: list[object] = [
         YouZonedHandler(bus, player),
+        PlayerProfileHandler(bus, player, settings, request_save=request_save),
         SpellTimerHandler(bus, player, spells, timers),
         DpsHandler(bus, player, fights),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),

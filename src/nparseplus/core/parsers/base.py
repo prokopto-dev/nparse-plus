@@ -15,6 +15,7 @@ from nparseplus.core.bus import EventBus
 from nparseplus.core.lineinfo import LineInfo
 
 if TYPE_CHECKING:
+    from nparseplus.config.settings import Settings
     from nparseplus.core.player import ActivePlayer
     from nparseplus.core.spells.spells_us import SpellBook
     from nparseplus.core.zones import ZoneDatabase
@@ -28,6 +29,9 @@ class ParseContext:
     player: ActivePlayer
     spells: SpellBook | None = None
     zones: ZoneDatabase | None = None
+    # None means "defaults" — parsers reading options must treat None as the
+    # option's default so bare test harnesses keep working.
+    settings: Settings | None = None
 
 
 @runtime_checkable

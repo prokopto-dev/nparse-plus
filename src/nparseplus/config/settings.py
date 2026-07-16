@@ -98,6 +98,9 @@ class SpellWindowSettings(BaseModel):
     you_only_spells: bool = False
     show_random_rolls: bool = True
     raid_mode_auto: bool = True
+    # nparseplus extension (EQTool's best-guess is always on): when False,
+    # ambiguous cast lines (multiple candidate spells) create no timer.
+    best_guess_spells: bool = True
 
 
 class DiscordSettings(BaseModel):
@@ -120,6 +123,9 @@ class PlayerInfo(BaseModel):
     map_location_sharing: Literal["everyone", "guild", "off"] = "everyone"
     share_timers: bool = True
     tracking_skill: int = 0
+    # Spell-filter classes (PlayerClass wire ints). None = show all classes'
+    # spells (EQTool's ShowSpellsForClasses null default).
+    show_spells_for_classes: list[int] | None = None
     you_spells: list[YouSpell] = Field(default_factory=list)
     best_dps: float = 0.0
 
@@ -179,13 +185,20 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
     tmp_path.replace(path)
 
 
-def get_player(settings: Settings, name: str, server: str) -> PlayerInfo:
-    """Return the PlayerInfo for (name, server), creating and appending it if absent."""
+def find_player(settings: Settings, name: str, server: str) -> PlayerInfo | None:
+    """Return the PlayerInfo for (name, server) if one exists (no creation)."""
     for player in settings.players:
         if player.name == name and player.server == server:
             return player
-    player = PlayerInfo(name=name, server=server)
-    settings.players.append(player)
+    return None
+
+
+def get_player(settings: Settings, name: str, server: str) -> PlayerInfo:
+    """Return the PlayerInfo for (name, server), creating and appending it if absent."""
+    player = find_player(settings, name, server)
+    if player is None:
+        player = PlayerInfo(name=name, server=server)
+        settings.players.append(player)
     return player
 
 
