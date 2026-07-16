@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from nparseplus.helpers.application import NomnsParse
+    from nparseplus.ui.consolewindow import ConsoleWindow
+    from nparseplus.ui.dpswindow import DpsMeterWindow
+    from nparseplus.ui.eventoverlay import EventOverlayWindow
+    from nparseplus.ui.mobinfo import MobInfoWindow
     from nparseplus.ui.qtbridge import QtEventBridge
     from nparseplus.ui.spellwindow import SpellTimerWindow
 
@@ -53,6 +57,10 @@ class AppContext:
     backend: Backend
     bridge: QtEventBridge
     spell_window: SpellTimerWindow
+    dps_window: DpsMeterWindow
+    mob_info_window: MobInfoWindow
+    console_window: ConsoleWindow
+    event_overlay: EventOverlayWindow
     settings: Settings
     save: Callable[[], None]
 
@@ -73,6 +81,10 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
+    from nparseplus.ui.consolewindow import ConsoleWindow
+    from nparseplus.ui.dpswindow import DpsMeterWindow
+    from nparseplus.ui.eventoverlay import EventOverlayWindow
+    from nparseplus.ui.mobinfo import MobInfoWindow
     from nparseplus.ui.qtbridge import QtEventBridge
     from nparseplus.ui.spellwindow import SpellTimerWindow
 
@@ -93,7 +105,22 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
     bridge = QtEventBridge(backend.bus)
     spell_window = SpellTimerWindow(backend, on_save=save)
-    app.attach_backend_ui(bridge, spell_window, save)
+    dps_window = DpsMeterWindow(backend, on_save=save)
+    mob_info_window = MobInfoWindow(settings, backend.mob_info, on_save=save)
+    console_window = ConsoleWindow(settings, on_save=save)
+    event_overlay = EventOverlayWindow()
+    bridge.event_received.connect(event_overlay.handle_event)
+    bridge.event_received.connect(console_window.handle_event)
+    app.attach_backend_ui(
+        bridge,
+        spell_window,
+        save,
+        windows={
+            "DPS Meter": dps_window,
+            "Mob Info": mob_info_window,
+            "Console": console_window,
+        },
+    )
     app.aboutToQuit.connect(backend.stop)
 
     return AppContext(
@@ -101,6 +128,10 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         backend=backend,
         bridge=bridge,
         spell_window=spell_window,
+        dps_window=dps_window,
+        mob_info_window=mob_info_window,
+        console_window=console_window,
+        event_overlay=event_overlay,
         settings=settings,
         save=save,
     )

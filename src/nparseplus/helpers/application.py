@@ -55,6 +55,7 @@ class NomnsParse(QApplication):
         self._bridge = None
         self._spell_window = None
         self._save_new_settings = None
+        self._backend_windows = {}
 
         # Updates
         self._toggled = False
@@ -102,13 +103,16 @@ class NomnsParse(QApplication):
         self._parsers_dict["discord"] = Discord()
         self._parsers = list(self._parsers_dict.values())
 
-    def attach_backend_ui(self, bridge, spell_window, save_new_settings=None):
+    def attach_backend_ui(self, bridge, spell_window, save_new_settings=None, windows=None):
         """Backend mode wiring (called by nparseplus.app.create_app):
         feed LineEvents from the Qt bridge into the legacy parse path and
-        hook up the new spell timer window for the tray menu."""
+        hook up the new overlay windows for the tray menu. ``windows`` is an
+        ordered {label: window} dict of extra toggleable windows (each needs
+        .toggle() and .isVisible())."""
         self._bridge = bridge
         self._spell_window = spell_window
         self._save_new_settings = save_new_settings
+        self._backend_windows = dict(windows or {})
         bridge.event_received.connect(self._on_backend_event)
 
     def _on_backend_event(self, event):
@@ -185,6 +189,13 @@ class NomnsParse(QApplication):
             spell_timers_action.setCheckable(True)
             spell_timers_action.setChecked(self._spell_window.isVisible())
 
+        backend_window_actions = {}
+        for label, window in self._backend_windows.items():
+            window_action = menu.addAction(label)
+            window_action.setCheckable(True)
+            window_action.setChecked(window.isVisible())
+            backend_window_actions[window_action] = window
+
         menu.addSeparator()
         settings_action = menu.addAction("Settings")
         discord_conf_action = menu.addAction("Configure Discord")
@@ -215,6 +226,9 @@ class NomnsParse(QApplication):
 
         elif spell_timers_action is not None and action == spell_timers_action:
             self._spell_window.toggle()
+
+        elif action in backend_window_actions:
+            backend_window_actions[action].toggle()
 
         elif action == settings_action:
             self._settings._set_values()
