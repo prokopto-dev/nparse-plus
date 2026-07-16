@@ -102,6 +102,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.ui.mobinfo import MobInfoWindow
     from nparseplus.ui.qtbridge import QtEventBridge
     from nparseplus.ui.spellwindow import SpellTimerWindow
+    from nparseplus.ui.triggereditor import TriggerEditorWindow
 
     app = NomnsParse(list(argv), backend=backend)
     with open(resource_path(os.path.join("data", "ui", "_.css"))) as css:
@@ -130,6 +131,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         state=overlay_state,
         on_save=save,
     )
+    trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
     app.attach_backend_ui(
@@ -140,6 +142,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "DPS Meter": dps_window,
             "Mob Info": mob_info_window,
             "Console": console_window,
+            "Trigger Editor": trigger_editor,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
     )
