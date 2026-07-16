@@ -4,11 +4,25 @@ General global settings setup to provide settings.data
 
 import json
 import os
+import sys
 from glob import glob
 
 data = {}
 _filename = ""
 APP_EXIT = False
+
+
+def _resolve_config_path(filename):
+    """Relative config paths resolve against the CWD from a source checkout,
+    but a frozen app's CWD is inside the .app bundle (read-only, and writing
+    there breaks the code signature) — use the platform config dir there."""
+    if os.path.isabs(filename) or not getattr(sys, "frozen", False):
+        return filename
+    import platformdirs
+
+    config_dir = platformdirs.user_config_dir("nparseplus")
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, filename)
 
 
 def load(filename):
@@ -20,7 +34,7 @@ def load(filename):
     """
     global data
     global _filename
-    _filename = filename
+    _filename = _resolve_config_path(filename)
 
     try:
         with open(_filename, "r+") as f:

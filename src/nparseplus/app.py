@@ -53,9 +53,14 @@ SETTINGS_ENV_VAR = "NPARSEPLUS_SETTINGS"
 def _ensure_data_cwd() -> None:
     """Legacy modules open ``data/...`` relative to CWD.
 
-    Until data moves into the package, locate the project root that holds
-    ``data/`` and chdir there when running from a source checkout.
+    Frozen (PyInstaller): both data roots are bundled under ``sys._MEIPASS``
+    (see packaging/nparseplus.spec), so chdir there — a Finder launch starts
+    with CWD ``/``. From a source checkout, locate the project root that
+    holds ``data/`` instead.
     """
+    if getattr(sys, "frozen", False):
+        os.chdir(sys._MEIPASS)  # type: ignore[attr-defined]  # noqa: SLF001
+        return
     if Path("data").is_dir():
         return
     for parent in Path(__file__).resolve().parents:
@@ -156,6 +161,13 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         },
     )
     app.aboutToQuit.connect(backend.stop)
+
+    # Persist the settled settings immediately: on a fresh install nothing
+    # else may write settings.json this session, and the app itself creates
+    # a default legacy nparse.config.json — without this, the NEXT launch
+    # would "migrate" that self-created file (sharing.enabled=False -> mode
+    # off) and silently turn sharing off.
+    save()
 
     return AppContext(
         app=app,
