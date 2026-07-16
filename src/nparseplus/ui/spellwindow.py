@@ -29,6 +29,7 @@ from nparseplus.config.settings import Settings, WindowState, find_player
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.matching import hide_spell
 from nparseplus.core.timers import YOU_GROUP, CounterRow, RollRow, Row, SpellRow
+from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
 REFRESH_INTERVAL_MS = 250
@@ -85,6 +86,11 @@ class _RowWidget(QFrame):
         self.row_name = ""
         self._color = ""
 
+        self._icon = QLabel(self)
+        self._icon.setObjectName("SpellTimerRowIcon")
+        self._icon.setFixedSize(ICON_SIZE, ICON_SIZE)
+        self._icon.setVisible(False)
+        self._icon_index: int | None = None
         self._name = QLabel(self)
         self._name.setObjectName("SpellTimerRowName")
         self._value = QLabel(self)
@@ -94,6 +100,7 @@ class _RowWidget(QFrame):
         text_row = QHBoxLayout()
         text_row.setContentsMargins(0, 0, 0, 0)
         text_row.setSpacing(4)
+        text_row.addWidget(self._icon, 0)
         text_row.addWidget(self._name, 1)
         text_row.addWidget(self._value, 0)
 
@@ -114,6 +121,7 @@ class _RowWidget(QFrame):
         """Render ``row`` — read-only; never mutates the model."""
         self.row_name = row.name
         self._name.setText(row.name)
+        self._update_icon(row)
         if isinstance(row, CounterRow):
             self._value.setText(f"x{row.count}")
             self._bar.setVisible(False)
@@ -133,6 +141,20 @@ class _RowWidget(QFrame):
                 "QProgressBar { background-color: rgba(255, 255, 255, 35); border: none; }"
                 f"QProgressBar::chunk {{ background-color: {color}; }}"
             )
+
+    def _update_icon(self, row: Row) -> None:
+        """Gem icon for spell rows (bundled sprite sheets); hidden otherwise."""
+        icon_index = row.spell.spell_icon if isinstance(row, SpellRow) else None
+        if icon_index == self._icon_index:
+            return
+        self._icon_index = icon_index
+        pixmap = spell_icon_pixmap(icon_index) if icon_index else None
+        if pixmap is None:
+            self._icon.clear()
+            self._icon.setVisible(False)
+        else:
+            self._icon.setPixmap(pixmap)
+            self._icon.setVisible(True)
 
 
 class SpellTimerWindow(QWidget):
