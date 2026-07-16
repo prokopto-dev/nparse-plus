@@ -17,7 +17,7 @@ from nparseplus.updater import (
 
 RELEASE_JSON = {
     "tag_name": "v9.9.9",
-    "html_url": "https://github.com/OWNER/nparseplus/releases/tag/v9.9.9",
+    "html_url": "https://github.com/prokopto-dev/nparse-plus/releases/tag/v9.9.9",
     "prerelease": False,
     "assets": [
         {"name": "nParse+-9.9.9.dmg", "browser_download_url": "https://dl.test/a.dmg", "size": 5},

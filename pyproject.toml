@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/nomns/nparse"
+Homepage = "https://github.com/prokopto-dev/nparse-plus"
 
 [project.gui-scripts]
 nparseplus = "nparseplus.__main__:main"

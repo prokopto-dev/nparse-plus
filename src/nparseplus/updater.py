@@ -27,10 +27,8 @@ import nparseplus
 
 logger = logging.getLogger(__name__)
 
-# TODO: set the owner when the GitHub repo is created (repo has no origin
-# remote yet). While it is the placeholder, every check 404s -> no update.
-GITHUB_OWNER = "OWNER"
-GITHUB_REPO = "nparseplus"
+GITHUB_OWNER = "prokopto-dev"
+GITHUB_REPO = "nparse-plus"
 TIMEOUT_S = 10.0
 
 

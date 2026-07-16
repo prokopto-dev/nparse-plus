@@ -50,7 +50,7 @@ Preferences) and offers the download from the tray menu.
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+ (uv installs Python for you).
 
 ```bash
-git clone <this repo> nparseplus && cd nparseplus
+git clone https://github.com/prokopto-dev/nparse-plus.git nparseplus && cd nparseplus
 uv sync
 uv run python -m nparseplus
 ```

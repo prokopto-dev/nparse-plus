@@ -75,7 +75,7 @@ src/nparseplus/
                         #   hubproto.py + pigparse_hub.py (minimal SignalR JSON hub
                         #   client; signalrcore is probe-only — its sends are broken),
                         #   nparse_ws.py (legacy locationserver wire), worker.py
-  updater.py            # GitHub releases check; GITHUB_OWNER constant is a placeholder
+  updater.py            # GitHub releases check (prokopto-dev/nparse-plus)
   ui/                   # PySide6 windows; overlaybase.py is the shared overlay recipe
   audio/tts.py          # Speaker protocol: macOS `say`, PowerShell, espeak, Null
   data/                 # generated/ported data — regenerate via tools/, never hand-edit JSON
@@ -152,7 +152,8 @@ mob-info loot pricing), the self-hostable nparse websocket mode, Night
 Vision fix, self-updater, PyInstaller .app/DMG + release CI. `git log
 --oneline` narrates the build milestone by milestone.
 
-Remaining human steps: create the GitHub repo and set
-`updater.GITHUB_OWNER` + push a `v*` tag to exercise the release pipeline;
-confirm bidirectional dots with a real EQTool user in-game (probe-level
-interop is verified). Post-1.0 parking lot lives in README.md.
+Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
+there too); `upstream` = nomns/nparse. Remaining human steps: push a `v*`
+tag to exercise the release pipeline; confirm bidirectional dots with a
+real EQTool user in-game (probe-level interop is verified). Post-1.0
+parking lot lives in README.md.
