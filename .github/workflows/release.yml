@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match nparseplus.__version__ and pyproject
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          grep -q "^__version__ = \"$TAG\"$" src/nparseplus/__init__.py \
+            || { echo "::error::tag $TAG != __init__.py __version__"; exit 1; }
+          grep -q "^version = \"$TAG\"$" pyproject.toml \
+            || { echo "::error::tag $TAG != pyproject version"; exit 1; }
+
+  build-macos:
+    needs: check-version
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Sync dependencies (with build group)
+        run: uv sync --frozen --group build
+      - name: Build .app
+        run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+      - name: Ad-hoc codesign
+        run: codesign --force --deep -s - "dist/nParse+.app"
+      - name: Build DMG
+        run: uv run dmgbuild -s packaging/dmg_settings.py "nParse+" "dist/nParse+-${GITHUB_REF_NAME#v}-macos-arm64.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  build-windows:
+    needs: check-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Sync dependencies (with build group)
+        run: uv sync --frozen --group build
+      - name: Build
+        run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+      - name: Zip
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          Compress-Archive -Path dist/nparseplus -DestinationPath "dist/nparseplus-$version-win64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: dist/*.zip
+          if-no-files-found: error
+
+  build-linux:
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Sync dependencies (with build group)
+        run: uv sync --frozen --group build
+      - name: Build
+        run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+      - name: Tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -C dist -czf "dist/nparseplus-$VERSION-linux-x86_64.tar.gz" nparseplus
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
