@@ -31,6 +31,7 @@ from nparseplus.core.handlers.random_roll import RandomRollHandler
 from nparseplus.core.handlers.ring_war import RingWarHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
+from nparseplus.core.logarchive import LogArchiveService
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
 from nparseplus.core.pets import PlayerPet, load_pets
@@ -173,9 +174,16 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         GroupLeaderHandler(bus, player),
     ]
 
+    archiver = LogArchiveService(
+        get_log_dir=lambda: settings.general.eq_log_dir,
+        is_enabled=lambda: settings.general.log_archive_enabled,
+        get_threshold_mb=lambda: settings.general.log_archive_size_mb,
+    )
+
     driver.on_tick.append(timers.tick)
     driver.on_tick.append(engine.tick)
     driver.on_tick.append(fights.tick)
+    driver.on_tick.append(archiver.tick)
 
     return Backend(
         settings=settings,

@@ -100,6 +100,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.ui.dpswindow import DpsMeterWindow
     from nparseplus.ui.eventoverlay import EventOverlayWindow
     from nparseplus.ui.mobinfo import MobInfoWindow
+    from nparseplus.ui.preferences import PreferencesWindow
     from nparseplus.ui.qtbridge import QtEventBridge
     from nparseplus.ui.spellwindow import SpellTimerWindow
     from nparseplus.ui.triggereditor import TriggerEditorWindow
@@ -132,6 +133,9 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_save=save,
     )
     trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
+    preferences = PreferencesWindow(
+        settings, on_save=save, on_log_dir_changed=backend.driver.set_log_dir
+    )
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
     app.attach_backend_ui(
@@ -143,6 +147,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Mob Info": mob_info_window,
             "Console": console_window,
             "Trigger Editor": trigger_editor,
+            "Preferences": preferences,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
     )
