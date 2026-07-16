@@ -87,6 +87,9 @@ class TimersService:
         self.on_change: list[Callable[[], None]] = []
         # Adaptive grouping state (SpellWindowViewModel.PCSpellsGroupedByTarget).
         self._pc_grouped_by_target = False
+        # Gate for _adaptive_regroup (EQTool RaidModeEnabled); composition
+        # points this at Settings.spellwindow.raid_mode_auto.
+        self.raid_mode_provider: Callable[[], bool] = lambda: True
 
     # -- observation ---------------------------------------------------------
 
@@ -266,6 +269,13 @@ class TimersService:
             for row in self._rows
             if isinstance(row, SpellRow) and row.is_target_player and row.group != YOU_GROUP
         ]
+        if not self.raid_mode_provider():
+            # Raid mode off: restore per-target grouping if we had flipped.
+            if self._pc_grouped_by_target:
+                for row in player_spells:
+                    row.name, row.group = row.group, row.name
+                self._pc_grouped_by_target = False
+            return
         groups = {row.group for row in player_spells}
         names = {row.name for row in player_spells}
         if len(groups) > len(names):

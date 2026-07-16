@@ -188,3 +188,30 @@ def test_adaptive_regrouping_swaps_when_targets_exceed_spells(
     # New rows added while flipped adopt the flipped orientation.
     added = timers.add_spell(_spell_row(spell_book, name="Aegolism", group="Zed", seconds=100))
     assert added.group == "Aegolism" and added.name == "Zed"
+
+
+def test_raid_mode_off_disables_regrouping(timers: TimersService, spell_book: SpellBook) -> None:
+    timers.raid_mode_provider = lambda: False
+    for target in ("Joe", "Bob", "Ann"):
+        timers.add_spell(_spell_row(spell_book, name="Aegolism", group=target, seconds=100))
+    timers.tick(T0 + timedelta(seconds=1))
+    rows = timers.rows_of(SpellRow)
+    assert {row.group for row in rows} == {"Joe", "Bob", "Ann"}
+    assert {row.name for row in rows} == {"Aegolism"}
+
+
+def test_raid_mode_turned_off_restores_target_grouping(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    enabled = True
+    timers.raid_mode_provider = lambda: enabled
+    for target in ("Joe", "Bob", "Ann"):
+        timers.add_spell(_spell_row(spell_book, name="Aegolism", group=target, seconds=100))
+    timers.tick(T0 + timedelta(seconds=1))
+    assert {row.group for row in timers.rows_of(SpellRow)} == {"Aegolism"}
+
+    enabled = False
+    timers.tick(T0 + timedelta(seconds=2))
+    rows = timers.rows_of(SpellRow)
+    assert {row.group for row in rows} == {"Joe", "Bob", "Ann"}
+    assert {row.name for row in rows} == {"Aegolism"}

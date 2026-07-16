@@ -447,6 +447,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "closest-level guess. Off: ambiguous casts start no timer."
         )
         form.addRow("Guess ambiguous spells", self._best_guess)
+        self._raid_mode = QCheckBox(self)
+        self._raid_mode.setChecked(spellwindow.raid_mode_auto)
+        self._raid_mode.setToolTip(
+            "When buff rows span more targets than distinct spells (raids), "
+            "regroup the window by spell instead of by target."
+        )
+        form.addRow("Auto raid-mode grouping", self._raid_mode)
         note = QLabel("Per-class spell filters live on the Character page.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
@@ -773,6 +780,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.you_only_spells = self._you_only.isChecked()
         spellwindow.show_random_rolls = self._show_rolls.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
+        spellwindow.raid_mode_auto = self._raid_mode.isChecked()
         self._apply_character()
         self._apply_maps()
         self._apply_windows()
