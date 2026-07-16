@@ -17,9 +17,9 @@ modified (the optional Night Vision fix is applied only when you ask).
 
 | Area | What you get |
 |---|---|
-| **Spell timers** | Per-target buff/debuff countdowns from the real spell DB (durations by your level/class), worn-off removal, cooldowns, self-buffs restored across camps |
+| **Spell timers** | Per-target buff/debuff countdowns from the real spell DB (durations by your level/class), gem icons, per-class spell filters, worn-off removal, cooldowns, self-buffs restored across camps |
 | **Triggers** | 65 built-in triggers (raid AOEs with countdown bars, invis/levitate fading, failed feign, charm break, death touch, …) + custom triggers with `{name}`/`{c}`/`{COUNTER}` tokens, zone gating, text-to-speech, timers, counters. Start ad-hoc timers from chat: `StartTimer-45-Label` |
-| **Maps** | Brewall map set, player tracking via `/loc`, smooth z-axis fading tuned per zone, spawn-point timers, waypoints, path recording, **NPC search** (map labels + notable NPCs + live P99-wiki lookup with click-to-flash) |
+| **Maps** | Brewall map set, player marker with direction arrow via `/loc`, tracking-skill radius circle (Druid/Ranger/Bard), smooth z-axis fading tuned per zone, spawn-point timers, waypoints, path recording, **NPC search** (map labels + notable NPCs + live P99-wiki lookup with click-to-flash) |
 | **DPS meter** | Per-fight attacker breakdown, 12-second trailing DPS, session best/current/last |
 | **Combat automation** | Respawn timers on kill (per-NPC times for 121 zones), faction/exp kill guessing, random-roll tracking, boat schedules, quake/Ring War/FTE alerts, death-loop detection, pet tracking |
 | **CH chains** | `CA 001 CH -- Target` calls render as chips sliding across an 11s lane per heal target; voice + on-screen warning when your slot is next |
@@ -43,7 +43,7 @@ download; the command above clears that. Windows users: unzip
 untar and run `nparseplus/nparseplus`.)
 
 nParse+ checks GitHub for new releases at startup (turn off in
-Preferences) and offers the download from the tray menu.
+Settings) and offers the download from the tray menu.
 
 ## Install & run (from source)
 
@@ -108,14 +108,19 @@ CI and attach them to a GitHub release
 
 - **M1 (done):** core engine, spell timers, trigger engine + TTS, settings, maps.
 - **M2 (done):** DPS, spawn timers, CH chains, encounter AOEs, event overlay,
-  mob info, NPC finder + wiki lookup, z-fade, trigger editor, Preferences,
+  mob info, NPC finder + wiki lookup, z-fade, trigger editor, preferences,
   log archiving.
 - **M3 (done):** PigParse network interop (shared map dots, timers, quake/
   boat/roll feeds, loot pricing), nparse websocket fallback, Night Vision
   fix, self-updater, .app/DMG + Windows/Linux release builds.
-- **Post-1.0 parking lot:** notarization, corpse waypoints over the nparse
-  wire, /who player upserts, Discord auth/auction APIs, inventory watcher,
-  3D map view.
+- **M4 / 1.1 (done):** ONE unified "nParse+ Settings" window (per-window
+  opacity sliders + always-on-top, live preview), per-character profiles
+  (class/level/zone/track skill) that feed the engine, EQTool spell class
+  filters + a Guess Spells toggle, EQTool-style drawn map markers with the
+  tracking-skill radius circle, and spell gem icons on timer rows.
+- **Parking lot:** notarization, corpse waypoints over the nparse wire,
+  /who player upserts, raid-mode spell collapse, Discord auth/auction APIs,
+  inventory watcher, 3D map view.
 
 ## License & credits
 

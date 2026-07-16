@@ -146,11 +146,17 @@ when frozen and the legacy config moves to platformdirs). Then ad-hoc
 
 ## Where things stand
 
-**M0–M3 complete** (~590 tests): full EQTool parity including the network —
+**M0–M4 complete** (~630 tests): full EQTool parity including the network —
 live PigParse hub interop (map dots, shared timers, quake/boat/roll feeds,
 mob-info loot pricing), the self-hostable nparse websocket mode, Night
-Vision fix, self-updater, PyInstaller .app/DMG + release CI. `git log
---oneline` narrates the build milestone by milestone.
+Vision fix, self-updater, PyInstaller .app/DMG + release CI. M4 (1.1) added
+the unified `ui/settingswindow.py` "nParse+ Settings" window — it DUAL-
+WRITES the Pydantic Settings and the legacy config.data (the only place
+that bridges both), per-window opacity/on-top, per-character profiles
+(PlayerProfileHandler syncs PlayerInfo <-> ActivePlayer), spell class
+filters (`hide_spell`), the best_guess_spells toggle, EQTool-style drawn
+map markers + tracking radius, and spell gem icons. `git log --oneline`
+narrates the build milestone by milestone.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. Remaining human steps: push a `v*`
