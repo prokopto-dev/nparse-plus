@@ -1,14 +1,16 @@
 import os
+import threading
 import webbrowser
 from pathlib import Path
 
 from packaging.version import Version
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QSystemTrayIcon
 
+from nparseplus import updater
 from nparseplus.core.events import LineEvent
-from nparseplus.helpers import config, get_version, logreader, resource_path
+from nparseplus.helpers import config, logreader, resource_path
 from nparseplus.helpers.logreader import LogReaderSignals
 from nparseplus.helpers.settings import SettingsSignals, SettingsWindow
 from nparseplus.parsers.discord import Discord
@@ -23,10 +25,7 @@ config.verify_settings()
 import nparseplus
 
 CURRENT_VERSION = Version(nparseplus.__version__)
-if config.data["general"]["update_check"]:
-    ONLINE_VERSION = get_version()
-else:
-    ONLINE_VERSION = CURRENT_VERSION
+UPDATE_CHECK_DELAY_MS = 10_000  # don't block or race startup
 
 
 class NomnsParse(QApplication):
@@ -46,6 +45,8 @@ class NomnsParse(QApplication):
         next milestone.
     """
 
+    update_available = Signal(object)  # ReleaseInfo, emitted off-thread
+
     def __init__(self, *args, backend=None):
         super().__init__(*args)
 
@@ -55,6 +56,8 @@ class NomnsParse(QApplication):
         self._spell_window = None
         self._save_new_settings = None
         self._backend_windows = {}
+        self._available_release = None
+        self.update_available.connect(self._on_update_available)
 
         # Updates
         self._toggled = False
@@ -82,12 +85,30 @@ class NomnsParse(QApplication):
         # Turn On
         self._toggle()
 
-        if self.new_version_available():
-            self._system_tray.showMessage(
-                "nParse Update",
-                f"New version available!\nCurrent: {CURRENT_VERSION}\nOnline: {ONLINE_VERSION}",
-                msecs=3000,
-            )
+        if self._update_check_enabled():
+            QTimer.singleShot(UPDATE_CHECK_DELAY_MS, self._start_update_check)
+
+    def _update_check_enabled(self):
+        if self._backend is not None:
+            return bool(self._backend.settings.general.update_check)
+        return bool(config.data["general"]["update_check"])
+
+    def _start_update_check(self):
+        def work():
+            release = updater.check_for_update()
+            if release is not None:
+                self.update_available.emit(release)
+
+        threading.Thread(target=work, name="update-check", daemon=True).start()
+
+    def _on_update_available(self, release):
+        self._available_release = release
+        self._system_tray.showMessage(
+            "nParse+ update",
+            f"Version {release.version} is available (installed: {CURRENT_VERSION}).\n"
+            "Install it from the tray menu.",
+            msecs=5000,
+        )
 
     @property
     def maps_window(self):
@@ -165,9 +186,8 @@ class NomnsParse(QApplication):
         """Returns a new QMenu for system tray."""
         menu = QMenu()
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        # check online for new version
-        if self.new_version_available():
-            new_version_text = f"Update Available: {ONLINE_VERSION}"
+        if self._available_release is not None:
+            new_version_text = f"Install update v{self._available_release.version}"
         else:
             new_version_text = f"Version: {CURRENT_VERSION}"
 
@@ -208,7 +228,17 @@ class NomnsParse(QApplication):
         action = menu.exec(QCursor.pos())
 
         if action == check_version_action:
-            webbrowser.open("https://github.com/nomns/nparse/releases")
+            if self._available_release is not None:
+                # Downloads the platform artifact to ~/Downloads and opens it
+                # (or the release page when there is no artifact).
+                threading.Thread(
+                    target=updater.install_action,
+                    args=(self._available_release,),
+                    name="update-install",
+                    daemon=True,
+                ).start()
+            else:
+                webbrowser.open(updater.releases_page_url())
 
         elif action == get_eq_dir_action:
             dir_path = str(
@@ -251,9 +281,3 @@ class NomnsParse(QApplication):
         elif action in parser_toggles:
             parser = [parser for parser in self._parsers if parser.name == action.text().lower()][0]
             parser.toggle()
-
-    def new_version_available(self):
-        try:
-            return ONLINE_VERSION > CURRENT_VERSION
-        except:
-            return False

@@ -1,25 +1,7 @@
-import json
 import math
 import os
 import sys
-import urllib.request
 from datetime import datetime, timedelta
-
-from packaging.version import Version
-
-
-def get_version():
-    version = None
-    try:
-        response = urllib.request.urlopen(
-            "https://api.github.com/repos/nomns/nparse/releases/latest"
-        )
-        response_json = json.loads(response.read().decode("utf-8"))
-        version_text = response_json["tag_name"]
-        version = Version(version_text.lstrip("v"))
-    except Exception as e:
-        print(e)
-    return version
 
 
 def parse_line(line):
