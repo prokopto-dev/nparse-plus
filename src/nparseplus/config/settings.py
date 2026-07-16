@@ -48,6 +48,8 @@ class GeneralSettings(BaseModel):
     tts_voice: str | None = None
     log_archive_enabled: bool = False
     log_archive_size_mb: int = Field(default=100, ge=1)
+    # How long overlay alert text (ENRAGED, FTE, CH warnings...) stays on screen.
+    overlay_text_seconds: float = Field(default=4.0, ge=1.0, le=30.0)
 
 
 class SharingSettings(BaseModel):

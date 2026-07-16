@@ -95,6 +95,9 @@ class TriggerEngine:
     timers: TimerSink
     clock: Callable[[], datetime] = _now
     sound_player: Callable[[str], None] | None = None
+    # How long display text stays up before the engine publishes its
+    # matching reset OverlayEvent (user-configurable via settings).
+    display_text_seconds: float = DISPLAY_TEXT_SECONDS
 
     _triggers: list[Trigger] = field(default_factory=list, init=False)
     _active_timers: list[_ActiveTimer] = field(default_factory=list, init=False)
@@ -167,7 +170,7 @@ class TriggerEngine:
             self.bus.publish(OverlayEvent(text=text, foreground=color, reset=False))
             self._pending_resets.append(
                 _PendingOverlayReset(
-                    due=self.clock() + _seconds(DISPLAY_TEXT_SECONDS),
+                    due=self.clock() + _seconds(self.display_text_seconds),
                     text=text,
                     foreground=color,
                 )

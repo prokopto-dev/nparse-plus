@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from nparseplus.core.events import OverlayEvent, TimerBarEvent
 
-CLEAR_AFTER_MS = 4000
+DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
 BAR_WIDTH = 320
 DEFAULT_TEXT_COLOR = "red"
@@ -56,8 +56,11 @@ class _TimerBar:
 class EventOverlayWindow(QWidget):
     """Clickthrough full-screen overlay driven by bridge events."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, clear_after_s: float = DEFAULT_CLEAR_AFTER_S, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
+        self._clear_after_ms = max(1000, int(clear_after_s * 1000))
         self.setObjectName("EventOverlayWindow")
         self.setWindowTitle("Event Overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -105,7 +108,7 @@ class EventOverlayWindow(QWidget):
 
         self._clear_timer = QTimer(self)
         self._clear_timer.setSingleShot(True)
-        self._clear_timer.setInterval(CLEAR_AFTER_MS)
+        self._clear_timer.setInterval(self._clear_after_ms)
         self._clear_timer.timeout.connect(self.clear_text)
 
         self._bar_timer = QTimer(self)

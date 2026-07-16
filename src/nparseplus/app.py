@@ -108,7 +108,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     dps_window = DpsMeterWindow(backend, on_save=save)
     mob_info_window = MobInfoWindow(settings, backend.mob_info, on_save=save)
     console_window = ConsoleWindow(settings, on_save=save)
-    event_overlay = EventOverlayWindow()
+    event_overlay = EventOverlayWindow(clear_after_s=settings.general.overlay_text_seconds)
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
     app.attach_backend_ui(

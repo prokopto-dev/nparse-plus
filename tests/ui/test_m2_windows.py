@@ -117,3 +117,9 @@ def test_console_appends_and_pauses(qtbot) -> None:
     window.set_paused(True)
     window.handle_event(LineEvent(timestamp=T0, line="ignored while paused", line_number=3))
     assert window.line_count() == before
+
+
+def test_event_overlay_configurable_duration(qtbot) -> None:
+    overlay = EventOverlayWindow(clear_after_s=7.5)
+    qtbot.addWidget(overlay)
+    assert overlay._clear_timer.interval() == 7500

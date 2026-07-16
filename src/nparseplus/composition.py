@@ -134,7 +134,13 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         )
 
     sink = TriggerTimerSink(timers)
-    engine = TriggerEngine(bus=bus, player=player, speaker=speaker, timers=sink)
+    engine = TriggerEngine(
+        bus=bus,
+        player=player,
+        speaker=speaker,
+        timers=sink,
+        display_text_seconds=settings.general.overlay_text_seconds,
+    )
     synced, changed = sync_builtin_triggers(list(settings.triggers))
     if changed:
         settings.triggers = synced
