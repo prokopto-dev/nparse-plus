@@ -19,7 +19,7 @@ from nparseplus.core.handlers.api_timers import ApiTimersService
 from nparseplus.core.handlers.bard_count import BardCountHandler
 from nparseplus.core.handlers.boat import BoatHandler
 from nparseplus.core.handlers.complete_heal import CompleteHealCommsHandler, CompleteHealHandler
-from nparseplus.core.handlers.con import ConHandler, MobInfoState
+from nparseplus.core.handlers.consider import ConHandler, MobInfoState
 from nparseplus.core.handlers.death_loop import DeathLoopHandler
 from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandler
 from nparseplus.core.handlers.dps import DpsHandler

@@ -1,5 +1,5 @@
 from nparseplus.core.events import ConEvent
-from nparseplus.core.parsers.con import ConLogParse
+from nparseplus.core.parsers.consider import ConLogParse
 
 
 def test_scowls(ctx, make_line, spy):

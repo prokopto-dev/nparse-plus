@@ -13,7 +13,7 @@ from nparseplus.core.parsers.base import LineParser
 from nparseplus.core.parsers.boat import BoatParser
 from nparseplus.core.parsers.camp import CampParser
 from nparseplus.core.parsers.comms import CommsParser
-from nparseplus.core.parsers.con import ConLogParse
+from nparseplus.core.parsers.consider import ConLogParse
 from nparseplus.core.parsers.damage import DamageParser
 from nparseplus.core.parsers.discipline_cooldown import DisciplineCooldownParser
 from nparseplus.core.parsers.exp_gained import ExpGainedParser

@@ -7,7 +7,7 @@ import pytest
 from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.events import DamageEvent, LineEvent, OverlayEvent, TimerBarEvent
-from nparseplus.core.handlers.con import MobInfoState
+from nparseplus.core.handlers.consider import MobInfoState
 from nparseplus.ui.consolewindow import ConsoleWindow
 from nparseplus.ui.dpswindow import DpsMeterWindow
 from nparseplus.ui.eventoverlay import EventOverlayWindow

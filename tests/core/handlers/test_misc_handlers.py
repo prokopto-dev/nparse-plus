@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from tests.core.handlers.conftest import Harness
 
-from nparseplus.core.handlers.con import ConHandler
+from nparseplus.core.handlers.consider import ConHandler
 from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandler
 from nparseplus.core.handlers.group_leader import NO_LEADER, GroupLeaderHandler
 from nparseplus.core.handlers.mend_wounds import (

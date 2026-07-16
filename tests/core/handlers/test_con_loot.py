@@ -5,7 +5,7 @@ from datetime import datetime
 from nparseplus.core.bus import EventBus
 from nparseplus.core.enums import Server
 from nparseplus.core.events import ConEvent
-from nparseplus.core.handlers.con import ConHandler, MobInfoState, parse_known_loot
+from nparseplus.core.handlers.consider import ConHandler, MobInfoState, parse_known_loot
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.net.pigparse_models import ItemPrice

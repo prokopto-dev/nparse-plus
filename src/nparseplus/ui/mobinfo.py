@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
-from nparseplus.core.handlers.con import MobInfoState
+from nparseplus.core.handlers.consider import MobInfoState
 from nparseplus.ui.overlaybase import OverlayWindowBase, format_mmss
 
 WINDOW_KEY = "mobinfo"
