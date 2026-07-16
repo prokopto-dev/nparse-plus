@@ -47,6 +47,7 @@ from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.chat_commands import CustomTimerChatCommands
 from nparseplus.core.triggers.engine import TriggerEngine
 from nparseplus.core.zones import ZoneDatabase, load_zone_database
+from nparseplus.net.nparse_ws import NParseWsClient
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.pigparse_hub import PigParseHubClient
 from nparseplus.net.worker import NetWorker
@@ -195,7 +196,13 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         )
         pigparse_api = PigParseApiClient(settings.sharing.pigparse_api_url)
         net_worker = NetWorker(deliver=sharing.enqueue_inbound)
-    # (the "nparse" websocket mode lands with the M3 fallback step)
+    elif settings.sharing.mode == "nparse":
+        sharing_client = NParseWsClient(
+            url=settings.sharing.nparse_ws_url,
+            group_key=settings.sharing.nparse_group_key,
+            on_inbound=sharing.enqueue_inbound,
+            zones=zones,
+        )
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
 

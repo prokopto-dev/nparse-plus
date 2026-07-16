@@ -9,7 +9,6 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QSystemTrayIcon
 
 from nparseplus.core.events import LineEvent
 from nparseplus.helpers import config, get_version, logreader, resource_path
-from nparseplus.helpers.location_service import LocationSharingService, LocationSharingSignals
 from nparseplus.helpers.logreader import LogReaderSignals
 from nparseplus.helpers.settings import SettingsSignals, SettingsWindow
 from nparseplus.parsers.discord import Discord
@@ -66,11 +65,7 @@ class NomnsParse(QApplication):
         self._signals["logreader"] = LogReaderSignals()
         self._signals["settings"] = SettingsSignals()
         self._signals["maps"] = MapsSignals()
-        self._signals["locationsharing"] = LocationSharingSignals()
-
-        # Load Services
-        self._services = {}
-        self._services["locationsharing"] = LocationSharingService()
+        # (location sharing moved to the backend: core.sharing + net/)
 
         # Load Parsers
         self._load_parsers()

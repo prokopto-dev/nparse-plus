@@ -73,6 +73,18 @@ class ZoneDatabase:
         """'You have entered <long name>.' -> short zone key."""
         return self._name_to_short.get(long_name.strip().lower())
 
+    def long_name(self, short_name: str) -> str | None:
+        """Short zone key -> a long display name (first mapper entry).
+
+        The legacy nparse sharing protocol keys zones by the long name the
+        maps window shows; this is the inverse of ``short_name``.
+        """
+        short = short_name.strip().lower()
+        for long_form, mapped in self._name_to_short.items():
+            if mapped == short:
+                return long_form
+        return None
+
     def short_name_from_who(self, who_name: str) -> str | None:
         """'There are N players in <who name>.' -> short zone key."""
         who = who_name.strip().lower()

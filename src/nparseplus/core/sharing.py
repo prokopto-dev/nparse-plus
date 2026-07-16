@@ -191,9 +191,12 @@ class SharingCoordinator:
         logger.debug("sharing inbound item ignored: %r", type(item).__name__)
 
     def _is_self_echo(self, remote: RemotePlayer) -> bool:
-        """The hub echoes our own frames back; drop name+server matches
-        (case-sensitive, like SignalrPlayerHub.cs)."""
-        return remote.name == self._share_name() and remote.server == self._my_server_int()
+        """The servers echo our own frames back; drop name+server matches
+        (case-sensitive, like SignalrPlayerHub.cs). The nparse wire carries
+        no server (None) — there a name match alone is the echo."""
+        if remote.name != self._share_name():
+            return False
+        return remote.server is None or remote.server == self._my_server_int()
 
     def _my_server_int(self) -> int | None:
         return int(self.player.server) if self.player.server is not None else None
