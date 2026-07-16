@@ -17,10 +17,11 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QGraphicsDropShadowEffect,
     QLabel,
     QProgressBar,
@@ -28,13 +29,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from nparseplus.core.events import OverlayEvent, TimerBarEvent
+from nparseplus.core.events import CompleteHealEvent, OverlayEvent, TimerBarEvent
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
 BAR_WIDTH = 320
 DEFAULT_TEXT_COLOR = "red"
 DEFAULT_BAR_COLOR = "steelblue"
+
+# CH chain lane (EQTool EventOverlay.xaml.cs): each CH call is a green chip
+# labeled with the caster's position, sliding across the lane over the CH
+# cast time; empty lanes disappear after a grace period.
+CH_CHIP_SECONDS = 11.0
+CH_LANE_HEIGHT = 30
+CH_LANE_GRACE_MS = 5000
 
 
 def resolve_color(token: str | None, fallback: str) -> str:
@@ -51,6 +59,50 @@ class _TimerBar:
     ends_at: datetime
     total_seconds: int
     widget: QProgressBar
+
+
+class _ChainLane(QFrame):
+    """One heal target's CH lane: chips slide right-to-left across it."""
+
+    def __init__(self, target: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.target = target
+        self.chips: list[QLabel] = []
+        self.setObjectName("ChChainLane")
+        self.setFixedHeight(CH_LANE_HEIGHT)
+        self.setStyleSheet(
+            "#ChChainLane { background-color: rgba(0, 0, 0, 130);"
+            " border: 1px solid rgba(255, 255, 255, 60); border-radius: 3px; }"
+        )
+        self._target_label = QLabel(target, self)
+        self._target_label.setStyleSheet("color: #cccccc; font-size: 11px; font-weight: bold;")
+        self._target_label.move(4, 6)
+        self._target_label.show()
+
+    def add_chip(self, position: str) -> QLabel:
+        chip = QLabel(position, self)
+        chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        chip.setFixedSize(56, CH_LANE_HEIGHT - 6)
+        chip.setStyleSheet(
+            "background-color: forestgreen; color: white; font-weight: bold;"
+            " border: 1px solid black; border-radius: 3px;"
+        )
+        chip.move(self.width(), 3)  # enter from the right edge
+        chip.show()
+        self.chips.append(chip)
+
+        animation = QPropertyAnimation(chip, b"pos", chip)
+        animation.setDuration(int(CH_CHIP_SECONDS * 1000))
+        animation.setStartValue(QPoint(self.width(), 3))
+        animation.setEndValue(QPoint(-chip.width(), 3))
+        animation.finished.connect(lambda: self._chip_done(chip))
+        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        return chip
+
+    def _chip_done(self, chip: QLabel) -> None:
+        if chip in self.chips:
+            self.chips.remove(chip)
+        chip.deleteLater()
 
 
 class EventOverlayWindow(QWidget):
@@ -78,6 +130,7 @@ class EventOverlayWindow(QWidget):
 
         self._text_color = ""
         self._bars: dict[str, _TimerBar] = {}
+        self._chain_lanes: dict[str, _ChainLane] = {}
 
         self._center_text = QLabel("", self)
         self._center_text.setObjectName("EventOverlayText")
@@ -98,8 +151,16 @@ class EventOverlayWindow(QWidget):
         bars_host.setFixedWidth(BAR_WIDTH)
         bars_host.setLayout(self._bars_layout)
 
+        self._lanes_layout = QVBoxLayout()
+        self._lanes_layout.setContentsMargins(0, 0, 0, 0)
+        self._lanes_layout.setSpacing(3)
+        lanes_host = QWidget(self)
+        lanes_host.setMinimumWidth(520)
+        lanes_host.setLayout(self._lanes_layout)
+
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 60)
+        layout.setContentsMargins(20, 40, 20, 60)
+        layout.addWidget(lanes_host, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(2)
         layout.addWidget(self._center_text, 0)
         layout.addStretch(3)
@@ -124,6 +185,32 @@ class EventOverlayWindow(QWidget):
             self._on_overlay_event(event)
         elif isinstance(event, TimerBarEvent):
             self._on_timer_bar_event(event)
+        elif isinstance(event, CompleteHealEvent):
+            self._on_complete_heal(event)
+
+    def _on_complete_heal(self, event: CompleteHealEvent) -> None:
+        target = event.recipient or "?"
+        lane = self._chain_lanes.get(target)
+        if lane is None:
+            lane = _ChainLane(target, self)
+            lane.setFixedWidth(520)
+            self._chain_lanes[target] = lane
+            self._lanes_layout.addWidget(lane)
+            lane.show()
+        lane.add_chip(event.position or "?")
+        QTimer.singleShot(
+            int(CH_CHIP_SECONDS * 1000) + CH_LANE_GRACE_MS,
+            lambda: self._maybe_remove_lane(target),
+        )
+        self._update_visibility()
+
+    def _maybe_remove_lane(self, target: str) -> None:
+        lane = self._chain_lanes.get(target)
+        if lane is not None and not lane.chips:
+            self._lanes_layout.removeWidget(lane)
+            lane.deleteLater()
+            del self._chain_lanes[target]
+        self._update_visibility()
 
     def _on_overlay_event(self, event: OverlayEvent) -> None:
         if event.reset:
@@ -198,7 +285,9 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _update_visibility(self) -> None:
-        active = bool(self._center_text.text()) or bool(self._bars)
+        active = (
+            bool(self._center_text.text()) or bool(self._bars) or bool(self._chain_lanes)
+        )
         if active and not self.isVisible():
             self.show()
         elif not active and self.isVisible():
@@ -225,3 +314,10 @@ class EventOverlayWindow(QWidget):
 
     def is_active(self) -> bool:
         return self.isVisible()
+
+    def current_chain_lanes(self) -> dict[str, list[str]]:
+        """Test hook: {target: [chip position texts]} for the CH lanes."""
+        return {
+            target: [chip.text() for chip in lane.chips]
+            for target, lane in self._chain_lanes.items()
+        }

@@ -123,3 +123,27 @@ def test_event_overlay_configurable_duration(qtbot) -> None:
     overlay = EventOverlayWindow(clear_after_s=7.5)
     qtbot.addWidget(overlay)
     assert overlay._clear_timer.interval() == 7500
+
+
+def test_event_overlay_ch_chain_lanes(qtbot) -> None:
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(
+            timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="Clericone"
+        )
+    )
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="002", caster="You")
+    )
+    overlay.handle_event(
+        CompleteHealEvent(
+            timestamp=T0, recipient="Backup", tag="CA", position="001", caster="Other"
+        )
+    )
+    lanes = overlay.current_chain_lanes()
+    assert lanes["Tanky"] == ["001", "002"]
+    assert lanes["Backup"] == ["001"]
+    assert overlay.is_active()
