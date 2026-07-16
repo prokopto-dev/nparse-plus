@@ -53,6 +53,29 @@ def test_fade_disabled_without_zone_height() -> None:
     assert fade_opacity(500, 0) == 1.0
 
 
+def test_fade_min_opacity_moves_the_floor() -> None:
+    assert fade_opacity(1000, 10, min_opacity=0.4) == pytest.approx(0.4)
+    # The linear segment is offset by the floor too (EQTool adds it in).
+    assert fade_opacity(20, 10, min_opacity=0.4) == pytest.approx(0.9)
+
+
+def test_fade_strength_scales_effective_height() -> None:
+    # strength 2.0 halves the effective height: h=5 for a 10-unit zone.
+    assert fade_opacity(4.9, 10, strength=2.0) == 1.0
+    assert fade_opacity(10, 10, strength=2.0) == pytest.approx(0.6)
+    # strength 0.5 doubles it: d=20 is the inner edge, still opaque.
+    assert fade_opacity(19.9, 10, strength=0.5) == 1.0
+    # Degenerate strength never divides by zero.
+    assert fade_opacity(100, 10, strength=0) == 1.0
+
+
+def test_fade_fallback_height_fades_metadata_less_zones() -> None:
+    assert fade_opacity(5, None, fallback_height=10) == 1.0
+    assert fade_opacity(500, None, fallback_height=10) == pytest.approx(0.1)
+    # Real zone metadata always wins over the fallback.
+    assert fade_opacity(25, 10, fallback_height=100) == pytest.approx(0.35)
+
+
 def test_band_helpers() -> None:
     assert band_width_for(None) == 10.0
     assert band_width_for(10) == 5.0
@@ -81,17 +104,19 @@ def synthetic_maps(tmp_path, monkeypatch):
     map_dir.mkdir()
     (map_dir / "fadezone.txt").write_text(MAP_BODY)
     (map_dir / "allzone.txt").write_text(MAP_BODY)
+    (map_dir / "nozone.txt").write_text(MAP_BODY)
     timers = tmp_path / "map_timers.csv"
-    timers.write_text("fadezone,6:40\nallzone,6:40\n")
+    timers.write_text("fadezone,6:40\nallzone,6:40\nnozone,6:40\n")
 
     zone_db = ZoneDatabase(
         zones={
             "fadezone": ZoneInfo(name="fadezone", zone_level_height=10),
             "allzone": ZoneInfo(name="allzone", zone_level_height=10, show_all_map_levels=True),
+            "nozone": ZoneInfo(name="nozone"),  # no level metadata
         },
         boats=[],
         kael_faction_mobs=[],
-        zone_name_mapper={"fadezone": "fadezone", "allzone": "allzone"},
+        zone_name_mapper={"fadezone": "fadezone", "allzone": "allzone", "nozone": "nozone"},
         zone_who_mapper={},
     )
 
@@ -100,7 +125,7 @@ def synthetic_maps(tmp_path, monkeypatch):
     monkeypatch.setattr(
         MapData,
         "get_zone_dict",
-        staticmethod(lambda: {"fadezone": "fadezone", "allzone": "allzone"}),
+        staticmethod(lambda: {"fadezone": "fadezone", "allzone": "allzone", "nozone": "nozone"}),
     )
     monkeypatch.setattr(mapdata_module, "load_zone_database", lambda: zone_db)
 
@@ -167,6 +192,32 @@ def test_no_fading_before_first_player_location(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "fadezone")
     assert band_opacity(canvas, 0.0) == pytest.approx(1.0)
     assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
+
+
+def test_z_fade_can_be_disabled(qtbot, synthetic_maps) -> None:
+    config.data["maps"]["z_fade_enabled"] = False
+    canvas = make_canvas(qtbot, "fadezone")
+    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
+
+
+def test_z_fade_min_opacity_setting(qtbot, synthetic_maps) -> None:
+    config.data["maps"]["z_fade_min_opacity"] = 40
+    canvas = make_canvas(qtbot, "fadezone")
+    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    assert band_opacity(canvas, 100.0) == pytest.approx(0.4)
+
+
+def test_metadata_less_zone_fades_only_with_fallback(qtbot, synthetic_maps) -> None:
+    canvas = make_canvas(qtbot, "nozone")
+    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    # Default fallback 0: EQTool behavior, no fading.
+    assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
+
+    config.data["maps"]["z_fade_fallback_height"] = 10
+    canvas.update_()
+    assert band_opacity(canvas, 100.0) == pytest.approx(0.1)
+    assert band_opacity(canvas, 0.0) == pytest.approx(1.0)
 
 
 def test_use_z_layers_keeps_tiered_behavior(qtbot, synthetic_maps) -> None:

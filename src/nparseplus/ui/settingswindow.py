@@ -476,6 +476,37 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             spin.setSuffix(" %")
             spin.setValue(int(self._lc("maps", key, 100)))
             form.addRow(label, spin)
+
+        fade_box = QGroupBox("Smooth z-axis fade (when Z layers are off)", self)
+        fade_form = QFormLayout()
+        self._z_fade_enabled = QCheckBox(self)
+        self._z_fade_enabled.setChecked(bool(self._lc("maps", "z_fade_enabled", True)))
+        fade_form.addRow("Enabled", self._z_fade_enabled)
+        self._z_fade_min = QSpinBox(self)
+        self._z_fade_min.setRange(1, 100)
+        self._z_fade_min.setSuffix(" %")
+        self._z_fade_min.setValue(int(self._lc("maps", "z_fade_min_opacity", 10)))
+        self._z_fade_min.setToolTip("Opacity floor for geometry far above/below you.")
+        fade_form.addRow("Minimum opacity", self._z_fade_min)
+        self._z_fade_strength = QSpinBox(self)
+        self._z_fade_strength.setRange(25, 400)
+        self._z_fade_strength.setSuffix(" %")
+        self._z_fade_strength.setValue(int(self._lc("maps", "z_fade_strength", 100)))
+        self._z_fade_strength.setToolTip(
+            "Above 100% fades sooner and harder; below 100% keeps distant levels visible longer."
+        )
+        fade_form.addRow("Fade strength", self._z_fade_strength)
+        self._z_fade_fallback = QSpinBox(self)
+        self._z_fade_fallback.setRange(0, 1000)
+        self._z_fade_fallback.setSpecialValueText("(off)")
+        self._z_fade_fallback.setValue(int(self._lc("maps", "z_fade_fallback_height", 0)))
+        self._z_fade_fallback.setToolTip(
+            "Level height (z-units) assumed for zones without level metadata, "
+            "so they fade too. (off) = such zones never fade, like EQTool."
+        )
+        fade_form.addRow("Fallback level height", self._z_fade_fallback)
+        fade_box.setLayout(fade_form)
+        form.addRow(fade_box)
         return self._page(form)
 
     def _apply_maps(self) -> None:
@@ -484,6 +515,10 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._lc_set("maps", "current_z_alpha", self._z_current.value())
         self._lc_set("maps", "closest_z_alpha", self._z_closest.value())
         self._lc_set("maps", "other_z_alpha", self._z_other.value())
+        self._lc_set("maps", "z_fade_enabled", self._z_fade_enabled.isChecked())
+        self._lc_set("maps", "z_fade_min_opacity", self._z_fade_min.value())
+        self._lc_set("maps", "z_fade_strength", self._z_fade_strength.value())
+        self._lc_set("maps", "z_fade_fallback_height", self._z_fade_fallback.value())
 
     # -- Windows grid ------------------------------------------------------------------------
 

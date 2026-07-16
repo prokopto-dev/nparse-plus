@@ -102,6 +102,8 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     window._best_guess.setChecked(False)
     window._maps_line_width.setValue(3)
     window._z_closest.setValue(42)
+    window._z_fade_min.setValue(35)
+    window._z_fade_fallback.setValue(25)
     window.apply()
 
     # Pydantic side.
@@ -113,6 +115,8 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     # Legacy side.
     assert legacy["maps"]["line_width"] == 3
     assert legacy["maps"]["closest_z_alpha"] == 42
+    assert legacy["maps"]["z_fade_min_opacity"] == 35
+    assert legacy["maps"]["z_fade_fallback_height"] == 25
     # Bridge callables: exactly once each.
     assert calls == {"save": 1, "legacy_save": 1, "notify": 1, "repaint": 1}
     assert dir_changes == [tmp_path]

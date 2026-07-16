@@ -3,6 +3,11 @@
 Port of EQTool's MapOpacityHelper.AdjustOpacity: map geometry fades out
 smoothly as its z distance from the player grows, using the per-zone
 ``zone_level_height`` from the zone database.
+
+Deliberate divergence from the C#: the curve is tunable. EQTool hardcodes
+the 0.1 opacity floor and never fades zones without level metadata; here
+``min_opacity``, ``strength``, and ``fallback_height`` are settings-driven
+(defaults reproduce EQTool exactly).
 """
 
 from __future__ import annotations
@@ -13,29 +18,40 @@ MIN_OPACITY = 0.1
 DEFAULT_BAND_WIDTH = 10.0
 
 
-def fade_opacity(distance: float, zone_level_height: int | None) -> float:
+def fade_opacity(
+    distance: float,
+    zone_level_height: int | None,
+    *,
+    min_opacity: float = MIN_OPACITY,
+    strength: float = 1.0,
+    fallback_height: float = 0.0,
+) -> float:
     """Opacity for a map element ``distance`` z-units away from the player.
 
     Exact port of EQTool's MapOpacityHelper.AdjustOpacity curve, with
     ``h = zone_level_height``:
 
     - ``d < h``: fully opaque (1.0)
-    - ``h <= d <= 3h``: ``((2h) - (d - h)) / (2h) + 0.1`` clamped to [0.1, 1.0]
-    - ``d > 3h``: 0.1
+    - ``h <= d <= 3h``: ``((2h) - (d - h)) / (2h) + min_opacity`` clamped
+      to [min_opacity, 1.0]
+    - ``d > 3h``: min_opacity
 
-    A falsy ``zone_level_height`` means the zone has no level metadata, so
-    nothing fades (1.0).
+    ``strength`` divides the effective height (>1 fades sooner/harder,
+    <1 later/softer). ``fallback_height`` substitutes for zones without
+    level metadata; when both are falsy nothing fades (1.0, the EQTool
+    behavior).
     """
-    if not zone_level_height:
+    height = zone_level_height or fallback_height
+    if not height or strength <= 0:
         return 1.0
-    h = float(zone_level_height)
+    h = float(height) / strength
     d = abs(distance)
     if d < h:
         return 1.0
     if d <= 3.0 * h:
-        value = ((2.0 * h) - (d - h)) / (2.0 * h) + MIN_OPACITY
-        return min(max(value, MIN_OPACITY), 1.0)
-    return MIN_OPACITY
+        value = ((2.0 * h) - (d - h)) / (2.0 * h) + min_opacity
+        return min(max(value, min_opacity), 1.0)
+    return min_opacity
 
 
 def band_width_for(zone_level_height: int | None) -> float:

@@ -140,12 +140,21 @@ class MapCanvas(QGraphicsView):
                 pass
 
         # Smooth EQTool-style z fading (default when z layers are off):
-        # fade each z-band by its distance from the player's z.
+        # fade each z-band by its distance from the player's z. The curve is
+        # user-tunable; a fallback height lets zones without level metadata
+        # fade too (0 keeps the EQTool no-fade behavior for them).
         you = self._data.players.get("__you__", None)
+        fade_fallback = float(config.data["maps"]["z_fade_fallback_height"])
+        fade_kwargs = {
+            "min_opacity": config.data["maps"]["z_fade_min_opacity"] / 100,
+            "strength": config.data["maps"]["z_fade_strength"] / 100,
+            "fallback_height": fade_fallback,
+        }
         smooth_fade = (
-            not use_z_layers
+            config.data["maps"]["z_fade_enabled"]
+            and not use_z_layers
             and not self._data.show_all_map_levels
-            and bool(self._data.zone_level_height)
+            and bool(self._data.zone_level_height or fade_fallback)
             and you is not None
         )
         player_z = you.location.z if you else None
@@ -167,7 +176,11 @@ class MapCanvas(QGraphicsView):
                 else:
                     alpha = other_alpha
             elif smooth_fade:
-                alpha = fade_opacity(abs(band["center_z"] - player_z), self._data.zone_level_height)
+                alpha = fade_opacity(
+                    abs(band["center_z"] - player_z),
+                    self._data.zone_level_height,
+                    **fade_kwargs,
+                )
             else:
                 alpha = 1.0
             # lines
@@ -211,7 +224,11 @@ class MapCanvas(QGraphicsView):
                         p.text.setOpacity(other_alpha)
                 elif smooth_fade:
                     p.text.setOpacity(
-                        fade_opacity(abs(p.location.z - player_z), self._data.zone_level_height)
+                        fade_opacity(
+                            abs(p.location.z - player_z),
+                            self._data.zone_level_height,
+                            **fade_kwargs,
+                        )
                     )
                 else:
                     p.text.setOpacity(1.0)
