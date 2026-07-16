@@ -204,5 +204,8 @@ class ItemPrice(WireModel):
     total_wts_last_30_days_average: Annotated[int, _wire_alias("TotalWTSLast30DaysAverage")] = 0
     total_wts_last_90_days_count: Annotated[int, _wire_alias("TotalWTSLast90DaysCount")] = 0
     total_wts_last_90_days_average: Annotated[int, _wire_alias("TotalWTSLast90DaysAverage")] = 0
+    # MobInfo's displayed price is the 6-month WTS average (ConHandler.cs).
+    total_wts_last_6_months_count: Annotated[int, _wire_alias("TotalWTSLast6MonthsCount")] = 0
+    total_wts_last_6_months_average: Annotated[int, _wire_alias("TotalWTSLast6MonthsAverage")] = 0
 
     _naive = field_validator("last_wts_seen")(_naive_local_opt)

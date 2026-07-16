@@ -15,6 +15,7 @@ from nparseplus.config.settings import Settings
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.driver import LogDriver
+from nparseplus.core.handlers.api_timers import ApiTimersService
 from nparseplus.core.handlers.bard_count import BardCountHandler
 from nparseplus.core.handlers.boat import BoatHandler
 from nparseplus.core.handlers.complete_heal import CompleteHealCommsHandler, CompleteHealHandler
@@ -32,6 +33,7 @@ from nparseplus.core.handlers.ring_war import RingWarHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.handlers.you_zoned import YouZonedHandler
+from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
 from nparseplus.core.logarchive import LogArchiveService
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
@@ -171,35 +173,11 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
     player_pet = PlayerPet()
     npcs = load_master_npc_list()
 
-    handlers: list[object] = [
-        YouZonedHandler(bus, player),
-        SpellTimerHandler(bus, player, spells, timers),
-        DpsHandler(bus, player, fights),
-        SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
-        RandomRollHandler(bus, player, timers),
-        FTEHandler(bus, player, timers, speaker=speaker),
-        QuakeHandler(bus, player, speaker=speaker),
-        RingWarHandler(bus, player, timers),
-        BoatHandler(bus, player, timers, zones),
-        PetHandler(bus, player, pets, player_pet=player_pet),
-        ConHandler(bus, player, zones, player_pet=player_pet, mob_info=mob_info),
-        DisciplineCooldownHandler(bus, player, timers),
-        MendWoundsHandler(bus, player, timers),
-        CompleteHealCommsHandler(bus, player, npcs=npcs),
-        CompleteHealHandler(bus, player, speaker=speaker),
-        BardCountHandler(bus, player, speaker=speaker, timers=timers),
-        DeathLoopHandler(bus, player, speaker=speaker),
-        GroupLeaderHandler(bus, player),
-    ]
-
-    archiver = LogArchiveService(
-        get_log_dir=lambda: settings.general.eq_log_dir,
-        is_enabled=lambda: settings.general.log_archive_enabled,
-        get_threshold_mb=lambda: settings.general.log_archive_size_mb,
-    )
-
     # Sharing: the coordinator always exists (it is the mode gate); the
     # network client and REST plumbing only when a sharing mode is on.
+    # Handlers get api+submit (or None/None, turning their sends into
+    # no-ops); results apply back on the driver thread via the coordinator
+    # inbox.
     sharing = SharingCoordinator(
         bus=bus,
         player=player,
@@ -219,12 +197,51 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
         net_worker = NetWorker(deliver=sharing.enqueue_inbound)
     # (the "nparse" websocket mode lands with the M3 fallback step)
     sharing.set_client(sharing_client)
+    submit = net_worker.submit if net_worker is not None else None
+
+    handlers: list[object] = [
+        YouZonedHandler(bus, player),
+        SpellTimerHandler(bus, player, spells, timers),
+        DpsHandler(bus, player, fights),
+        SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
+        RandomRollHandler(bus, player, timers),
+        FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=submit),
+        QuakeHandler(bus, player, speaker=speaker, api=pigparse_api, submit=submit),
+        RingWarHandler(bus, player, timers),
+        BoatHandler(bus, player, timers, zones, api=pigparse_api, submit=submit),
+        PetHandler(bus, player, pets, player_pet=player_pet),
+        ConHandler(
+            bus,
+            player,
+            zones,
+            player_pet=player_pet,
+            mob_info=mob_info,
+            api=pigparse_api,
+            submit=submit,
+        ),
+        ZoneActivityHandler(bus, player, zones, api=pigparse_api, submit=submit),
+        DisciplineCooldownHandler(bus, player, timers),
+        MendWoundsHandler(bus, player, timers),
+        CompleteHealCommsHandler(bus, player, npcs=npcs),
+        CompleteHealHandler(bus, player, speaker=speaker),
+        BardCountHandler(bus, player, speaker=speaker, timers=timers),
+        DeathLoopHandler(bus, player, speaker=speaker),
+        GroupLeaderHandler(bus, player),
+    ]
+    api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=submit)
+
+    archiver = LogArchiveService(
+        get_log_dir=lambda: settings.general.eq_log_dir,
+        is_enabled=lambda: settings.general.log_archive_enabled,
+        get_threshold_mb=lambda: settings.general.log_archive_size_mb,
+    )
 
     driver.on_tick.append(timers.tick)
     driver.on_tick.append(engine.tick)
     driver.on_tick.append(fights.tick)
     driver.on_tick.append(archiver.tick)
     driver.on_tick.append(sharing.tick)
+    driver.on_tick.append(api_timers.tick)
 
     return Backend(
         settings=settings,

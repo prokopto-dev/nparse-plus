@@ -1,9 +1,9 @@
 """Mob info overlay — shows the last-considered mob (MobInfoState).
 
-Port of the local-data half of EQTool's UI/MobInfo.xaml: name, zone,
-respawn time, notable flag, pet indicator, and a button opening the mob's
-P99 wiki page in the user's browser. Wiki/pricing enrichment arrives with
-the M3 network layer.
+Port of EQTool's UI/MobInfo.xaml: name, zone, respawn time, notable flag,
+pet indicator, a button opening the mob's P99 wiki page, and — when the
+network layer has enriched the state — the known-loot list with PigParse
+6-month WTS average prices (clickable rows open the wiki page).
 """
 
 from __future__ import annotations
@@ -48,6 +48,12 @@ class MobInfoWindow(OverlayWindowBase):
         self._name.setWordWrap(True)
         self._detail = QLabel("", self)
         self._detail.setWordWrap(True)
+        self._loot = QLabel("", self)
+        self._loot.setObjectName("MobInfoLoot")
+        self._loot.setWordWrap(True)
+        self._loot.setTextFormat(Qt.TextFormat.RichText)
+        self._loot.setOpenExternalLinks(True)
+        self._loot.hide()
 
         self._wiki_button = QPushButton("Open wiki page", self)
         self._wiki_button.clicked.connect(self._open_wiki)
@@ -60,6 +66,7 @@ class MobInfoWindow(OverlayWindowBase):
         layout.setSpacing(4)
         layout.addWidget(self._name)
         layout.addWidget(self._detail)
+        layout.addWidget(self._loot)
         layout.addStretch(1)
         layout.addWidget(self._wiki_button)
         container.setLayout(layout)
@@ -88,6 +95,7 @@ class MobInfoWindow(OverlayWindowBase):
         if not mob.name:
             self._name.setText("Consider a mob…")
             self._detail.setText("")
+            self._loot.hide()
             self._wiki_button.setEnabled(False)
             return
         title = mob.name
@@ -102,7 +110,22 @@ class MobInfoWindow(OverlayWindowBase):
         if mob.spawn_seconds:
             parts.append(f"Respawn: {format_mmss(mob.spawn_seconds)}")
         self._detail.setText("\n".join(parts))
+        self._render_loot()
         self._wiki_button.setEnabled(not mob.is_pet)
+
+    def _render_loot(self) -> None:
+        loot = self._mob_info.loot
+        if not loot:
+            self._loot.hide()
+            self._loot.setText("")
+            return
+        rows = []
+        for entry in loot[:12]:
+            price = f" — {entry.price}p" if entry.price and entry.price != "0" else ""
+            rows.append(f'<a href="{entry.url}" style="color:#9ecfff;">{entry.name}</a>{price}')
+        more = f"<br>… +{len(loot) - 12} more" if len(loot) > 12 else ""
+        self._loot.setText("Known loot:<br>" + "<br>".join(rows) + more)
+        self._loot.show()
 
     def _open_wiki(self) -> None:
         if self._mob_info.name:

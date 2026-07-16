@@ -6,11 +6,12 @@ its loop, from which the time to the sighted dock and to the far dock are
 projected. Rows live in the "Boats" group, one per schedule leg, named by
 the leg's pretty name.
 
-TODO(M3): EQTool's Services/Handlers/BoatHandler.cs only *sends* the
-sighting to PigParse; the countdowns are rebuilt from the server's shared
-BoatActivityResponce feed so everyone benefits from any sighting. The local
-projection below applies the same UpdateBoatInformation math to our own
-sightings until the sharing layer lands.
+EQTool's Services/Handlers/BoatHandler.cs only *sends* the sighting to
+PigParse; the countdowns are rebuilt from the server's shared
+BoatActivityResponce feed (``handlers.api_timers``, 5-minute refresh) so
+everyone benefits from any sighting. The local projection below applies the
+same UpdateBoatInformation math to our own sightings immediately — a
+deliberate divergence so a solo/offline install still gets countdowns.
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from nparseplus.core.bus import EventBus
+from nparseplus.core.enums import Boat
 from nparseplus.core.events import BoatEvent
 from nparseplus.core.handlers.base import BaseHandler
+from nparseplus.core.pigparse import PigParseApi, SubmitFn
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.timers import TimerRow, TimersService
 from nparseplus.core.zones import BoatInfo, ZoneDatabase
@@ -75,14 +78,29 @@ class BoatHandler(BaseHandler):
         player: ActivePlayer,
         timers: TimersService,
         zones: ZoneDatabase,
+        api: PigParseApi | None = None,
+        submit: SubmitFn | None = None,
     ) -> None:
         super().__init__(bus, player)
         self.timers = timers
         self.zones = zones
+        self.api = api
+        self.submit = submit
         bus.subscribe(BoatEvent, self._on_boat)
 
     def _on_boat(self, event: BoatEvent) -> None:
-        # TODO(M3): pigParseApi.SendBoatData equivalent (share the sighting).
+        api, submit, server = self.api, self.submit, self.player.server
+        if (
+            api is not None
+            and submit is not None
+            and server is not None
+            and event.boat in Boat.__members__
+        ):
+            boat_wire = int(Boat[event.boat])
+            start_point = event.start_point
+            submit(
+                lambda: api.boat_seen(start_point=start_point, boat=boat_wire, server=int(server))
+            )
         for leg, seconds in boat_dock_countdowns(
             self.zones, event.boat, event.start_point, event.timestamp, event.timestamp
         ):
