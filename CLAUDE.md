@@ -3,7 +3,7 @@
 nParse+ is a Python 3.12 EverQuest P99 log-parsing overlay: a fork of
 nomns/nparse rebuilt to feature parity with EQTool/PigParse (C#/WPF). If you
 are porting or checking behavior, the C# source of truth is
-github.com/smasherprog/eqtool at commit `fdd3f25a` (see CREDITS.md) — clone it
+github.com/smasherprog/eqtool at commit `d8e8084f` (see CREDITS.md) — clone it
 somewhere disposable and read it; do not vendor C# into this repo.
 
 ## Commands

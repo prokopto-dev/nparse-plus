@@ -15,7 +15,7 @@ Feature designs, log-parsing patterns, built-in trigger definitions, zone/respaw
 databases, pet data, and test fixtures are ported from
 [EQTool](https://github.com/smasherprog/eqtool) by smasherprog and contributors (MIT).
 
-- Ported from EQTool commit `fdd3f25a274defade4e6330c5b7724144a11000b`.
+- Ported from EQTool commit `d8e8084fe50a4f40b7c632e26be3e48dbced96f5`.
 - Ported data assets include: `EQToolShared/Zones.cs` (zone/respawn/boat data),
   `EQTool/Models/BuiltInTriggers.cs` (built-in trigger library),
   `EQTool/Files/All_Pet_Names.txt` / `Pet_Spells.txt`,
