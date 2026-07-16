@@ -212,7 +212,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     handlers: list[object] = [
         YouZonedHandler(bus, player),
         PlayerProfileHandler(bus, player, settings, request_save=request_save),
-        SpellTimerHandler(bus, player, spells, timers),
+        SpellTimerHandler(bus, player, spells, timers, spell_settings=settings.spellwindow),
         DpsHandler(bus, player, fights),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
         RandomRollHandler(bus, player, timers),

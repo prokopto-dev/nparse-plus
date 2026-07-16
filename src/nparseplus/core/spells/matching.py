@@ -14,12 +14,29 @@ Ports the candidate-selection logic the EQTool parsers share:
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.spells.models import Spell
 
 MAX_TARGET_WORDS = 5
+
+
+def hide_spell(
+    show_classes: Sequence[PlayerClass | int] | None,
+    spell_classes: Mapping[PlayerClass, int],
+) -> bool:
+    """Class-filter predicate — exact port of SpellUIExtensions.HideSpell.
+
+    Show (False) when the filter is None (EQTool's null = show all) or when
+    the spell has no class table; otherwise show iff ANY selected class can
+    cast the spell. Note the C# quirk kept on purpose: an EMPTY (non-null)
+    selection hides every spell that has castable classes.
+    """
+    if show_classes is None or not spell_classes:
+        return False
+    selected = {PlayerClass(cls) for cls in show_classes}
+    return not any(cls in spell_classes for cls in selected)
 
 
 def match_closest_level_to_spell(

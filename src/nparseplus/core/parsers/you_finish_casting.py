@@ -100,6 +100,16 @@ class YouFinishCastingParser:
             s for s in ctx.spells.cast_on_you(message) if s.name not in _IGNORE_SPELLS_FOR_GUESSES
         ]
         if candidates:
+            # Guess Spells off: an ambiguous cast-on-you line is recognized
+            # but publishes nothing — still consumed so later parsers don't
+            # misread it. (nparseplus option; EQTool's best-guess is always
+            # on. ctx without settings keeps guessing on for test harnesses.)
+            if (
+                len(candidates) > 1
+                and ctx.settings is not None
+                and not ctx.settings.spellwindow.best_guess_spells
+            ):
+                return True
             guessed = match_closest_level_to_spell(
                 candidates, ctx.player.player_class, ctx.player.level
             )

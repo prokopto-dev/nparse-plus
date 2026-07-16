@@ -45,7 +45,9 @@ def make_backend() -> types.SimpleNamespace:
             total_duration_s=30.0,
         )
     )
-    return types.SimpleNamespace(timers=timers, settings=Settings())
+    from nparseplus.core.player import ActivePlayer
+
+    return types.SimpleNamespace(timers=timers, settings=Settings(), player=ActivePlayer())
 
 
 def test_rows_render_and_you_group_first(qtbot):
@@ -83,6 +85,78 @@ def test_you_only_filter_hides_other_groups(qtbot):
 
     assert window.current_groups() == [YOU_GROUP]
     assert window.current_row_names() == ["Clarity"]
+
+
+def _add_player_spell(backend, name: str, class_levels: dict) -> None:
+    backend.timers.add_spell(
+        SpellRow(
+            name=name,
+            group="Joe",
+            updated_at=NOW,
+            is_target_player=True,
+            spell=Spell(id=hash(name) % 9999, name=name, class_levels=class_levels),
+            ends_at=NOW + timedelta(minutes=5),
+            total_duration_s=300.0,
+        )
+    )
+
+
+def _with_profile(backend, show_classes):
+    from nparseplus.config.settings import PlayerInfo
+    from nparseplus.core.enums import Server
+
+    backend.player.reset_for("Xantik", Server.GREEN)
+    backend.settings.players.append(
+        PlayerInfo(name="Xantik", server="green", show_spells_for_classes=show_classes)
+    )
+
+
+def test_class_filter_hides_unselected_classes(qtbot):
+    from nparseplus.core.enums import PlayerClass
+
+    backend = make_backend()
+    _with_profile(backend, [int(PlayerClass.CLERIC)])
+    _add_player_spell(backend, "Skin like Wood", {PlayerClass.DRUID: 14})
+    _add_player_spell(backend, "Courage", {PlayerClass.CLERIC: 1, PlayerClass.PALADIN: 9})
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+    names = window.current_row_names()
+    assert "Courage" in names  # a selected class can cast it
+    assert "Skin like Wood" not in names  # druid-only, filtered
+    assert "Clarity" in names  # YOU group always visible
+
+
+def test_class_filter_none_shows_all_and_npc_rows_survive(qtbot):
+    from nparseplus.core.enums import PlayerClass
+
+    backend = make_backend()
+    _with_profile(backend, None)  # None = show all (EQTool null default)
+    _add_player_spell(backend, "Skin like Wood", {PlayerClass.DRUID: 14})
+    backend.timers.add_spell(
+        SpellRow(
+            name="Tainted Breath",
+            group=" a rat ",
+            updated_at=NOW,
+            is_target_player=False,  # NPC target: never filtered
+            spell=Spell(id=2, name="Tainted Breath", class_levels={PlayerClass.SHAMAN: 4}),
+            ends_at=NOW + timedelta(seconds=42),
+            total_duration_s=42.0,
+        )
+    )
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+    names = window.current_row_names()
+    assert "Skin like Wood" in names
+    assert "Tainted Breath" in names
+
+    # Even with a restrictive filter, the NPC-target row survives.
+    backend.settings.players[0].show_spells_for_classes = [int(PlayerClass.CLERIC)]
+    window.refresh()
+    names = window.current_row_names()
+    assert "Tainted Breath" in names
+    assert "Skin like Wood" not in names
 
 
 def test_refresh_drops_removed_rows(qtbot):

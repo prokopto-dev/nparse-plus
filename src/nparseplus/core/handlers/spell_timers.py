@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from nparseplus.config.settings import SpellWindowSettings
 from nparseplus.core.bus import EventBus
 from nparseplus.core.events import (
     LineEvent,
@@ -138,11 +139,16 @@ class SpellTimerHandler(BaseHandler):
         spells: SpellBook,
         timers: TimersService,
         counter_lists: CounterLists | None = None,
+        spell_settings: SpellWindowSettings | None = None,
     ) -> None:
         super().__init__(bus, player)
         self.spells = spells
         self.timers = timers
         self.counters = counter_lists or load_counter_lists()
+        # Live shared object (composition passes settings.spellwindow).
+        self.spell_settings = (
+            spell_settings if spell_settings is not None else SpellWindowSettings()
+        )
         bus.subscribe(YouBeginCastingEvent, self._on_begin_casting)
         bus.subscribe(YouFinishCastingEvent, self._on_finish_casting)
         bus.subscribe(SpellCastOnYouEvent, self._on_cast_on_you)
@@ -195,6 +201,11 @@ class SpellTimerHandler(BaseHandler):
                 self.handle_spell(spell, target, 0, event.timestamp)
                 return
 
+        # Guess Spells off: an ambiguous line (several candidates) creates no
+        # timer — only exact single-candidate matches. (nparseplus option;
+        # EQTool's best-guess is always on.)
+        if not self.spell_settings.best_guess_spells and len(event.spells) > 1:
+            return
         spell = match_closest_level_to_spell(
             list(event.spells), self.player.player_class, self.player.level
         )

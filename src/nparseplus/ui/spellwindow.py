@@ -25,7 +25,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from nparseplus.config.settings import Settings, WindowState
+from nparseplus.config.settings import Settings, WindowState, find_player
+from nparseplus.core.player import ActivePlayer
+from nparseplus.core.spells.matching import hide_spell
 from nparseplus.core.timers import YOU_GROUP, CounterRow, RollRow, Row, SpellRow
 
 WINDOW_KEY = "spells"
@@ -51,6 +53,7 @@ class BackendLike(Protocol):
 
     timers: TimersLike
     settings: Settings
+    player: ActivePlayer
 
 
 def bar_color(row: Row) -> str:
@@ -209,6 +212,29 @@ class SpellTimerWindow(QWidget):
 
     # -- rendering -------------------------------------------------------------
 
+    def _row_hidden(self, row: Row) -> bool:
+        """Visibility pass — SpellWindowViewModel.cs order: the YOU group is
+        always visible, NPC targets are never hidden, then you_only_spells,
+        then the active character's class filter (HideSpell)."""
+        if row.group == YOU_GROUP:
+            return False
+        if isinstance(row, SpellRow) and not row.is_target_player:
+            return False
+        if self._backend.settings.spellwindow.you_only_spells:
+            return True
+        if isinstance(row, SpellRow):
+            info = self._active_player_info()
+            show_classes = info.show_spells_for_classes if info is not None else None
+            return hide_spell(show_classes, row.spell.class_levels)
+        return False
+
+    def _active_player_info(self):
+        player = self._backend.player
+        server_key = player.server_key
+        if server_key is None or not player.name:
+            return None
+        return find_player(self._backend.settings, player.name, server_key)
+
     def refresh(self) -> None:
         """Re-render from ``timers.snapshot()`` (rows are never mutated).
 
@@ -217,8 +243,7 @@ class SpellTimerWindow(QWidget):
         """
         now = datetime.now()
         rows = self._backend.timers.snapshot()
-        if self._backend.settings.spellwindow.you_only_spells:
-            rows = [row for row in rows if row.group == YOU_GROUP]
+        rows = [row for row in rows if not self._row_hidden(row)]
 
         grouped: dict[str, list[Row]] = {}
         for row in rows:
