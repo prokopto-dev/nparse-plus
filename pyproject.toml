@@ -46,6 +46,7 @@ dev = [
   "mypy>=1.10",
 ]
 build = [
+  "dmgbuild>=1.6.7",
   "pyinstaller>=6.8",
 ]
 

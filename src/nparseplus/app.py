@@ -59,7 +59,7 @@ def _ensure_data_cwd() -> None:
     holds ``data/`` instead.
     """
     if getattr(sys, "frozen", False):
-        os.chdir(sys._MEIPASS)  # type: ignore[attr-defined]  # noqa: SLF001
+        os.chdir(sys._MEIPASS)  # type: ignore[attr-defined]
         return
     if Path("data").is_dir():
         return

@@ -4,13 +4,16 @@ import sys
 
 
 def main() -> int:
-    try:  # PyInstaller splash screen, if present
-        import pyi_splash
+    # PyInstaller splash screen, if present (unsupported on macOS — and the
+    # mere import prints a traceback there, so don't try).
+    if sys.platform != "darwin":
+        try:
+            import pyi_splash
 
-        pyi_splash.update_text("Done!")
-        pyi_splash.close()
-    except Exception:
-        pass
+            pyi_splash.update_text("Done!")
+            pyi_splash.close()
+        except Exception:
+            pass
 
     # Deferred: nparseplus.app fixes the CWD (data/ + nparse.config.json are
     # CWD-relative) before the legacy modules import.
