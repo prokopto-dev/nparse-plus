@@ -26,10 +26,12 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QLabel,
     QProgressBar,
+    QSizeGrip,
     QVBoxLayout,
     QWidget,
 )
 
+from nparseplus.config.settings import WindowState
 from nparseplus.core.events import CompleteHealEvent, OverlayEvent, TimerBarEvent
 
 DEFAULT_CLEAR_AFTER_S = 4.0
@@ -120,25 +122,35 @@ class EventOverlayWindow(QWidget):
         self,
         clear_after_s: float = DEFAULT_CLEAR_AFTER_S,
         ch_lane_retention_s: float = DEFAULT_CH_LANE_RETENTION_S,
+        state: WindowState | None = None,
+        on_save: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._clear_after_ms = max(1000, int(clear_after_s * 1000))
         self._ch_lane_retention_s = max(0.0, ch_lane_retention_s)
+        self._state = state
+        self._on_save = on_save
+        self._edit_mode = False
+        self._drag_offset: QPoint | None = None
         self.setObjectName("EventOverlayWindow")
         self.setWindowTitle("Event Overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-            | Qt.WindowType.WindowTransparentForInput
-        )
+        # macOS: Qt.Tool windows normally hide when the app deactivates —
+        # this attribute keeps the overlay up while the game has focus.
+        self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+        self._apply_locked_flags()
 
-        screen = QApplication.primaryScreen()
-        if screen is not None:
-            self.setGeometry(screen.geometry())
+        # Region: persisted geometry if the user positioned it (e.g. centered
+        # over the P99 window), otherwise the primary screen.
+        geometry = state.geometry if state is not None else None
+        if geometry:
+            self.setGeometry(*geometry)
+        else:
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                self.setGeometry(screen.geometry())
 
         self._text_color = ""
         self._bars: dict[str, _TimerBar] = {}
@@ -188,7 +200,96 @@ class EventOverlayWindow(QWidget):
         self._bar_timer.setInterval(BAR_TICK_MS)
         self._bar_timer.timeout.connect(self._tick_bars)
 
+        # Position-mode chrome (hidden unless editing).
+        self._edit_hint = QLabel(
+            "Event overlay — drag to move, use the corner grip to resize,\n"
+            "double-click to lock in place",
+            self,
+        )
+        self._edit_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._edit_hint.setStyleSheet(
+            "color: white; font-size: 16px; font-weight: bold;"
+            " background-color: rgba(30, 60, 120, 120);"
+        )
+        self._edit_hint.hide()
+        self._size_grip = QSizeGrip(self)
+        self._size_grip.setFixedSize(24, 24)
+        self._size_grip.hide()
+
         self.hide()
+
+    # -- position mode -----------------------------------------------------------
+
+    def _apply_locked_flags(self) -> None:
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowTransparentForInput
+        )
+
+    def set_edit_mode(self, editing: bool) -> None:
+        """Position mode: the overlay becomes clickable/draggable/resizable so
+        the user can center it over the game window, then locks again."""
+        if editing == self._edit_mode:
+            return
+        self._edit_mode = editing
+        if editing:
+            self.setWindowFlags(
+                Qt.WindowType.FramelessWindowHint
+                | Qt.WindowType.WindowStaysOnTopHint
+                | Qt.WindowType.Tool
+            )
+            self._edit_hint.setGeometry(0, 0, self.width(), self.height())
+            self._edit_hint.show()
+            self._size_grip.move(self.width() - 26, self.height() - 26)
+            self._size_grip.show()
+            self.show()
+            self.raise_()
+        else:
+            self._edit_hint.hide()
+            self._size_grip.hide()
+            self._apply_locked_flags()
+            if self._state is not None:
+                geo = self.geometry()
+                self._state.geometry = (geo.x(), geo.y(), geo.width(), geo.height())
+                if self._on_save is not None:
+                    self._on_save()
+            self._update_visibility()
+
+    def is_edit_mode(self) -> bool:
+        return self._edit_mode
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._edit_mode:
+            self._edit_hint.setGeometry(0, 0, self.width(), self.height())
+            self._size_grip.move(self.width() - 26, self.height() - 26)
+
+    def mousePressEvent(self, event) -> None:
+        if self._edit_mode and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._edit_mode and self._drag_offset is not None:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if self._edit_mode:
+            self.set_edit_mode(False)
+            event.accept()
+        else:
+            super().mouseDoubleClickEvent(event)
 
     # -- event intake (connect the bridge's event_received signal here) ------------
 
@@ -308,6 +409,10 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _update_visibility(self) -> None:
+        if self._edit_mode:
+            if not self.isVisible():
+                self.show()
+            return
         active = bool(self._center_text.text()) or bool(self._bars) or bool(self._chain_lanes)
         if active and not self.isVisible():
             self.show()

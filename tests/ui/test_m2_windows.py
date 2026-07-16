@@ -183,3 +183,32 @@ def test_ch_lane_never_removed_with_chips_in_flight(qtbot) -> None:
     lane.last_call = lane.last_call - timedelta(seconds=999)
     overlay._maybe_remove_lane("Tanky")
     assert "Tanky" in overlay.current_chain_lanes()
+
+
+def test_event_overlay_position_mode_persists_geometry(qtbot) -> None:
+    from nparseplus.config.settings import WindowState
+
+    saves = []
+    state = WindowState()
+    overlay = EventOverlayWindow(state=state, on_save=lambda: saves.append(1))
+    qtbot.addWidget(overlay)
+    overlay.set_edit_mode(True)
+    assert overlay.is_edit_mode()
+    assert overlay.isVisible()
+    overlay.setGeometry(100, 120, 800, 500)
+    overlay.set_edit_mode(False)
+    assert not overlay.is_edit_mode()
+    assert state.geometry == (100, 120, 800, 500)
+    assert saves == [1]
+    # locked again: hides when idle
+    assert not overlay.is_active()
+
+
+def test_event_overlay_uses_persisted_geometry(qtbot) -> None:
+    from nparseplus.config.settings import WindowState
+
+    state = WindowState(geometry=(50, 60, 640, 400))
+    overlay = EventOverlayWindow(state=state)
+    qtbot.addWidget(overlay)
+    geo = overlay.geometry()
+    assert (geo.x(), geo.y(), geo.width(), geo.height()) == (50, 60, 640, 400)

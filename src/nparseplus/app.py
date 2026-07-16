@@ -18,7 +18,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nparseplus.composition import Backend, build_backend
-from nparseplus.config.settings import Settings, load_settings, save_settings
+from nparseplus.config.settings import Settings, WindowState, load_settings, save_settings
+
+
+class _OverlayPositioner:
+    """Tray-menu adapter: 'toggling' this enters/exits the event overlay's
+    position mode (checkable item shows whether positioning is active)."""
+
+    def __init__(self, overlay) -> None:
+        self._overlay = overlay
+
+    def toggle(self) -> None:
+        self._overlay.set_edit_mode(not self._overlay.is_edit_mode())
+
+    def isVisible(self) -> bool:
+        return self._overlay.is_edit_mode()
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -108,9 +123,12 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     dps_window = DpsMeterWindow(backend, on_save=save)
     mob_info_window = MobInfoWindow(settings, backend.mob_info, on_save=save)
     console_window = ConsoleWindow(settings, on_save=save)
+    overlay_state = settings.windows.setdefault("overlay", WindowState())
     event_overlay = EventOverlayWindow(
         clear_after_s=settings.general.overlay_text_seconds,
         ch_lane_retention_s=settings.general.ch_lane_retention_seconds,
+        state=overlay_state,
+        on_save=save,
     )
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
@@ -122,6 +140,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "DPS Meter": dps_window,
             "Mob Info": mob_info_window,
             "Console": console_window,
+            "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
     )
     app.aboutToQuit.connect(backend.stop)
