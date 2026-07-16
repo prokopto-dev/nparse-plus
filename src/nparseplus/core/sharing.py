@@ -24,13 +24,24 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from queue import Empty, SimpleQueue
 from typing import TYPE_CHECKING, Protocol
 
 from nparseplus.core.enums import MapLocationSharing
-from nparseplus.core.events import CampEvent, DragonRoarEvent, PlayerLocationEvent
+from nparseplus.core.events import (
+    CampEvent,
+    CustomTimerReceivedRemoteEvent,
+    DragonRoarEvent,
+    DragonRoarRemoteEvent,
+    OtherPlayerLocationReceivedRemoteEvent,
+    PlayerDisconnectReceivedRemoteEvent,
+    PlayerLocationEvent,
+    RemotePlayer,
+)
 from nparseplus.core.geometry import Loc
+from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
+from nparseplus.core.timers import TimerRow
 
 if TYPE_CHECKING:
     from nparseplus.config.settings import PlayerInfo, Settings
@@ -129,7 +140,7 @@ class SharingCoordinator:
 
     def tick(self, now: datetime) -> None:
         self._sync_server()
-        self._drain_inbox()
+        self._drain_inbox(now)
         self._keepalive(now)
 
     def _sync_server(self) -> None:
@@ -138,25 +149,75 @@ class SharingCoordinator:
             self._client_server = server
             self._client.set_server(server)
 
-    def _drain_inbox(self) -> None:
+    def _drain_inbox(self, now: datetime) -> None:
         while True:
             try:
                 item = self._inbox.get_nowait()
             except Empty:
                 return
             try:
-                self._dispatch_inbound(item)
+                self._dispatch_inbound(item, now)
             except Exception:
                 logger.exception("sharing inbound dispatch failed for %r", type(item).__name__)
 
-    def _dispatch_inbound(self, item: object) -> None:
+    def _dispatch_inbound(self, item: object, now: datetime) -> None:
         if callable(item):
             # A NetWorker delivery: apply a fetched result on the driver thread.
             item()
             return
-        # Remote-event handling (map dots, shared timers) lands with the
-        # inbound milestone step; unknown items are dropped loudly.
+        if isinstance(
+            item, OtherPlayerLocationReceivedRemoteEvent | PlayerDisconnectReceivedRemoteEvent
+        ):
+            if self._is_self_echo(item.player):
+                return
+            self.bus.publish(item)
+            return
+        if isinstance(item, DragonRoarRemoteEvent):
+            # C# acts only on same-server roars when this character shares
+            # timers. (At the pinned commit nothing in EQTool subscribes to
+            # the remote roar — publish-only, no local timer effect.)
+            info = self._player_info()
+            share_timers = info.share_timers if info is not None else True
+            my_server = self._my_server_int()
+            if my_server is not None and item.server == my_server and share_timers:
+                self.bus.publish(item)
+            return
+        if isinstance(item, CustomTimerReceivedRemoteEvent):
+            if self._my_server_int() is None or item.server != self._my_server_int():
+                return
+            self._add_remote_custom_timer(item, now)
+            self.bus.publish(item)
+            return
         logger.debug("sharing inbound item ignored: %r", type(item).__name__)
+
+    def _is_self_echo(self, remote: RemotePlayer) -> bool:
+        """The hub echoes our own frames back; drop name+server matches
+        (case-sensitive, like SignalrPlayerHub.cs)."""
+        return remote.name == self._share_name() and remote.server == self._my_server_int()
+
+    def _my_server_int(self) -> int | None:
+        return int(self.player.server) if self.player.server is not None else None
+
+    def _add_remote_custom_timer(self, item: CustomTimerReceivedRemoteEvent, now: datetime) -> None:
+        """Port of SignalrPlayerHub.CustomTriggerReceived: one shared timer
+        row, restarted if it already exists. (The C# also colors the Kael
+        pull row LightPink and falls back to the Feign Death icon; our rows
+        carry no color/icon — the spell window styles the group.)"""
+        ends_at = now + timedelta(seconds=item.duration_in_seconds)
+        existing = self.timers.find(item.name, CUSTOM_TIMER_GROUP)
+        if isinstance(existing, TimerRow):
+            existing.ends_at = ends_at
+            existing.updated_at = now
+            return
+        self.timers.add_timer(
+            TimerRow(
+                name=item.name,
+                group=CUSTOM_TIMER_GROUP,
+                updated_at=now,
+                ends_at=ends_at,
+                total_duration_s=float(item.duration_in_seconds),
+            )
+        )
 
     def _keepalive(self, now: datetime) -> None:
         if self._last_loc is None or self._last_send_time is None:

@@ -1,6 +1,7 @@
 """Map parser for nparse."""
 
 import re
+from datetime import datetime
 
 from PySide6.QtCore import QObject, QPoint, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -12,6 +13,10 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
+from nparseplus.core.events import (
+    OtherPlayerLocationReceivedRemoteEvent,
+    PlayerDisconnectReceivedRemoteEvent,
+)
 from nparseplus.core.npc_search import NpcSearchIndex, normalize_name, search_all_zones
 from nparseplus.core.zones import load_zone_database
 from nparseplus.helpers import config, to_real_xy
@@ -143,6 +148,31 @@ class Maps(ParserWindow):
             self._map.load_map(config.data["maps"]["last_zone"])
         else:
             self._map.load_map("west freeport")
+
+        # Remote (shared) player dots go stale after 1 minute without a
+        # refresh — EQTool sweeps every second (MappingWindow UITimer).
+        self._remote_expiry_timer = QTimer(self)
+        self._remote_expiry_timer.setInterval(1000)
+        self._remote_expiry_timer.timeout.connect(self._map.expire_players)
+        self._remote_expiry_timer.start()
+
+    def handle_remote_event(self, event):
+        """Shared-player events from the backend bus (queued Qt bridge).
+
+        Wire coordinates are in the raw ``/loc`` print order (see
+        core.events.RemotePlayer); map scene space is ``(-second, -first)``
+        of that order — the same transform ``to_real_xy`` applies to the
+        local ``Your Location is`` line above.
+        """
+        if isinstance(event, OtherPlayerLocationReceivedRemoteEvent):
+            remote = event.player
+            zone_key = self._map._data.short_zone_key if self._map._data else None
+            if remote.zone and zone_key and remote.zone != zone_key:
+                return  # another zone (nparse-mode state spans zones)
+            point = MapPoint(x=-remote.y, y=-remote.x, z=remote.z)
+            self._map.add_player(remote.name, datetime.now(), point)
+        elif isinstance(event, PlayerDisconnectReceivedRemoteEvent):
+            self._map.remove_player(event.player.name)
 
     def parse(self, timestamp, text):
         if text[:23] == "LOADING, PLEASE WAIT...":

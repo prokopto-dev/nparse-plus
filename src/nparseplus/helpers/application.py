@@ -94,6 +94,11 @@ class NomnsParse(QApplication):
                 msecs=3000,
             )
 
+    @property
+    def maps_window(self):
+        """The legacy Maps parser window (remote map dots attach to it)."""
+        return self._parsers_dict.get("maps")
+
     def _load_parsers(self):
         # Backend mode: the legacy spells window is replaced by the new
         # SpellTimerWindow, so keep it out of the parser list entirely.

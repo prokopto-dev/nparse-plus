@@ -4,9 +4,10 @@ Detects "You have entered <zone>." and the "/who" style
 "There are X players in <zone>." / "There is 1 player in <zone>." lines.
 
 Divergence from EQTool: the C# parser only publishes when the long name
-translates to a known map short name (Zones.TranslateToMapName). Until the
-zone database is wired into ParseContext, this port publishes the detected
-(lowercased) long name with a best-effort short name.
+translates to a known map short name (Zones.TranslateToMapName); this port
+publishes the detected (lowercased) long name always, with the zone-database
+short name when known (falling back to a squashed long name for unknown
+zones so downstream consumers still get an event).
 """
 
 from __future__ import annotations
@@ -24,11 +25,7 @@ _IN = "in "
 
 
 def _best_effort_short_name(long_name: str) -> str:
-    """Placeholder long→short zone-name mapping.
-
-    TODO: replace with a ZoneDatabase lookup backed by data/zones.json
-    (aliases.zone_name_mapper / aliases.zone_who_mapper tables).
-    """
+    """Fallback long→short squash for zones the database doesn't know."""
     return long_name.lower().replace(" ", "")
 
 
@@ -60,13 +57,17 @@ class YouZonedParser:
         long_name = _zone_changed(line.message)
         if not long_name.strip():
             return False
+        short_name = None
+        if ctx.zones is not None:
+            # Zones.TranslateToMapName: try the zone-name table, then /who.
+            short_name = ctx.zones.short_name(long_name) or ctx.zones.short_name_from_who(long_name)
         ctx.bus.publish(
             YouZonedEvent(
                 timestamp=line.timestamp,
                 line=line.message,
                 line_number=line.line_number,
                 long_name=long_name,
-                short_name=_best_effort_short_name(long_name),
+                short_name=short_name or _best_effort_short_name(long_name),
             )
         )
         return True

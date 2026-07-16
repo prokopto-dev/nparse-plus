@@ -2,6 +2,7 @@
 import math
 import os
 import traceback
+from datetime import datetime
 
 import pathvalidate
 from PySide6.QtCore import Qt, QTimer
@@ -290,9 +291,30 @@ class MapCanvas(QGraphicsView):
             self.centerOn(player.location.x, player.location.y)
 
     def remove_player(self, name):
-        player = self._data.players.pop(name)
+        player = self._data.players.pop(name, None)
         if player:
             self._scene.removeItem(player)
+
+    def expire_players(self, max_age_s=60.0):
+        """Drop remote dots not refreshed within max_age_s (EQTool: 1 minute).
+
+        "__you__" never expires; remote dots are stamped with datetime.now()
+        on arrival (see Maps.handle_remote_event).
+        """
+        if not self._data:
+            return
+        now = datetime.now()
+        stale = [
+            name
+            for name, player in self._data.players.items()
+            if name != "__you__"
+            and isinstance(player.timestamp, datetime)
+            and (now - player.timestamp).total_seconds() > max_age_s
+        ]
+        for name in stale:
+            self.remove_player(name)
+        if stale:
+            self.update_()
 
     def add_player(self, name, timestamp, location):
         if name not in self._data.players:

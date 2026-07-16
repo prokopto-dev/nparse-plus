@@ -31,6 +31,7 @@ from nparseplus.core.handlers.random_roll import RandomRollHandler
 from nparseplus.core.handlers.ring_war import RingWarHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
+from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.logarchive import LogArchiveService
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
@@ -171,6 +172,7 @@ def build_backend(settings: Settings, speaker=None) -> Backend:
     npcs = load_master_npc_list()
 
     handlers: list[object] = [
+        YouZonedHandler(bus, player),
         SpellTimerHandler(bus, player, spells, timers),
         DpsHandler(bus, player, fights),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
