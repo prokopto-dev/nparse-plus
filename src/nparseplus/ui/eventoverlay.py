@@ -14,6 +14,7 @@ show. Unlike the other overlays it has no tray toggle and persists nothing.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -39,10 +40,12 @@ DEFAULT_BAR_COLOR = "steelblue"
 
 # CH chain lane (EQTool EventOverlay.xaml.cs): each CH call is a green chip
 # labeled with the caster's position, sliding across the lane over the CH
-# cast time; empty lanes disappear after a grace period.
+# cast time. A lane never disappears while chips are in flight, and persists
+# ``ch_lane_retention_s`` (default 20s) past the last CH call for its target,
+# so healers keep a stable anchor for who is being chain-healed.
 CH_CHIP_SECONDS = 11.0
 CH_LANE_HEIGHT = 30
-CH_LANE_GRACE_MS = 5000
+DEFAULT_CH_LANE_RETENTION_S = 20.0
 
 
 def resolve_color(token: str | None, fallback: str) -> str:
@@ -68,6 +71,9 @@ class _ChainLane(QFrame):
         super().__init__(parent)
         self.target = target
         self.chips: list[QLabel] = []
+        self.last_call: datetime = datetime.now()
+        # Called (with no args) whenever a chip finishes its slide.
+        self.on_chip_done: Callable[[], None] | None = None
         self.setObjectName("ChChainLane")
         self.setFixedHeight(CH_LANE_HEIGHT)
         self.setStyleSheet(
@@ -103,16 +109,22 @@ class _ChainLane(QFrame):
         if chip in self.chips:
             self.chips.remove(chip)
         chip.deleteLater()
+        if self.on_chip_done is not None:
+            self.on_chip_done()
 
 
 class EventOverlayWindow(QWidget):
     """Clickthrough full-screen overlay driven by bridge events."""
 
     def __init__(
-        self, clear_after_s: float = DEFAULT_CLEAR_AFTER_S, parent: QWidget | None = None
+        self,
+        clear_after_s: float = DEFAULT_CLEAR_AFTER_S,
+        ch_lane_retention_s: float = DEFAULT_CH_LANE_RETENTION_S,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._clear_after_ms = max(1000, int(clear_after_s * 1000))
+        self._ch_lane_retention_s = max(0.0, ch_lane_retention_s)
         self.setObjectName("EventOverlayWindow")
         self.setWindowTitle("Event Overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -194,19 +206,30 @@ class EventOverlayWindow(QWidget):
         if lane is None:
             lane = _ChainLane(target, self)
             lane.setFixedWidth(520)
+            lane.on_chip_done = lambda t=target: QTimer.singleShot(
+                100, lambda: self._maybe_remove_lane(t)
+            )
             self._chain_lanes[target] = lane
             self._lanes_layout.addWidget(lane)
             lane.show()
+        lane.last_call = datetime.now()
         lane.add_chip(event.position or "?")
+        # Re-check just past the retention window of THIS call; earlier
+        # timers fire harmlessly (retention not yet elapsed).
         QTimer.singleShot(
-            int(CH_CHIP_SECONDS * 1000) + CH_LANE_GRACE_MS,
+            int(self._ch_lane_retention_s * 1000) + 250,
             lambda: self._maybe_remove_lane(target),
         )
         self._update_visibility()
 
     def _maybe_remove_lane(self, target: str) -> None:
+        """Remove a lane only when it has no chips in flight AND the retention
+        window since its last CH call has fully elapsed."""
         lane = self._chain_lanes.get(target)
-        if lane is not None and not lane.chips:
+        if lane is None:
+            return
+        idle_s = (datetime.now() - lane.last_call).total_seconds()
+        if not lane.chips and idle_s >= self._ch_lane_retention_s:
             self._lanes_layout.removeWidget(lane)
             lane.deleteLater()
             del self._chain_lanes[target]
@@ -285,9 +308,7 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _update_visibility(self) -> None:
-        active = (
-            bool(self._center_text.text()) or bool(self._bars) or bool(self._chain_lanes)
-        )
+        active = bool(self._center_text.text()) or bool(self._bars) or bool(self._chain_lanes)
         if active and not self.isVisible():
             self.show()
         elif not active and self.isVisible():

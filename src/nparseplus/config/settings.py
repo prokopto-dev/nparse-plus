@@ -50,6 +50,9 @@ class GeneralSettings(BaseModel):
     log_archive_size_mb: int = Field(default=100, ge=1)
     # How long overlay alert text (ENRAGED, FTE, CH warnings...) stays on screen.
     overlay_text_seconds: float = Field(default=4.0, ge=1.0, le=30.0)
+    # How long a CH chain lane stays visible after the last CH call for its
+    # target (chips in flight always keep the lane alive regardless).
+    ch_lane_retention_seconds: float = Field(default=20.0, ge=5.0, le=300.0)
 
 
 class SharingSettings(BaseModel):

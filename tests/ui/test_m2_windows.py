@@ -147,3 +147,39 @@ def test_event_overlay_ch_chain_lanes(qtbot) -> None:
     assert lanes["Tanky"] == ["001", "002"]
     assert lanes["Backup"] == ["001"]
     assert overlay.is_active()
+
+
+def test_ch_lane_retention_keeps_lane_after_chips(qtbot) -> None:
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow(ch_lane_retention_s=20.0)
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes["Tanky"]
+    # Simulate all chips having finished their slide: lane must persist
+    # because the retention window since the last call has not elapsed.
+    lane.chips.clear()
+    overlay._maybe_remove_lane("Tanky")
+    assert "Tanky" in overlay.current_chain_lanes()
+    assert overlay.is_active()
+    # Once the retention window has elapsed (simulated), the lane goes away.
+    lane.last_call = lane.last_call - timedelta(seconds=21)
+    overlay._maybe_remove_lane("Tanky")
+    assert "Tanky" not in overlay.current_chain_lanes()
+
+
+def test_ch_lane_never_removed_with_chips_in_flight(qtbot) -> None:
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow(ch_lane_retention_s=20.0)
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes["Tanky"]
+    # Even with the retention window long past, in-flight chips pin the lane.
+    lane.last_call = lane.last_call - timedelta(seconds=999)
+    overlay._maybe_remove_lane("Tanky")
+    assert "Tanky" in overlay.current_chain_lanes()
