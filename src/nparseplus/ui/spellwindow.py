@@ -318,6 +318,16 @@ class SpellTimerWindow(QWidget):
             flags |= Qt.WindowType.WindowTransparentForInput
         self.setWindowFlags(flags)
 
+    def apply_window_state(self) -> None:
+        """Re-apply opacity/flags from the (possibly just-edited) state.
+        (Copy of OverlayWindowBase.apply_window_state — this window predates
+        the base class.)"""
+        self.setWindowOpacity(self._state.opacity)
+        was_visible = self.isVisible()
+        self._apply_flags()
+        if was_visible:
+            self.show()
+
     def toggle(self) -> None:
         if self.isVisible():
             self.hide()

@@ -89,6 +89,18 @@ class OverlayWindowBase(QWidget):
             flags |= Qt.WindowType.WindowTransparentForInput
         self.setWindowFlags(flags)
 
+    def apply_window_state(self) -> None:
+        """Re-apply opacity/flags from the (possibly just-edited) state.
+
+        setWindowFlags hides the window, so re-show when it was visible —
+        same recipe as the legacy ParserWindow settings watcher.
+        """
+        self.setWindowOpacity(self._state.opacity)
+        was_visible = self.isVisible()
+        self._apply_flags()
+        if was_visible:
+            self.show()
+
     def toggle(self) -> None:
         if self.isVisible():
             self.hide()

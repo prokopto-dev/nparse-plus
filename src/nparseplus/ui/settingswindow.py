@@ -1,0 +1,720 @@
+"""The unified "nParse+ Settings" window — ONE settings surface.
+
+Replaces both the legacy ``helpers.settings.SettingsWindow`` QDialog (which
+edited the legacy ``config.data`` dict for the maps/discord windows) and the
+M2 ``PreferencesWindow`` (which edited the Pydantic ``Settings``). Until the
+maps window is rebuilt the app still runs two config systems, so this window
+is the dual-write bridge: Apply writes the Pydantic model AND the legacy
+dict, then notifies both worlds (``on_save`` / ``config.save`` +
+``config_updated``, which live-applies legacy window opacity/flags) and
+repaints the maps canvas (it reads its appearance keys at paint time).
+
+Everything external is injected (legacy dict, save/notify/repaint callables,
+window handles, backend player, zone database) so tests drive it with fakes.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from nparseplus.audio.tts import default_speaker, list_voices
+from nparseplus.config.settings import PlayerInfo, Settings, WindowState
+from nparseplus.core import visionfix
+from nparseplus.core.enums import PlayerClass
+from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
+from nparseplus.core.zones import ZoneDatabase
+from nparseplus.ui.overlaybase import OverlayWindowBase
+
+WINDOW_KEY = "settings"
+DEFAULT_GEOMETRY = (240, 160, 640, 560)
+
+# The Windows-grid rows. Legacy rows live in config.data[section]; new rows
+# live in Settings.windows[key] (handles get apply_window_state()).
+LEGACY_WINDOW_ROWS = [("Maps", "maps"), ("Discord", "discord")]
+NEW_WINDOW_ROWS = [
+    ("Spell Timers", "spells"),
+    ("DPS Meter", "dps"),
+    ("Mob Info", "mobinfo"),
+    ("Console", "console"),
+    ("Trigger Editor", "triggereditor"),
+]
+
+# Class combo entries: every playable class (no OTHER), EQTool SettingsGeneral.
+PLAYER_CLASSES = [cls for cls in PlayerClass if cls is not PlayerClass.OTHER]
+
+
+class _DirPicker(QWidget):
+    def __init__(self, caption: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._caption = caption
+        self.edit = QLineEdit(self)
+        button = QPushButton("…", self)
+        button.setFixedWidth(28)
+        button.clicked.connect(self._browse)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.edit, 1)
+        layout.addWidget(button, 0)
+        self.setLayout(layout)
+
+    def _browse(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, self._caption, self.edit.text())
+        if path:
+            self.edit.setText(path)
+
+    def path(self) -> str:
+        return self.edit.text().strip()
+
+
+class _WindowRow:
+    """One Windows-grid row: on-top checkbox + opacity slider (+clickthrough)."""
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        on_top: bool,
+        opacity_pct: int,
+        clickthrough: bool | None = None,
+        handle: object | None = None,
+    ) -> None:
+        self.label = label
+        self.handle = handle
+        self.on_top = QCheckBox()
+        self.on_top.setChecked(on_top)
+        self.opacity = QSlider(Qt.Orientation.Horizontal)
+        self.opacity.setRange(10, 100)  # 10% floor: a window must stay findable
+        self.opacity.setValue(max(10, min(100, opacity_pct)))
+        self.opacity.valueChanged.connect(self._live_preview)
+        self.clickthrough: QCheckBox | None = None
+        if clickthrough is not None:
+            self.clickthrough = QCheckBox()
+            self.clickthrough.setChecked(clickthrough)
+
+    def _live_preview(self, value: int) -> None:
+        if self.handle is not None:
+            try:
+                self.handle.setWindowOpacity(value / 100)
+            except Exception:
+                pass  # a fake/absent handle must never break the slider
+
+
+class UnifiedSettingsWindow(OverlayWindowBase):
+    def __init__(
+        self,
+        settings: Settings,
+        on_save: Callable[[], None],
+        *,
+        on_log_dir_changed: Callable[[Path], None] | None = None,
+        legacy_config: dict[str, Any] | None = None,
+        on_legacy_save: Callable[[], None] | None = None,
+        notify_legacy: Callable[[], None] | None = None,
+        repaint_maps: Callable[[], None] | None = None,
+        window_handles: dict[str, object] | None = None,
+        backend_player: ActivePlayer | None = None,
+        zones: ZoneDatabase | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(
+            settings=settings,
+            window_key=WINDOW_KEY,
+            title="nParse+ Settings",
+            default_geometry=DEFAULT_GEOMETRY,
+            on_save=on_save,
+            default_state=WindowState(frameless=False, always_on_top=False),
+            translucent=False,
+            parent=parent,
+        )
+        self._on_log_dir_changed = on_log_dir_changed
+        self._legacy = legacy_config if legacy_config is not None else {}
+        self._on_legacy_save = on_legacy_save
+        self._notify_legacy = notify_legacy
+        self._repaint_maps = repaint_maps
+        self._handles = window_handles or {}
+        self._backend_player = backend_player
+        self._zones = zones
+
+        self._sidebar = QListWidget(self)
+        self._sidebar.setFixedWidth(140)
+        self._stack = QStackedWidget(self)
+        self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
+
+        for name, builder in (
+            ("General", self._build_general),
+            ("Character", self._build_character),
+            ("Spell Timers", self._build_spell_timers),
+            ("Maps", self._build_maps),
+            ("Windows", self._build_windows_grid),
+            ("Audio && Overlays", self._build_audio_overlays),
+            ("Sharing", self._build_sharing),
+            ("Advanced", self._build_advanced),
+        ):
+            self._sidebar.addItem(name.replace("&&", "&"))
+            self._stack.addWidget(builder())
+        self._sidebar.setCurrentRow(0)
+
+        apply_button = QPushButton("Apply && Save", self)
+        apply_button.clicked.connect(self.apply)
+        close_button = QPushButton("Close", self)
+        close_button.clicked.connect(self.hide)
+
+        body = QHBoxLayout()
+        body.addWidget(self._sidebar)
+        body.addWidget(self._stack, 1)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(apply_button)
+        buttons.addWidget(close_button)
+        layout = QVBoxLayout()
+        layout.addLayout(body, 1)
+        layout.addLayout(buttons)
+        self.setLayout(layout)
+
+        self.restore_visibility()
+
+    # -- legacy dict access -----------------------------------------------------
+
+    def _lc(self, section: str, key: str, default: Any) -> Any:
+        return self._legacy.get(section, {}).get(key, default)
+
+    def _lc_set(self, section: str, key: str, value: Any) -> None:
+        self._legacy.setdefault(section, {})[key] = value
+
+    # -- General ------------------------------------------------------------------
+
+    def _build_general(self) -> QWidget:
+        general = self._settings.general
+        form = QFormLayout()
+        self._log_dir = _DirPicker("Select EverQuest Logs directory", self)
+        self._log_dir.edit.setText(str(general.eq_log_dir))
+        form.addRow("EQ Logs directory", self._log_dir)
+        self._install_dir = _DirPicker("Select EverQuest install directory", self)
+        self._install_dir.edit.setText(str(general.eq_install_dir or ""))
+        self._install_dir.edit.textChanged.connect(lambda _text: self._refresh_visionfix_status())
+        form.addRow("EQ install directory", self._install_dir)
+        self._update_check = QCheckBox(self)
+        self._update_check.setChecked(general.update_check)
+        form.addRow("Check for updates", self._update_check)
+        self._font_size = QSpinBox(self)
+        self._font_size.setRange(6, 32)
+        self._font_size.setValue(general.font_size)
+        form.addRow("Font size", self._font_size)
+        note = QLabel("Font size, TTS, and overlay durations apply after restart.", self)
+        note.setStyleSheet("color: #888888; font-size: 11px;")
+        form.addRow(note)
+        return self._page(form)
+
+    # -- Character -------------------------------------------------------------------
+
+    def _build_character(self) -> QWidget:
+        form = QFormLayout()
+        self._char_combo = QComboBox(self)
+        for info in self._settings.players:
+            self._char_combo.addItem(f"{info.name} ({info.server})")
+        form.addRow("Character", self._char_combo)
+
+        self._char_class = QComboBox(self)
+        self._char_class.addItem("(unknown)")
+        for cls in PLAYER_CLASSES:
+            self._char_class.addItem(cls.display_name)
+        self._char_class.currentIndexChanged.connect(lambda _i: self._sync_track_enabled())
+        form.addRow("Class", self._char_class)
+
+        self._char_level = QSpinBox(self)
+        self._char_level.setRange(0, 60)
+        self._char_level.setSpecialValueText("(unknown)")
+        form.addRow("Your Level", self._char_level)
+
+        self._char_zone = QComboBox(self)
+        self._char_zone.setEditable(True)
+        if self._zones is not None:
+            self._char_zone.addItem("")
+            for long_name in sorted(self._zones.long_names()):
+                self._char_zone.addItem(long_name)
+        form.addRow("Zone", self._char_zone)
+
+        self._char_track = QSpinBox(self)
+        self._char_track.setRange(0, 200)
+        self._char_track.setSpecialValueText("(unset)")
+        form.addRow("Track Skill", self._char_track)
+
+        self._char_sharing = QComboBox(self)
+        self._char_sharing.addItems(["everyone", "guild", "off"])
+        form.addRow("Location sharing", self._char_sharing)
+
+        self._char_share_timers = QCheckBox(self)
+        form.addRow("Share timers", self._char_share_timers)
+
+        # Spell class filters (EQTool "Class Filters"): a spell shows on other
+        # players when ANY checked class can cast it. All checked = show all.
+        filters_box = QGroupBox("Show spells for classes", self)
+        grid = QGridLayout()
+        self._class_filter_boxes: dict[PlayerClass, QCheckBox] = {}
+        for i, cls in enumerate(PLAYER_CLASSES):
+            box = QCheckBox(cls.display_name, self)
+            self._class_filter_boxes[cls] = box
+            grid.addWidget(box, i // 3, i % 3)
+        filters_box.setLayout(grid)
+        form.addRow(filters_box)
+
+        self._char_combo.currentIndexChanged.connect(lambda _i: self._load_character())
+        self._select_active_character()
+        self._load_character()
+        return self._page(form)
+
+    def _selected_player(self) -> PlayerInfo | None:
+        index = self._char_combo.currentIndex()
+        if 0 <= index < len(self._settings.players):
+            return self._settings.players[index]
+        return None
+
+    def _select_active_character(self) -> None:
+        player = self._backend_player
+        if player is None or not player.name:
+            return
+        for i, info in enumerate(self._settings.players):
+            if info.name == player.name and info.server == player.server_key:
+                self._char_combo.setCurrentIndex(i)
+                return
+
+    def _load_character(self) -> None:
+        info = self._selected_player()
+        enabled = info is not None
+        for widget in (
+            self._char_class,
+            self._char_level,
+            self._char_zone,
+            self._char_track,
+            self._char_sharing,
+            self._char_share_timers,
+            *self._class_filter_boxes.values(),
+        ):
+            widget.setEnabled(enabled)
+        if info is None:
+            return
+        if info.player_class is not None:
+            cls = PlayerClass(info.player_class)
+            self._char_class.setCurrentIndex(PLAYER_CLASSES.index(cls) + 1)
+        else:
+            self._char_class.setCurrentIndex(0)
+        self._char_level.setValue(info.level or 0)
+        zone_display = info.zone
+        if self._zones is not None and info.zone:
+            zone_display = self._zones.long_name(info.zone) or info.zone
+        self._char_zone.setCurrentText(zone_display)
+        self._char_track.setValue(info.tracking_skill or 0)
+        self._char_sharing.setCurrentText(info.map_location_sharing)
+        self._char_share_timers.setChecked(info.share_timers)
+        selected = info.show_spells_for_classes
+        for cls, box in self._class_filter_boxes.items():
+            box.setChecked(selected is None or int(cls) in selected)
+        self._sync_track_enabled()
+
+    def _combo_class(self) -> PlayerClass | None:
+        index = self._char_class.currentIndex()
+        return PLAYER_CLASSES[index - 1] if index > 0 else None
+
+    def _sync_track_enabled(self) -> None:
+        """Track Skill only means something for Druid/Ranger/Bard (EQTool)."""
+        trackable = self._combo_class() in TRACKABLE_CLASSES
+        self._char_track.setEnabled(trackable and self._char_combo.currentIndex() >= 0)
+        if not trackable:
+            self._char_track.setValue(0)
+
+    def _apply_character(self) -> None:
+        info = self._selected_player()
+        if info is None:
+            return
+        # Mutate IN PLACE: handlers and the sharing coordinator hold this object.
+        cls = self._combo_class()
+        info.player_class = int(cls) if cls is not None else None
+        info.level = self._char_level.value() or None
+        zone_text = self._char_zone.currentText().strip()
+        if self._zones is not None and zone_text:
+            info.zone = self._zones.short_name(zone_text) or zone_text
+        else:
+            info.zone = zone_text
+        info.tracking_skill = self._char_track.value() if cls in TRACKABLE_CLASSES else 0
+        info.map_location_sharing = self._char_sharing.currentText()  # type: ignore[assignment]
+        info.share_timers = self._char_share_timers.isChecked()
+        checked = [int(cls) for cls, box in self._class_filter_boxes.items() if box.isChecked()]
+        info.show_spells_for_classes = None if len(checked) == len(PLAYER_CLASSES) else checked
+
+        player = self._backend_player
+        if player is not None and info.name == player.name and info.server == player.server_key:
+            player.player_class = cls
+            player.level = info.level
+            if info.zone:
+                player.zone = info.zone
+            player.tracking_skill = info.tracking_skill or None
+
+    # -- Spell Timers -------------------------------------------------------------------
+
+    def _build_spell_timers(self) -> QWidget:
+        spellwindow = self._settings.spellwindow
+        form = QFormLayout()
+        self._you_only = QCheckBox(self)
+        self._you_only.setChecked(spellwindow.you_only_spells)
+        form.addRow("Show only your own spells", self._you_only)
+        self._show_rolls = QCheckBox(self)
+        self._show_rolls.setChecked(spellwindow.show_random_rolls)
+        form.addRow("Show random rolls", self._show_rolls)
+        self._best_guess = QCheckBox(self)
+        self._best_guess.setChecked(spellwindow.best_guess_spells)
+        self._best_guess.setToolTip(
+            "When a cast message matches several spells, start a timer for the "
+            "closest-level guess. Off: ambiguous casts start no timer."
+        )
+        form.addRow("Guess ambiguous spells", self._best_guess)
+        note = QLabel("Per-class spell filters live on the Character page.", self)
+        note.setStyleSheet("color: #888888; font-size: 11px;")
+        form.addRow(note)
+        return self._page(form)
+
+    # -- Maps (legacy config keys until the maps window is rebuilt) ----------------------
+
+    def _build_maps(self) -> QWidget:
+        form = QFormLayout()
+        self._maps_line_width = QSpinBox(self)
+        self._maps_line_width.setRange(1, 10)
+        self._maps_line_width.setValue(int(self._lc("maps", "line_width", 1)))
+        form.addRow("Map line width", self._maps_line_width)
+        self._maps_grid_width = QSpinBox(self)
+        self._maps_grid_width.setRange(1, 10)
+        self._maps_grid_width.setValue(int(self._lc("maps", "grid_line_width", 1)))
+        form.addRow("Grid line width", self._maps_grid_width)
+        self._z_current = QSpinBox(self)
+        self._z_closest = QSpinBox(self)
+        self._z_other = QSpinBox(self)
+        for spin, key, label in (
+            (self._z_current, "current_z_alpha", "Current Z opacity"),
+            (self._z_closest, "closest_z_alpha", "Closest Z opacity"),
+            (self._z_other, "other_z_alpha", "Other Z opacity"),
+        ):
+            spin.setRange(1, 100)
+            spin.setSuffix(" %")
+            spin.setValue(int(self._lc("maps", key, 100)))
+            form.addRow(label, spin)
+        return self._page(form)
+
+    def _apply_maps(self) -> None:
+        self._lc_set("maps", "line_width", self._maps_line_width.value())
+        self._lc_set("maps", "grid_line_width", self._maps_grid_width.value())
+        self._lc_set("maps", "current_z_alpha", self._z_current.value())
+        self._lc_set("maps", "closest_z_alpha", self._z_closest.value())
+        self._lc_set("maps", "other_z_alpha", self._z_other.value())
+
+    # -- Windows grid ------------------------------------------------------------------------
+
+    def _build_windows_grid(self) -> QWidget:
+        grid = QGridLayout()
+        grid.addWidget(QLabel("<b>Window</b>"), 0, 0)
+        grid.addWidget(QLabel("<b>On top</b>"), 0, 1)
+        grid.addWidget(QLabel("<b>Opacity</b>"), 0, 2)
+        grid.addWidget(QLabel("<b>Click-through</b>"), 0, 3)
+        self._legacy_rows: dict[str, _WindowRow] = {}
+        self._new_rows: dict[str, _WindowRow] = {}
+        row_index = 1
+        for label, section in LEGACY_WINDOW_ROWS:
+            row = _WindowRow(
+                label,
+                on_top=bool(self._lc(section, "always_on_top", True)),
+                opacity_pct=int(self._lc(section, "opacity", 80)),
+                clickthrough=bool(self._lc(section, "clickthrough", False)),
+                handle=self._handles.get(section),
+            )
+            self._legacy_rows[section] = row
+            self._add_grid_row(grid, row_index, row)
+            row_index += 1
+        for label, key in NEW_WINDOW_ROWS:
+            state = self._settings.windows.setdefault(key, WindowState())
+            row = _WindowRow(
+                label,
+                on_top=state.always_on_top,
+                opacity_pct=int(round(state.opacity * 100)),
+                handle=self._handles.get(key),
+            )
+            self._new_rows[key] = row
+            self._add_grid_row(grid, row_index, row)
+            row_index += 1
+
+        # Discord extras (bg opacity is the webview's own background).
+        self._discord_bg = QSpinBox(self)
+        self._discord_bg.setRange(0, 100)
+        self._discord_bg.setSuffix(" %")
+        self._discord_bg.setValue(int(self._lc("discord", "bg_opacity", 25)))
+        grid.addWidget(QLabel("Discord background"), row_index, 0)
+        grid.addWidget(self._discord_bg, row_index, 2)
+        grid.setColumnStretch(2, 1)
+
+        outer = QVBoxLayout()
+        outer.addLayout(grid)
+        note = QLabel("Opacity previews immediately; On top / Click-through apply on Save.", self)
+        note.setStyleSheet("color: #888888; font-size: 11px;")
+        outer.addWidget(note)
+        outer.addStretch(1)
+        page = QWidget(self)
+        page.setLayout(outer)
+        return page
+
+    @staticmethod
+    def _add_grid_row(grid: QGridLayout, index: int, row: _WindowRow) -> None:
+        grid.addWidget(QLabel(row.label), index, 0)
+        grid.addWidget(row.on_top, index, 1)
+        grid.addWidget(row.opacity, index, 2)
+        if row.clickthrough is not None:
+            grid.addWidget(row.clickthrough, index, 3)
+
+    def _apply_windows(self) -> None:
+        for section, row in self._legacy_rows.items():
+            self._lc_set(section, "always_on_top", row.on_top.isChecked())
+            self._lc_set(section, "opacity", row.opacity.value())
+            if row.clickthrough is not None:
+                self._lc_set(section, "clickthrough", row.clickthrough.isChecked())
+        self._lc_set("discord", "bg_opacity", self._discord_bg.value())
+        for key, row in self._new_rows.items():
+            state = self._settings.windows.setdefault(key, WindowState())
+            state.always_on_top = row.on_top.isChecked()
+            state.opacity = row.opacity.value() / 100
+            handle = self._handles.get(key)
+            if handle is not None and hasattr(handle, "apply_window_state"):
+                handle.apply_window_state()
+
+    # -- Audio & Overlays ------------------------------------------------------------------
+
+    def _build_audio_overlays(self) -> QWidget:
+        general = self._settings.general
+        form = QFormLayout()
+        self._voice = QComboBox(self)
+        self._voice.addItem("(system default)")
+        for voice in list_voices():
+            self._voice.addItem(voice)
+        if general.tts_voice:
+            index = self._voice.findText(general.tts_voice)
+            if index < 0:
+                self._voice.addItem(general.tts_voice)
+                index = self._voice.count() - 1
+            self._voice.setCurrentIndex(index)
+        form.addRow("TTS voice", self._voice)
+        self._volume = QSlider(Qt.Orientation.Horizontal, self)
+        self._volume.setRange(0, 100)
+        self._volume.setValue(general.global_audio_volume)
+        form.addRow("Volume", self._volume)
+        test_button = QPushButton("Test voice", self)
+        test_button.clicked.connect(self._test_voice)
+        form.addRow("", test_button)
+        self._overlay_seconds = QDoubleSpinBox(self)
+        self._overlay_seconds.setRange(1.0, 30.0)
+        self._overlay_seconds.setSingleStep(0.5)
+        self._overlay_seconds.setValue(general.overlay_text_seconds)
+        form.addRow("Alert text duration (s)", self._overlay_seconds)
+        self._ch_retention = QDoubleSpinBox(self)
+        self._ch_retention.setRange(5.0, 300.0)
+        self._ch_retention.setSingleStep(5.0)
+        self._ch_retention.setValue(general.ch_lane_retention_seconds)
+        form.addRow("CH lane retention (s)", self._ch_retention)
+        return self._page(form)
+
+    def _test_voice(self) -> None:
+        voice = "" if self._voice.currentIndex() == 0 else self._voice.currentText()
+        speaker = default_speaker(voice=voice, volume=self._volume.value() / 100)
+        speaker.speak("nParse plus voice test")
+
+    # -- Sharing --------------------------------------------------------------------------
+
+    def _build_sharing(self) -> QWidget:
+        form = QFormLayout()
+        self._sharing_mode = QComboBox(self)
+        self._sharing_mode.addItems(["pigparse", "nparse", "off"])
+        self._sharing_mode.setCurrentText(self._settings.sharing.mode)
+        form.addRow("Location sharing", self._sharing_mode)
+        note = QLabel("Sharing mode applies after restart.", self)
+        note.setStyleSheet("color: #888888; font-size: 11px;")
+        form.addRow(note)
+        return self._page(form)
+
+    # -- Advanced (archiving + Night Vision fix) ---------------------------------------------
+
+    def _build_advanced(self) -> QWidget:
+        general = self._settings.general
+        form = QFormLayout()
+        self._archive_enabled = QCheckBox(self)
+        self._archive_enabled.setChecked(general.log_archive_enabled)
+        form.addRow("Archive oversized logs", self._archive_enabled)
+        self._archive_mb = QSpinBox(self)
+        self._archive_mb.setRange(1, 4096)
+        self._archive_mb.setSuffix(" MB")
+        self._archive_mb.setValue(general.log_archive_size_mb)
+        form.addRow("Archive threshold", self._archive_mb)
+
+        visionfix_form = QFormLayout()
+        self._visionfix_status = QLabel("", self)
+        self._visionfix_status.setWordWrap(True)
+        visionfix_form.addRow(self._visionfix_status)
+        visionfix_buttons = QHBoxLayout()
+        self._visionfix_apply = QPushButton("Apply fix", self)
+        self._visionfix_apply.clicked.connect(self._apply_visionfix)
+        self._visionfix_revert = QPushButton("Revert", self)
+        self._visionfix_revert.clicked.connect(self._revert_visionfix)
+        visionfix_buttons.addWidget(self._visionfix_apply)
+        visionfix_buttons.addWidget(self._visionfix_revert)
+        visionfix_form.addRow(visionfix_buttons)
+        visionfix_box = QGroupBox("Night Vision fix", self)
+        visionfix_box.setLayout(visionfix_form)
+        form.addRow(visionfix_box)
+        self._refresh_visionfix_status()
+        return self._page(form)
+
+    # -- Night Vision fix (moved from PreferencesWindow) --------------------------------------
+
+    def _visionfix_dir(self) -> Path | None:
+        text = self._install_dir.path()
+        return Path(text).expanduser() if text else None
+
+    def _refresh_visionfix_status(self) -> None:
+        if not hasattr(self, "_visionfix_status"):
+            return  # General pane builds before Advanced
+        eq_dir = self._visionfix_dir()
+        reason = visionfix.preflight(eq_dir)
+        if reason is not None:
+            self._visionfix_status.setText(reason)
+            self._visionfix_apply.setEnabled(False)
+            self._visionfix_revert.setEnabled(False)
+            return
+        assert eq_dir is not None
+        has_backup = visionfix.backup_exists(eq_dir)
+        self._visionfix_status.setText(
+            "Applied (backup present — revert available)."
+            if has_backup
+            else "Replaces night-blind shaders/sky textures. Files are backed up first."
+        )
+        self._visionfix_apply.setEnabled(True)
+        self._visionfix_revert.setEnabled(has_backup)
+
+    def _eq_running(self) -> bool:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-if", "eqgame"], capture_output=True, timeout=5, check=False
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _apply_visionfix(self) -> None:
+        eq_dir = self._visionfix_dir()
+        if self._eq_running():
+            answer = QMessageBox.warning(
+                self,
+                "EverQuest looks like it is running",
+                "Apply anyway? The game must be restarted to pick up the fix.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        try:
+            written = visionfix.apply_visionfix(eq_dir)
+        except Exception as exc:
+            QMessageBox.critical(self, "Night Vision fix failed", str(exc))
+        else:
+            QMessageBox.information(
+                self,
+                "Night Vision fix applied",
+                f"{written} files written (originals backed up to "
+                f"{visionfix.BACKUP_DIR_NAME}/). Restart EQ to see the fix.",
+            )
+        self._refresh_visionfix_status()
+
+    def _revert_visionfix(self) -> None:
+        eq_dir = self._visionfix_dir()
+        try:
+            restored = visionfix.revert_visionfix(eq_dir)
+        except Exception as exc:
+            QMessageBox.critical(self, "Revert failed", str(exc))
+        else:
+            QMessageBox.information(
+                self, "Night Vision fix reverted", f"{restored} original files restored."
+            )
+        self._refresh_visionfix_status()
+
+    # -- apply ------------------------------------------------------------------------------------
+
+    def apply(self) -> None:
+        general = self._settings.general
+        old_log_dir = str(general.eq_log_dir)
+        general.eq_log_dir = Path(self._log_dir.path()).expanduser()
+        install = self._install_dir.path()
+        general.eq_install_dir = Path(install).expanduser() if install else None
+        general.update_check = self._update_check.isChecked()
+        general.font_size = self._font_size.value()
+        general.tts_voice = None if self._voice.currentIndex() == 0 else self._voice.currentText()
+        general.global_audio_volume = self._volume.value()
+        general.overlay_text_seconds = self._overlay_seconds.value()
+        general.ch_lane_retention_seconds = self._ch_retention.value()
+        general.log_archive_enabled = self._archive_enabled.isChecked()
+        general.log_archive_size_mb = self._archive_mb.value()
+        self._settings.sharing.mode = self._sharing_mode.currentText()  # type: ignore[assignment]
+        spellwindow = self._settings.spellwindow
+        spellwindow.you_only_spells = self._you_only.isChecked()
+        spellwindow.show_random_rolls = self._show_rolls.isChecked()
+        spellwindow.best_guess_spells = self._best_guess.isChecked()
+        self._apply_character()
+        self._apply_maps()
+        self._apply_windows()
+
+        if self._on_save is not None:
+            self._on_save()
+        if self._on_legacy_save is not None:
+            self._on_legacy_save()
+        if self._notify_legacy is not None:
+            self._notify_legacy()  # live-applies legacy window opacity/flags
+        if self._repaint_maps is not None:
+            self._repaint_maps()  # maps canvas reads its keys at paint time
+        if self._on_log_dir_changed is not None and str(general.eq_log_dir) != old_log_dir:
+            self._on_log_dir_changed(Path(general.eq_log_dir))
+
+    # -- keep normal window mouse behavior (text fields, sliders) ------------------------------
+
+    def _page(self, form: QFormLayout) -> QWidget:
+        outer = QVBoxLayout()
+        outer.addLayout(form)
+        outer.addStretch(1)
+        page = QWidget(self)
+        page.setLayout(outer)
+        return page
+
+    def mousePressEvent(self, event) -> None:
+        QWidget.mousePressEvent(self, event)
+
+    def mouseMoveEvent(self, event) -> None:
+        QWidget.mouseMoveEvent(self, event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        QWidget.mouseReleaseEvent(self, event)
+
+    def wheelEvent(self, event) -> None:
+        QWidget.wheelEvent(self, event)

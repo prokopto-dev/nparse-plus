@@ -73,6 +73,10 @@ class ZoneDatabase:
         """'You have entered <long name>.' -> short zone key."""
         return self._name_to_short.get(long_name.strip().lower())
 
+    def long_names(self) -> list[str]:
+        """Every known long zone name (the zone-name mapper's keys)."""
+        return list(self._name_to_short)
+
     def long_name(self, short_name: str) -> str | None:
         """Short zone key -> a long display name (first mapper entry).
 

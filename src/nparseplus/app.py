@@ -112,14 +112,15 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # from the CWD at import time and pulls in Qt.
     from PySide6.QtGui import QFontDatabase, QIcon
 
+    from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
     from nparseplus.ui.eventoverlay import EventOverlayWindow
     from nparseplus.ui.mobinfo import MobInfoWindow
-    from nparseplus.ui.preferences import PreferencesWindow
     from nparseplus.ui.qtbridge import QtEventBridge
+    from nparseplus.ui.settingswindow import UnifiedSettingsWindow
     from nparseplus.ui.spellwindow import SpellTimerWindow
     from nparseplus.ui.triggereditor import TriggerEditorWindow
 
@@ -151,8 +152,30 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_save=save,
     )
     trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
-    preferences = PreferencesWindow(
-        settings, on_save=save, on_log_dir_changed=backend.driver.set_log_dir
+
+    def _repaint_maps() -> None:
+        if app.maps_window is not None:
+            app.maps_window._map.update_()
+
+    settings_window = UnifiedSettingsWindow(
+        settings,
+        on_save=save,
+        on_log_dir_changed=backend.driver.set_log_dir,
+        legacy_config=legacy_config.data,
+        on_legacy_save=legacy_config.save,
+        notify_legacy=app._signals["settings"].config_updated.emit,
+        repaint_maps=_repaint_maps,
+        window_handles={
+            "maps": app.maps_window,
+            "discord": app._parsers_dict.get("discord"),
+            "spells": spell_window,
+            "dps": dps_window,
+            "mobinfo": mob_info_window,
+            "console": console_window,
+            "triggereditor": trigger_editor,
+        },
+        backend_player=backend.player,
+        zones=backend.zones,
     )
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
@@ -165,11 +188,11 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         spell_window,
         save,
         windows={
+            "Settings": settings_window,
             "DPS Meter": dps_window,
             "Mob Info": mob_info_window,
             "Console": console_window,
             "Trigger Editor": trigger_editor,
-            "Preferences": preferences,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
     )

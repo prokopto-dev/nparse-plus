@@ -12,7 +12,7 @@ from nparseplus import updater
 from nparseplus.core.events import LineEvent
 from nparseplus.helpers import config, logreader, resource_path
 from nparseplus.helpers.logreader import LogReaderSignals
-from nparseplus.helpers.settings import SettingsSignals, SettingsWindow
+from nparseplus.helpers.settings import SettingsSignals
 from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
 from nparseplus.parsers.maps.window import MapsSignals
@@ -72,7 +72,6 @@ class NomnsParse(QApplication):
 
         # Load Parsers
         self._load_parsers()
-        self._settings = SettingsWindow()
 
         # Tray Icon
         self._system_tray = QSystemTrayIcon()
@@ -220,7 +219,7 @@ class NomnsParse(QApplication):
             backend_window_actions[window_action] = window
 
         menu.addSeparator()
-        settings_action = menu.addAction("Settings")
+        # (the unified "Settings" window arrives via _backend_windows)
         discord_conf_action = menu.addAction("Configure Discord")
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
@@ -262,10 +261,6 @@ class NomnsParse(QApplication):
 
         elif action in backend_window_actions:
             backend_window_actions[action].toggle()
-
-        elif action == settings_action:
-            self._settings._set_values()
-            self._settings.exec()
 
         elif action == discord_conf_action:
             self._parsers_dict["discord"].show_settings()
