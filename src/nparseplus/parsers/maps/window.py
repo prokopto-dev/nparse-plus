@@ -156,6 +156,10 @@ class Maps(ParserWindow):
         self._remote_expiry_timer.timeout.connect(self._map.expire_players)
         self._remote_expiry_timer.start()
 
+        # Local tracking radius (game units) — app.py assigns a callable
+        # computing it from the backend player's class + track skill.
+        self.tracking_radius_provider = None
+
     def handle_remote_event(self, event):
         """Shared-player events from the backend bus (queued Qt bridge).
 
@@ -170,7 +174,12 @@ class Maps(ParserWindow):
             if remote.zone and zone_key and remote.zone != zone_key:
                 return  # another zone (nparse-mode state spans zones)
             point = MapPoint(x=-remote.y, y=-remote.x, z=remote.z)
-            self._map.add_player(remote.name, datetime.now(), point)
+            self._map.add_player(
+                remote.name,
+                datetime.now(),
+                point,
+                tracking_distance=remote.tracking_distance,
+            )
         elif isinstance(event, PlayerDisconnectReceivedRemoteEvent):
             self._map.remove_player(event.player.name)
 
@@ -190,7 +199,10 @@ class Maps(ParserWindow):
             QApplication.instance()._signals["maps"].location.emit(timestamp.isoformat(), text[17:])
             x, y, z = [float(value) for value in text[17:].strip().split(",")]
             x, y = to_real_xy(x, y)
-            self._map.add_player("__you__", timestamp, MapPoint(x=x, y=y, z=z))
+            radius = self.tracking_radius_provider() if self.tracking_radius_provider else None
+            self._map.add_player(
+                "__you__", timestamp, MapPoint(x=x, y=y, z=z), tracking_distance=radius
+            )
             self._map.record_path_loc((x, y, z))
         elif text[:16] == "start_recording_":
             QApplication.instance()._signals["maps"].start_recording.emit(text.split()[0][16:])

@@ -25,6 +25,7 @@ from nparseplus.config.settings import (
     load_settings,
     save_settings,
 )
+from nparseplus.core.player import tracking_distance
 
 
 class _OverlayPositioner:
@@ -183,6 +184,9 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         # Remote (shared) player dots; the coordinator has already filtered
         # self-echo and server mismatches on the driver thread.
         bridge.event_received.connect(app.maps_window.handle_remote_event)
+        app.maps_window.tracking_radius_provider = lambda: tracking_distance(
+            backend.player.player_class, backend.player.tracking_skill
+        )
     app.attach_backend_ui(
         bridge,
         spell_window,

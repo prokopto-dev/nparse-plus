@@ -15,6 +15,7 @@ window handles, backend player, zone database) so tests drive it with fakes.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -118,10 +119,9 @@ class _WindowRow:
 
     def _live_preview(self, value: int) -> None:
         if self.handle is not None:
-            try:
+            # A fake/absent handle must never break the slider.
+            with contextlib.suppress(Exception):
                 self.handle.setWindowOpacity(value / 100)
-            except Exception:
-                pass  # a fake/absent handle must never break the slider
 
 
 class UnifiedSettingsWindow(OverlayWindowBase):
@@ -456,7 +456,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             row = _WindowRow(
                 label,
                 on_top=state.always_on_top,
-                opacity_pct=int(round(state.opacity * 100)),
+                opacity_pct=round(state.opacity * 100),
                 handle=self._handles.get(key),
             )
             self._new_rows[key] = row

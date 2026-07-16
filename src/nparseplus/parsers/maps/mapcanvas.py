@@ -4,6 +4,7 @@ import os
 import traceback
 from datetime import datetime
 
+import colorhash
 import pathvalidate
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QTransform
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from nparseplus.helpers import config, text_time_to_seconds, to_range
 from nparseplus.parsers.maps.mapclasses import (
+    YOU_COLOR,
     MapPoint,
     MouseLocation,
     Player,
@@ -61,6 +63,7 @@ class MapCanvas(QGraphicsView):
         self._flash_timer = QTimer(self)
         self._flash_timer.setInterval(100)
         self._flash_timer.timeout.connect(self._flash_pulse)
+        self._tracking_circles = {}  # name -> QGraphicsEllipseItem (true radius)
         self.map_loaded_callback = None  # set by the Maps window
 
     def load_map(self, map_name, keep_loc=False):
@@ -79,6 +82,7 @@ class MapCanvas(QGraphicsView):
         else:
             self._data = map_data
             self._scene.clear()
+            self._tracking_circles = {}  # items died with the scene
             self._z_index = 0
             self._pen_state = None  # force pen-width refresh for the new map
             self._draw()
@@ -294,6 +298,39 @@ class MapCanvas(QGraphicsView):
         player = self._data.players.pop(name, None)
         if player:
             self._scene.removeItem(player)
+        self._remove_tracking_circle(name)
+
+    def _remove_tracking_circle(self, name):
+        circle = self._tracking_circles.pop(name, None)
+        if circle:
+            self._scene.removeItem(circle)
+
+    def _update_tracking_circle(self, name, location, tracking_distance):
+        """The tracking-skill radius (EQTool TrackingEllipse): a TRUE-radius
+        circle in scene units — it scales with the map, unlike the player
+        marker group which is counter-scaled to constant pixel size."""
+        if tracking_distance is None or tracking_distance <= 0:
+            self._remove_tracking_circle(name)
+            return
+        radius = float(tracking_distance)
+        circle = self._tracking_circles.get(name)
+        if circle is None:
+            color = (
+                QColor(YOU_COLOR) if name == "__you__" else QColor(colorhash.ColorHash(name).hex)
+            )
+            pen = QPen(color, 1)
+            pen.setCosmetic(True)  # constant stroke width at any zoom
+            fill = QColor(color)
+            fill.setAlpha(5 if name == "__you__" else 3)  # EQTool alphas
+            circle = QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
+            circle.setPen(pen)
+            circle.setBrush(fill)
+            circle.setZValue(9)  # just under the player markers
+            self._scene.addItem(circle)
+            self._tracking_circles[name] = circle
+        else:
+            circle.setRect(-radius, -radius, radius * 2, radius * 2)
+        circle.setPos(location.x, location.y)
 
     def expire_players(self, max_age_s=60.0):
         """Drop remote dots not refreshed within max_age_s (EQTool: 1 minute).
@@ -316,7 +353,7 @@ class MapCanvas(QGraphicsView):
         if stale:
             self.update_()
 
-    def add_player(self, name, timestamp, location):
+    def add_player(self, name, timestamp, location, tracking_distance=None):
         if name not in self._data.players:
             self._data.players[name] = Player(name=name, location=location, timestamp=timestamp)
             self._scene.addItem(self._data.players[name])
@@ -324,6 +361,7 @@ class MapCanvas(QGraphicsView):
             self._data.players[name].previous_location = self._data.players[name].location
             self._data.players[name].location = location
             self._data.players[name].timestamp = timestamp
+        self._update_tracking_circle(name, location, tracking_distance)
         self._data.players[name].z_level = self._data.get_closest_z_group(
             self._data.players[name].location.z
         )

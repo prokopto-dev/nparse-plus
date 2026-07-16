@@ -2,15 +2,45 @@ import datetime
 
 import colorhash
 from PySide6.QtCore import QPointF, Qt, QTimer
-from PySide6.QtGui import QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
+    QGraphicsEllipseItem,
     QGraphicsItemGroup,
     QGraphicsLineItem,
     QGraphicsPixmapItem,
+    QGraphicsPolygonItem,
     QGraphicsTextItem,
 )
 
 from nparseplus.helpers import format_time, get_degrees_from_line, to_eq_xy
+
+# The local player's marker color — EQTool MapViewModelService.cs rgb(61,235,52).
+YOU_COLOR = QColor(61, 235, 52)
+
+# Marker geometry in group units (the group is counter-scaled to constant
+# pixel size, so these are effectively pixels): EQTool draws a small circle
+# with an arrow of ~length whose head is length/4.
+_DOT_RADIUS = 6.0
+_ARROW_LENGTH = 14.0
+_ARROW_HEAD = _ARROW_LENGTH / 4
+
+
+def _arrow_polygon() -> QPolygonF:
+    """An upward arrow (shaft + head) from the dot's edge; rotation points it."""
+    tip_y = -(_DOT_RADIUS + _ARROW_LENGTH)
+    return QPolygonF(
+        [
+            # shaft (a thin rectangle)
+            QPointF(-1.0, -_DOT_RADIUS),
+            QPointF(1.0, -_DOT_RADIUS),
+            QPointF(1.0, tip_y + _ARROW_HEAD),
+            # head
+            QPointF(_ARROW_HEAD, tip_y + _ARROW_HEAD),
+            QPointF(0.0, tip_y),
+            QPointF(-_ARROW_HEAD, tip_y + _ARROW_HEAD),
+            QPointF(-1.0, tip_y + _ARROW_HEAD),
+        ]
+    )
 
 
 class MouseLocation(QGraphicsTextItem):
@@ -60,22 +90,37 @@ class PointOfInterest:
 
 
 class Player(QGraphicsItemGroup):
+    """A drawn player marker (EQTool style): colored circle + direction arrow.
+
+    Local player is EQTool's green; other players keep colorhash colors (a
+    deliberate divergence from EQTool's random-per-session RGB — stable
+    colors across sessions).
+    """
+
     def __init__(self, **kwargs):
         super().__init__()
         self.name = ""
         self.location = MapPoint()
-        self.previous_location = MapPoint()
+        self.previous_location = None  # None until a second fix arrives
         self.timestamp = None  # datetime
         self.__dict__.update(kwargs)
+        self.color = colorhash.ColorHash(self.name)
         if self.name == "__you__":
-            self.icon = QGraphicsPixmapItem(QPixmap("data/maps/user.png"))
+            marker_color = QColor(YOU_COLOR)
             self.setZValue(15)
         else:
-            self.icon = QGraphicsPixmapItem(QPixmap("data/maps/otheruser.png"))
+            marker_color = QColor(self.color.hex)
             self.setZValue(10)
-        self.icon.setOffset(-10, -10)
-        self.directional = QGraphicsPixmapItem(QPixmap("data/maps/directional.png"))
-        self.directional.setOffset(-15, -15)
+        fill = QColor(marker_color)
+        fill.setAlpha(90)
+        self.icon = QGraphicsEllipseItem(
+            -_DOT_RADIUS, -_DOT_RADIUS, _DOT_RADIUS * 2, _DOT_RADIUS * 2
+        )
+        self.icon.setPen(QPen(marker_color, 2))
+        self.icon.setBrush(QBrush(fill))
+        self.directional = QGraphicsPolygonItem(_arrow_polygon())
+        self.directional.setPen(QPen(marker_color, 1))
+        self.directional.setBrush(QBrush(marker_color))
         self.directional.setVisible(False)
         self.nametag = QGraphicsTextItem()
         self.nametag.setPos(10, -15)
@@ -83,10 +128,15 @@ class Player(QGraphicsItemGroup):
         self.addToGroup(self.directional)
         self.addToGroup(self.nametag)
         self.z_level = 0
-        self.color = colorhash.ColorHash(self.name)
 
     def update_(self, scale):
-        if self.previous_location:
+        # (previous_location used to default to a truthy MapPoint(), making
+        # the arrow point at (0,0) on the very first fix — hence the None
+        # guard, and scale/pos applied unconditionally.)
+        if self.previous_location is not None and (
+            self.previous_location.x != self.location.x
+            or self.previous_location.y != self.location.y
+        ):
             self.directional.setRotation(
                 get_degrees_from_line(
                     self.location.x,
@@ -95,13 +145,12 @@ class Player(QGraphicsItemGroup):
                     self.previous_location.y,
                 )
             )
-            self.setScale(scale)
-            self.setPos(self.location.x, self.location.y)
             self.directional.setVisible(True)
+        self.setScale(scale)
         self.setPos(self.location.x, self.location.y)
         self.nametag.setHtml(
             "<font color='{}' size='{}'>{}</font>".format(
-                self.color.hex if self.name != "__you__" else "purple",
+                self.color.hex if self.name != "__you__" else YOU_COLOR.name(),
                 5,
                 self.name if self.name != "__you__" else "You",
             )
