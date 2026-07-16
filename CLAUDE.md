@@ -40,7 +40,13 @@ packages may touch Qt.
 typed Pydantic events on `EventBus` → handlers mutate services
 (`TimersService`, `FightTracker`, trigger engine, …) → UI reads snapshots on
 QTimers, and `ui/qtbridge.QtEventBridge` re-emits bus events as a queued Qt
-signal — **the only thread crossing in the app**.
+signal.
+
+**Thread crossings (only these):** the Qt bridge above (driver → GUI), and
+network inbound: net-client/worker threads ONLY call
+`SharingCoordinator.enqueue_inbound()`; the coordinator's driver-tick drains
+the inbox and is the sole place inbound traffic touches the bus or timers.
+The bus and TimersService are not thread-safe — never publish off-thread.
 
 ## Map of the code
 
@@ -59,8 +65,17 @@ src/nparseplus/
     dps.py              #   FightTracker (12s trailing window, session stats, >20s gate)
     zones.py            #   ZoneDatabase over data/zones.json (respawn lookup order)
     ch_chain.py, death_loop.py, pets.py, npc_search.py, boats.py
+    sharing.py          #   SharingCoordinator: THE sharing gate + inbound thread crossing
+    visionfix.py        #   Night Vision fix apply/revert (backup-first)
+    pigparse.py         #   Qt-free Protocol for the REST client + SubmitFn
   config/               # Pydantic Settings -> platformdirs settings.json (+ legacy migration)
-  net/                  # httpx/wiki clients (p99wiki.py); PigParse SignalR lands here (M3)
+  net/                  # Qt-free network clients (UI marshals results itself):
+                        #   p99wiki.py, pigparse_models.py (wire DTOs, camelCase-in/
+                        #   PascalCase-out, THE axis swap), pigparse_api.py (REST),
+                        #   hubproto.py + pigparse_hub.py (minimal SignalR JSON hub
+                        #   client; signalrcore is probe-only — its sends are broken),
+                        #   nparse_ws.py (legacy locationserver wire), worker.py
+  updater.py            # GitHub releases check; GITHUB_OWNER constant is a placeholder
   ui/                   # PySide6 windows; overlaybase.py is the shared overlay recipe
   audio/tts.py          # Speaker protocol: macOS `say`, PowerShell, espeak, Null
   data/                 # generated/ported data — regenerate via tools/, never hand-edit JSON
@@ -108,16 +123,36 @@ pyproject.toml) — keep NEW code clean even when touching them.
 - Git: commit with `git -c core.hooksPath=/dev/null commit` (hook friction),
   imperative messages prefixed by milestone (`M2: ...`).
 
+## Packaging
+
+`uv run pyinstaller packaging/nparseplus.spec --noconfirm` builds the onedir
+.app (both data roots land under `_MEIPASS`; `_ensure_data_cwd` chdirs there
+when frozen and the legacy config moves to platformdirs). Then ad-hoc
+`codesign` + `uv run dmgbuild -s packaging/dmg_settings.py`. Tag `v<X.Y.Z>`
+(must equal `__version__` AND pyproject) to cut a GitHub release via
+`.github/workflows/release.yml`.
+
+## Sharing wire cheatsheet (see tools/pigparse_probe_transcript.md)
+
+- Inbound JSON is camelCase; send PascalCase (EQTool-compatible, servers
+  bind case-insensitively). Enums as ints (`core.enums` wire ordinals).
+- The wire carries raw `/loc` print order: wire X = `Loc.y`, wire Y =
+  `Loc.x` (`wire_player_from_loc` owns it); the map plots `(-y, -x)` of
+  wire order. Don't "fix" either without live calibration.
+- Cadence courtesy (never exceed): send per `/loc` + 10 s keepalive, stop
+  after 5 idle minutes or camp; 15 s Kael throttle; 4 s roar dedupe.
+- You only receive a zone's players after SENDING a location with that
+  zone; the hub echoes your own frames back (coordinator self-filters).
+
 ## Where things stand
 
-**M0–M2 complete** (475 tests): full local EQTool parity — spell timers,
-trigger engine + editor, DPS, spawn timers, CH chains, encounter AOEs, event
-overlay (positionable), mob info, console, Preferences, log archiving, maps
-z-fade + NPC finder + live P99 wiki lookup. `git log --oneline` narrates the
-build milestone by milestone.
+**M0–M3 complete** (~590 tests): full EQTool parity including the network —
+live PigParse hub interop (map dots, shared timers, quake/boat/roll feeds,
+mob-info loot pricing), the self-hostable nparse websocket mode, Night
+Vision fix, self-updater, PyInstaller .app/DMG + release CI. `git log
+--oneline` narrates the build milestone by milestone.
 
-**M3 is next and fully specified in [docs/M3.md](docs/M3.md)** — PigParse
-network interop (probe the live SignalR hub first), Night Vision fix,
-self-updater, PyInstaller .app/DMG + CI releases. Network send points are
-marked `TODO(M3)` in the handlers (`grep -rn "TODO(M3)" src/`). Stretch:
-3D map view (map L-records already carry z on both endpoints).
+Remaining human steps: create the GitHub repo and set
+`updater.GITHUB_OWNER` + push a `v*` tag to exercise the release pipeline;
+confirm bidirectional dots with a real EQTool user in-game (probe-level
+interop is verified). Post-1.0 parking lot lives in README.md.

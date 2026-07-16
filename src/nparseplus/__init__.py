@@ -4,4 +4,4 @@ A modernized fork of nomns/nparse targeting feature parity with
 EQTool (github.com/smasherprog/eqtool).
 """
 
-__version__ = "0.8.0"
+__version__ = "1.0.0"

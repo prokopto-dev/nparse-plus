@@ -24,7 +24,26 @@ modified (the optional Night Vision fix is applied only when you ask).
 | **Combat automation** | Respawn timers on kill (per-NPC times for 121 zones), faction/exp kill guessing, random-roll tracking, boat schedules, quake/Ring War/FTE alerts, death-loop detection, pet tracking |
 | **CH chains** | `CA 001 CH -- Target` calls render as chips sliding across an 11s lane per heal target; voice + on-screen warning when your slot is next |
 | **Event overlay** | Full-screen click-through alerts and countdown bars; position/size it over your game window from the tray |
-| **Mob info** | `/consider` a mob → respawn time, notable flag, one-click wiki page |
+| **Mob info** | `/consider` a mob → respawn time, notable flag, known loot with live auction prices, one-click wiki page |
+| **PigParse network** | Live interop with EQTool users: shared player dots on the map (10s cadence, guild-only option), shared Kael pull timers and dragon roars, quake/boat/roll-timer feeds — plus a self-hostable `nparse` websocket mode and a per-character off switch |
+| **Night Vision fix** | One click applies the community shader/sky fix over your EQ install (with backups) — and one click reverts it |
+
+## Install (macOS)
+
+Download the latest `nParse+-<version>-macos-arm64.dmg` from the releases
+page, drag **nParse+** to Applications, and run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/nParse+.app"
+```
+
+(The app is ad-hoc signed, not notarized — macOS quarantines it on first
+download; the command above clears that. Windows users: unzip
+`nparseplus-<version>-win64.zip` and run `nparseplus.exe`; Linux users:
+untar and run `nparseplus/nparseplus`.)
+
+nParse+ checks GitHub for new releases at startup (turn off in
+Preferences) and offers the download from the tray menu.
 
 ## Install & run (from source)
 
@@ -72,16 +91,31 @@ matters most: **`nparseplus.core` (and `config`/`net`) never import Qt**; a
 test enforces it. Parsers/handlers are 1:1 ports of EQTool's C# (pinned commit
 in [CREDITS.md](CREDITS.md)) and the `EQtoolsTests` corpus is our golden spec.
 
+## Building the packages
+
+```bash
+uv sync --group build
+uv run pyinstaller packaging/nparseplus.spec --noconfirm   # dist/nParse+.app
+codesign --force --deep -s - "dist/nParse+.app"            # ad-hoc sign
+uv run dmgbuild -s packaging/dmg_settings.py "nParse+" dist/nParse+.dmg
+```
+
+Tagged pushes (`v*`) build the macOS DMG, Windows zip, and Linux tarball in
+CI and attach them to a GitHub release
+([.github/workflows/release.yml](.github/workflows/release.yml)).
+
 ## Status / roadmap
 
 - **M1 (done):** core engine, spell timers, trigger engine + TTS, settings, maps.
 - **M2 (done):** DPS, spawn timers, CH chains, encounter AOEs, event overlay,
   mob info, NPC finder + wiki lookup, z-fade, trigger editor, Preferences,
   log archiving.
-- **M3 (next — see [docs/M3.md](docs/M3.md)):** PigParse network interop
-  (shared player locations, dragon roars, wiki pricing), Night Vision fix,
-  self-updater, .app/DMG + Windows/Linux builds.
-- **Stretch:** 3D map view.
+- **M3 (done):** PigParse network interop (shared map dots, timers, quake/
+  boat/roll feeds, loot pricing), nparse websocket fallback, Night Vision
+  fix, self-updater, .app/DMG + Windows/Linux release builds.
+- **Post-1.0 parking lot:** notarization, corpse waypoints over the nparse
+  wire, /who player upserts, Discord auth/auction APIs, inventory watcher,
+  3D map view.
 
 ## License & credits
 

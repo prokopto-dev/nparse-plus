@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nparseplus"
-version = "0.8.0"
+version = "1.0.0"
 description = "nParse+ — EverQuest Project 1999 log parser: maps, spell timers, triggers, DPS, and sharing. A modernized fork of nomns/nparse with EQTool feature parity."
 readme = "README.md"
 license = "GPL-3.0-or-later"
