@@ -75,11 +75,12 @@ in [CREDITS.md](CREDITS.md)) and the `EQtoolsTests` corpus is our golden spec.
 ## Status / roadmap
 
 - **M1 (done):** core engine, spell timers, trigger engine + TTS, settings, maps.
-- **M2 (nearly done):** DPS, spawn timers, CH chains, encounter AOEs, event
-  overlay, mob info, NPC finder, z-fade; trigger editor & settings UI in flight.
-- **M3 (next):** PigParse network interop (shared player locations, dragon
-  roars, wiki pricing), Night Vision fix, self-updater, signed .app/DMG +
-  Windows/Linux builds.
+- **M2 (done):** DPS, spawn timers, CH chains, encounter AOEs, event overlay,
+  mob info, NPC finder + wiki lookup, z-fade, trigger editor, Preferences,
+  log archiving.
+- **M3 (next — see [docs/M3.md](docs/M3.md)):** PigParse network interop
+  (shared player locations, dragon roars, wiki pricing), Night Vision fix,
+  self-updater, .app/DMG + Windows/Linux builds.
 - **Stretch:** 3D map view.
 
 ## License & credits

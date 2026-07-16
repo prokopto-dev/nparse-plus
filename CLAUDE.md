@@ -110,12 +110,14 @@ pyproject.toml) — keep NEW code clean even when touching them.
 
 ## Where things stand
 
-M0/M1 complete; M2 (combat/automation + UI windows + maps rework) essentially
-done — remaining: trigger editor + settings dialog integration, log archiving.
-M3 next: PigParse SignalR/REST interop (`https://www.pigparse.org/PP`,
-`pigparse.azurewebsites.net` — DTOs PascalCase, enums as ints, probe the live
-hub before trusting `signalrcore`), Night Vision fix (`data/visionfix.zip`),
-GitHub-releases updater, PyInstaller .app/DMG + CI release matrix. Stretch:
-3D map view (map L-records already carry z on both endpoints). The full plan
-survives in the repo history and the user's plan file; per-zone data,
-built-in triggers, and master NPC/item lists are already ported.
+**M0–M2 complete** (475 tests): full local EQTool parity — spell timers,
+trigger engine + editor, DPS, spawn timers, CH chains, encounter AOEs, event
+overlay (positionable), mob info, console, Preferences, log archiving, maps
+z-fade + NPC finder + live P99 wiki lookup. `git log --oneline` narrates the
+build milestone by milestone.
+
+**M3 is next and fully specified in [docs/M3.md](docs/M3.md)** — PigParse
+network interop (probe the live SignalR hub first), Night Vision fix,
+self-updater, PyInstaller .app/DMG + CI releases. Network send points are
+marked `TODO(M3)` in the handlers (`grep -rn "TODO(M3)" src/`). Stretch:
+3D map view (map L-records already carry z on both endpoints).
