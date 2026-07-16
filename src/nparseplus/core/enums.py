@@ -38,6 +38,28 @@ class Server(IntEnum):
     QUARM = 3
 
 
+class MapLocationSharing(IntEnum):
+    # EQToolShared/HubModels/SignalrPlayer.cs — wire values, do not reorder.
+    EVERYONE = 0
+    GUILD_ONLY = 1
+
+
+class Boat(IntEnum):
+    # EQToolShared/Zones.cs Boats — wire values. Member names deliberately keep
+    # the C# spelling: they double as the short boat keys in data/zones.json
+    # (BoatEvent.boat), so ``Boat[event.boat]`` is the key->wire mapping.
+    BarrelBarge = 0
+    BloatedBelly = 1
+    MaidensVoyage = 2
+    NroIcecladBoat = 3
+
+
+class RollTimerType(IntEnum):
+    # EQToolShared/APIModels/RollTimerModel.cs — wire values.
+    SCOUT = 1
+    QUAKE = 2
+
+
 class CommsChannel(IntFlag):
     # EQTool/Models/EventModels.cs CommsEvent.Channel
     NONE = 0
