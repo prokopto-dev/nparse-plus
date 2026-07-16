@@ -180,6 +180,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     )
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
+    bridge.event_received.connect(settings_window.handle_backend_event)
     if app.maps_window is not None:
         # Remote (shared) player dots; the coordinator has already filtered
         # self-echo and server mismatches on the driver thread.

@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from nparseplus.config.settings import PlayerInfo, Settings, WindowState
+from datetime import datetime
+
+from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server
+from nparseplus.core.events import AfterPlayerChangedEvent
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.settingswindow import UnifiedSettingsWindow
@@ -192,6 +195,71 @@ def test_track_skill_enabled_only_for_trackable_classes(qtbot) -> None:
     assert window._char_track.value() == 0  # auto-cleared like PlayerInfo.cs
     window._char_class.setCurrentText("Ranger")
     assert window._char_track.isEnabled()
+
+
+def test_character_combo_refreshes_after_lazy_profile_creation(qtbot) -> None:
+    # The real-life bug: the window is built BEFORE the driver attaches the
+    # log and creates the profile, leaving the combo empty forever.
+    settings = Settings()
+    player = ActivePlayer()
+    window = _window(qtbot, settings, backend_player=player)
+    assert window._char_combo.count() == 0
+    assert not window._char_class.isEnabled()
+
+    # Driver thread attaches the log: profile created, character-change event.
+    player.reset_for("Xantik", Server.GREEN)
+    get_player(settings, "Xantik", "green")
+    window.handle_backend_event(AfterPlayerChangedEvent(timestamp=datetime.now()))
+
+    assert [window._char_combo.itemText(i) for i in range(window._char_combo.count())] == [
+        "Xantik (green)"
+    ]
+    assert window._char_combo.currentIndex() == 0
+    assert window._char_class.isEnabled()
+
+
+def test_character_combo_refreshes_on_show(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    assert window._char_combo.count() == 0
+    settings.players.append(PlayerInfo(name="Xantik", server="green"))
+    window.show()
+    assert window._char_combo.count() == 1
+    window.hide()
+
+
+def test_refresh_preserves_unsaved_edits_for_same_character(qtbot) -> None:
+    settings = Settings()
+    settings.players.append(PlayerInfo(name="Xantik", server="green"))
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    window = _window(qtbot, settings, backend_player=player)
+    window._char_level.setValue(37)  # unsaved edit
+
+    # A second profile appears (e.g. loaded elsewhere) but the active
+    # character did not change: selection and edits must survive.
+    settings.players.append(PlayerInfo(name="Beeta", server="blue"))
+    window.refresh_characters()
+
+    assert window._char_combo.count() == 2
+    assert window._char_combo.currentText() == "Xantik (green)"
+    assert window._char_level.value() == 37
+
+
+def test_refresh_tracks_character_switch(qtbot) -> None:
+    settings = Settings()
+    settings.players.append(PlayerInfo(name="Xantik", server="green", level=50))
+    settings.players.append(PlayerInfo(name="Beeta", server="blue", level=12))
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    window = _window(qtbot, settings, backend_player=player)
+    assert window._char_combo.currentText() == "Xantik (green)"
+
+    player.reset_for("Beeta", Server.BLUE)
+    window.handle_backend_event(AfterPlayerChangedEvent(timestamp=datetime.now()))
+
+    assert window._char_combo.currentText() == "Beeta (blue)"
+    assert window._char_level.value() == 12
 
 
 def test_all_classes_checked_round_trips_to_none(qtbot) -> None:

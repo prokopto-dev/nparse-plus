@@ -21,7 +21,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -47,6 +47,7 @@ from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
 from nparseplus.core import visionfix
 from nparseplus.core.enums import PlayerClass
+from nparseplus.core.events import AfterPlayerChangedEvent
 from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.ui.overlaybase import OverlayWindowBase
@@ -235,7 +236,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         form = QFormLayout()
         self._char_combo = QComboBox(self)
         for info in self._settings.players:
-            self._char_combo.addItem(f"{info.name} ({info.server})")
+            self._char_combo.addItem(self._char_label(info))
         form.addRow("Character", self._char_combo)
 
         self._char_class = QComboBox(self)
@@ -283,9 +284,20 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         form.addRow(filters_box)
 
         self._char_combo.currentIndexChanged.connect(lambda _i: self._load_character())
+        self._active_character = self._backend_character()
         self._select_active_character()
         self._load_character()
         return self._page(form)
+
+    @staticmethod
+    def _char_label(info: PlayerInfo) -> str:
+        return f"{info.name} ({info.server})"
+
+    def _backend_character(self) -> tuple[str, str | None] | None:
+        player = self._backend_player
+        if player is None or not player.name:
+            return None
+        return (player.name, player.server_key)
 
     def _selected_player(self) -> PlayerInfo | None:
         index = self._char_combo.currentIndex()
@@ -294,13 +306,57 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         return None
 
     def _select_active_character(self) -> None:
-        player = self._backend_player
-        if player is None or not player.name:
+        active = self._backend_character()
+        if active is None:
             return
         for i, info in enumerate(self._settings.players):
-            if info.name == player.name and info.server == player.server_key:
+            if (info.name, info.server) == active:
                 self._char_combo.setCurrentIndex(i)
                 return
+
+    def refresh_characters(self) -> None:
+        """Re-sync the character combo with ``settings.players``.
+
+        Profiles are created lazily on the driver thread once a log attaches,
+        usually AFTER this window was built — so the combo must be refreshed
+        on show and on character-change events. Repopulates only when the
+        profile list or the active character actually changed, keeping any
+        unsaved field edits for a still-selected character intact.
+        """
+        active = self._backend_character()
+        active_changed = active is not None and active != self._active_character
+        self._active_character = active
+        labels = [self._char_label(info) for info in self._settings.players]
+        current = [self._char_combo.itemText(i) for i in range(self._char_combo.count())]
+        if labels == current and not active_changed:
+            return
+        previous_label = self._char_combo.currentText()
+        blocker = QSignalBlocker(self._char_combo)
+        self._char_combo.clear()
+        self._char_combo.addItems(labels)
+        index = -1
+        if not active_changed and previous_label in labels:
+            index = labels.index(previous_label)
+        elif active is not None:
+            for i, info in enumerate(self._settings.players):
+                if (info.name, info.server) == active:
+                    index = i
+                    break
+        if index < 0 and labels:
+            index = 0
+        self._char_combo.setCurrentIndex(index)
+        del blocker
+        if self._char_combo.currentText() != previous_label or not previous_label:
+            self._load_character()
+
+    def handle_backend_event(self, event: object) -> None:
+        """Bridge slot (GUI thread): track live character switches."""
+        if isinstance(event, AfterPlayerChangedEvent):
+            self.refresh_characters()
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().showEvent(event)
+        self.refresh_characters()
 
     def _load_character(self) -> None:
         info = self._selected_player()
