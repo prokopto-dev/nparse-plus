@@ -36,6 +36,7 @@ from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
+from nparseplus.core.inventory import InventoryWatcher
 from nparseplus.core.logarchive import LogArchiveService
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
@@ -245,6 +246,16 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         GroupLeaderHandler(bus, player),
     ]
     api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=submit)
+    inventory_watcher = InventoryWatcher(
+        player,
+        get_eq_dir=lambda: (
+            Path(settings.general.eq_install_dir) if settings.general.eq_install_dir else None
+        ),
+        is_enabled=lambda: settings.pigparse_account.inventory_upload,
+        get_token=lambda: settings.pigparse_account.api_token,
+        api=pigparse_api,
+        submit=submit,
+    )
 
     archiver = LogArchiveService(
         get_log_dir=lambda: settings.general.eq_log_dir,
@@ -259,6 +270,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     driver.on_tick.append(sharing.tick)
     driver.on_tick.append(api_timers.tick)
     driver.on_tick.append(player_tracker.tick)
+    driver.on_tick.append(inventory_watcher.tick)
 
     return Backend(
         settings=settings,

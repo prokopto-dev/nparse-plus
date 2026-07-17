@@ -51,12 +51,16 @@ class PigParseApiClient:
         )
 
     def _request(
-        self, method: str, path: str, json_body: object | None = None
+        self,
+        method: str,
+        path: str,
+        json_body: object | None = None,
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response | None:
         url = f"{self._base}/{path}"
         for attempt in range(1, ATTEMPTS + 1):
             try:
-                resp = self._client.request(method, url, json=json_body)
+                resp = self._client.request(method, url, json=json_body, headers=headers)
                 resp.raise_for_status()
                 return resp
             except Exception:
@@ -122,6 +126,31 @@ class PigParseApiClient:
             "POST",
             "api/player/upsertplayers",
             {"Players": [r.wire_dump() for r in records], "Server": server},
+        )
+
+    def upload_inventory(
+        self, *, character_name: str, server: int, items: list, api_token: str
+    ) -> None:
+        """POST api/inventory/upload (Bearer auth) — pigparse.org character
+        browser. ``items`` are core InventoryItem-shaped objects."""
+        self._request(
+            "POST",
+            "api/inventory/upload",
+            {
+                "CharacterName": character_name,
+                "Server": server,
+                "Items": [
+                    {
+                        "Location": item.location,
+                        "Name": item.name,
+                        "ItemId": item.item_id,
+                        "Count": item.count,
+                        "Slots": item.slots,
+                    }
+                    for item in items
+                ],
+            },
+            headers={"Authorization": f"Bearer {api_token}"},
         )
 
     # --- zone activity ----------------------------------------------------------
