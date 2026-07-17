@@ -113,7 +113,13 @@ jobs:
       - name: Import Flatpak signing key
         env:
           FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
-        run: printf '%s' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
+        run: |
+          printf '%s' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
+          # Regenerate the public key from the secret rather than trusting
+          # the checked-out tree: the checkout is at RELEASE_TAG, which may
+          # predate the committed key file (and this also keeps the embedded
+          # key correct if the key is ever rotated).
+          gpg --export "$FLATPAK_GPG_KEY_ID" > packaging/flatpak/nparseplus-repo.gpg
       - name: Install Flatpak runtime
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
