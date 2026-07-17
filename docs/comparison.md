@@ -66,7 +66,8 @@ Honesty cuts both ways:
 
 - **GINA** has a huge ecosystem of shared trigger packages and an
   import/export format nParse+ cannot read (yet) — see
-  [Migrating from GINA](migrating/from-gina.md).
+  [Migrating from GINA](migrating/from-gina.md). Trigger export/import is
+  [on the roadmap](roadmap.md#triggers).
 - **EQTool** is the reference implementation of the PigParse network and gets
   its own features first; nParse+ ports them after.
 - **nParse** (upstream) is smaller and simpler if all you want is the map.

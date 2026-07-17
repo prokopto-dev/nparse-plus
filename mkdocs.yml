@@ -56,6 +56,11 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+  # Lets docs/changelog.md embed the repo-root CHANGELOG.md so the site
+  # renders the real changelog without duplicating it.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
 
 nav:
   - Home: index.md
@@ -110,6 +115,8 @@ nav:
       - Advanced: settings/advanced.md
   - FAQ: faq.md
   - Troubleshooting: troubleshooting.md
+  - Roadmap: roadmap.md
+  - Changelog: changelog.md
   - Development:
       - development/index.md
       - Building packages: development/building.md

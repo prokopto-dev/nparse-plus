@@ -31,7 +31,7 @@ and Linux, where GINA can't follow you.
 | Timer Ending / Timer Ended notices | The same two hooks, per trigger |
 | Early-end / cancel patterns | Restart behavior + reset events cover the common cases |
 | Character-specific trigger sets | Zone gating per trigger, plus per-character [profiles](../settings/character.md) for everything else |
-| Shared trigger packages | Not yet — built-ins ship with the app and stay updated with it |
+| Shared trigger packages | Not yet — built-ins ship with the app; trigger export/import is [on the roadmap](../roadmap.md#triggers) |
 
 ## Recreating a trigger, quickly
 

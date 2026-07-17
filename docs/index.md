@@ -59,6 +59,8 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 - [Migrating from nParse, GINA, or EQTool](migrating/index.md)
 - [Settings Reference](settings/index.md) · [FAQ](faq.md) ·
   [Troubleshooting](troubleshooting.md)
+- [Roadmap](roadmap.md) — what's coming · [Changelog](changelog.md) —
+  what's shipped
 
 nParse+ is free software (GPL-3.0), not affiliated with Daybreak Games or
 Project 1999. Full attribution lives in
