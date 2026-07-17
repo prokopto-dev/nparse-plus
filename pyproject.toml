@@ -51,6 +51,10 @@ build = [
   "dmgbuild>=1.6.7",
   "pyinstaller>=6.8",
 ]
+docs = [
+  "mkdocs-material>=9.5",
+  "mike>=2.1",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nparseplus"]

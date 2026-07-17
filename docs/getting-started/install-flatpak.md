@@ -7,8 +7,10 @@ etc. — and is the recommended install if you don't want to manage the tarball
 by hand.
 
 nParse+ is not (yet) on Flathub, so this is a "sideloaded" bundle: you install
-the file directly, and updates come from the releases page rather than
-`flatpak update` (details [below](#updating)).
+the file directly. Updates still work the normal Flatpak way — every release
+publishes a signed OSTree repository, and bundles from v1.4.1 onward configure
+it as their update source automatically, so plain `flatpak update` picks up
+new releases (details [below](#5-updating)).
 
 ## 1. Prerequisites
 

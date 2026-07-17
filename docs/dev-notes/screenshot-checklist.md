@@ -1,0 +1,60 @@
+# Screenshot checklist
+
+Drop PNGs with these exact filenames into `docs/assets/screenshots/` and
+they appear on the docs site automatically (no page edits needed — until a
+file exists, its page shows a dashed "screenshot pending" placeholder
+naming it). This file lives in `dev-notes/` and never publishes.
+
+Capture tips: use the **dark theme**, crop tight to the window (no
+desktop), and for overlays capture them **over the game** so readers see
+real context. Retina/2x captures are fine. PNG only.
+
+## Hero & tray
+
+| File | Used on | What to capture |
+|---|---|---|
+| `home--overview.png` | Home | The money shot: EQ windowed with Spell Timers, DPS Meter, Maps, and an Event Overlay alert visible at once. Mid-fight if possible. |
+| `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, window toggles, Window Layouts. |
+
+## Windows
+
+| File | Used on | What to capture |
+|---|---|---|
+| `window--spell-timers.png` | Spell Timers | Several rows across kinds: your buffs (green), a debuff on a target (red), a purple timer — gem icons visible. |
+| `window--dps-meter.png` | DPS Meter | A fight with 3+ attackers and the session footer; your row highlighted. |
+| `window--maps.png` | Maps | A busy zone map: your marker with direction arrow, another player's dot, a spawn-point countdown, the search box visible. |
+| `window--mob-info.png` | Mob Info | After considering a named mob with loot data: respawn time, notable flag, loot prices. |
+| `window--event-overlay.png` | Event Overlay | An alert text + a countdown bar over the game (fire a builtin trigger or a `StartTimer-30`). |
+| `window--console.png` | Console | The console with a dozen log lines, Pause checkbox visible. |
+| `window--trigger-editor.png` | Trigger Editor | Folder tree expanded (Built In folders + a custom folder), a trigger selected showing the form and test box. |
+| `window--discord.png` | Discord Overlay | The Discord voice overlay over the game with 2+ users, one speaking. |
+
+## Features
+
+| File | Used on | What to capture |
+|---|---|---|
+| `feature--ch-chain.png` | CH chains | The Event Overlay with a CH lane and 2–3 chips in flight (raid night material — grab it when you can). |
+| `feature--sharing-dots.png` | Sharing | The map with several shared player dots (a raid or busy zone). |
+
+## Settings pages
+
+One capture per sidebar page of the Settings window, cropped to the whole
+window with that page selected:
+
+| File | Page |
+|---|---|
+| `settings--overview.png` | Any page — shows the sidebar itself (General selected is fine; can be the same capture as `settings--general.png`) |
+| `settings--general.png` | General |
+| `settings--character.png` | Character (with a real character profile loaded) |
+| `settings--friends.png` | Friends (ideally after Load, with names in the box) |
+| `settings--spell-timers.png` | Spell Timers |
+| `settings--maps.png` | Maps |
+| `settings--windows.png` | Windows |
+| `settings--audio-overlays.png` | Audio & Overlays |
+| `settings--sharing.png` | Sharing (logged-out state is fine) |
+| `settings--advanced.png` | Advanced |
+
+## Status
+
+22 wanted, 0 captured. Delete rows from "wanted" mentally as you drop
+files in — the site tracks reality automatically.

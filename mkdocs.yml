@@ -1,0 +1,116 @@
+site_name: nParse+
+site_description: EverQuest Project 1999 companion overlay for macOS, Windows, and Linux
+site_url: https://prokopto-dev.github.io/nparse-plus/
+repo_url: https://github.com/prokopto-dev/nparse-plus
+repo_name: prokopto-dev/nparse-plus
+edit_uri: edit/master/docs/
+docs_dir: docs
+
+# Internal design notes live under docs/ but never publish.
+exclude_docs: |
+  dev-notes/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+
+extra:
+  version:
+    provider: mike
+
+extra_css:
+  - assets/extra.css
+
+hooks:
+  - tools/mkdocs_hooks.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Why nParse+: comparison.md
+  - Getting Started:
+      - getting-started/index.md
+      - Install on macOS: getting-started/install-macos.md
+      - Install on Windows: getting-started/install-windows.md
+      - Install on Linux (Flatpak): getting-started/install-flatpak.md
+      - Install on Linux (tarball): getting-started/install-linux-tarball.md
+      - First run: getting-started/first-run.md
+      - Updating: getting-started/updating.md
+  - Migrating:
+      - migrating/index.md
+      - From nParse: migrating/from-nparse.md
+      - From GINA: migrating/from-gina.md
+      - From EQTool: migrating/from-eqtool.md
+  - Windows & Overlays:
+      - windows/index.md
+      - Spell Timers: windows/spell-timers.md
+      - DPS Meter: windows/dps-meter.md
+      - Maps: windows/maps.md
+      - Mob Info: windows/mob-info.md
+      - Event Overlay: windows/event-overlay.md
+      - Console: windows/console.md
+      - Trigger Editor: windows/trigger-editor.md
+      - Discord Overlay: windows/discord-overlay.md
+  - Features:
+      - features/index.md
+      - Triggers: features/triggers.md
+      - Built-in triggers: features/builtin-triggers.md
+      - Chat-command timers: features/chat-timers.md
+      - Respawn & zone timers: features/respawn-timers.md
+      - CH chains: features/ch-chains.md
+      - Combat tracking: features/combat.md
+      - Boats: features/boats.md
+      - Sharing & PigParse: features/sharing.md
+      - Friends sync: features/friends-sync.md
+      - Night Vision fix: features/night-vision.md
+      - Text-to-speech: features/tts.md
+      - Self-updater: features/updater.md
+  - Settings Reference:
+      - settings/index.md
+      - General: settings/general.md
+      - Character: settings/character.md
+      - Friends: settings/friends.md
+      - Spell Timers: settings/spell-timers.md
+      - Maps: settings/maps.md
+      - Windows: settings/windows.md
+      - Audio & Overlays: settings/audio-overlays.md
+      - Sharing: settings/sharing.md
+      - Advanced: settings/advanced.md
+  - FAQ: faq.md
+  - Troubleshooting: troubleshooting.md
+  - Development:
+      - development/index.md
+      - Building packages: development/building.md
+      - Release flow: development/releasing.md
