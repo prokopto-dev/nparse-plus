@@ -12,6 +12,9 @@ on:
 
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  # OSTree repo published to GitHub Pages (gh-pages branch) so
+  # `flatpak update` works for sideloaded bundle installs too.
+  FLATPAK_REPO_URL: https://prokopto-dev.github.io/nparse-plus/repo
 
 jobs:
   check-version:
@@ -80,6 +83,8 @@ jobs:
   build-linux:
     needs: check-version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # force-pushes the flatpak repo to gh-pages
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,7 +118,11 @@ jobs:
             packaging/flatpak/io.github.prokopto_dev.nparse_plus.metainfo.xml
           flatpak-builder --user --force-clean --repo=flatpak-repo flatpak-builddir \
             packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml
-          flatpak build-bundle flatpak-repo \
+          # --repo-url: installing the bundle configures its origin remote,
+          # so `flatpak update` finds future releases without extra setup.
+          flatpak build-bundle \
+            --repo-url="$FLATPAK_REPO_URL" \
+            flatpak-repo \
             "dist/nparseplus-$VERSION-linux-x86_64.flatpak" \
             io.github.prokopto_dev.nparse_plus
       - name: Smoke-test Flatpak bundle
@@ -133,6 +142,61 @@ jobs:
             echo "::error::flatpak app exited early (code $code)"
             exit 1
           fi
+      - name: Verify flatpak update wiring
+        run: |
+          # The bundle install (smoke test above) must have configured an
+          # origin remote pointing at the published repo URL...
+          flatpak remotes --user -d | tee remotes.txt
+          grep -F "$FLATPAK_REPO_URL" remotes.txt \
+            || { echo "::error::bundle origin remote is not $FLATPAK_REPO_URL"; exit 1; }
+          # ...and the repo we are about to publish must actually serve the
+          # app ref (same check a client's `flatpak update` performs).
+          flatpak remote-add --user --no-gpg-verify localtest "file://$(pwd)/flatpak-repo"
+          flatpak remote-ls --user localtest | tee refs.txt
+          grep -F "io.github.prokopto_dev.nparse_plus" refs.txt \
+            || { echo "::error::app ref missing from the flatpak repo"; exit 1; }
+      - name: Publish flatpak repo to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir site
+          cp -a flatpak-repo site/repo
+          touch site/.nojekyll
+          cat > site/nparseplus.flatpakref <<EOF
+          [Flatpak Ref]
+          Name=io.github.prokopto_dev.nparse_plus
+          Branch=master
+          Url=$FLATPAK_REPO_URL
+          Title=nParse+ (EverQuest P99 overlay)
+          IsRuntime=false
+          SuggestRemoteName=nparseplus
+          RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          EOF
+          cat > site/nparseplus.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=nParse+
+          Url=$FLATPAK_REPO_URL
+          Homepage=https://github.com/${GITHUB_REPOSITORY}
+          Comment=nParse+ EverQuest P99 log-parsing overlay
+          EOF
+          cat > site/index.html <<EOF
+          <!doctype html><title>nParse+ flatpak repo</title>
+          <h1>nParse+ Flatpak repository (${RELEASE_TAG})</h1>
+          <p>See <a href="https://github.com/${GITHUB_REPOSITORY}/blob/master/docs/install-flatpak.md">the install guide</a>.</p>
+          EOF
+          # Single-commit orphan branch, force-pushed: the repo is rebuilt
+          # from scratch each release (clients pull incrementally anyway —
+          # ostree fetches only objects they don't already have), and the
+          # branch never accumulates history.
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "flatpak repo for ${RELEASE_TAG}"
+          git push --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            gh-pages
       - uses: actions/upload-artifact@v4
         with:
           name: linux-builds

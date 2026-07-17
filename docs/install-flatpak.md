@@ -78,16 +78,32 @@ the EQ install, with backups).
 
 ## 5. Updating
 
-Sideloaded bundles have no repository behind them, so `flatpak update` will
-**not** find new versions. Instead:
+`flatpak update` works: every release also publishes an OSTree repository at
+`https://prokopto-dev.github.io/nparse-plus/repo`.
 
-1. nParse+ checks GitHub for new releases at startup (can be turned off in
-   Settings) and offers the download from the tray menu.
-2. Download the new `.flatpak` and install it the same way as step 2 —
-   Flatpak treats it as an upgrade in place.
+- **Bundles downloaded from v1.4.1 onward embed that repo URL** — installing
+  the `.flatpak` once configures its origin remote automatically, and from
+  then on plain `flatpak update` picks up new nParse+ releases alongside
+  everything else. Updates are incremental (only changed files download).
+- **Installed from an older bundle?** Wire it up once by hand:
+
+  ```bash
+  flatpak remote-add --user --no-gpg-verify nparseplus \
+    https://prokopto-dev.github.io/nparse-plus/repo
+  flatpak update
+  ```
+
+  (`--no-gpg-verify` because the repo is unsigned — trust is anchored in the
+  HTTPS connection to GitHub Pages, the same as downloading the bundle from
+  the releases page.)
+- The in-app update check still notifies you from the tray either way, and
+  downloading a newer `.flatpak` over the top keeps working too.
 
 Your settings and data live in
-`~/.var/app/io.github.prokopto_dev.nparse_plus/` and survive upgrades.
+`~/.var/app/io.github.prokopto_dev.nparse_plus/` and survive upgrades,
+reinstalls, and switches between bundle and repo installs (only
+`flatpak uninstall --delete-data` removes them). Per-app overrides
+(`flatpak override`) persist independently as well.
 
 ## 6. Uninstall
 
