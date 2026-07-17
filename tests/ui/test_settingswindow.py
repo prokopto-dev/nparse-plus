@@ -286,6 +286,58 @@ def test_friends_page_load_and_push_round_trip(qtbot, tmp_path: Path) -> None:
     )
 
 
+def test_discord_login_flow_saves_account(qtbot) -> None:
+    from nparseplus.net.discordauth import DiscordAuthResult
+
+    settings = Settings()
+    saves = {"count": 0}
+
+    def bump() -> None:
+        saves["count"] += 1
+
+    window = _window(
+        qtbot,
+        settings,
+        on_save=bump,
+        discord_login_fn=lambda: DiscordAuthResult(
+            username="Pig", discord_id="123", api_token="tok"
+        ),
+    )
+    assert "Not logged in" in window._account_status.text()
+    assert not window._account_logout.isEnabled()
+
+    with qtbot.waitSignal(window._discord_auth_done, timeout=5000):
+        window._start_discord_login()
+    # The slot is queued; wait for it to have run on the GUI thread.
+    qtbot.waitUntil(lambda: settings.pigparse_account.api_token == "tok", timeout=5000)
+
+    account = settings.pigparse_account
+    assert (account.username, account.discord_id, account.api_token) == ("Pig", "123", "tok")
+    assert saves["count"] == 1
+    assert "Logged in as Pig" in window._account_status.text()
+    assert window._account_logout.isEnabled()
+
+    window._discord_logout()
+    assert settings.pigparse_account.api_token == ""
+    assert "Not logged in" in window._account_status.text()
+
+
+def test_discord_login_failure_reenables_button(qtbot) -> None:
+    window = _window(qtbot, discord_login_fn=lambda: None)
+    with qtbot.waitSignal(window._discord_auth_done, timeout=5000):
+        window._start_discord_login()
+    qtbot.waitUntil(lambda: "failed or timed out" in window._account_status.text(), timeout=5000)
+    assert window._account_login.isEnabled()
+
+
+def test_inventory_upload_toggle_applies(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    window._inventory_upload.setChecked(True)
+    window.apply()
+    assert settings.pigparse_account.inventory_upload is True
+
+
 def test_all_classes_checked_round_trips_to_none(qtbot) -> None:
     settings = Settings()
     settings.players.append(PlayerInfo(name="Xantik", server="green", show_spells_for_classes=None))

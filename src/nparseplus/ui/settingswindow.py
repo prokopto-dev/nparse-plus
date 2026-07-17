@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import contextlib
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSignalBlocker, Qt
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -51,6 +52,8 @@ from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import AfterPlayerChangedEvent
 from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
 from nparseplus.core.zones import ZoneDatabase
+from nparseplus.net.discordauth import DiscordAuthResult
+from nparseplus.net.discordauth import login as discord_login
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "settings"
@@ -127,11 +130,15 @@ class _WindowRow:
 
 
 class UnifiedSettingsWindow(OverlayWindowBase):
+    # Emitted from the login worker thread; queued onto the GUI thread.
+    _discord_auth_done = Signal(object)
+
     def __init__(
         self,
         settings: Settings,
         on_save: Callable[[], None],
         *,
+        discord_login_fn: Callable[[], DiscordAuthResult | None] = discord_login,
         on_log_dir_changed: Callable[[Path], None] | None = None,
         legacy_config: dict[str, Any] | None = None,
         on_legacy_save: Callable[[], None] | None = None,
@@ -160,6 +167,8 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._handles = window_handles or {}
         self._backend_player = backend_player
         self._zones = zones
+        self._discord_login = discord_login_fn
+        self._discord_auth_done.connect(self._finish_discord_login)
 
         self._sidebar = QListWidget(self)
         self._sidebar.setFixedWidth(140)
@@ -730,7 +739,85 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         note = QLabel("Sharing mode applies after restart.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
+
+        account_box = QGroupBox("pigparse.org account", self)
+        account_form = QFormLayout()
+        self._account_status = QLabel("", self)
+        self._account_status.setWordWrap(True)
+        account_form.addRow(self._account_status)
+        account_buttons = QHBoxLayout()
+        self._account_login = QPushButton("Log in with Discord…", self)
+        self._account_login.clicked.connect(self._start_discord_login)
+        self._account_logout = QPushButton("Log out", self)
+        self._account_logout.clicked.connect(self._discord_logout)
+        account_buttons.addWidget(self._account_login)
+        account_buttons.addWidget(self._account_logout)
+        account_buttons.addStretch(1)
+        account_form.addRow(account_buttons)
+        self._inventory_upload = QCheckBox(self)
+        self._inventory_upload.setChecked(self._settings.pigparse_account.inventory_upload)
+        self._inventory_upload.setToolTip(
+            "Watch the EQ directory for /outputfile inventory dumps and upload "
+            "them to your pigparse.org character page. Needs a login."
+        )
+        account_form.addRow("Upload inventory dumps", self._inventory_upload)
+        account_box.setLayout(account_form)
+        form.addRow(account_box)
+        self._refresh_account_status()
         return self._page(form)
+
+    def _refresh_account_status(self) -> None:
+        account = self._settings.pigparse_account
+        if account.api_token:
+            who = account.username or account.discord_id
+            self._account_status.setText(f"Logged in as {who}.")
+        else:
+            self._account_status.setText(
+                "Not logged in. Logging in via Discord enables the auction APIs "
+                "and the pigparse.org character browser (inventory upload)."
+            )
+        self._account_login.setEnabled(True)
+        self._account_logout.setEnabled(bool(account.api_token))
+
+    def _start_discord_login(self) -> None:
+        """Open the pigparse Discord login in the browser; the user
+        authenticates there and the loopback redirect delivers the token."""
+        self._account_login.setEnabled(False)
+        self._account_status.setText("Waiting for the browser login…")
+        login_fn = self._discord_login
+
+        def run() -> None:
+            try:
+                result = login_fn()
+            except Exception:
+                result = None
+            # Cross-thread emit: Qt queues delivery onto the GUI thread.
+            self._discord_auth_done.emit(result)
+
+        threading.Thread(target=run, name="discord-login", daemon=True).start()
+
+    def _finish_discord_login(self, result: object) -> None:
+        account = self._settings.pigparse_account
+        if isinstance(result, DiscordAuthResult) and result.ok:
+            account.username = result.username
+            account.discord_id = result.discord_id
+            account.api_token = result.api_token
+            if self._on_save is not None:
+                self._on_save()
+        else:
+            self._account_status.setText("Login failed or timed out — try again.")
+            self._account_login.setEnabled(True)
+            return
+        self._refresh_account_status()
+
+    def _discord_logout(self) -> None:
+        account = self._settings.pigparse_account
+        account.username = ""
+        account.discord_id = ""
+        account.api_token = ""
+        if self._on_save is not None:
+            self._on_save()
+        self._refresh_account_status()
 
     # -- Advanced (archiving + Night Vision fix) ---------------------------------------------
 
@@ -852,6 +939,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()
         self._settings.sharing.mode = self._sharing_mode.currentText()  # type: ignore[assignment]
+        self._settings.pigparse_account.inventory_upload = self._inventory_upload.isChecked()
         spellwindow = self._settings.spellwindow
         spellwindow.you_only_spells = self._you_only.isChecked()
         spellwindow.show_random_rolls = self._show_rolls.isChecked()

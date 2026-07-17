@@ -108,6 +108,18 @@ class DiscordSettings(BaseModel):
     channel: str = ""
 
 
+class PigParseAccountSettings(BaseModel):
+    """pigparse.org Discord-login credentials (EQTool DiscordId/ApiToken).
+
+    ``api_token`` is a bearer credential for the inventory/auction APIs —
+    treat it like a password (never log it)."""
+
+    username: str = ""
+    discord_id: str = ""
+    api_token: str = ""
+    inventory_upload: bool = False  # gate for the inventory watcher
+
+
 class YouSpell(BaseModel):
     name: str
     seconds_left: int
@@ -139,6 +151,7 @@ class Settings(BaseModel):
     maps: MapSettings = Field(default_factory=MapSettings)
     spellwindow: SpellWindowSettings = Field(default_factory=SpellWindowSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
+    pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
     players: list[PlayerInfo] = Field(default_factory=list)
     triggers: list[Trigger] = Field(default_factory=list)
