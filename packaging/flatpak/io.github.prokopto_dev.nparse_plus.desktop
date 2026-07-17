@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=nParse+
+Comment=EverQuest Project 1999 log-parsing overlay
+Exec=nparseplus
+Icon=io.github.prokopto_dev.nparse_plus
+Categories=Game;Utility;
+StartupNotify=false

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- @VERSION@ / @DATE@ are stamped by CI (release.yml) before flatpak-builder runs. -->
+<component type="desktop-application">
+  <id>io.github.prokopto_dev.nparse_plus</id>
+  <name>nParse+</name>
+  <summary>EverQuest Project 1999 log-parsing overlay</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      nParse+ tails your EverQuest log file and shows spell timers, DPS,
+      spawn timers, maps with shared player dots, triggers with text-to-speech,
+      and more — as always-on-top overlays while you play on Project 1999.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.prokopto_dev.nparse_plus.desktop</launchable>
+  <url type="homepage">https://github.com/prokopto-dev/nparse-plus</url>
+  <url type="bugtracker">https://github.com/prokopto-dev/nparse-plus/issues</url>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

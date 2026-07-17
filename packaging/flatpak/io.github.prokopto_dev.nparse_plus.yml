@@ -1,0 +1,54 @@
+# Flatpak manifest that wraps the PyInstaller onedir build (dist/nparseplus).
+# Build the PyInstaller output first, then from the repo root:
+#
+#   flatpak-builder --user --force-clean --repo=flatpak-repo flatpak-builddir \
+#     packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml
+#   flatpak build-bundle flatpak-repo nparseplus.flatpak io.github.prokopto_dev.nparse_plus
+#
+# CI does exactly this in .github/workflows/release.yml (build-linux job).
+# The app id follows the Flathub io.github.<owner>.<repo> convention (hyphens
+# become underscores) so a future Flathub submission can keep it.
+app-id: io.github.prokopto_dev.nparse_plus
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+command: nparseplus
+finish-args:
+  - --share=ipc
+  - --socket=x11 # frameless always-on-top overlays; also XWayland
+  - --socket=wayland
+  - --device=dri
+  - --share=network # PigParse hub/REST, p99 wiki, update check
+  - --socket=pulseaudio # trigger audio / TTS
+  - --talk-name=org.kde.StatusNotifierWatcher # tray icon
+  # EQ logs + spells_us.txt live inside the user's WINE prefix, and the
+  # Night Vision fix writes into the EQ install. home covers the common
+  # ~/.wine / ~/Games layouts; installs elsewhere need a user override
+  # (documented in docs/install-flatpak.md):
+  #   flatpak override --user --filesystem=/path/to/eq io.github.prokopto_dev.nparse_plus
+  - --filesystem=home
+modules:
+  - name: nparseplus
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/opt/nparseplus
+      - cp -a dist-nparseplus/. /app/opt/nparseplus/
+      - install -Dm755 nparseplus.sh /app/bin/nparseplus
+      - install -Dm644 io.github.prokopto_dev.nparse_plus.desktop
+        /app/share/applications/io.github.prokopto_dev.nparse_plus.desktop
+      - install -Dm644 io.github.prokopto_dev.nparse_plus.metainfo.xml
+        /app/share/metainfo/io.github.prokopto_dev.nparse_plus.metainfo.xml
+      - install -Dm644 icon.png
+        /app/share/icons/hicolor/64x64/apps/io.github.prokopto_dev.nparse_plus.png
+    sources:
+      - type: dir
+        path: ../../dist/nparseplus
+        dest: dist-nparseplus
+      - type: file
+        path: nparseplus.sh
+      - type: file
+        path: io.github.prokopto_dev.nparse_plus.desktop
+      - type: file
+        path: io.github.prokopto_dev.nparse_plus.metainfo.xml
+      - type: file
+        path: ../../data/ui/icon.png

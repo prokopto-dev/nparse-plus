@@ -82,10 +82,46 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           tar -C dist -czf "dist/nparseplus-$VERSION-linux-x86_64.tar.gz" nparseplus
+      - name: Install flatpak-builder
+        run: sudo apt-get install -y flatpak flatpak-builder dbus
+      - name: Install Flatpak runtime
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+      - name: Build Flatpak bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/@VERSION@/$VERSION/; s/@DATE@/$(date -u +%Y-%m-%d)/" \
+            packaging/flatpak/io.github.prokopto_dev.nparse_plus.metainfo.xml
+          flatpak-builder --user --force-clean --repo=flatpak-repo flatpak-builddir \
+            packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml
+          flatpak build-bundle flatpak-repo \
+            "dist/nparseplus-$VERSION-linux-x86_64.flatpak" \
+            io.github.prokopto_dev.nparse_plus
+      - name: Smoke-test Flatpak bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          flatpak install --user -y --noninteractive \
+            "dist/nparseplus-$VERSION-linux-x86_64.flatpak"
+          # Boot the real app headless inside the sandbox; exit 124 means
+          # timeout killed it, i.e. it was still running after 20 s.
+          set +e
+          dbus-run-session -- timeout 20 flatpak run \
+            --env=QT_QPA_PLATFORM=offscreen \
+            io.github.prokopto_dev.nparse_plus
+          code=$?
+          set -e
+          if [ "$code" -ne 124 ]; then
+            echo "::error::flatpak app exited early (code $code)"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-tarball
-          path: dist/*.tar.gz
+          name: linux-builds
+          path: |
+            dist/*.tar.gz
+            dist/*.flatpak
           if-no-files-found: error
 
   release:

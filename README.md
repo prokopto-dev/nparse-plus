@@ -41,10 +41,18 @@ xattr -dr com.apple.quarantine "/Applications/nParse+.app"
 (The app is ad-hoc signed, not notarized — macOS quarantines it on first
 download; the command above clears that. Windows users: unzip
 `nparseplus-<version>-win64.zip` and run `nparseplus.exe`; Linux users:
-untar and run `nparseplus/nparseplus`.)
+untar and run `nparseplus/nparseplus`, or use the Flatpak below.)
 
 nParse+ checks GitHub for new releases at startup (turn off in
 Settings) and offers the download from the tray menu.
+
+## Install (Linux Flatpak)
+
+Download `nparseplus-<version>-linux-x86_64.flatpak` from the releases page
+and install it with `flatpak install --user <file>` (or a double-click in
+GNOME Software / KDE Discover). **Full instructions — prerequisites, EQ
+installs outside your home directory, GNOME tray icon, updating,
+troubleshooting — are in [docs/install-flatpak.md](docs/install-flatpak.md).**
 
 ## Install & run (from source)
 
@@ -101,9 +109,12 @@ codesign --force --deep -s - "dist/nParse+.app"            # ad-hoc sign
 uv run dmgbuild -s packaging/dmg_settings.py "nParse+" dist/nParse+.dmg
 ```
 
-Tagged pushes (`v*`) build the macOS DMG, Windows zip, and Linux tarball in
-CI and attach them to a GitHub release
-([.github/workflows/release.yml](.github/workflows/release.yml)).
+Tagged pushes (`v*`) build the macOS DMG, Windows zip, and Linux tarball +
+Flatpak bundle in CI and attach them to a GitHub release
+([.github/workflows/release.yml](.github/workflows/release.yml)). The
+Flatpak wraps the PyInstaller onedir build via the manifest in
+[packaging/flatpak/](packaging/flatpak/); building it locally needs a Linux
+box with `flatpak-builder` (commands are in the manifest header).
 
 ## Status / roadmap
 
@@ -124,10 +135,17 @@ CI and attach them to a GitHub release
   login + inventory upload (character browser), friends-list sync, map
   label sizing, configurable z-fade, the raid-mode toggle — plus the
   settings-window character-profile refresh fix.
-- **Parking lot:** notarization + Windows signing/installer + Linux
-  AppImage, persistent map bookmarks, hide-others'-dots toggle, audio on
-  respawn-timer expiry, buff-fade pre-warnings, light theme, corpse
-  waypoints over the nparse wire, 3D map view.
+- **M6 (done):** community-request sweep — persistent map markers (spawn
+  points/way points survive zone changes and restarts), corpse waypoints
+  saved locally and shared over the nparse wire, respawn timers that
+  survive camping (plus the self-buff restore finally wired), audio on
+  respawn-timer expiry, buff-fade pre-warnings (GINA parity), stacked
+  detrimental timers (EQTool TimerRecast, roots always refresh),
+  hide-others'-dots map toggle, in-game `show_/hide_/toggle_<window>`
+  chat commands, and a light theme.
+- **Parking lot:** notarization + Windows signing/installer, Flathub
+  submission (a `.flatpak` bundle ships with each release since 1.2),
+  3D map view.
 
 ## License & credits
 

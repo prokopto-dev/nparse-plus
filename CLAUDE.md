@@ -130,7 +130,9 @@ pyproject.toml) — keep NEW code clean even when touching them.
 when frozen and the legacy config moves to platformdirs). Then ad-hoc
 `codesign` + `uv run dmgbuild -s packaging/dmg_settings.py`. Tag `v<X.Y.Z>`
 (must equal `__version__` AND pyproject) to cut a GitHub release via
-`.github/workflows/release.yml`.
+`.github/workflows/release.yml`. The Linux job also wraps the onedir build
+into a `.flatpak` bundle (`packaging/flatpak/` manifest; Linux-only to
+build — CI does it, don't try locally on macOS).
 
 ## Sharing wire cheatsheet (see tools/pigparse_probe_transcript.md)
 
