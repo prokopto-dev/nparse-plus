@@ -6,6 +6,25 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.4.1 (2026-07-17)
+
+### Bug Fixes
+
+- Crash/warning log files and Linux runtime env defaults
+  ([`ed5c872`](https://github.com/prokopto-dev/nparse-plus/commit/ed5c872fcc08adeac3f0680bd986560d7448b4f8))
+
+- Legacy window on-top apply, OTHER-class crash, WebEngine guards
+  ([`c020ef2`](https://github.com/prokopto-dev/nparse-plus/commit/c020ef20559911f5fe91d54c19f14eecab65b655))
+
+- Pin certifi CA bundle for websocket TLS in frozen builds
+  ([`267c62b`](https://github.com/prokopto-dev/nparse-plus/commit/267c62b0c22958a2c9badc352809b5bc200430dd))
+
+### Chores
+
+- Add project verify skill (offscreen app-driving recipe)
+  ([`dfdd744`](https://github.com/prokopto-dev/nparse-plus/commit/dfdd74413eb40b7d5b84eedf51f1ed8a3bbae1b5))
+
+
 ## v1.4.0 (2026-07-17)
 
 ### Features
