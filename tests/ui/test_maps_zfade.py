@@ -11,7 +11,7 @@ from nparseplus.core.zones import ZoneDatabase, ZoneInfo
 from nparseplus.helpers import config
 from nparseplus.parsers.maps import mapdata as mapdata_module
 from nparseplus.parsers.maps.mapcanvas import MapCanvas
-from nparseplus.parsers.maps.mapclasses import MapPoint
+from nparseplus.parsers.maps.mapclasses import MapPoint, scaled_font_size
 from nparseplus.parsers.maps.mapdata import MapData
 from nparseplus.parsers.maps.zfade import band_center, band_key_for, band_width_for, fade_opacity
 
@@ -218,6 +218,28 @@ def test_metadata_less_zone_fades_only_with_fallback(qtbot, synthetic_maps) -> N
     canvas.update_()
     assert band_opacity(canvas, 100.0) == pytest.approx(0.1)
     assert band_opacity(canvas, 0.0) == pytest.approx(1.0)
+
+
+def test_scaled_font_size_clamps_to_html_range(synthetic_maps) -> None:
+    config.data["maps"]["map_font_scale"] = 100
+    assert scaled_font_size(4) == 4
+    config.data["maps"]["map_font_scale"] = 150
+    assert scaled_font_size(4) == 6
+    config.data["maps"]["map_font_scale"] = 200
+    assert scaled_font_size(5) == 7  # clamped at HTML max
+    config.data["maps"]["map_font_scale"] = 50
+    assert scaled_font_size(1) == 1  # clamped at HTML min
+
+
+def test_map_font_scale_rerenders_poi_labels(qtbot, synthetic_maps) -> None:
+    canvas = make_canvas(qtbot, "fadezone")
+    pois = {p.location.text: p for bk in canvas._data for p in canvas._data[bk]["poi"]}
+    poi = pois["King_Arthur"]
+    base_width = poi.text.boundingRect().width()
+
+    config.data["maps"]["map_font_scale"] = 200
+    canvas.update_()
+    assert poi.text.boundingRect().width() > base_width
 
 
 def test_use_z_layers_keeps_tiered_behavior(qtbot, synthetic_maps) -> None:

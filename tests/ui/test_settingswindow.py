@@ -1,10 +1,9 @@
 """UnifiedSettingsWindow — dual-config apply, windows grid, character pane."""
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
-
-from datetime import datetime
 
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server

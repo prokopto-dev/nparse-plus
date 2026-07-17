@@ -354,7 +354,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         if isinstance(event, AfterPlayerChangedEvent):
             self.refresh_characters()
 
-    def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         self.refresh_characters()
 
@@ -471,6 +471,12 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._maps_grid_width.setRange(1, 10)
         self._maps_grid_width.setValue(int(self._lc("maps", "grid_line_width", 1)))
         form.addRow("Grid line width", self._maps_grid_width)
+        self._maps_font_scale = QSpinBox(self)
+        self._maps_font_scale.setRange(50, 200)
+        self._maps_font_scale.setSuffix(" %")
+        self._maps_font_scale.setValue(int(self._lc("maps", "map_font_scale", 100)))
+        self._maps_font_scale.setToolTip("Scales POI labels, player names, and spawn countdowns.")
+        form.addRow("Map label size", self._maps_font_scale)
         self._z_current = QSpinBox(self)
         self._z_closest = QSpinBox(self)
         self._z_other = QSpinBox(self)
@@ -519,6 +525,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
     def _apply_maps(self) -> None:
         self._lc_set("maps", "line_width", self._maps_line_width.value())
         self._lc_set("maps", "grid_line_width", self._maps_grid_width.value())
+        self._lc_set("maps", "map_font_scale", self._maps_font_scale.value())
         self._lc_set("maps", "current_z_alpha", self._z_current.value())
         self._lc_set("maps", "closest_z_alpha", self._z_closest.value())
         self._lc_set("maps", "other_z_alpha", self._z_other.value())

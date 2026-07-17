@@ -12,10 +12,21 @@ from PySide6.QtWidgets import (
     QGraphicsTextItem,
 )
 
-from nparseplus.helpers import format_time, get_degrees_from_line, to_eq_xy
+from nparseplus.helpers import config, format_time, get_degrees_from_line, to_eq_xy
 
 # The local player's marker color — EQTool MapViewModelService.cs rgb(61,235,52).
 YOU_COLOR = QColor(61, 235, 52)
+
+
+def map_font_pct() -> int:
+    """Current map label scale in percent (EQTool GlobalFontSize analogue)."""
+    return int(config.data.get("maps", {}).get("map_font_scale", 100))
+
+
+def scaled_font_size(base: int) -> int:
+    """HTML <font size> (1-7) scaled by the map label setting, clamped."""
+    return max(1, min(7, round(base * map_font_pct() / 100)))
+
 
 # Marker geometry in group units (the group is counter-scaled to constant
 # pixel size, so these are effectively pixels): EQTool draws a small circle
@@ -53,7 +64,9 @@ class MouseLocation(QGraphicsTextItem):
         # view = QGraphicsView of the scene view
         x, y = to_eq_xy(pos.x(), pos.y())
 
-        self.setHtml(f"<font color='white' size='4'>{int(x)!s}, {int(y)!s}</font>")
+        self.setHtml(
+            f"<font color='white' size='{scaled_font_size(4)}'>{int(x)!s}, {int(y)!s}</font>"
+        )
 
         # move hover to left if it goes out of view
         scene_rect = view.mapToScene(view.viewport().rect()).boundingRect()
@@ -73,15 +86,23 @@ class PointOfInterest:
         self.location = MapPoint()
         self.__dict__.update(kwargs)
         self.text = QGraphicsTextItem()
-        self.text.setHtml(
-            "<font color='{}' size='{}'>{}</font>".format(
-                self.location.color.name(), 1 + self.location.size, "\u272a" + self.location.text
-            )
-        )
+        self._render()
         self.text.setZValue(2)
         self.text.setPos(self.location.x, self.location.y)
 
+    def _render(self):
+        self._rendered_pct = map_font_pct()
+        self.text.setHtml(
+            "<font color='{}' size='{}'>{}</font>".format(
+                self.location.color.name(),
+                scaled_font_size(1 + self.location.size),
+                "\u272a" + self.location.text,
+            )
+        )
+
     def update_(self, scale):
+        if self._rendered_pct != map_font_pct():
+            self._render()
         self.text.setScale(scale)
         self.text.setPos(
             self.location.x - self.text.boundingRect().width() * 0.05 * scale,
@@ -151,7 +172,7 @@ class Player(QGraphicsItemGroup):
         self.nametag.setHtml(
             "<font color='{}' size='{}'>{}</font>".format(
                 self.color.hex if self.name != "__you__" else YOU_COLOR.name(),
-                5,
+                scaled_font_size(5),
                 self.name if self.name != "__you__" else "You",
             )
         )
@@ -187,7 +208,10 @@ class SpawnPoint(QGraphicsItemGroup):
             if remaining_seconds < 0:
                 self.stop()
             elif remaining_seconds <= 30:
-                self.text.setHtml(f"<font color='red' size='5'>{format_time(remaining)}</font>")
+                self.text.setHtml(
+                    f"<font color='red' size='{scaled_font_size(5)}'>"
+                    f"{format_time(remaining)}</font>"
+                )
             else:
                 self.text.setHtml(f"<font color='white'>{format_time(remaining)}</font>")
             self.realign()
@@ -240,7 +264,9 @@ class UserWaypoint(QGraphicsItemGroup):
         self.pixmap = QGraphicsPixmapItem(QPixmap(icon))
         self.pixmap.setOffset(-10, -10)
         self.text = QGraphicsTextItem()
-        self.text.setHtml(f"<font color='{self.color.hex}' size='{5}'>{self.name}</font>")
+        self.text.setHtml(
+            f"<font color='{self.color.hex}' size='{scaled_font_size(5)}'>{self.name}</font>"
+        )
         self.text.setPos(10, -15)
         self.setToolTip(self.name)
 

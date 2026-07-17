@@ -122,6 +122,9 @@ def verify_settings():
     data["maps"]["show_poi"] = get_setting(data["maps"].get("show_poi", True), True)
     data["maps"]["toggled"] = get_setting(data["maps"].get("toggled", True), True)
     data["maps"]["use_z_layers"] = get_setting(data["maps"].get("use_z_layers", False), False)
+    data["maps"]["map_font_scale"] = get_setting(
+        data["maps"].get("map_font_scale", 100), 100, lambda x: 50 <= x <= 200
+    )
     data["maps"]["z_fade_enabled"] = get_setting(data["maps"].get("z_fade_enabled", True), True)
     data["maps"]["z_fade_min_opacity"] = get_setting(
         data["maps"].get("z_fade_min_opacity", 10), 10, lambda x: 1 <= x <= 100
