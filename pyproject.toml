@@ -29,6 +29,7 @@ dependencies = [
   "colorhash>=2.0",
   "pathvalidate>=3.2",
   "websocket-client>=1.8",
+  "certifi>=2024.2.2",  # pinned CA store for websocket-client (frozen app)
 ]
 
 [project.urls]

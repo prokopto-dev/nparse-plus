@@ -8,6 +8,8 @@ deterministic — no real sockets, no real time (``sleep`` is recorded).
 import random
 import threading
 
+import pytest
+
 from nparseplus.core.events import (
     CustomTimerReceivedRemoteEvent,
     DragonRoarRemoteEvent,
@@ -312,3 +314,28 @@ def test_raw_transport_waits_for_completion_frame() -> None:
 
     assert errors == []
     assert not thread.is_alive()
+
+
+def test_raw_transport_pins_certifi_for_wss(monkeypatch) -> None:
+    # Frozen-app regression: with no explicit CA bundle, websocket-client
+    # falls back to the default SSL store, which is empty in the PyInstaller
+    # build — every wss upgrade failed CERTIFICATE_VERIFY_FAILED and the
+    # client looped in "retrying in 5s".
+    import certifi
+    import websocket
+
+    from nparseplus.net import pigparse_hub
+
+    calls: list[dict] = []
+
+    def fake_create_connection(url, **kwargs):
+        calls.append(kwargs)
+        raise ConnectionError("stop here — only the kwargs matter")
+
+    monkeypatch.setattr(pigparse_hub.hubproto, "negotiate", lambda url: "wss://hub.test/PP?id=x")
+    monkeypatch.setattr(websocket, "create_connection", fake_create_connection)
+
+    transport = RawWsTransport("https://hub.test/PP")
+    with pytest.raises(ConnectionError):
+        transport.connect()
+    assert calls[0]["sslopt"] == {"ca_certs": certifi.where()}

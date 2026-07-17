@@ -36,6 +36,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
+import certifi
 import websocket
 
 from nparseplus.core.events import (
@@ -177,7 +178,14 @@ class NParseWsClient:
         while not self._stop.is_set():
             self._status = "connecting"
             try:
-                ws = self._connect(self._url, timeout=SOCKET_TIMEOUT_S)
+                # certifi pinned for wss:// self-hosted servers (harmless for
+                # plain ws://): the frozen app's default SSL store is empty —
+                # see RawWsTransport.connect in pigparse_hub.py.
+                ws = self._connect(
+                    self._url,
+                    timeout=SOCKET_TIMEOUT_S,
+                    sslopt={"ca_certs": certifi.where()},
+                )
             except Exception:
                 logger.warning("nparse ws connect failed", exc_info=True)
                 if not self._stop.is_set():

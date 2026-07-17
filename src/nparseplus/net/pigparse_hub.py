@@ -30,6 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import certifi
 import websocket
 
 from nparseplus.core.events import (
@@ -95,7 +96,15 @@ class RawWsTransport:
 
     def connect(self) -> None:
         ws_url = hubproto.negotiate(self._url)
-        ws = websocket.create_connection(ws_url, timeout=hubproto.NEGOTIATE_TIMEOUT_S)
+        # Pin certifi like httpx does for the negotiate above. Left to the
+        # default SSL store, the frozen (PyInstaller) app finds no CA certs —
+        # every wss upgrade dies with CERTIFICATE_VERIFY_FAILED and the client
+        # loops in "retrying in 5s" while source runs work fine.
+        ws = websocket.create_connection(
+            ws_url,
+            timeout=hubproto.NEGOTIATE_TIMEOUT_S,
+            sslopt={"ca_certs": certifi.where()},
+        )
         try:
             ws.send(hubproto.HANDSHAKE_FRAME)
             frames = hubproto.decode_frames(ws.recv())

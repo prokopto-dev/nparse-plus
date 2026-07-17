@@ -130,10 +130,12 @@ def test_non_state_and_malformed_frames_ignored() -> None:
 def test_reconnect_loop_retries_after_failure() -> None:
     attempts = {"n": 0}
     sleeps: list[float] = []
+    sslopts: list = []
     socket = FakeSocket()
 
-    def connect(url: str, timeout: float) -> FakeSocket:
+    def connect(url: str, timeout: float, sslopt=None) -> FakeSocket:
         attempts["n"] += 1
+        sslopts.append(sslopt)
         if attempts["n"] == 1:
             raise ConnectionError("scripted")
         return socket
@@ -152,6 +154,10 @@ def test_reconnect_loop_retries_after_failure() -> None:
     assert attempts["n"] == 2  # failed once (slept 5), then connected
     assert sleeps == [5.0]
     assert client.status == "stopped"
+    # certifi pinned so wss:// works in the frozen app (empty default store).
+    import certifi
+
+    assert all(opt == {"ca_certs": certifi.where()} for opt in sslopts)
 
 
 def test_outbound_waypoint_matches_legacy_share_death_frame() -> None:
