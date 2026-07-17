@@ -270,6 +270,27 @@ class OtherPlayerLocationReceivedRemoteEvent(RemoteEvent):
     player: RemotePlayer
 
 
+class RemoteWaypoint(BaseModel):
+    """A shared map waypoint from an nparse-wire state snapshot. Coordinates
+    are in raw ``/loc`` print order, like RemotePlayer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: str  # server snapshot key ("Player:expiry")
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    icon: str = "corpse"
+
+
+class WaypointsReceivedRemoteEvent(RemoteEvent):
+    """nparseplus port of the original nparse waypoint feed: the full waypoint
+    snapshot for one zone (the maps window reconciles add/remove against it)."""
+
+    zone: str  # short zone key
+    waypoints: tuple[RemoteWaypoint, ...] = ()
+
+
 # --- UI/overlay events --------------------------------------------------------
 
 
@@ -283,6 +304,15 @@ class TimerBarEvent(RemoteEvent):
     name: str
     total_seconds: int
     bar_color: str | None = None
+
+
+class CorpseMarkerEvent(LogEvent):
+    """nparseplus extension (original-nparse corpse waypoints): you died at a
+    known location; the maps window marks it and the coordinator shares it."""
+
+    name: str  # the character's (share) name
+    zone: str  # short zone key
+    loc: Loc
 
 
 class WindowCommandEvent(LogEvent):

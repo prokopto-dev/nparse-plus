@@ -6,6 +6,7 @@ import queue
 from nparseplus.core.events import (
     OtherPlayerLocationReceivedRemoteEvent,
     PlayerDisconnectReceivedRemoteEvent,
+    WaypointsReceivedRemoteEvent,
 )
 from nparseplus.core.geometry import Loc
 from nparseplus.core.zones import load_zone_database
@@ -96,8 +97,7 @@ def test_inbound_state_converts_scene_coords_and_zone() -> None:
             "waypoints": {},
         }
     )
-    (event,) = inbound
-    assert isinstance(event, OtherPlayerLocationReceivedRemoteEvent)
+    (event,) = [e for e in inbound if isinstance(e, OtherPlayerLocationReceivedRemoteEvent)]
     remote = event.player
     assert remote.name == "Soandso"
     assert remote.zone == "gfaydark"  # short key for the map adapter
@@ -122,7 +122,9 @@ def test_non_state_and_malformed_frames_ignored() -> None:
     client, _socket, inbound = _connected_client()
     client._handle_frame({"type": "something else"})
     client._handle_frame({"type": "state", "locations": {"zone": "not a dict"}})
-    assert inbound == []
+    # Malformed player data yields no player events; the (empty) waypoint
+    # snapshot for the zone still flows so removals reconcile.
+    assert [e for e in inbound if not isinstance(e, WaypointsReceivedRemoteEvent)] == []
 
 
 def test_reconnect_loop_retries_after_failure() -> None:
@@ -150,3 +152,54 @@ def test_reconnect_loop_retries_after_failure() -> None:
     assert attempts["n"] == 2  # failed once (slept 5), then connected
     assert sleeps == [5.0]
     assert client.status == "stopped"
+
+
+def test_outbound_waypoint_matches_legacy_share_death_frame() -> None:
+    client, socket, _ = _connected_client()
+    client.send_waypoint(
+        name="Xantik",
+        zone="gfaydark",
+        loc=Loc(x=222.0, y=111.0, z=3.0),
+        icon="corpse",
+        timeout_minutes=60,
+    )
+    frame = json.loads(socket.sent[0])
+    assert frame["type"] == "waypoint"
+    assert frame["group_key"] == "testkey"
+    location = frame["location"]
+    assert (location["x"], location["y"], location["z"]) == (-222.0, -111.0, 3.0)
+    assert location["zone"] == "greater faydark"
+    assert location["player"] == "Xantik"
+    assert location["icon"] == "corpse"
+    assert location["timeout"] == 60
+
+
+def test_inbound_waypoints_snapshot_converts_and_keys() -> None:
+    client, _, inbound = _connected_client()
+    client._handle_frame(
+        {
+            "type": "state",
+            "locations": {"greater faydark": {}},
+            "waypoints": {
+                "greater faydark": {
+                    "Xantik:1789000000.0": {"x": -222.0, "y": -111.0, "z": 3.0, "icon": "corpse"}
+                }
+            },
+        }
+    )
+    events = [e for e in inbound if isinstance(e, WaypointsReceivedRemoteEvent)]
+    assert len(events) == 1
+    assert events[0].zone == "gfaydark"
+    (waypoint,) = events[0].waypoints
+    assert waypoint.key == "Xantik:1789000000.0"
+    # Scene -> raw /loc print order (same convention as RemotePlayer).
+    assert (waypoint.x, waypoint.y, waypoint.z) == (111.0, 222.0, 3.0)
+    assert waypoint.icon == "corpse"
+
+
+def test_inbound_empty_waypoints_still_emits_snapshot() -> None:
+    client, _, inbound = _connected_client()
+    client._handle_frame({"type": "state", "locations": {"greater faydark": {}}})
+    events = [e for e in inbound if isinstance(e, WaypointsReceivedRemoteEvent)]
+    assert len(events) == 1
+    assert events[0].waypoints == ()

@@ -487,6 +487,19 @@ class MapCanvas(QGraphicsView):
             self.set_way_point(
                 markers.way_point.x, markers.way_point.y, markers.way_point.z, persist=False
             )
+        for name in [
+            key
+            for key, waypoint in self._data.waypoints.items()
+            if getattr(waypoint, "persistent", False)
+        ]:
+            self.remove_waypoint(name)
+        for saved in markers.user_waypoints:
+            self.add_persistent_waypoint(
+                saved.name,
+                MapPoint(x=saved.x, y=saved.y, z=saved.z),
+                icon=saved.icon,
+                persist=False,
+            )
         self.update_()
 
     def _add_spawn_item(self, location, seconds):
@@ -536,6 +549,43 @@ class MapCanvas(QGraphicsView):
         self._data.way_point = None
         if persist:
             self.persist_markers()
+
+    # Cap for persistent user waypoints per zone (corpse markers).
+    MAX_PERSISTENT_WAYPOINTS = 5
+
+    def add_persistent_waypoint(self, name, location, icon="corpse", persist=True):
+        """A named, persisted user waypoint (your own corpse marker) — unlike
+        the wire waypoints in add_waypoint, these survive restarts. Oldest
+        markers roll off past MAX_PERSISTENT_WAYPOINTS."""
+        key = name
+        suffix = 2
+        while key in self._data.waypoints:
+            key = f"{name} ({suffix})"
+            suffix += 1
+        waypoint = UserWaypoint(
+            name=name,
+            icon=ICON_MAP.get(icon, "data/maps/waypoint.png"),
+            location=location,
+        )
+        waypoint.persistent = True
+        waypoint.icon_key = icon
+        self._data.waypoints[key] = waypoint
+        self._scene.addItem(waypoint)
+        waypoint.z_level = self._data.get_closest_z_group(location.z)
+        persistent_keys = [
+            k for k, w in self._data.waypoints.items() if getattr(w, "persistent", False)
+        ]
+        for stale in persistent_keys[: -self.MAX_PERSISTENT_WAYPOINTS]:
+            self.remove_waypoint(stale)
+        if persist:
+            self.persist_markers()
+        self.update_()
+
+    def clear_persistent_waypoints(self):
+        for key in [k for k, w in self._data.waypoints.items() if getattr(w, "persistent", False)]:
+            self.remove_waypoint(key)
+        self.persist_markers()
+        self.update_()
 
     def enterEvent(self, event):
         if config.data["maps"]["show_mouse_location"]:
@@ -599,6 +649,7 @@ class MapCanvas(QGraphicsView):
         way_point_menu = menu.addMenu("Way Point")
         way_point_create = way_point_menu.addAction("Create on Cursor")
         way_point_delete = way_point_menu.addAction("Clear")
+        corpse_clear = way_point_menu.addAction("Clear Corpse Markers")
         pathing_menu = menu.addMenu("Custom Pathing")
         pathing_start_recording = QAction("Start Recording")
         pathing_rename_recording = QAction("Rename Path")
@@ -640,6 +691,9 @@ class MapCanvas(QGraphicsView):
 
         if action == way_point_delete:
             self.clear_way_point()
+
+        if action == corpse_clear:
+            self.clear_persistent_waypoints()
 
         if action == pathing_start_recording:
             self.start_path_recording()

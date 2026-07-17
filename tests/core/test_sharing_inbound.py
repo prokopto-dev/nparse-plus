@@ -11,6 +11,8 @@ from nparseplus.core.events import (
     OtherPlayerLocationReceivedRemoteEvent,
     PlayerDisconnectReceivedRemoteEvent,
     RemotePlayer,
+    RemoteWaypoint,
+    WaypointsReceivedRemoteEvent,
 )
 from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import ActivePlayer
@@ -135,3 +137,14 @@ def test_custom_timer_wrong_server_dropped() -> None:
     rig.deliver(CustomTimerReceivedRemoteEvent(name="X", duration_in_seconds=90, server=2))
     assert rig.published == []
     assert rig.timers.find("X", CUSTOM_TIMER_GROUP) is None
+
+
+def test_waypoint_snapshot_published_without_self_filter() -> None:
+    rig = Rig()
+    event = WaypointsReceivedRemoteEvent(
+        zone="gfaydark",
+        waypoints=(RemoteWaypoint(key="Xantik:1789000000", x=1.0, y=2.0, z=0.0),),
+    )
+    rig.deliver(event)
+    # Our own corpse comes back keyed "Name:expiry" and must still render.
+    assert event in rig.published

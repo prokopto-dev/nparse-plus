@@ -286,6 +286,18 @@ class PigParseHubClient:
         )
         self._invoke("DragonRoarEvent", [wire.wire_dump()])
 
+    def send_waypoint(
+        self,
+        *,
+        name: str,
+        zone: str,
+        loc: Loc,
+        icon: str = "corpse",
+        timeout_minutes: int = 60,
+    ) -> None:
+        """No such wire on the PigParse hub — corpse waypoints are an
+        nparse-websocket-mode feature only."""
+
     def _invoke(self, target: str, arguments: list[Any]) -> None:
         """C# guard: invocations are silently dropped unless connected."""
         transport = self._transport

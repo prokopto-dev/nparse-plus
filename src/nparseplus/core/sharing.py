@@ -32,6 +32,7 @@ from nparseplus.config.settings import find_player
 from nparseplus.core.enums import MapLocationSharing
 from nparseplus.core.events import (
     CampEvent,
+    CorpseMarkerEvent,
     CustomTimerReceivedRemoteEvent,
     DragonRoarEvent,
     DragonRoarRemoteEvent,
@@ -39,6 +40,7 @@ from nparseplus.core.events import (
     PlayerDisconnectReceivedRemoteEvent,
     PlayerLocationEvent,
     RemotePlayer,
+    WaypointsReceivedRemoteEvent,
 )
 from nparseplus.core.geometry import Loc
 from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
@@ -96,6 +98,15 @@ class SharingClient(Protocol):
         sharing: int,
         loc: Loc | None,
     ) -> None: ...
+    def send_waypoint(
+        self,
+        *,
+        name: str,
+        zone: str,
+        loc: Loc,
+        icon: str = "corpse",
+        timeout_minutes: int = 60,
+    ) -> None: ...
 
 
 class SharingCoordinator:
@@ -122,6 +133,7 @@ class SharingCoordinator:
         bus.subscribe(PlayerLocationEvent, self._on_location)
         bus.subscribe(CampEvent, self._on_camp)
         bus.subscribe(DragonRoarEvent, self._on_dragon_roar)
+        bus.subscribe(CorpseMarkerEvent, self._on_corpse_marker)
 
     def set_client(self, client: SharingClient | None) -> None:
         self._client = client
@@ -172,6 +184,11 @@ class SharingCoordinator:
         ):
             if self._is_self_echo(item.player):
                 return
+            self.bus.publish(item)
+            return
+        if isinstance(item, WaypointsReceivedRemoteEvent):
+            # Deliberately NOT self-echo-filtered: your own corpse marker comes
+            # back keyed "Name:expiry" and must render like everyone else's.
             self.bus.publish(item)
             return
         if isinstance(item, DragonRoarRemoteEvent):
@@ -281,6 +298,20 @@ class SharingCoordinator:
             zone=self.player.zone,
             sharing=int(self._sharing_wire_value()),
             loc=self._last_loc,
+        )
+
+    def _on_corpse_marker(self, event: CorpseMarkerEvent) -> None:
+        if not self._location_sharing_allowed():
+            return
+        client = self._client
+        if client is None:
+            return
+        client.send_waypoint(
+            name=self._share_name(),
+            zone=event.zone,
+            loc=event.loc,
+            icon="corpse",
+            timeout_minutes=60,  # the original client's fixed corpse timeout
         )
 
     def _send_location(self, loc: Loc, when: datetime) -> None:

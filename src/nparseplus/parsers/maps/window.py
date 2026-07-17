@@ -13,9 +13,12 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
+from nparseplus.config.settings import WaypointMarker
 from nparseplus.core.events import (
+    CorpseMarkerEvent,
     OtherPlayerLocationReceivedRemoteEvent,
     PlayerDisconnectReceivedRemoteEvent,
+    WaypointsReceivedRemoteEvent,
 )
 from nparseplus.core.npc_search import NpcSearchIndex, normalize_name, search_all_zones
 from nparseplus.core.zones import load_zone_database
@@ -198,6 +201,48 @@ class Maps(ParserWindow):
             )
         elif isinstance(event, PlayerDisconnectReceivedRemoteEvent):
             self._map.remove_player(event.player.name)
+        elif isinstance(event, CorpseMarkerEvent):
+            self._handle_corpse_marker(event)
+        elif isinstance(event, WaypointsReceivedRemoteEvent):
+            self._reconcile_remote_waypoints(event)
+
+    def _handle_corpse_marker(self, event):
+        """Your own death: a persistent corpse marker in the death zone."""
+        zone_key = self._map._data.short_zone_key if self._map._data else None
+        point = MapPoint(x=-event.loc.x, y=-event.loc.y, z=event.loc.z)
+        if zone_key and event.zone == zone_key:
+            self._map.add_persistent_waypoint(f"{event.name}'s corpse", point, icon="corpse")
+        elif self._map.marker_store is not None:
+            # Map is showing another zone: persist straight to the store so
+            # the marker is there when the death zone loads.
+            markers = self._map.marker_store.load(event.zone)
+            markers.user_waypoints.append(
+                WaypointMarker(
+                    x=point.x, y=point.y, z=point.z, icon="corpse", name=f"{event.name}'s corpse"
+                )
+            )
+            del markers.user_waypoints[: -MapCanvas.MAX_PERSISTENT_WAYPOINTS]
+            self._map.marker_store.save(event.zone, markers)
+
+    def _reconcile_remote_waypoints(self, event):
+        """Full waypoint snapshot for one zone from the nparse wire: add the
+        new ones, drop vanished ones. Locally persisted markers are ours, not
+        the server's — reconciliation never touches them."""
+        zone_key = self._map._data.short_zone_key if self._map._data else None
+        if not zone_key or event.zone != zone_key:
+            return
+        seen = set()
+        for waypoint in event.waypoints:
+            seen.add(waypoint.key)
+            if waypoint.key not in self._map._data.waypoints:
+                point = MapPoint(x=-waypoint.y, y=-waypoint.x, z=waypoint.z)
+                self._map.add_waypoint(waypoint.key, point, waypoint.icon)
+        for name in [
+            key
+            for key, waypoint in self._map._data.waypoints.items()
+            if key not in seen and not getattr(waypoint, "persistent", False)
+        ]:
+            self._map.remove_waypoint(name)
 
     def parse(self, timestamp, text):
         if text[:23] == "LOADING, PLEASE WAIT...":

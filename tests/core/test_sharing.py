@@ -5,7 +5,12 @@ from datetime import datetime, timedelta
 from nparseplus.config.settings import PlayerInfo, Settings
 from nparseplus.core.bus import EventBus
 from nparseplus.core.enums import Server
-from nparseplus.core.events import CampEvent, DragonRoarEvent, PlayerLocationEvent
+from nparseplus.core.events import (
+    CampEvent,
+    CorpseMarkerEvent,
+    DragonRoarEvent,
+    PlayerLocationEvent,
+)
 from nparseplus.core.geometry import Loc
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.sharing import SharingCoordinator
@@ -21,6 +26,7 @@ class FakeSharingClient:
     def __init__(self) -> None:
         self.locations: list[dict] = []
         self.roars: list[dict] = []
+        self.waypoints: list[dict] = []
         self.servers: list[int | None] = []
         self.started = 0
         self.stopped = 0
@@ -40,6 +46,9 @@ class FakeSharingClient:
 
     def send_dragon_roar(self, **kwargs) -> None:
         self.roars.append(kwargs)
+
+    def send_waypoint(self, **kwargs) -> None:
+        self.waypoints.append(kwargs)
 
 
 class Rig:
@@ -239,3 +248,34 @@ def test_status_reflects_mode_and_client() -> None:
     assert rig.coordinator.status == "pigparse — connected"
     rig.coordinator.set_client(None)
     assert rig.coordinator.status == "off"
+
+
+def test_corpse_marker_sends_waypoint() -> None:
+    rig = Rig()
+    rig.bus.publish(
+        CorpseMarkerEvent(
+            timestamp=T0, line="", line_number=1, name="Xantik", zone="gfaydark", loc=LOC
+        )
+    )
+    assert rig.client.waypoints == [
+        {
+            "name": "Xantik",
+            "zone": "gfaydark",
+            "loc": LOC,
+            "icon": "corpse",
+            "timeout_minutes": 60,
+        }
+    ]
+
+
+def test_corpse_marker_respects_sharing_gate() -> None:
+    for rig in (
+        Rig(mode="off"),
+        Rig(player_info=PlayerInfo(name="Xantik", server="green", map_location_sharing="off")),
+    ):
+        rig.bus.publish(
+            CorpseMarkerEvent(
+                timestamp=T0, line="", line_number=1, name="Xantik", zone="gfaydark", loc=LOC
+            )
+        )
+        assert rig.client.waypoints == []

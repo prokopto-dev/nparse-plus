@@ -21,6 +21,7 @@ from nparseplus.core.handlers.boat import BoatHandler
 from nparseplus.core.handlers.buff_warning import BuffFadeWarner
 from nparseplus.core.handlers.complete_heal import CompleteHealCommsHandler, CompleteHealHandler
 from nparseplus.core.handlers.consider import ConHandler, MobInfoState
+from nparseplus.core.handlers.corpse import CorpseWaypointHandler
 from nparseplus.core.handlers.death_loop import DeathLoopHandler
 from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandler
 from nparseplus.core.handlers.dps import DpsHandler
@@ -252,6 +253,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         DpsHandler(bus, player, fights),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
+        CorpseWaypointHandler(bus, player),
         RandomRollHandler(bus, player, timers),
         FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=submit),
         QuakeHandler(bus, player, speaker=speaker, api=pigparse_api, submit=submit),

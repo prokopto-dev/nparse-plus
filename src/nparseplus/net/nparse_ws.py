@@ -18,10 +18,12 @@ converted at this boundary so the rest of the app only ever sees the
 raw-wire-order ``RemotePlayer`` convention and short zone keys.
 
 Inbound state is a full snapshot: players missing from it get synthesized
-PlayerDisconnect events (the legacy client removed their dots directly).
+PlayerDisconnect events (the legacy client removed their dots directly), and
+the zone's waypoint snapshot (corpse markers, keyed "Player:expiry") becomes
+one WaypointsReceivedRemoteEvent the maps window reconciles against.
 
-Deliberate divergences from the legacy module: corpse waypoints are not
-ported (post-1.0), and dragon roars don't exist on this wire (no-op).
+Deliberate divergence from the legacy module: dragon roars don't exist on
+this wire (no-op).
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ from nparseplus.core.events import (
     PlayerDisconnectReceivedRemoteEvent,
     RemoteEvent,
     RemotePlayer,
+    RemoteWaypoint,
+    WaypointsReceivedRemoteEvent,
 )
 from nparseplus.core.geometry import Loc
 from nparseplus.core.zones import ZoneDatabase
@@ -135,6 +139,38 @@ class NParseWsClient:
         except Exception:
             logger.warning("nparse ws send failed", exc_info=True)
 
+    def send_waypoint(
+        self,
+        *,
+        name: str,
+        zone: str,
+        loc: Loc,
+        icon: str = "corpse",
+        timeout_minutes: int = 60,
+    ) -> None:
+        """Corpse/user waypoint (legacy share_death) — the exact send_location
+        coordinate transform; the server expires it after ``timeout`` minutes."""
+        if not self._connected.is_set():
+            return
+        frame = {
+            "type": "waypoint",
+            "group_key": self._group_key,
+            "location": {
+                "x": -loc.x,
+                "y": -loc.y,
+                "z": loc.z,
+                "zone": self._long_zone(zone),
+                "player": name,
+                "timestamp": datetime.now().isoformat(),
+                "timeout": timeout_minutes,
+                "icon": icon,
+            },
+        }
+        try:
+            self._send_raw(json.dumps(frame))
+        except Exception:
+            logger.warning("nparse ws waypoint send failed", exc_info=True)
+
     # --- connection loop ---------------------------------------------------------
 
     def _run(self) -> None:
@@ -219,6 +255,29 @@ class NParseWsClient:
                 )
                 self._on_inbound(PlayerDisconnectReceivedRemoteEvent(player=remote))
         self._last_seen = seen
+
+        # Waypoints: the server sends only the snapshot zone's markers (the
+        # zone the state's locations are for); emit its full snapshot so the
+        # maps window can reconcile removals too.
+        snapshot_zone = next(iter(locations), None)
+        if snapshot_zone is None:
+            return
+        waypoint_data = message.get("waypoints", {}).get(snapshot_zone, {})
+        waypoints = tuple(
+            RemoteWaypoint(
+                key=key,
+                # Scene -> raw wire order, exactly like the player dots above.
+                x=-float(data.get("y", 0.0)),
+                y=-float(data.get("x", 0.0)),
+                z=float(data.get("z", 0.0)),
+                icon=str(data.get("icon", "corpse")),
+            )
+            for key, data in waypoint_data.items()
+            if isinstance(data, dict)
+        )
+        self._on_inbound(
+            WaypointsReceivedRemoteEvent(zone=self._short_zone(snapshot_zone), waypoints=waypoints)
+        )
 
     # --- zone-name conversion ---------------------------------------------------------
 

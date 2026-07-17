@@ -14,6 +14,8 @@ import pytest
 from nparseplus.core.events import (
     OtherPlayerLocationReceivedRemoteEvent,
     RemotePlayer,
+    RemoteWaypoint,
+    WaypointsReceivedRemoteEvent,
 )
 from nparseplus.helpers import config
 from nparseplus.parsers.maps.mapcanvas import MapCanvas
@@ -61,3 +63,47 @@ def test_purge_removes_only_remote_dots(maps: Maps) -> None:
     maps.handle_remote_event(remote_event("Thalistair"))
     maps._purge_remote_players()
     assert set(maps._map._data.players) == {"__you__"}
+
+
+def test_remote_waypoints_reconcile(maps: Maps) -> None:
+    snapshot = WaypointsReceivedRemoteEvent(
+        zone="freportw",
+        waypoints=(RemoteWaypoint(key="Xantik:1789.0", x=10.0, y=20.0, z=0.0),),
+    )
+    maps.handle_remote_event(snapshot)
+    assert "Xantik:1789.0" in maps._map._data.waypoints
+    assert maps._map._data.waypoints["Xantik:1789.0"].name == "Xantik"
+
+    # The next snapshot no longer carries it: reconciled away.
+    maps.handle_remote_event(WaypointsReceivedRemoteEvent(zone="freportw", waypoints=()))
+    assert maps._map._data.waypoints == {}
+
+
+def test_reconcile_never_touches_persistent_markers(maps: Maps) -> None:
+    maps._map.add_persistent_waypoint("Tester's corpse", MapPoint(x=1.0, y=2.0, z=0.0))
+    maps.handle_remote_event(WaypointsReceivedRemoteEvent(zone="freportw", waypoints=()))
+    assert "Tester's corpse" in maps._map._data.waypoints
+
+
+def test_corpse_marker_draws_and_persists(maps: Maps) -> None:
+    from nparseplus.config.settings import MapMarkerStore, Settings
+    from nparseplus.core.events import CorpseMarkerEvent
+    from nparseplus.core.geometry import Loc
+
+    store = MapMarkerStore(Settings())
+    maps._map.marker_store = store
+    maps.handle_remote_event(
+        CorpseMarkerEvent(
+            timestamp=NOW,
+            line="",
+            line_number=1,
+            name="Tester",
+            zone="freportw",
+            loc=Loc(x=222.0, y=111.0, z=3.0),
+        )
+    )
+    assert "Tester's corpse" in maps._map._data.waypoints
+    drawn = maps._map._data.waypoints["Tester's corpse"]
+    assert (drawn.location.x, drawn.location.y) == (-222.0, -111.0)
+    saved = store._settings.map_markers["freportw"].user_waypoints
+    assert [w.name for w in saved] == ["Tester's corpse"]
