@@ -26,6 +26,11 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
   timers are shared network-wide the same way.
 - `/consider` a mob to see its respawn time in
   [Mob Info](../windows/mob-info.md) before you commit to the camp.
+- **Don't want them on screen?** Hide the whole Custom Timer section with
+  "Show mob respawn timers" in
+  [Settings → Spell Timers](../settings/spell-timers.md) (timers keep
+  running, expiry announcements still fire) — or right-click a wrong
+  timer in the overlay to clear it by hand.
 
 ## Manual spawn points
 

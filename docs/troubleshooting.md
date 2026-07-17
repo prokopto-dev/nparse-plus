@@ -82,10 +82,14 @@ Where they live:
 
 ## Spell timers are wrong or missing
 
-- Class/level not set → durations can't scale
-  ([Settings → Character](settings/character.md)).
-- "Show only your own spells" hides others' casts
+- Class/level not set → durations can't scale — type `/who` in game and
+  they auto-fill ([Settings → Character](settings/character.md)).
+- "Show only your own spells" hides other players' casts
   ([Settings → Spell Timers](settings/spell-timers.md)).
+- A whole section missing (Boats / Custom Timer / Timers / rolls)? Its
+  **Show …** toggle in Settings → Spell Timers may be off — or someone
+  right-clicked and cleared it (cleared timers restart on their next
+  trigger; hidden ones come back instantly when re-enabled).
 - Ambiguous cast messages need **Guess ambiguous spells** on to show a
   best-guess row.
 

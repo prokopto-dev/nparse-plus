@@ -15,9 +15,11 @@ docking and departure times.
 - Sightings you make are shared to the network, and everyone else's
   sightings flow to you — so on a populated server the boat schedule is
   usually "just known" without anyone standing on the dock.
-- Boat timers appear as timer rows so you can see how long until the
-  *Sirensbane* or the *Maiden's Voyage* comes back before you decide to
-  swim.
+- Boat timers appear as timer rows in the **Boats** section of
+  [Spell Timers](../windows/spell-timers.md), so you can see how long
+  until the *Sirensbane* or the *Maiden's Voyage* comes back before you
+  decide to swim. Landlubbers can hide the section with "Show boat
+  timers" in [Settings → Spell Timers](../settings/spell-timers.md).
 
 This is a port of EQTool's boat service over the same shared feed, so
 nParse+ and EQTool users pool their sightings.

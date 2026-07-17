@@ -10,8 +10,8 @@ profile follows.
 | Setting | What it does |
 |---|---|
 | **Character** | Which profile you're editing. |
-| **Class** / **Your Level** | Drive spell-duration math for [Spell Timers](../windows/spell-timers.md) — a level 60 enchanter's Clarity lasts longer than a level 20's. Keep these current. |
-| **Zone** | The character's current zone (normally auto-detected from the log). |
+| **Class** / **Your Level** | Drive spell-duration math for [Spell Timers](../windows/spell-timers.md) — a level 60 enchanter's Clarity lasts longer than a level 20's. Auto-filled from your own `/who` row (and from level-up / class-detect log lines); a quick `/who` in game refreshes them, even while this window is open. |
+| **Zone** | The character's current zone — auto-detected from zone-change lines and from a plain `/who` (a global `/who all` carries no zone, so it can't update this). |
 | **Track Skill** | Your tracking skill; draws the tracking-radius circle on the [map](../windows/maps.md) for Druids/Rangers/Bards. |
 | **Location sharing** | Per-character: everyone / guild-only / off. Guild-only shows your dot only to guildmates ([Sharing](../features/sharing.md)). |
 | **Share timers** | Whether this character's kill timers are shared to (and received from) the network. |
