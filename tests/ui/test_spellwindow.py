@@ -249,3 +249,21 @@ def test_bar_colors_and_time_format():
     assert format_remaining(-5) == "00:00"
     assert format_remaining(65) == "01:05"
     assert format_remaining(3723) == "1:02:03"
+
+
+def test_buff_fade_warning_turns_time_label_red(qtbot):
+    backend = make_backend()
+    backend.settings.spellwindow.buff_fade_warning_seconds = 30
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+
+    window.refresh(now=NOW)
+    clarity = next(w for w in window._row_widgets.values() if w.row_name == "Clarity")
+    assert clarity._value.styleSheet() == ""
+
+    window.refresh(now=NOW + timedelta(minutes=35) - timedelta(seconds=10))
+    assert "bold" in clarity._value.styleSheet()
+
+    # Recast clears the warning again.
+    window.refresh(now=NOW)
+    assert clarity._value.styleSheet() == ""

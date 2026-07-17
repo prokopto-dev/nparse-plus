@@ -555,6 +555,19 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             'Speak "<mob> spawn timer expired" when a respawn countdown runs out.'
         )
         form.addRow("Announce respawn-timer expiry", self._respawn_audio)
+        self._buff_fade_secs = QSpinBox(self)
+        self._buff_fade_secs.setRange(0, 300)
+        self._buff_fade_secs.setSuffix(" s")
+        self._buff_fade_secs.setSpecialValueText("off")
+        self._buff_fade_secs.setValue(spellwindow.buff_fade_warning_seconds)
+        self._buff_fade_secs.setToolTip(
+            "Warn this many seconds before one of your own buffs fades "
+            "(the time label turns red; optional voice alert below)."
+        )
+        form.addRow("Buff-fade warning", self._buff_fade_secs)
+        self._buff_fade_audio = QCheckBox(self)
+        self._buff_fade_audio.setChecked(spellwindow.buff_fade_warning_audio)
+        form.addRow("Speak buff-fade warnings", self._buff_fade_audio)
         note = QLabel("Per-class spell filters live on the Character page.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
@@ -969,6 +982,8 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.best_guess_spells = self._best_guess.isChecked()
         spellwindow.raid_mode_auto = self._raid_mode.isChecked()
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()
+        spellwindow.buff_fade_warning_seconds = self._buff_fade_secs.value()
+        spellwindow.buff_fade_warning_audio = self._buff_fade_audio.isChecked()
         self._apply_character()
         self._apply_maps()
         self._apply_windows()

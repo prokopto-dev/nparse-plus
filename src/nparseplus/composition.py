@@ -18,6 +18,7 @@ from nparseplus.core.driver import LogDriver
 from nparseplus.core.handlers.api_timers import ApiTimersService
 from nparseplus.core.handlers.bard_count import BardCountHandler
 from nparseplus.core.handlers.boat import BoatHandler
+from nparseplus.core.handlers.buff_warning import BuffFadeWarner
 from nparseplus.core.handlers.complete_heal import CompleteHealCommsHandler, CompleteHealHandler
 from nparseplus.core.handlers.consider import ConHandler, MobInfoState
 from nparseplus.core.handlers.death_loop import DeathLoopHandler
@@ -291,7 +292,9 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         get_threshold_mb=lambda: settings.general.log_archive_size_mb,
     )
 
+    buff_warner = BuffFadeWarner(bus, timers, speaker, settings.spellwindow)
     driver.on_tick.append(timers.tick)
+    driver.on_tick.append(buff_warner.tick)
     driver.on_tick.append(engine.tick)
     driver.on_tick.append(fights.tick)
     driver.on_tick.append(archiver.tick)

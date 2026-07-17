@@ -104,6 +104,10 @@ class SpellWindowSettings(BaseModel):
     best_guess_spells: bool = True
     # nparseplus extension (eqtool #239): speak when a respawn timer expires.
     respawn_expiry_audio: bool = False
+    # nparseplus extension (GINA parity): warn when a self-buff is about to
+    # fade. 0 disables; the time label also turns red inside the window.
+    buff_fade_warning_seconds: int = Field(default=0, ge=0, le=300)
+    buff_fade_warning_audio: bool = True
 
 
 class DiscordSettings(BaseModel):

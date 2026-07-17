@@ -80,11 +80,17 @@ def format_remaining(seconds: float) -> str:
 class _RowWidget(QFrame):
     """One timer row: name + remaining time above a thin progress bar."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        warning_threshold: Callable[[], int] = lambda: 0,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("SpellTimerRow")
         self.row_name = ""
         self._color = ""
+        self._warning_threshold = warning_threshold
+        self._warning = False
 
         self._icon = QLabel(self)
         self._icon.setObjectName("SpellTimerRowIcon")
@@ -131,6 +137,7 @@ class _RowWidget(QFrame):
             self._value.setText(f"{row.roll}/{row.max_roll}  {format_remaining(remaining)}")
         else:
             self._value.setText(format_remaining(remaining))
+        self._update_warning(row, remaining)
         total = max(row.total_duration_s, 0.001)
         self._bar.setValue(int(min(remaining / total, 1.0) * BAR_MAX))
         self._bar.setVisible(True)
@@ -141,6 +148,22 @@ class _RowWidget(QFrame):
                 "QProgressBar { background-color: rgba(255, 255, 255, 35); border: none; }"
                 f"QProgressBar::chunk {{ background-color: {color}; }}"
             )
+
+    def _update_warning(self, row: Row, remaining: float) -> None:
+        """Buff-fade pre-warning: the time label turns red inside the window
+        (visual side of core/handlers/buff_warning.py)."""
+        threshold = self._warning_threshold()
+        warning = (
+            threshold > 0
+            and isinstance(row, SpellRow)
+            and row.group == YOU_GROUP
+            and not row.is_cooldown
+            and not row.detrimental
+            and 0 < remaining <= threshold
+        )
+        if warning != self._warning:
+            self._warning = warning
+            self._value.setStyleSheet("color: #ff5044; font-weight: bold;" if warning else "")
 
     def _update_icon(self, row: Row) -> None:
         """Gem icon for spell rows (bundled sprite sheets); hidden otherwise."""
@@ -257,13 +280,16 @@ class SpellTimerWindow(QWidget):
             return None
         return find_player(self._backend.settings, player.name, server_key)
 
-    def refresh(self) -> None:
+    def _buff_fade_warning_seconds(self) -> int:
+        return self._backend.settings.spellwindow.buff_fade_warning_seconds
+
+    def refresh(self, now: datetime | None = None) -> None:
         """Re-render from ``timers.snapshot()`` (rows are never mutated).
 
         Rebuilds the layout order each tick but reuses the per-row widgets
         keyed by (kind, name, group, dup-index) — cheap at overlay scale.
         """
-        now = datetime.now()
+        now = now if now is not None else datetime.now()
         rows = self._backend.timers.snapshot()
         rows = [row for row in rows if not self._row_hidden(row)]
 
@@ -301,7 +327,10 @@ class SpellTimerWindow(QWidget):
                 key = (*base, index)
                 widget = self._row_widgets.get(key)
                 if widget is None:
-                    widget = _RowWidget(self._container)
+                    widget = _RowWidget(
+                        self._container,
+                        warning_threshold=self._buff_fade_warning_seconds,
+                    )
                     self._row_widgets[key] = widget
                 widget.update_row(row, now)
                 self._rows_layout.addWidget(widget)
