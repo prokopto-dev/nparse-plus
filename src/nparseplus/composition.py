@@ -52,6 +52,7 @@ from nparseplus.core.timers import TimerRow, TimersService
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.chat_commands import CustomTimerChatCommands
 from nparseplus.core.triggers.engine import TriggerEngine
+from nparseplus.core.triggers.window_commands import WindowChatCommands
 from nparseplus.core.zones import ZoneDatabase, load_zone_database
 from nparseplus.net.nparse_ws import NParseWsClient
 from nparseplus.net.pigparse_api import PigParseApiClient
@@ -182,6 +183,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         settings.triggers = synced
     engine.set_triggers(synced)
     chat_commands = CustomTimerChatCommands(bus, sink)
+    window_commands = WindowChatCommands(bus)
 
     fights = FightTracker()
     mob_info = MobInfoState()
@@ -322,5 +324,5 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         net_worker=net_worker,
         player_tracker=player_tracker,
         timer_persistence=timer_persistence,
-        _retained=[chat_commands, sink, *handlers],
+        _retained=[chat_commands, window_commands, sink, *handlers],
     )

@@ -25,6 +25,7 @@ from nparseplus.config.settings import (
     load_settings,
     save_settings,
 )
+from nparseplus.core.events import WindowCommandEvent
 from nparseplus.core.player import tracking_distance
 
 
@@ -74,6 +75,21 @@ def _ensure_data_cwd() -> None:
         if (parent / "data").is_dir():
             os.chdir(parent)
             return
+
+
+def _apply_window_command(event: object, window_handles: dict[str, object]) -> None:
+    """show_/hide_/toggle_<window> typed in game (core WindowChatCommands).
+
+    ``toggle()`` owns each window's persistence (legacy and new alike), so
+    show/hide only flip when the state actually differs.
+    """
+    if not isinstance(event, WindowCommandEvent):
+        return
+    window = window_handles.get(event.window)
+    if window is None:
+        return
+    if event.action == "toggle" or (event.action == "show") != window.isVisible():  # type: ignore[attr-defined]
+        window.toggle()  # type: ignore[attr-defined]
 
 
 @dataclass
@@ -158,6 +174,15 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         if app.maps_window is not None:
             app.maps_window._map.update_()
 
+    window_handles = {
+        "maps": app.maps_window,
+        "discord": app._parsers_dict.get("discord"),
+        "spells": spell_window,
+        "dps": dps_window,
+        "mobinfo": mob_info_window,
+        "console": console_window,
+        "triggereditor": trigger_editor,
+    }
     settings_window = UnifiedSettingsWindow(
         settings,
         on_save=save,
@@ -166,18 +191,12 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_legacy_save=legacy_config.save,
         notify_legacy=app._signals["settings"].config_updated.emit,
         repaint_maps=_repaint_maps,
-        window_handles={
-            "maps": app.maps_window,
-            "discord": app._parsers_dict.get("discord"),
-            "spells": spell_window,
-            "dps": dps_window,
-            "mobinfo": mob_info_window,
-            "console": console_window,
-            "triggereditor": trigger_editor,
-        },
+        window_handles=window_handles,
         backend_player=backend.player,
         zones=backend.zones,
     )
+
+    bridge.event_received.connect(lambda event: _apply_window_command(event, window_handles))
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.event_received.connect(console_window.handle_event)
     bridge.event_received.connect(settings_window.handle_backend_event)

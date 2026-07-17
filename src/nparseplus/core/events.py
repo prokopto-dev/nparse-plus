@@ -283,3 +283,11 @@ class TimerBarEvent(RemoteEvent):
     name: str
     total_seconds: int
     bar_color: str | None = None
+
+
+class WindowCommandEvent(LogEvent):
+    """nparseplus extension (nparse #42/#64, not in EventModels.cs): the player
+    typed show_/hide_/toggle_<window> in chat; app.py flips the window."""
+
+    window: str
+    action: str  # "show" | "hide" | "toggle"
