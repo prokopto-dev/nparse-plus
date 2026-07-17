@@ -395,8 +395,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             self.refresh_characters()
             return
 
-        info = self._selected_player()
         active = self._backend_character()
+        if active is not None and active != self._active_character:
+            # Stale bookkeeping (e.g. the profile was created after this
+            # window was built and no character-change event re-synced us):
+            # heal it now so live /who//zone updates aren't silently dropped.
+            self.refresh_characters()
+        info = self._selected_player()
         if info is None or active is None or (info.name, info.server) != active:
             return
         if isinstance(event, WhoPlayerEvent):
@@ -416,6 +421,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self.refresh_characters()
+        # Always reload the character fields: the backend mutates the profile
+        # (/who, level dings, zoning) while the window is hidden, and
+        # refresh_characters skips _load_character when the combo is
+        # unchanged — without this, reopening showed stale class/level/zone.
+        self._load_character()
 
     def _load_character(self) -> None:
         info = self._selected_player()
@@ -607,6 +617,23 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._show_rolls = QCheckBox(self)
         self._show_rolls.setChecked(spellwindow.show_random_rolls)
         form.addRow("Show random rolls", self._show_rolls)
+        # Category display toggles (hide the section; timers keep running
+        # and respawn-expiry audio still fires while hidden).
+        self._show_boats = QCheckBox(self)
+        self._show_boats.setChecked(spellwindow.show_boats)
+        form.addRow("Show boat timers", self._show_boats)
+        self._show_custom_timers = QCheckBox(self)
+        self._show_custom_timers.setChecked(spellwindow.show_custom_timers)
+        self._show_custom_timers.setToolTip(
+            "The Custom Timer section: mob death/respawn countdowns, FTE and shared timers."
+        )
+        form.addRow("Show mob respawn timers", self._show_custom_timers)
+        self._show_trigger_timers = QCheckBox(self)
+        self._show_trigger_timers.setChecked(spellwindow.show_trigger_timers)
+        self._show_trigger_timers.setToolTip(
+            "The Timers section: countdowns started by triggers and chat commands."
+        )
+        form.addRow("Show trigger && chat timers", self._show_trigger_timers)
         self._best_guess = QCheckBox(self)
         self._best_guess.setChecked(spellwindow.best_guess_spells)
         self._best_guess.setToolTip(
@@ -1067,6 +1094,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow = self._settings.spellwindow
         spellwindow.you_only_spells = self._you_only.isChecked()
         spellwindow.show_random_rolls = self._show_rolls.isChecked()
+        spellwindow.show_boats = self._show_boats.isChecked()
+        spellwindow.show_custom_timers = self._show_custom_timers.isChecked()
+        spellwindow.show_trigger_timers = self._show_trigger_timers.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
         spellwindow.raid_mode_auto = self._raid_mode.isChecked()
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()

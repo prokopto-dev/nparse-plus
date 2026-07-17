@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import pytest
 
 from nparseplus.config.settings import Settings
+from nparseplus.core.handlers.boat import BOATS_GROUP
+from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.timers import (
     YOU_GROUP,
@@ -76,15 +78,109 @@ def test_rows_render_and_you_group_first(qtbot):
     assert names == ["Clarity", "Tainted Breath", "Custom Timer"]
 
 
-def test_you_only_filter_hides_other_groups(qtbot):
+def _add_category_rows(backend) -> None:
+    """One row per built-in category (plus another player's buff)."""
+    backend.timers.add_spell(
+        SpellRow(
+            name="Aegolism",
+            group="Joe",
+            updated_at=NOW,
+            is_target_player=True,
+            spell=Spell(id=3, name="Aegolism"),
+            ends_at=NOW + timedelta(minutes=90),
+            total_duration_s=90 * 60.0,
+        )
+    )
+    backend.timers.add_timer(
+        TimerRow(
+            name="Butcherblock to Freeport",
+            group=BOATS_GROUP,
+            updated_at=NOW,
+            ends_at=NOW + timedelta(minutes=5),
+            total_duration_s=300.0,
+        )
+    )
+    backend.timers.add_timer(
+        TimerRow(
+            name="a decaying skeleton",
+            group=CUSTOM_TIMER_GROUP,
+            updated_at=NOW,
+            ends_at=NOW + timedelta(minutes=6),
+            total_duration_s=360.0,
+        )
+    )
+    backend.timers.add_roll(
+        RollRow(
+            name="Joe",
+            group=" Random -- 333",
+            updated_at=NOW,
+            roll=42,
+            max_roll=333,
+            ends_at=NOW + timedelta(seconds=30),
+            total_duration_s=30.0,
+        )
+    )
+
+
+def test_you_only_filter_hides_only_other_player_spell_rows(qtbot):
+    # Regression: the toggle used to hide EVERY non-YOU row (boats, custom
+    # respawn timers, trigger timers, rolls) instead of just other players'
+    # spell rows.
     backend = make_backend()
+    _add_category_rows(backend)
     backend.settings.spellwindow.you_only_spells = True
     window = SpellTimerWindow(backend)
     qtbot.addWidget(window)
     window.refresh()
 
-    assert window.current_groups() == [YOU_GROUP]
-    assert window.current_row_names() == ["Clarity"]
+    names = window.current_row_names()
+    assert "Aegolism" not in names  # the other player's buff hides
+    assert "Clarity" in names  # yours stays
+    assert "Custom Timer" in names  # trigger timer stays
+    assert "Butcherblock to Freeport" in names  # boats stay
+    assert "a decaying skeleton" in names  # respawn timers stay
+    assert "Joe" in names  # the roll stays
+
+
+@pytest.mark.parametrize(
+    ("setting", "gone", "kept"),
+    [
+        ("show_boats", "Butcherblock to Freeport", "a decaying skeleton"),
+        ("show_custom_timers", "a decaying skeleton", "Butcherblock to Freeport"),
+        ("show_trigger_timers", "Custom Timer", "Butcherblock to Freeport"),
+        ("show_random_rolls", "Joe", "Custom Timer"),
+    ],
+)
+def test_category_toggle_hides_only_its_section(qtbot, setting, gone, kept):
+    backend = make_backend()
+    _add_category_rows(backend)
+    setattr(backend.settings.spellwindow, setting, False)
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+
+    names = window.current_row_names()
+    assert gone not in names
+    assert kept in names
+    assert "Clarity" in names and "Aegolism" in names  # spells untouched
+
+
+def test_all_categories_visible_by_default(qtbot):
+    backend = make_backend()
+    _add_category_rows(backend)
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+    names = window.current_row_names()
+    for name in (
+        "Clarity",
+        "Aegolism",
+        "Custom Timer",
+        "Butcherblock to Freeport",
+        "a decaying skeleton",
+        "Joe",
+    ):
+        assert name in names
 
 
 def _add_player_spell(backend, name: str, class_levels: dict) -> None:
@@ -249,6 +345,57 @@ def test_bar_colors_and_time_format():
     assert format_remaining(-5) == "00:00"
     assert format_remaining(65) == "01:05"
     assert format_remaining(3723) == "1:02:03"
+
+
+# -- context menu (manual timer clearing) --------------------------------------
+
+
+def _shown_window(qtbot, backend) -> SpellTimerWindow:
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+    window.show()  # childAt/mapTo need real layout geometry
+    window._rows_layout.activate()
+    return window
+
+
+def test_context_target_resolves_row_header_and_empty(qtbot):
+    backend = make_backend()
+    window = _shown_window(qtbot, backend)
+
+    clarity_widget = next(w for w in window._row_widgets.values() if w.row_name == "Clarity")
+    pos = clarity_widget.mapTo(window, clarity_widget.rect().center())
+    row, group = window._context_target(pos)
+    assert row is not None and row.name == "Clarity"
+    assert group == YOU_GROUP
+
+    header = window._headers["Timers"]
+    pos = header.mapTo(window, header.rect().center())
+    row, group = window._context_target(pos)
+    assert row is None
+    assert group == "Timers"
+
+    row, group = window._context_target(window.rect().bottomRight())
+    assert row is None and group is None
+
+
+def test_clear_row_group_and_all(qtbot):
+    backend = make_backend()
+    _add_category_rows(backend)
+    window = _shown_window(qtbot, backend)
+
+    row = backend.timers.find("Custom Timer", "Timers")
+    window._clear_row(row)
+    assert "Custom Timer" not in window.current_row_names()
+    assert backend.timers.find("Custom Timer", "Timers") is None
+
+    window._clear_group(BOATS_GROUP)
+    assert "Butcherblock to Freeport" not in window.current_row_names()
+
+    window._clear_all()
+    assert backend.timers.snapshot() == []
+    assert window.current_row_names() == []
+    assert window.current_groups() == []
 
 
 def test_buff_fade_warning_turns_time_label_red(qtbot):

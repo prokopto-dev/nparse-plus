@@ -49,7 +49,7 @@ from nparseplus.core.pipeline import LogPipeline
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.sharing import SharingClient, SharingCoordinator
 from nparseplus.core.spells.spells_us import SpellBook, load_master_npc_list, load_spell_book
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow, TimersService
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.chat_commands import CustomTimerChatCommands
 from nparseplus.core.triggers.engine import TriggerEngine
@@ -59,8 +59,6 @@ from nparseplus.net.nparse_ws import NParseWsClient
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.pigparse_hub import PigParseHubClient
 from nparseplus.net.worker import NetWorker
-
-TRIGGER_TIMER_GROUP = "Timers"
 
 
 class TriggerTimerSink:

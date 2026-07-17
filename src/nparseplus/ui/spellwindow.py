@@ -20,15 +20,25 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QProgressBar,
     QVBoxLayout,
     QWidget,
 )
 
 from nparseplus.config.settings import Settings, WindowState, find_player
+from nparseplus.core.handlers.boat import BOATS_GROUP
+from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.matching import hide_spell
-from nparseplus.core.timers import YOU_GROUP, CounterRow, RollRow, Row, SpellRow
+from nparseplus.core.timers import (
+    TRIGGER_TIMER_GROUP,
+    YOU_GROUP,
+    CounterRow,
+    RollRow,
+    Row,
+    SpellRow,
+)
 from nparseplus.ui import theme
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
@@ -89,6 +99,9 @@ class _RowWidget(QFrame):
         super().__init__(parent)
         self.setObjectName("SpellTimerRow")
         self.row_name = ""
+        #: The last-rendered Row — snapshot() copies the list, not the rows,
+        #: so this identity works for TimersService.remove_row (context menu).
+        self.row: Row | None = None
         self._color = ""
         self._warning_threshold = warning_threshold
         self._warning = False
@@ -127,6 +140,7 @@ class _RowWidget(QFrame):
     def update_row(self, row: Row, now: datetime) -> None:
         """Render ``row`` — read-only; never mutates the model."""
         self.row_name = row.name
+        self.row = row
         self._name.setText(row.name)
         self._update_icon(row)
         if isinstance(row, CounterRow):
@@ -267,9 +281,20 @@ class SpellTimerWindow(QWidget):
         then the active character's class filter (HideSpell)."""
         if row.group == YOU_GROUP:
             return False
+        sw = self._backend.settings.spellwindow
+        if row.group == BOATS_GROUP and not sw.show_boats:
+            return True
+        if row.group == CUSTOM_TIMER_GROUP and not sw.show_custom_timers:
+            return True
+        if row.group == TRIGGER_TIMER_GROUP and not sw.show_trigger_timers:
+            return True
+        if isinstance(row, RollRow) and not sw.show_random_rolls:
+            return True
         if isinstance(row, SpellRow) and not row.is_target_player:
             return False
-        if self._backend.settings.spellwindow.you_only_spells:
+        if sw.you_only_spells and isinstance(row, SpellRow):
+            # Only OTHER PLAYERS' spell rows — boats, custom/respawn, trigger
+            # timers, counters, and rolls are not "spells" and stay visible.
             return True
         if isinstance(row, SpellRow):
             info = self._active_player_info()
@@ -450,3 +475,48 @@ class SpellTimerWindow(QWidget):
 
     def wheelEvent(self, event) -> None:
         event.accept()  # deliberately inert: no scroll-through to the game
+
+    # -- context menu (manual timer clearing) -----------------------------------
+    # Note: with click-through enabled the OS never delivers right-clicks
+    # here, same as drag-to-move.
+
+    def _context_target(self, pos: QPoint) -> tuple[Row | None, str | None]:
+        """Resolve a click position: a row widget yields (row, its group), a
+        group header yields (None, group), empty space yields (None, None)."""
+        child = self.childAt(pos)
+        while child is not None and child is not self:
+            if isinstance(child, _RowWidget):
+                row = child.row
+                return row, (row.group if row is not None else None)
+            if isinstance(child, QLabel):
+                group = child.property("group_key")
+                if group:
+                    return None, group
+            child = child.parentWidget()
+        return None, None
+
+    def _clear_row(self, row: Row) -> None:
+        self._backend.timers.remove_row(row)
+        self.refresh()
+
+    def _clear_group(self, group: str) -> None:
+        self._backend.timers.remove_group(group)
+        self.refresh()
+
+    def _clear_all(self) -> None:
+        self._backend.timers.clear_all()
+        self.refresh()
+
+    def contextMenuEvent(self, event) -> None:
+        row, group = self._context_target(event.pos())
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        if row is not None:
+            menu.addAction(f"Clear '{row.name}'", lambda r=row: self._clear_row(r))
+        if group is not None:
+            label = self._group_label(group)
+            menu.addAction(f"Clear group '{label}'", lambda g=group: self._clear_group(g))
+        if menu.actions():
+            menu.addSeparator()
+        menu.addAction("Clear all timers", self._clear_all)
+        menu.exec(event.globalPos())

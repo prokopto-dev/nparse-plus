@@ -68,7 +68,7 @@ def _window(qtbot, settings=None, legacy=None, **kwargs) -> UnifiedSettingsWindo
     return window
 
 
-def test_window_title() -> None:
+def test_window_title(qtbot) -> None:  # qtbot: needs a QApplication to exist
     # The whole point of the consolidation: one window, the right name.
     assert (
         UnifiedSettingsWindow(
@@ -105,6 +105,9 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     window._sharing_mode.setCurrentText("off")
     window._you_only.setChecked(True)
     window._best_guess.setChecked(False)
+    window._show_boats.setChecked(False)
+    window._show_custom_timers.setChecked(False)
+    window._show_trigger_timers.setChecked(False)
     window._maps_line_width.setValue(3)
     window._z_closest.setValue(42)
     window._z_fade_min.setValue(35)
@@ -117,6 +120,9 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     assert settings.sharing.mode == "off"
     assert settings.spellwindow.you_only_spells is True
     assert settings.spellwindow.best_guess_spells is False
+    assert settings.spellwindow.show_boats is False
+    assert settings.spellwindow.show_custom_timers is False
+    assert settings.spellwindow.show_trigger_timers is False
     # Legacy side.
     assert legacy["maps"]["line_width"] == 3
     assert legacy["maps"]["closest_z_alpha"] == 42
@@ -302,6 +308,95 @@ def test_live_who_and_zone_events_refresh_backend_fields_only(qtbot) -> None:
     )
     assert window._char_zone.currentText() == "greater faydark"
     assert window._char_sharing.currentText() == "off"
+
+
+def test_who_block_end_to_end_updates_character_fields(qtbot) -> None:
+    """Real parsers + PlayerProfileHandler + the window: a /who block must
+    land class, level, AND zone in the character page (regression: users saw
+    stale fields after /who)."""
+    from nparseplus.core.bus import EventBus
+    from nparseplus.core.parsers.base import ParseContext
+    from nparseplus.core.parsers.who import PlayerWhoLogParse
+    from nparseplus.core.parsers.you_zoned import YouZonedParser
+    from nparseplus.core.pipeline import LogPipeline
+
+    settings = Settings()
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    profile = get_player(settings, "Xantik", "green")
+
+    bus = EventBus()
+    from nparseplus.core.handlers.player_profile import PlayerProfileHandler
+
+    PlayerProfileHandler(bus, player, settings)
+    # Registry order: YouZonedParser runs before PlayerWhoLogParse.
+    pipeline = LogPipeline(
+        [YouZonedParser(), PlayerWhoLogParse()],
+        ParseContext(bus=bus, player=player, zones=ZONES, settings=settings),
+    )
+
+    window = _window(qtbot, settings, backend_player=player)
+    bus.subscribe_all(window.handle_backend_event)  # what the Qt bridge does
+
+    stamp = "[Wed Jul 15 12:00:00 2026]"
+    for message in (
+        "Players on EverQuest:",
+        "---------------------------",
+        "[54 Wanderer] Xantik (Wood Elf) <Sanctuary>",
+        "There are 4 players in Greater Faydark.",
+    ):
+        pipeline.process(f"{stamp} {message}")
+
+    assert profile.player_class == int(PlayerClass.DRUID)
+    assert profile.level == 54
+    assert profile.zone == "gfaydark"
+    assert window._char_class.currentText() == "Druid"
+    assert window._char_level.value() == 54
+    assert window._char_zone.currentText() == "greater faydark"
+
+
+def test_reopening_window_reloads_backend_mutated_fields(qtbot) -> None:
+    # Regression: refresh_characters early-returns when the profile list and
+    # active character are unchanged, so reopening showed stale fields.
+    profile = PlayerInfo(name="Xantik", server="green", level=49)
+    settings = Settings(players=[profile])
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    window = _window(qtbot, settings, backend_player=player)
+    window.show()
+    assert window._char_level.value() == 49
+    window.hide()
+
+    profile.level = 50  # ding while the window is hidden
+    profile.zone = "gfaydark"
+    window.show()
+    assert window._char_level.value() == 50
+    assert window._char_zone.currentText() == "greater faydark"
+    window.hide()
+
+
+def test_stale_active_character_heals_on_live_event(qtbot) -> None:
+    # The profile is created AFTER the window was built (log attaches late)
+    # and no AfterPlayerChangedEvent reached us: a live /who event must still
+    # re-sync the combo instead of being silently dropped.
+    settings = Settings()
+    player = ActivePlayer()
+    window = _window(qtbot, settings, backend_player=player)
+    assert window._char_combo.count() == 0
+
+    player.reset_for("Xantik", Server.GREEN)
+    profile = get_player(settings, "Xantik", "green")
+    profile.player_class = int(PlayerClass.DRUID)
+    profile.level = 54
+    window.handle_backend_event(
+        WhoPlayerEvent(
+            timestamp=datetime.now(),
+            player=WhoPlayer(name="Xantik", player_class=PlayerClass.DRUID, level=54),
+        )
+    )
+    assert window._char_combo.currentText() == "Xantik (green)"
+    assert window._char_class.currentText() == "Druid"
+    assert window._char_level.value() == 54
 
 
 @pytest.mark.parametrize("stored_class", [int(PlayerClass.OTHER), 99])

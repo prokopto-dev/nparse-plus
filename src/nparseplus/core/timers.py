@@ -22,6 +22,10 @@ from nparseplus.core.spells.spells_us import SPACE_YOU, SpellBook
 # The self-target group constant (EQSpells.SpaceYou).
 YOU_GROUP = SPACE_YOU
 
+# Group for trigger/chat-command timers (EQTool CustomTimer.TargetName is
+# per-timer; we use one shared section like the trigger overlay list).
+TRIGGER_TIMER_GROUP = "Timers"
+
 # Counters are dropped when not refreshed for this long (UpdateSpells).
 COUNTER_IDLE_EXPIRY = timedelta(minutes=10)
 
@@ -239,6 +243,14 @@ class TimersService:
         self._rows = [row for row in self._rows if not _eq(row.group, group)]
         removed = before - len(self._rows)
         if removed:
+            self._notify()
+        return removed
+
+    def clear_all(self) -> int:
+        """Drop every row (manual reset from the overlay). Returns count."""
+        removed = len(self._rows)
+        if removed:
+            self._rows = []
             self._notify()
         return removed
 

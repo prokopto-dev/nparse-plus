@@ -111,6 +111,12 @@ class SpellWindowSettings(BaseModel):
     you_only_spells: bool = False
     show_random_rolls: bool = True
     raid_mode_auto: bool = True
+    # nparseplus extension: per-category display toggles for the built-in
+    # timer sections (display-only — the timers keep running and expiry
+    # audio still fires while hidden).
+    show_boats: bool = True
+    show_custom_timers: bool = True
+    show_trigger_timers: bool = True
     # nparseplus extension (EQTool's best-guess is always on): when False,
     # ambiguous cast lines (multiple candidate spells) create no timer.
     best_guess_spells: bool = True

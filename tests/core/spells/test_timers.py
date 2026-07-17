@@ -142,6 +142,19 @@ def test_clear_you_spells(timers: TimersService, spell_book: SpellBook) -> None:
     assert [row.group for row in timers.snapshot()] == ["Joe"]
 
 
+def test_clear_all_empties_rows_and_notifies(timers: TimersService, spell_book: SpellBook) -> None:
+    timers.add_spell(_spell_row(spell_book, group=YOU_GROUP))
+    timers.add_spell(_spell_row(spell_book, name="Aegolism", group="Joe"))
+    calls: list[int] = []
+    timers.on_change.append(lambda: calls.append(1))
+    assert timers.clear_all() == 2
+    assert timers.snapshot() == []
+    assert calls == [1]
+    # Already empty: no rows, no notification.
+    assert timers.clear_all() == 0
+    assert calls == [1]
+
+
 def test_on_change_fires(timers: TimersService, spell_book: SpellBook) -> None:
     calls: list[int] = []
     timers.on_change.append(lambda: calls.append(1))
