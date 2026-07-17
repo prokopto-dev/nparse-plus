@@ -31,6 +31,7 @@ from nparseplus.core.handlers.player_profile import PlayerProfileHandler
 from nparseplus.core.handlers.player_tracker import PlayerTrackerHandler
 from nparseplus.core.handlers.quake import QuakeHandler
 from nparseplus.core.handlers.random_roll import RandomRollHandler
+from nparseplus.core.handlers.respawn_expiry import RespawnExpiryNotifier
 from nparseplus.core.handlers.ring_war import RingWarHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
@@ -247,6 +248,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         ),
         DpsHandler(bus, player, fights),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
+        RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
         RandomRollHandler(bus, player, timers),
         FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=submit),
         QuakeHandler(bus, player, speaker=speaker, api=pigparse_api, submit=submit),

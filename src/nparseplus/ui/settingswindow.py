@@ -549,6 +549,12 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "regroup the window by spell instead of by target."
         )
         form.addRow("Auto raid-mode grouping", self._raid_mode)
+        self._respawn_audio = QCheckBox(self)
+        self._respawn_audio.setChecked(spellwindow.respawn_expiry_audio)
+        self._respawn_audio.setToolTip(
+            'Speak "<mob> spawn timer expired" when a respawn countdown runs out.'
+        )
+        form.addRow("Announce respawn-timer expiry", self._respawn_audio)
         note = QLabel("Per-class spell filters live on the Character page.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
@@ -962,6 +968,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.show_random_rolls = self._show_rolls.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
         spellwindow.raid_mode_auto = self._raid_mode.isChecked()
+        spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()
         self._apply_character()
         self._apply_maps()
         self._apply_windows()

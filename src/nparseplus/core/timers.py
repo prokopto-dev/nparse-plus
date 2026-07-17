@@ -96,6 +96,9 @@ class TimersService:
     def __init__(self) -> None:
         self._rows: list[Row] = []
         self.on_change: list[Callable[[], None]] = []
+        # Called from tick() with the rows that just expired (nparseplus
+        # extension — the C# UpdateSpells drops them silently).
+        self.on_expired: list[Callable[[list[Row]], None]] = []
         # Adaptive grouping state (SpellWindowViewModel.PCSpellsGroupedByTarget).
         self._pc_grouped_by_target = False
         # Gate for _adaptive_regroup (EQTool RaidModeEnabled); composition
@@ -269,6 +272,8 @@ class TimersService:
 
         self._adaptive_regroup()
         if expired:
+            for callback in list(self.on_expired):
+                callback(expired)
             self._notify()
         return expired
 

@@ -102,6 +102,8 @@ class SpellWindowSettings(BaseModel):
     # nparseplus extension (EQTool's best-guess is always on): when False,
     # ambiguous cast lines (multiple candidate spells) create no timer.
     best_guess_spells: bool = True
+    # nparseplus extension (eqtool #239): speak when a respawn timer expires.
+    respawn_expiry_audio: bool = False
 
 
 class DiscordSettings(BaseModel):
