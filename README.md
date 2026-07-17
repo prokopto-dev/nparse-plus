@@ -19,14 +19,15 @@ modified (the optional Night Vision fix is applied only when you ask).
 |---|---|
 | **Spell timers** | Per-target buff/debuff countdowns from the real spell DB (durations by your level/class), gem icons, per-class spell filters, worn-off removal, cooldowns, self-buffs restored across camps |
 | **Triggers** | 65 built-in triggers (raid AOEs with countdown bars, invis/levitate fading, failed feign, charm break, death touch, …) + custom triggers with `{name}`/`{c}`/`{COUNTER}` tokens, zone gating, text-to-speech, timers, counters. Start ad-hoc timers from chat: `StartTimer-45-Label` |
-| **Maps** | Brewall map set, player marker with direction arrow via `/loc`, tracking-skill radius circle (Druid/Ranger/Bard), smooth z-axis fading tuned per zone, spawn-point timers, waypoints, path recording, **NPC search** (map labels + notable NPCs + live P99-wiki lookup with click-to-flash) |
+| **Maps** | Brewall map set, player marker with direction arrow via `/loc`, tracking-skill radius circle (Druid/Ranger/Bard), smooth z-axis fading tuned per zone (opacity floor/strength/fallback all adjustable), map label size setting, spawn-point timers, waypoints, path recording, **NPC search** (map labels + notable NPCs + live P99-wiki lookup with click-to-flash) |
 | **DPS meter** | Per-fight attacker breakdown, 12-second trailing DPS, session best/current/last |
 | **Combat automation** | Respawn timers on kill (per-NPC times for 121 zones), faction/exp kill guessing, random-roll tracking, boat schedules, quake/Ring War/FTE alerts, death-loop detection, pet tracking |
 | **CH chains** | `CA 001 CH -- Target` calls render as chips sliding across an 11s lane per heal target; voice + on-screen warning when your slot is next |
 | **Event overlay** | Full-screen click-through alerts and countdown bars; position/size it over your game window from the tray |
 | **Mob info** | `/consider` a mob → respawn time, notable flag, known loot with live auction prices, one-click wiki page |
-| **PigParse network** | Live interop with EQTool users: shared player dots on the map (10s cadence, guild-only option), shared Kael pull timers and dragon roars, quake/boat/roll-timer feeds — plus a self-hostable `nparse` websocket mode and a per-character off switch |
+| **PigParse network** | Live interop with EQTool users: shared player dots on the map (10s cadence, guild-only option), shared Kael pull timers and dragon roars, quake/boat/roll-timer feeds, a shared `/who` player roster (classes appear on buff timers), pigparse.org Discord login with inventory upload to the character browser — plus a self-hostable `nparse` websocket mode and a per-character off switch |
 | **Night Vision fix** | One click applies the community shader/sky fix over your EQ install (with backups) — and one click reverts it |
+| **Friends sync** | Merge every character's in-game friends list on a server and push it back to all of them (originals backed up) |
 
 ## Install (macOS)
 
@@ -118,9 +119,15 @@ CI and attach them to a GitHub release
   (class/level/zone/track skill) that feed the engine, EQTool spell class
   filters + a Guess Spells toggle, EQTool-style drawn map markers with the
   tracking-skill radius circle, and spell gem icons on timer rows.
-- **Parking lot:** notarization, corpse waypoints over the nparse wire,
-  /who player upserts, raid-mode spell collapse, Discord auth/auction APIs,
-  inventory watcher, 3D map view.
+- **M5 (done):** the last EQTool parity gaps — shared `/who` player roster
+  with PigParse upserts and buff-timer class labels, pigparse.org Discord
+  login + inventory upload (character browser), friends-list sync, map
+  label sizing, configurable z-fade, the raid-mode toggle — plus the
+  settings-window character-profile refresh fix.
+- **Parking lot:** notarization + Windows signing/installer + Linux
+  AppImage, persistent map bookmarks, hide-others'-dots toggle, audio on
+  respawn-timer expiry, buff-fade pre-warnings, light theme, corpse
+  waypoints over the nparse wire, 3D map view.
 
 ## License & credits
 

@@ -146,7 +146,7 @@ when frozen and the legacy config moves to platformdirs). Then ad-hoc
 
 ## Where things stand
 
-**M0–M4 complete** (~630 tests): full EQTool parity including the network —
+**M0–M5 complete** (~680 tests): full EQTool parity including the network —
 live PigParse hub interop (map dots, shared timers, quake/boat/roll feeds,
 mob-info loot pricing), the self-hostable nparse websocket mode, Night
 Vision fix, self-updater, PyInstaller .app/DMG + release CI. M4 (1.1) added
@@ -155,8 +155,13 @@ WRITES the Pydantic Settings and the legacy config.data (the only place
 that bridges both), per-window opacity/on-top, per-character profiles
 (PlayerProfileHandler syncs PlayerInfo <-> ActivePlayer), spell class
 filters (`hide_spell`), the best_guess_spells toggle, EQTool-style drawn
-map markers + tracking radius, and spell gem icons. `git log --oneline`
-narrates the build milestone by milestone.
+map markers + tracking radius, and spell gem icons. M5 closed the last
+parity gaps: /who roster + PigParse upserts (`core/handlers/
+player_tracker.py`), pigparse.org Discord login (`net/discordauth.py`,
+token in `settings.pigparse_account` — never log it) + inventory watcher
+(`core/inventory.py`), friends ini sync (`core/friends.py`), map label
+scale + tunable z-fade (legacy `maps` keys), raid_mode_auto wiring.
+`git log --oneline` narrates the build milestone by milestone.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. Remaining human steps: push a `v*`

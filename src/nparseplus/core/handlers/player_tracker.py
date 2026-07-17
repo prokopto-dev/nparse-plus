@@ -53,6 +53,7 @@ class PlayerTrackerHandler(BaseHandler):
         self._in_zone: dict[str, TrackedPlayer] = {}
         self._dirty: dict[str, TrackedPlayer] = {}
         self._last_sync: datetime | None = None
+        self._current_zone = player.zone
         bus.subscribe(WhoPlayerEvent, self._on_who_player)
         bus.subscribe(YouZonedEvent, self._on_zoned)
         bus.subscribe(AfterPlayerChangedEvent, self._on_player_changed)
@@ -121,7 +122,12 @@ class PlayerTrackerHandler(BaseHandler):
         self.player.known_players.add(who.name)
 
     def _on_zoned(self, _event: YouZonedEvent) -> None:
-        self._in_zone.clear()
+        # C#: only clear when the zone actually changed — a /who block's
+        # trailing zone line re-announces the current zone and must not
+        # wipe the roster it just built.
+        if self._current_zone != self.player.zone:
+            self._current_zone = self.player.zone
+            self._in_zone.clear()
 
     def _on_player_changed(self, _event: AfterPlayerChangedEvent) -> None:
         self._all.clear()

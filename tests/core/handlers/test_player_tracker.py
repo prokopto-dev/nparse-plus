@@ -84,11 +84,24 @@ def test_own_who_row_updates_guild() -> None:
 
 
 def test_zone_change_clears_zone_roster_only() -> None:
-    handler, bus, _player = _make()
+    handler, bus, player = _make()
     _who(bus, "Joe", level=50)
+    player.zone = "commons"  # YouZonedHandler owns this in production
     bus.publish(YouZonedEvent(timestamp=T0, long_name="West Commonlands", short_name="commons"))
     assert handler.players_in_zone() == []
     assert handler.is_player("Joe")
+
+
+def test_who_zone_reannouncement_keeps_zone_roster() -> None:
+    # The /who block's trailing zone line re-publishes YouZonedEvent for the
+    # SAME zone — the roster the block just built must survive (C# CurrentZone
+    # comparison).
+    handler, bus, player = _make()
+    player.zone = "ecommons"
+    handler._current_zone = player.zone
+    _who(bus, "Joe", level=50)
+    bus.publish(YouZonedEvent(timestamp=T0, long_name="East Commonlands", short_name="ecommons"))
+    assert [p.name for p in handler.players_in_zone()] == ["Joe"]
 
 
 def test_character_change_clears_everything() -> None:
