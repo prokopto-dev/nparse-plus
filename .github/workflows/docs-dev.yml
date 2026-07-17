@@ -1,0 +1,44 @@
+name: Docs (dev)
+
+# Redeploys the "dev" docs version on master pushes that touch the docs.
+# Release versions (1.4, latest, ...) are deployed by the docs job in
+# release.yml. Both share the gh-pages-docs concurrency group so mike
+# pushes to gh-pages never interleave.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "tools/mkdocs_hooks.py"
+      - ".github/workflows/docs-dev.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch gh-pages for mike
+        run: git fetch origin gh-pages --depth=1 || true
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Sync docs dependencies
+        run: uv sync --frozen --only-group docs
+      - name: Build (strict)
+        run: uv run mkdocs build --strict
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Deploy dev docs
+        run: uv run mike deploy --push dev

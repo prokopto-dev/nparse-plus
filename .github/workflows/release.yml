@@ -186,7 +186,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir site
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Seed from the current gh-pages tree so the mike-managed docs
+          # (version dirs, versions.json, root index.html redirect) survive
+          # the rebuild; only the flatpak-owned paths are replaced.
+          if git clone -q --depth 1 --branch gh-pages "$REMOTE" site; then
+            rm -rf site/.git site/repo site/nparseplus.flatpakref site/nparseplus.flatpakrepo
+          else
+            echo "no existing gh-pages branch; starting fresh"
+            mkdir site
+          fi
           cp -a flatpak-repo site/repo
           touch site/.nojekyll
           # Embedded public key: remote-add from these files verifies with
@@ -211,24 +220,30 @@ jobs:
           Comment=nParse+ EverQuest P99 log-parsing overlay
           GPGKey=$GPG_KEY_B64
           EOF
-          cat > site/index.html <<EOF
+          # The site root belongs to mike (index.html redirects to the
+          # latest docs). Only write a fallback landing page if docs have
+          # never been deployed to this branch.
+          if [ ! -f site/index.html ]; then
+            cat > site/index.html <<EOF
           <!doctype html><title>nParse+ flatpak repo</title>
           <h1>nParse+ Flatpak repository (${RELEASE_TAG})</h1>
-          <p>See <a href="https://github.com/${GITHUB_REPOSITORY}/blob/master/docs/install-flatpak.md">the install guide</a>.</p>
+          <p>Docs are not deployed yet. See
+          <a href="https://github.com/${GITHUB_REPOSITORY}">the repository</a>.</p>
           EOF
+          fi
           # Single-commit orphan branch, force-pushed: the repo is rebuilt
           # from scratch each release (clients pull incrementally anyway —
           # ostree fetches only objects they don't already have), and the
-          # branch never accumulates history.
+          # branch never accumulates history. The docs tree carried over
+          # above rides along in the same single commit; mike only needs
+          # tree state, not history, so re-orphaning under it is safe.
           cd site
           git init -q -b gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "flatpak repo for ${RELEASE_TAG}"
-          git push --force \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            gh-pages
+          git push --force "$REMOTE" gh-pages
       - uses: actions/upload-artifact@v4
         with:
           name: linux-builds
@@ -266,3 +281,37 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: artifacts/*
           body_path: release-notes.md
+
+  # Versioned docs deploy. Runs after `release` (which needs build-linux), so
+  # the flatpak step's orphan force-push of gh-pages has already landed and
+  # mike commits on top of it — no race within a release run. The concurrency
+  # group is shared with docs-dev.yml to serialize mike pushes.
+  docs:
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: gh-pages-docs
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Fetch gh-pages for mike
+        run: git fetch origin gh-pages --depth=1
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Sync docs dependencies
+        run: uv sync --frozen --only-group docs
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Deploy versioned docs
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          DOCS_VERSION="${VERSION%.*}"   # 1.4.1 -> 1.4
+          uv run mike deploy --push --update-aliases "$DOCS_VERSION" latest
+          uv run mike set-default --push latest

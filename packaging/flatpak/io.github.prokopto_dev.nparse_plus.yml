@@ -24,7 +24,7 @@ finish-args:
   # EQ logs + spells_us.txt live inside the user's WINE prefix, and the
   # Night Vision fix writes into the EQ install. home covers the common
   # ~/.wine / ~/Games layouts; installs elsewhere need a user override
-  # (documented in docs/install-flatpak.md):
+  # (documented in docs/getting-started/install-flatpak.md):
   #   flatpak override --user --filesystem=/path/to/eq io.github.prokopto_dev.nparse_plus
   - --filesystem=home
 modules:
