@@ -120,6 +120,10 @@ def verify_settings():
         data["maps"].get("show_mouse_location", True), True
     )
     data["maps"]["show_poi"] = get_setting(data["maps"].get("show_poi", True), True)
+    # eqtool #211: hide other players' shared dots while still sending yours.
+    data["maps"]["show_other_players"] = get_setting(
+        data["maps"].get("show_other_players", True), True
+    )
     data["maps"]["toggled"] = get_setting(data["maps"].get("toggled", True), True)
     data["maps"]["use_z_layers"] = get_setting(data["maps"].get("use_z_layers", False), False)
     data["maps"]["map_font_scale"] = get_setting(

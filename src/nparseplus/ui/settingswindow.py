@@ -591,6 +591,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._maps_font_scale.setValue(int(self._lc("maps", "map_font_scale", 100)))
         self._maps_font_scale.setToolTip("Scales POI labels, player names, and spawn countdowns.")
         form.addRow("Map label size", self._maps_font_scale)
+        self._maps_show_others = QCheckBox(self)
+        self._maps_show_others.setChecked(bool(self._lc("maps", "show_other_players", True)))
+        self._maps_show_others.setToolTip(
+            "Draw other players' shared dots on the map. Off still shares your "
+            "own location — it only hides theirs."
+        )
+        form.addRow("Show other players' dots", self._maps_show_others)
         self._z_current = QSpinBox(self)
         self._z_closest = QSpinBox(self)
         self._z_other = QSpinBox(self)
@@ -640,6 +647,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._lc_set("maps", "line_width", self._maps_line_width.value())
         self._lc_set("maps", "grid_line_width", self._maps_grid_width.value())
         self._lc_set("maps", "map_font_scale", self._maps_font_scale.value())
+        self._lc_set("maps", "show_other_players", self._maps_show_others.isChecked())
         self._lc_set("maps", "current_z_alpha", self._z_current.value())
         self._lc_set("maps", "closest_z_alpha", self._z_closest.value())
         self._lc_set("maps", "other_z_alpha", self._z_other.value())

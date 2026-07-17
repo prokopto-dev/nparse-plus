@@ -117,6 +117,14 @@ class Maps(ParserWindow):
         show_poi.setToolTip("Show Points of Interest")
         show_poi.clicked.connect(self._toggle_show_poi)
         button_layout.addWidget(show_poi)
+        self._show_others_button = QPushButton("\U0001f465")
+        self._show_others_button.setCheckable(True)
+        self._show_others_button.setChecked(config.data["maps"].get("show_other_players", True))
+        self._show_others_button.setToolTip(
+            "Show other players' shared dots (your own location is still shared)"
+        )
+        self._show_others_button.clicked.connect(self._toggle_show_others)
+        button_layout.addWidget(self._show_others_button)
         auto_follow = QPushButton("\u25ce")
         auto_follow.setCheckable(True)
         auto_follow.setChecked(config.data["maps"]["auto_follow"])
@@ -160,6 +168,10 @@ class Maps(ParserWindow):
         # computing it from the backend player's class + track skill.
         self.tracking_radius_provider = None
 
+        # Settings-window changes to show_other_players (ParserWindow already
+        # connects this signal for its own opacity/flag keys).
+        QApplication.instance()._signals["settings"].config_updated.connect(self.sync_show_others)
+
     def handle_remote_event(self, event):
         """Shared-player events from the backend bus (queued Qt bridge).
 
@@ -169,6 +181,10 @@ class Maps(ParserWindow):
         local ``Your Location is`` line above.
         """
         if isinstance(event, OtherPlayerLocationReceivedRemoteEvent):
+            if not config.data["maps"].get("show_other_players", True):
+                # Display-only gate (eqtool #211): the SharingCoordinator keeps
+                # sending our own location; we just don't render the others.
+                return
             remote = event.player
             zone_key = self._map._data.short_zone_key if self._map._data else None
             if remote.zone and zone_key and remote.zone != zone_key:
@@ -223,6 +239,27 @@ class Maps(ParserWindow):
             QApplication.instance()._signals["maps"].death.emit(timestamp.isoformat(), text)
 
     # events
+    def _purge_remote_players(self):
+        if not self._map._data:
+            return
+        for name in [n for n in self._map._data.players if n != "__you__"]:
+            self._map.remove_player(name)
+
+    def _toggle_show_others(self, _):
+        shown = not config.data["maps"].get("show_other_players", True)
+        config.data["maps"]["show_other_players"] = shown
+        config.save()
+        self._show_others_button.setChecked(shown)
+        if not shown:
+            self._purge_remote_players()
+
+    def sync_show_others(self):
+        """Settings-window flips arrive via config_updated (see app.py)."""
+        shown = config.data["maps"].get("show_other_players", True)
+        self._show_others_button.setChecked(shown)
+        if not shown:
+            self._purge_remote_players()
+
     def _toggle_show_poi(self, _):
         config.data["maps"]["show_poi"] = not config.data["maps"]["show_poi"]
         config.save()
