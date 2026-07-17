@@ -7,11 +7,6 @@ likely to land. Want something moved up (or something new)?
 
 ## Triggers
 
-**Trigger export/import** — save your triggers to a file and share them
-with friends or guildies. This is the foundation for shareable trigger
-packs (and closes the biggest gap
-[GINA migrators](migrating/from-gina.md) feel today).
-
 **Per-character trigger profiles** — don't care about the
 [CH chain](features/ch-chains.md) on your warrior? Don't need FTE alerts
 while leveling an alt? Triggers will auto-enable/disable based on which

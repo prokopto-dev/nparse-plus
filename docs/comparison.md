@@ -42,7 +42,8 @@ Legend: ✅ full support · 🟡 partial / different approach · ❌ not availab
 | Text-to-speech alerts | ✅ native on all 3 OSes | ✅ | ❌ | ✅ |
 | Discord overlay | ✅ | ❌ | ✅ | ❌ |
 | Self-updater | ✅ | ✅ | ❌ | ✅ |
-| Trigger import from GINA | ❌ ([manual recreation](migrating/from-gina.md)) | 🟡 | ❌ | — |
+| Trigger export/import (shareable files) | ✅ JSON packs | ❌ | ❌ | ✅ (`.gtp` packages) |
+| Trigger import from GINA | ✅ reads `.gtp`/XML ([details](migrating/from-gina.md)) | 🟡 | ❌ | — |
 
 ## What only nParse+ offers
 
@@ -64,10 +65,11 @@ Legend: ✅ full support · 🟡 partial / different approach · ❌ not availab
 
 Honesty cuts both ways:
 
-- **GINA** has a huge ecosystem of shared trigger packages and an
-  import/export format nParse+ cannot read (yet) — see
-  [Migrating from GINA](migrating/from-gina.md). Trigger export/import is
-  [on the roadmap](roadmap.md#triggers).
+- **GINA** has a huge ecosystem of shared trigger packages. nParse+ now
+  [imports `.gtp` packages directly](migrating/from-gina.md) (sound files
+  and phrase modifiers aside) and has its own
+  [JSON export/import](features/triggers.md#sharing-triggers-export-import),
+  but the community library itself still lives in GINA's world.
 - **EQTool** is the reference implementation of the PigParse network and gets
   its own features first; nParse+ ports them after.
 - **nParse** (upstream) is smaller and simpler if all you want is the map.

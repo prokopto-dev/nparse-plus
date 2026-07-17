@@ -6,14 +6,16 @@ match a log line, show text, speak, start timers — plus everything GINA
 never did (maps, spell timers, DPS, the network). It also runs on macOS
 and Linux, where GINA can't follow you.
 
-!!! warning "There is no GINA importer"
-    Being upfront: **nParse+ cannot read GINA's trigger packages or
-    `.gtp`/XML exports today.** Your triggers must be recreated by hand in
-    the [Trigger Editor](../windows/trigger-editor.md). For most players
-    that's a handful of triggers that actually matter plus the raid pack —
-    and the [built-in library](../features/builtin-triggers.md) already
-    covers the standard raid AOEs, so start by enabling those before
-    recreating anything.
+!!! success "Your triggers come with you"
+    **nParse+ reads GINA's trigger packages directly.** In the
+    [Trigger Editor](../windows/trigger-editor.md), click **Import…** and
+    pick a `.gtp` package (or the raw XML) — trigger groups become
+    categories, `{S}` tokens and timers carry over unchanged, and nothing
+    is kept until you Apply. Skipped on the way in: sound media files
+    (use [TTS](../features/tts.md) instead), copy-to-clipboard, and
+    phrase modifiers. Before importing a big raid pack, note the
+    [built-in library](../features/builtin-triggers.md) already covers
+    the standard raid AOEs.
 
 ## Concept map
 
@@ -31,7 +33,7 @@ and Linux, where GINA can't follow you.
 | Timer Ending / Timer Ended notices | The same two hooks, per trigger |
 | Early-end / cancel patterns | Restart behavior + reset events cover the common cases |
 | Character-specific trigger sets | Zone gating per trigger, plus per-character [profiles](../settings/character.md) for everything else |
-| Shared trigger packages | Not yet — built-ins ship with the app; trigger export/import is [on the roadmap](../roadmap.md#triggers) |
+| Shared trigger packages | [Export/import](../features/triggers.md#sharing-triggers-export-import) as JSON files — and `.gtp` packages import directly |
 
 ## Recreating a trigger, quickly
 

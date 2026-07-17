@@ -67,6 +67,33 @@ Triggers can be restricted to specific zones, so a Plane of Growth trigger
 never fires from someone quoting the emote in the Commonlands. The
 [built-in](builtin-triggers.md) encounter triggers ship zone-gated.
 
+## Sharing triggers (export & import)
+
+Triggers travel as plain JSON files, so you can share them with friends
+and guildies or keep themed packs around.
+
+**Export** (Trigger Editor → **Export…**) writes what's selected in the
+tree: a selected trigger exports alone, a selected folder exports its
+triggers, and with nothing selected everything exports. Unmodified
+[built-ins](builtin-triggers.md) are left out — every install already has
+them — but built-ins you've customized are included.
+
+**Import** (Trigger Editor → **Import…**) reads:
+
+- **nParse+ trigger files** (`.json`) — the format Export writes.
+- **GINA trigger packages** (`.gtp`, or their raw XML) — groups become
+  categories, `{S}`-style tokens and timers carry over as-is. Sound
+  files, clipboard actions, and phrase modifiers are skipped; see
+  [Migrating from GINA](../migrating/from-gina.md).
+
+Imported triggers arrive as your own editable copies (never merged into
+the built-in library), duplicates you already have are skipped, and
+nothing is kept until you click **Apply / Save**.
+
+A hand-crafted pack is just JSON — an object with a
+`"format": "nparseplus-triggers"` key and a `"triggers"` list, or even a
+bare list of trigger objects.
+
 ## Tips
 
 - Grab exact log lines from the [Console](../windows/console.md) and use

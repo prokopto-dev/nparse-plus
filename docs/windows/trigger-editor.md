@@ -38,5 +38,12 @@ Open it from the tray → **Trigger Editor**.
 - Custom triggers can be created, moved between folders, and deleted
   freely.
 
+## Import & export
+
+**Export…** saves the current tree selection (a trigger, a folder, or —
+with nothing selected — everything you'd want to share) to a JSON file;
+**Import…** reads those files *and* GINA `.gtp` packages. Details in
+[Sharing triggers](../features/triggers.md#sharing-triggers-export-import).
+
 For the full trigger model — tokens, timers, counters, examples — see the
 [Triggers feature guide](../features/triggers.md).
