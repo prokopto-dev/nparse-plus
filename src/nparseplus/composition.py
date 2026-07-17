@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from nparseplus.config.settings import Settings
+from nparseplus.config.settings import Settings, find_player
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.driver import LogDriver
@@ -213,14 +213,27 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
 
+    def timer_recast() -> str:
+        """The active character's PlayerInfo.TimerRecastSetting."""
+        server_key = player.server_key
+        info = find_player(settings, player.name, server_key) if server_key else None
+        return info.timer_recast if info is not None else "RestartCurrentTimer"
+
     player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=submit)
     handlers: list[object] = [
         YouZonedHandler(bus, player),
         PlayerProfileHandler(bus, player, settings, request_save=request_save),
         player_tracker,
-        SpellTimerHandler(bus, player, spells, timers, spell_settings=settings.spellwindow),
+        SpellTimerHandler(
+            bus,
+            player,
+            spells,
+            timers,
+            spell_settings=settings.spellwindow,
+            timer_recast=timer_recast,
+        ),
         DpsHandler(bus, player, fights),
-        SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
+        SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RandomRollHandler(bus, player, timers),
         FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=submit),
         QuakeHandler(bus, player, speaker=speaker, api=pigparse_api, submit=submit),

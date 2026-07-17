@@ -10,12 +10,14 @@ Known divergences from EQTool:
 - ResistHandler consulted FightHistory for the current target; fight history
   is not ported yet, so resists increment the first matching counter row and
   never create one.
-- The TimerRecast=StartNewTimer setting (stacked detrimental timers on NPCs)
-  is not ported; timers always refresh/overwrite.
+- Root-type spells always refresh the running timer even under
+  TimerRecast=StartNewTimer (eqtool #213; the C# stacks roots like any other
+  detrimental, which just orphans the previous root's timer).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from nparseplus.config.settings import SpellWindowSettings
@@ -130,6 +132,24 @@ _DISCIPLINE_COOLDOWNS = {
 
 _CHARM_BREAK_LINE = "Your charm spell has worn off."
 
+# Deliberate divergence from EQTool: root spells always restart the current
+# timer, even with TimerRecast=StartNewTimer (eqtool #213). Only one root
+# sticks per mob, so a stacked row would just be a dead leftover. Name-based
+# because the spell model carries no SPA effect data.
+ROOT_SPELLS = frozenset(
+    {
+        "Root",
+        "Grasping Roots",
+        "Ensnaring Roots",
+        "Engulfing Roots",
+        "Enveloping Roots",
+        "Enstill",
+        "Immobilize",
+        "Paralyzing Earth",
+        "Fetter",
+    }
+)
+
 
 class SpellTimerHandler(BaseHandler):
     def __init__(
@@ -140,6 +160,7 @@ class SpellTimerHandler(BaseHandler):
         timers: TimersService,
         counter_lists: CounterLists | None = None,
         spell_settings: SpellWindowSettings | None = None,
+        timer_recast: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(bus, player)
         self.spells = spells
@@ -149,6 +170,9 @@ class SpellTimerHandler(BaseHandler):
         self.spell_settings = (
             spell_settings if spell_settings is not None else SpellWindowSettings()
         )
+        # Per-character PlayerInfo.TimerRecastSetting (composition resolves the
+        # active profile; C# reads activePlayer?.Player?.TimerRecastSetting).
+        self.timer_recast = timer_recast or (lambda: "RestartCurrentTimer")
         bus.subscribe(YouBeginCastingEvent, self._on_begin_casting)
         bus.subscribe(YouFinishCastingEvent, self._on_finish_casting)
         bus.subscribe(SpellCastOnYouEvent, self._on_cast_on_you)
@@ -335,9 +359,15 @@ class SpellTimerHandler(BaseHandler):
         if duration.total_seconds() <= 0:
             return
 
+        # SpellHandlerService: skip the overwrite only for a detrimental spell
+        # on an NPC under TimerRecast=StartNewTimer (stacked DoTs on several
+        # same-named mobs each keep their own row).
+        overwrite = True
         if is_npc and spell.is_detrimental:
             # Extra tick so the row outlives the "spell has worn off" line.
             duration += timedelta(seconds=6)
+            if self.timer_recast() == "StartNewTimer" and spell.name not in ROOT_SPELLS:
+                overwrite = False
 
         self.timers.add_spell(
             SpellRow(
@@ -349,7 +379,8 @@ class SpellTimerHandler(BaseHandler):
                 ends_at=timestamp + duration,
                 total_duration_s=duration.total_seconds(),
                 detrimental=spell.is_detrimental,
-            )
+            ),
+            overwrite=overwrite,
         )
 
     def _discipline_cooldown_seconds(self, spell: Spell, delay_offset_ms: int) -> int:

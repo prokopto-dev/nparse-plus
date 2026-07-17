@@ -134,6 +134,9 @@ class PlayerInfo(BaseModel):
     level: int | None = None
     map_location_sharing: Literal["everyone", "guild", "off"] = "everyone"
     share_timers: bool = True
+    # EQTool PlayerInfo.TimerRecastSetting: recasting a detrimental spell on an
+    # NPC either refreshes the running row or stacks a new one per cast.
+    timer_recast: Literal["RestartCurrentTimer", "StartNewTimer"] = "RestartCurrentTimer"
     tracking_skill: int = 0
     # Spell-filter classes (PlayerClass wire ints). None = show all classes'
     # spells (EQTool's ShowSpellsForClasses null default).

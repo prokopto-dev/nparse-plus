@@ -282,6 +282,19 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._char_share_timers = QCheckBox(self)
         form.addRow("Share timers", self._char_share_timers)
 
+        # EQTool TimerRecastSetting: recast a detrimental spell on an NPC and
+        # either refresh the running timer or stack a new one per cast (roots
+        # always refresh).
+        self._char_timer_recast = QComboBox(self)
+        self._char_timer_recast.addItem("Restart Current Timer", "RestartCurrentTimer")
+        self._char_timer_recast.addItem("Start New Timer", "StartNewTimer")
+        self._char_timer_recast.setToolTip(
+            "Recasting a detrimental spell on an NPC: restart the running timer, "
+            "or start a new one per cast (for DoTs stacked on several mobs). "
+            "Root spells always restart."
+        )
+        form.addRow("Timer recast", self._char_timer_recast)
+
         # Spell class filters (EQTool "Class Filters"): a spell shows on other
         # players when ANY checked class can cast it. All checked = show all.
         filters_box = QGroupBox("Show spells for classes", self)
@@ -379,6 +392,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             self._char_track,
             self._char_sharing,
             self._char_share_timers,
+            self._char_timer_recast,
             *self._class_filter_boxes.values(),
         ):
             widget.setEnabled(enabled)
@@ -397,6 +411,8 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._char_track.setValue(info.tracking_skill or 0)
         self._char_sharing.setCurrentText(info.map_location_sharing)
         self._char_share_timers.setChecked(info.share_timers)
+        recast_index = self._char_timer_recast.findData(info.timer_recast)
+        self._char_timer_recast.setCurrentIndex(max(recast_index, 0))
         selected = info.show_spells_for_classes
         for cls, box in self._class_filter_boxes.items():
             box.setChecked(selected is None or int(cls) in selected)
@@ -429,6 +445,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         info.tracking_skill = self._char_track.value() if cls in TRACKABLE_CLASSES else 0
         info.map_location_sharing = self._char_sharing.currentText()  # type: ignore[assignment]
         info.share_timers = self._char_share_timers.isChecked()
+        info.timer_recast = self._char_timer_recast.currentData()
         checked = [int(cls) for cls, box in self._class_filter_boxes.items() if box.isChecked()]
         info.show_spells_for_classes = None if len(checked) == len(PLAYER_CLASSES) else checked
 

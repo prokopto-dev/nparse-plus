@@ -29,6 +29,7 @@ is left to the M3 sharing layer.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from nparseplus.core.bus import EventBus
@@ -81,11 +82,14 @@ class SpawnTimerHandler(BaseHandler):
         timers: TimersService,
         zones: ZoneDatabase,
         npcs: frozenset[str] = frozenset(),
+        timer_recast: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(bus, player)
         self.timers = timers
         self.zones = zones
         self.npcs = npcs
+        # Per-character PlayerInfo.TimerRecastSetting (see SpellTimerHandler).
+        self.timer_recast = timer_recast or (lambda: "RestartCurrentTimer")
         self._victim = ""
         self._killer = ""
         self._faction_messages: list[str] = []
@@ -176,8 +180,11 @@ class SpawnTimerHandler(BaseHandler):
 
         spawn_seconds = self.zones.spawn_time(victim, self.player.zone)
         name = f"--Dead-- {victim}"
-        # The victim's buff rows die with it (TimerRecast.RestartCurrentTimer).
-        self.timers.remove_group(f" {victim}" if is_npc else victim)
+        # The victim's buff rows die with it — but only under RestartCurrentTimer;
+        # with StartNewTimer another same-named mob may own stacked rows in the
+        # same group, so the C# SlainHandler leaves them to expire naturally.
+        if self.timer_recast() == "RestartCurrentTimer":
+            self.timers.remove_group(f" {victim}" if is_npc else victim)
         if self.timers.find(name, CUSTOM_TIMER_GROUP) is not None:
             self._death_counter = 1 if self._death_counter >= 999 else self._death_counter + 1
             name = f"{name}_{self._death_counter}"

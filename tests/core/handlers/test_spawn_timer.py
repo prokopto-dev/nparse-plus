@@ -3,8 +3,10 @@ respawn-timer assertions that the C# spread across ZoneSpawnTimeTests."""
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
-from tests.core.handlers.conftest import Harness
+from tests.core.handlers.conftest import T0, Harness
 
 from nparseplus.core.events import ConfirmedDeathEvent
 from nparseplus.core.handlers.spawn_timer import (
@@ -12,7 +14,8 @@ from nparseplus.core.handlers.spawn_timer import (
     SIRRAN_TIMER_NAME,
     SpawnTimerHandler,
 )
-from nparseplus.core.timers import TimerRow
+from nparseplus.core.spells.models import Spell
+from nparseplus.core.timers import SpellRow, TimerRow
 
 
 @pytest.fixture
@@ -251,3 +254,33 @@ def test_known_player_victim_gets_no_timer(h: Harness) -> None:
     h.push("You have slain Uglan!")
     assert len(deaths(h)) == 1
     assert timer_rows(h) == []
+
+
+def _victim_spell_row(h: Harness, victim: str) -> SpellRow:
+    spell = Spell(id=1, name="Tainted Breath", benefit_detriment="detrimental")
+    return SpellRow(
+        name=spell.name,
+        group=f" {victim}",
+        updated_at=T0,
+        is_target_player=False,
+        spell=spell,
+        ends_at=T0 + timedelta(seconds=60),
+        total_duration_s=60.0,
+        detrimental=True,
+    )
+
+
+def test_slain_clears_victim_rows_under_restart_current_timer(h: Harness) -> None:
+    h.timers.add_spell(_victim_spell_row(h, "a frost giant scout"))
+    h.push("You have slain a frost giant scout!")
+    assert h.timers.find("Tainted Breath", " a frost giant scout") is None
+
+
+def test_slain_keeps_victim_rows_under_start_new_timer(h: Harness) -> None:
+    # SlainHandler.cs: stacked rows may belong to another same-named mob, so
+    # StartNewTimer leaves them to expire naturally.
+    h.handler.timer_recast = lambda: "StartNewTimer"
+    h.timers.add_spell(_victim_spell_row(h, "a frost giant scout"))
+    h.push("You have slain a frost giant scout!")
+    assert h.timers.find("Tainted Breath", " a frost giant scout") is not None
+    assert h.timers.find("--Dead-- a frost giant scout", CUSTOM_TIMER_GROUP) is not None
