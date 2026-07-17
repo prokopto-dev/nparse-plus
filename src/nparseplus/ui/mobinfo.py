@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.handlers.consider import MobInfoState
+from nparseplus.ui import theme
 from nparseplus.ui.overlaybase import OverlayWindowBase, format_mmss
 
 WINDOW_KEY = "mobinfo"
@@ -77,10 +78,12 @@ class MobInfoWindow(OverlayWindowBase):
         self.setLayout(outer)
 
         font_size = max(8, settings.general.font_size)
+        colors = theme.palette()
         self.setStyleSheet(
-            "#MobInfoContainer { background-color: rgba(0, 0, 0, 185); border-radius: 4px; }"
-            f"QLabel {{ color: #dddddd; font-size: {font_size - 2}px; }}"
-            f"#MobInfoName {{ color: #ffffff; font-weight: bold; font-size: {font_size}px; }}"
+            f"#MobInfoContainer {{ background-color: {colors.panel_bg}; border-radius: 4px; }}"
+            f"QLabel {{ color: {colors.text}; font-size: {font_size - 2}px; }}"
+            f"#MobInfoName {{ color: {colors.heading}; font-weight: bold;"
+            f" font-size: {font_size}px; }}"
         )
 
         # Poll (cheap) rather than marshalling on_change across threads.

@@ -27,20 +27,30 @@ from nparseplus.helpers.parser import ParserWindow
 from nparseplus.parsers.maps.mapcanvas import MapCanvas
 from nparseplus.parsers.maps.mapclasses import MapPoint
 from nparseplus.parsers.maps.mapdata import MapData
+from nparseplus.ui import theme
 
 ZONE_MATCHER = re.compile(r"There (is|are) \d+ players? in (?P<zone>.+)\.")
 
-SEARCH_BOX_STYLE = (
-    "QLineEdit { background-color: #050505; color: white; border: none;"
-    " border-radius: 3px; padding: 2px 4px; font-size: 12px; }"
-)
-SEARCH_RESULTS_STYLE = (
-    "QListWidget { background-color: black; color: rgb(200, 200, 200);"
-    " border: 1px solid #333; font-size: 12px; }"
-    " QListWidget::item { padding: 2px; }"
-    " QListWidget::item:selected, QListWidget::item:hover { background: darkgreen;"
-    " color: white; }"
-)
+
+def _search_box_style():
+    colors = theme.palette()
+    return (
+        f"QLineEdit {{ background-color: {colors.map_input_bg};"
+        f" color: {colors.map_input_text}; border: none;"
+        " border-radius: 3px; padding: 2px 4px; font-size: 12px; }"
+    )
+
+
+def _search_results_style():
+    colors = theme.palette()
+    return (
+        f"QListWidget {{ background-color: {colors.map_input_bg};"
+        f" color: {colors.map_input_text};"
+        f" border: 1px solid {colors.map_input_border}; font-size: 12px; }}"
+        " QListWidget::item { padding: 2px; }"
+        " QListWidget::item:selected, QListWidget::item:hover { background: darkgreen;"
+        " color: white; }"
+    )
 
 
 def format_respawn(seconds):
@@ -93,7 +103,7 @@ class Maps(ParserWindow):
         self._search_box.setObjectName("MapSearchBox")
         self._search_box.setPlaceholderText("Find NPC/label…")
         self._search_box.setFixedWidth(130)
-        self._search_box.setStyleSheet(SEARCH_BOX_STYLE)
+        self._search_box.setStyleSheet(_search_box_style())
         self._search_box.textChanged.connect(self._search_text_changed)
         button_layout.addWidget(self._search_box)
         # notable NPCs quick list
@@ -106,7 +116,7 @@ class Maps(ParserWindow):
         # results dropdown (child overlay, styled like the dark menu)
         self._search_results = QListWidget(self)
         self._search_results.setObjectName("MapSearchResults")
-        self._search_results.setStyleSheet(SEARCH_RESULTS_STYLE)
+        self._search_results.setStyleSheet(_search_results_style())
         self._search_results.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._search_results.itemClicked.connect(self._search_hit_selected)
         self._search_results.hide()

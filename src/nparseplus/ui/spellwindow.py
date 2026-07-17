@@ -29,6 +29,7 @@ from nparseplus.config.settings import Settings, WindowState, find_player
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.matching import hide_spell
 from nparseplus.core.timers import YOU_GROUP, CounterRow, RollRow, Row, SpellRow
+from nparseplus.ui import theme
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -145,7 +146,7 @@ class _RowWidget(QFrame):
         if color != self._color:
             self._color = color
             self._bar.setStyleSheet(
-                "QProgressBar { background-color: rgba(255, 255, 255, 35); border: none; }"
+                f"QProgressBar {{ background-color: {theme.palette().bar_track}; border: none; }}"
                 f"QProgressBar::chunk {{ background-color: {color}; }}"
             )
 
@@ -163,7 +164,9 @@ class _RowWidget(QFrame):
         )
         if warning != self._warning:
             self._warning = warning
-            self._value.setStyleSheet("color: #ff5044; font-weight: bold;" if warning else "")
+            self._value.setStyleSheet(
+                f"color: {theme.palette().warning_text}; font-weight: bold;" if warning else ""
+            )
 
     def _update_icon(self, row: Row) -> None:
         """Gem icon for spell rows (bundled sprite sheets); hidden otherwise."""
@@ -211,11 +214,12 @@ class SpellTimerWindow(QWidget):
         self.setWindowOpacity(state.opacity)
 
         font_size = max(8, backend.settings.general.font_size)
+        colors = theme.palette()
         self.setStyleSheet(
             "#SpellTimerContainer {"
-            " background-color: rgba(0, 0, 0, 180); border-radius: 4px; }"
-            f"QLabel {{ color: #dddddd; font-size: {font_size - 2}px; }}"
-            "#SpellTimerGroup { color: #ffffff; font-weight: bold;"
+            f" background-color: {colors.panel_bg}; border-radius: 4px; }}"
+            f"QLabel {{ color: {colors.text}; font-size: {font_size - 2}px; }}"
+            f"#SpellTimerGroup {{ color: {colors.heading}; font-weight: bold;"
             f" font-size: {font_size}px; background-color: rgba(0, 68, 0, 160);"
             " padding: 1px 4px; }"
         )

@@ -44,6 +44,8 @@ class GeneralSettings(BaseModel):
     eq_log_dir: Path = Field(default_factory=_default_eq_log_dir)
     eq_install_dir: Path | None = None
     update_check: bool = True
+    # UI theme (eqtool #148); applied at startup, restart to change.
+    theme: Literal["dark", "light"] = "dark"
     font_size: int = Field(default=12, ge=6)
     global_audio_volume: int = Field(default=100, ge=0, le=100)
     tts_voice: str | None = None

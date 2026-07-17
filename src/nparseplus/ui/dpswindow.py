@@ -17,16 +17,14 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightRow, SessionSummary
+from nparseplus.ui import theme
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "dps"
 REFRESH_INTERVAL_MS = 500
 DEFAULT_GEOMETRY = (640, 0, 280, 400)
 
-COLOR_YOU = "#e0c341"  # your row's highlight (amber)
-COLOR_ROW = "#dddddd"
-COLOR_DEAD_HEADER = "rgba(90, 30, 30, 190)"
-COLOR_LIVE_HEADER = "rgba(0, 40, 80, 190)"
+# Row/header colors come from the active theme palette (ui/theme.py).
 
 
 class FightsLike(Protocol):
@@ -77,7 +75,8 @@ class _AttackerRow(QFrame):
         self._percent.setText(f"{row.percent_of_total}%")
         if row.is_your_damage != self.is_you:
             self.is_you = row.is_your_damage
-            color = COLOR_YOU if row.is_your_damage else COLOR_ROW
+            colors = theme.palette()
+            color = colors.dps_you if row.is_your_damage else colors.text
             weight = "bold" if row.is_your_damage else "normal"
             self.setStyleSheet(f"QLabel {{ color: {color}; font-weight: {weight}; }}")
 
@@ -105,13 +104,14 @@ class DpsMeterWindow(OverlayWindowBase):
 
         self.setObjectName("DpsMeterWindow")
         font_size = max(8, backend.settings.general.font_size)
+        colors = theme.palette()
         self.setStyleSheet(
             "#DpsMeterContainer {"
-            " background-color: rgba(0, 0, 0, 180); border-radius: 4px; }"
-            f"QLabel {{ color: {COLOR_ROW}; font-size: {font_size - 2}px; }}"
-            "#DpsTargetHeader { color: #ffffff; font-weight: bold;"
+            f" background-color: {colors.panel_bg}; border-radius: 4px; }}"
+            f"QLabel {{ color: {colors.text}; font-size: {font_size - 2}px; }}"
+            f"#DpsTargetHeader {{ color: {colors.heading}; font-weight: bold;"
             f" font-size: {font_size}px; padding: 1px 4px; }}"
-            f"#DpsTitle, #DpsFooter {{ color: #ffffff; font-size: {font_size - 2}px; }}"
+            f"#DpsTitle, #DpsFooter {{ color: {colors.heading}; font-size: {font_size - 2}px; }}"
         )
 
         self._title = QLabel("DPS Meter", self)
@@ -177,7 +177,8 @@ class DpsMeterWindow(OverlayWindowBase):
                 self._headers[target] = header
             suffix = "  (slain)" if first.is_dead else ""
             header.setText(f"{target} — {first.target_total_damage}{suffix}")
-            bg = COLOR_DEAD_HEADER if first.is_dead else COLOR_LIVE_HEADER
+            colors = theme.palette()
+            bg = colors.dps_dead_header if first.is_dead else colors.dps_live_header
             header.setStyleSheet(f"background-color: {bg};")
             self._rows_layout.addWidget(header)
             header.show()

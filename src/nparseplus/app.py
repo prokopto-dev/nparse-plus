@@ -28,6 +28,7 @@ from nparseplus.config.settings import (
 )
 from nparseplus.core.events import WindowCommandEvent
 from nparseplus.core.player import tracking_distance
+from nparseplus.ui import theme
 
 
 class _OverlayPositioner:
@@ -143,7 +144,8 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.ui.triggereditor import TriggerEditorWindow
 
     app = NomnsParse(list(argv), backend=backend)
-    with open(resource_path(os.path.join("data", "ui", "_.css"))) as css:
+    theme.set_theme(settings.general.theme)
+    with open(resource_path(os.path.join("data", "ui", theme.stylesheet_filename()))) as css:
         app.setStyleSheet(css.read())
     app.setWindowIcon(QIcon(resource_path(os.path.join("data", "ui", "icon.png"))))
     app.setQuitOnLastWindowClosed(False)

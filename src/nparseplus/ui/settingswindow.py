@@ -232,11 +232,20 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._update_check = QCheckBox(self)
         self._update_check.setChecked(general.update_check)
         form.addRow("Check for updates", self._update_check)
+        self._theme_combo = QComboBox(self)
+        self._theme_combo.addItem("Dark", "dark")
+        self._theme_combo.addItem("Light", "light")
+        self._theme_combo.setCurrentIndex(max(self._theme_combo.findData(general.theme), 0))
+        self._theme_combo.setToolTip(
+            "Window color theme (the full-screen event overlay stays dark — "
+            "it renders over the game)."
+        )
+        form.addRow("Theme", self._theme_combo)
         self._font_size = QSpinBox(self)
         self._font_size.setRange(6, 32)
         self._font_size.setValue(general.font_size)
         form.addRow("Font size", self._font_size)
-        note = QLabel("Font size, TTS, and overlay durations apply after restart.", self)
+        note = QLabel("Theme, font size, TTS, and overlay durations apply after restart.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
         return self._page(form)
@@ -975,6 +984,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         install = self._install_dir.path()
         general.eq_install_dir = Path(install).expanduser() if install else None
         general.update_check = self._update_check.isChecked()
+        general.theme = self._theme_combo.currentData()
         general.font_size = self._font_size.value()
         general.tts_voice = None if self._voice.currentIndex() == 0 else self._voice.currentText()
         general.global_audio_volume = self._volume.value()
