@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.4.0 (2026-07-17)
+
+### Features
+
+- Add window presets and release automation
+  ([`3b718b7`](https://github.com/prokopto-dev/nparse-plus/commit/3b718b7c4b92fd902b667063709c4a7cd848c6f1))
+
+
 ## v1.3.0 (2026-07-17)
 
 - Added persistent map markers and corpse waypoints.
