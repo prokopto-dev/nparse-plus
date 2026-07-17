@@ -47,6 +47,14 @@ Spell rows show their **gem icon** from the spell data.
   enabled.
 - **Raid mode** — with many casters around, rows can auto-group to stay
   readable (Auto raid-mode grouping in Settings → Spell Timers).
+- **Hide whole sections** — don't care about Boats, mob respawn timers, or
+  trigger/chat timers? Each built-in section (and random rolls) has a show/
+  hide toggle in [Settings → Spell Timers](../settings/spell-timers.md).
+  Hiding is display-only; the timers keep running underneath.
+- **Right-click to clear timers** — right-click a row for *Clear '(name)'*,
+  a section header for *Clear group*, or anywhere for *Clear all timers*.
+  (With click-through enabled the overlay ignores all clicks, including
+  right-clicks — toggle click-through off first.)
 
 ## Related
 
