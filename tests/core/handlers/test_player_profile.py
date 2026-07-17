@@ -83,6 +83,16 @@ def test_class_detected_never_overwrites() -> None:
     assert rig.saves == 0
 
 
+def test_class_detected_other_is_ignored() -> None:
+    # OTHER is the castable-by-everyone spell fixup (item clickies), not a
+    # real class: it must never fill the player or persist into the profile.
+    rig = Rig()
+    rig.bus.publish(ClassDetectedEvent(timestamp=T0, player_class=PlayerClass.OTHER))
+    assert rig.player.player_class is None
+    assert get_player(rig.settings, "Xantik", "green").player_class is None
+    assert rig.saves == 0
+
+
 def test_level_detection_only_raises() -> None:
     # PlayerLevelDetectionHandler.cs: Level only ever goes up.
     profile = PlayerInfo(name="Xantik", server="green", level=30)

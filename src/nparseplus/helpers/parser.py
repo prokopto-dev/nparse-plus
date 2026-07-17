@@ -155,6 +155,25 @@ class ParserWindow(QWidget):
             flags |= Qt.WindowType.WindowTransparentForInput
         self.setWindowFlags(flags)
 
+    def apply_window_state(self):
+        """Re-read window config and re-apply flags/opacity unconditionally.
+
+        Same contract as ui.overlaybase.OverlayWindowBase.apply_window_state,
+        so the settings window can drive legacy and new windows identically
+        (the config_updated watcher above stays diff-gated for other callers).
+        setWindowFlags() hides the window, so re-show when it was visible.
+        """
+        section = config.data.get(self.name, {})
+        self._always_on_top = section.get("always_on_top", True)
+        self._clickthrough = section.get("clickthrough", False)
+        self._window_opacity = section.get("opacity", 80)
+        self.setWindowOpacity(self._window_opacity / 100)
+        was_visible = self.isVisible()
+        self._set_flags()
+        if was_visible:
+            self.show()
+            self.raise_()
+
     def _toggle_frame(self):
         current_geometry = self.geometry()
         titlebar_height = self.style().pixelMetric(QStyle.PixelMetric.PM_TitleBarHeight)

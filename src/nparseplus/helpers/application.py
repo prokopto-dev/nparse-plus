@@ -216,7 +216,9 @@ class NomnsParse(QApplication):
                         "clickthrough"
                     ]
                     config.save()
-                    parser._set_flags()
+                    # apply_window_state re-shows: setWindowFlags() alone
+                    # would hide the window with no way to get it back.
+                    parser.apply_window_state()
                 elif text.startswith("toggle_%s" % parser.name):
                     parser.toggle()
                 elif config.data[parser.name]["toggled"] or parser.name == "maps":

@@ -84,6 +84,12 @@ class PlayerProfileHandler:
             self.player.guild_name = info.guild_name
 
     def _on_class_detected(self, event: ClassDetectedEvent) -> None:
+        # Deliberate divergence from the C#: OTHER is the spell-DB fixup class
+        # seeded onto castable-by-everyone spells (item clickies), not a real
+        # detection — persisting it corrupts the profile and the settings
+        # window's class combo has no entry for it.
+        if event.player_class is PlayerClass.OTHER:
+            return
         # C#: only fills an unset class; a user-chosen class is never clobbered.
         if self.player.player_class is not None:
             return

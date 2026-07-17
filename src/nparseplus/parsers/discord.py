@@ -2,8 +2,20 @@ import functools
 
 from PySide6 import QtCore
 from PySide6.QtGui import QColor
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QApplication, QDialog, QGridLayout, QPushButton, QScrollArea
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QGridLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+)
+
+try:
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+except ImportError:  # QtWebEngine missing/broken on this system (Linux libs)
+    QWebEngineView = None
 
 from nparseplus.helpers import config
 from nparseplus.helpers.parser import ParserWindow
@@ -83,6 +95,7 @@ HTML_NO_CONFIG = """
 <html><font color='lightgrey' size='5px'>
 Hover this window and click the gear icon to configure your Discord overlay.
 </font></html>"""
+TEXT_NO_WEBENGINE = "Qt WebEngine is unavailable on this system —\nthe Discord overlay is disabled."
 
 
 class Discord(ParserWindow):
@@ -159,6 +172,13 @@ class Discord(ParserWindow):
         setup_button.clicked.connect(self.show_settings)
         self.menu_area.addWidget(setup_button)
 
+        if QWebEngineView is None:
+            placeholder = QLabel(TEXT_NO_WEBENGINE)
+            placeholder.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            placeholder.setStyleSheet("color: lightgrey;")
+            self.content.addWidget(placeholder, 1)
+            return
+
         self.overlay = QWebEngineView()
         self.overlay.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.overlay.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -177,6 +197,13 @@ class Discord(ParserWindow):
         self.content.addWidget(scroll_area, 1)
 
     def show_settings(self):
+        if QWebEngineView is None:
+            QMessageBox.information(
+                None,
+                "Discord overlay",
+                TEXT_NO_WEBENGINE.replace("\n", " "),
+            )
+            return
         self.settings_dialog = QDialog()
         self.settings_dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.settings_dialog.setWindowTitle("Configure Overlay")
@@ -212,6 +239,8 @@ class Discord(ParserWindow):
         frame.close()
 
     def _on_get_url(self, url):
+        if self.overlay is None:
+            return
         try:
             self.url = url.replace("true", "True")
             self.overlay.loadFinished.connect(self._applyTweaks)

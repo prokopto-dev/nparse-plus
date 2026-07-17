@@ -66,7 +66,8 @@ WINDOW_KEY = "settings"
 DEFAULT_GEOMETRY = (240, 160, 640, 560)
 
 # The Windows-grid rows. Legacy rows live in config.data[section]; new rows
-# live in Settings.windows[key] (handles get apply_window_state()).
+# live in Settings.windows[key]. Both kinds get apply_window_state() called
+# directly on their handle when applied.
 LEGACY_WINDOW_ROWS = [("Maps", "maps"), ("Discord", "discord")]
 NEW_WINDOW_ROWS = [
     ("Spell Timers", "spells"),
@@ -432,11 +433,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             widget.setEnabled(enabled)
         if info is None:
             return
-        if info.player_class is not None:
-            cls = PlayerClass(info.player_class)
-            self._char_class.setCurrentIndex(PLAYER_CLASSES.index(cls) + 1)
-        else:
-            self._char_class.setCurrentIndex(0)
+        self._char_class.setCurrentIndex(self._class_combo_index(info.player_class))
         self._char_level.setValue(info.level or 0)
         zone_display = info.zone
         if self._zones is not None and info.zone:
@@ -464,11 +461,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         if info is None:
             return
         if player_class:
-            if info.player_class is None:
-                self._char_class.setCurrentIndex(0)
-            else:
-                cls = PlayerClass(info.player_class)
-                self._char_class.setCurrentIndex(PLAYER_CLASSES.index(cls) + 1)
+            self._char_class.setCurrentIndex(self._class_combo_index(info.player_class))
             # The class signal enables Track Skill. Restore its saved value in
             # case the formerly-unknown class had caused the widget to clear.
             self._char_track.setValue(info.tracking_skill or 0)
@@ -480,6 +473,22 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             if self._zones is not None and info.zone:
                 zone_display = self._zones.long_name(info.zone) or info.zone
             self._char_zone.setCurrentText(zone_display)
+
+    @staticmethod
+    def _class_combo_index(raw: int | None) -> int:
+        """Class-combo index for a stored class value; 0 ("unknown") when the
+        value is None, PlayerClass.OTHER (the castable-by-everyone spell
+        fixup, not a real class), or junk from a hand-edited settings.json —
+        PLAYER_CLASSES.index would raise for those in a live-event slot."""
+        if raw is None:
+            return 0
+        try:
+            cls = PlayerClass(raw)
+        except ValueError:
+            return 0
+        if cls not in PLAYER_CLASSES:
+            return 0
+        return PLAYER_CLASSES.index(cls) + 1
 
     def _combo_class(self) -> PlayerClass | None:
         index = self._char_class.currentIndex()
@@ -786,6 +795,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             self._lc_set(section, "opacity", row.opacity.value())
             if row.clickthrough is not None:
                 self._lc_set(section, "clickthrough", row.clickthrough.isChecked())
+            # Apply directly, same as the new rows below — the config_updated
+            # signal fires later in apply(), after the save callbacks, and a
+            # failure anywhere in between must not leave the legacy windows
+            # with stale flags while the new windows already changed.
+            handle = self._handles.get(section)
+            if handle is not None and hasattr(handle, "apply_window_state"):
+                handle.apply_window_state()
         self._lc_set("discord", "bg_opacity", self._discord_bg.value())
         for key, row in self._new_rows.items():
             state = self._settings.windows.setdefault(key, WindowState())

@@ -9,6 +9,7 @@ from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_pl
 from nparseplus.core.enums import PlayerClass, Server
 from nparseplus.core.events import (
     AfterPlayerChangedEvent,
+    ClassDetectedEvent,
     WhoPlayer,
     WhoPlayerEvent,
     YouZonedEvent,
@@ -156,6 +157,9 @@ def test_windows_grid_writes_both_families_and_applies(qtbot) -> None:
     assert state.opacity == pytest.approx(0.40)
     assert state.always_on_top is False
     assert dps_handle.applied == 1  # apply_window_state called on Apply
+    # Legacy handles get the same direct call — the map must not depend on
+    # the config_updated signal that fires later in apply().
+    assert maps_handle.applied == 1
 
 
 def test_character_pane_mutates_in_place_and_pushes_active(qtbot) -> None:
@@ -298,6 +302,35 @@ def test_live_who_and_zone_events_refresh_backend_fields_only(qtbot) -> None:
     )
     assert window._char_zone.currentText() == "greater faydark"
     assert window._char_sharing.currentText() == "off"
+
+
+@pytest.mark.parametrize("stored_class", [int(PlayerClass.OTHER), 99])
+def test_unknown_stored_class_loads_as_unknown_without_crash(qtbot, stored_class) -> None:
+    # Regression: OTHER (14, the castable-by-everyone spell fixup) or junk in
+    # settings.json made PLAYER_CLASSES.index raise ValueError inside a Qt
+    # slot, which killed the whole app.
+    settings = Settings()
+    settings.players.append(PlayerInfo(name="Xantik", server="green", player_class=stored_class))
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    window = _window(qtbot, settings, backend_player=player)
+    assert window._char_class.currentIndex() == 0  # "(unknown)"
+
+
+def test_live_class_event_with_other_class_does_not_crash(qtbot) -> None:
+    # Same regression via the live path: settings window open, an item clicky
+    # is cast, ClassDetectedEvent triggers the field refresh.
+    profile = PlayerInfo(name="Xantik", server="green")
+    settings = Settings(players=[profile])
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    window = _window(qtbot, settings, backend_player=player)
+
+    profile.player_class = int(PlayerClass.OTHER)  # e.g. pre-fix polluted file
+    window.handle_backend_event(
+        ClassDetectedEvent(timestamp=datetime.now(), player_class=PlayerClass.OTHER)
+    )
+    assert window._char_class.currentIndex() == 0
 
 
 def test_friends_page_load_and_push_round_trip(qtbot, tmp_path: Path) -> None:
