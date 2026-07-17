@@ -30,6 +30,7 @@ RELEASE_JSON = {
             "size": 5,
         },
         {"name": "nparseplus-linux.tar.gz", "browser_download_url": "https://dl.test/a.tgz"},
+        {"name": "nparseplus-linux.flatpak", "browser_download_url": "https://dl.test/a.flatpak"},
     ],
 }
 
@@ -54,7 +55,7 @@ def test_newer_release_found() -> None:
     release = check_for_update(current="1.0.0", client=_client(_release_handler))
     assert release is not None
     assert release.version == "9.9.9"
-    assert len(release.assets) == 3
+    assert len(release.assets) == 4
     assert [note.version for note in release.notes] == ["9.9.9", "5.0.0"]
 
 
@@ -105,7 +106,16 @@ def test_pick_asset_per_platform() -> None:
     release = check_for_update(current="1.0.0", client=_client(_release_handler))
     assert pick_asset(release, "darwin").name.endswith(".dmg")
     assert pick_asset(release, "win32").name.endswith(".zip")
-    assert pick_asset(release, "linux") is None
+    assert pick_asset(release, "linux", in_flatpak=False).name.endswith(".tar.gz")
+    assert pick_asset(release, "linux", in_flatpak=True).name.endswith(".flatpak")
+    assert pick_asset(release, "sunos") is None
+
+
+def test_running_in_flatpak_detection(tmp_path: Path) -> None:
+    marker = tmp_path / ".flatpak-info"
+    assert not updater.running_in_flatpak(marker)
+    marker.write_text("[Application]\nname=io.github.prokopto_dev.nparse_plus\n")
+    assert updater.running_in_flatpak(marker)
 
 
 def test_download_asset(tmp_path: Path) -> None:

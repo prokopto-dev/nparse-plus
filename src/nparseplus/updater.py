@@ -32,6 +32,14 @@ GITHUB_OWNER = "prokopto-dev"
 GITHUB_REPO = "nparse-plus"
 TIMEOUT_S = 10.0
 
+# Flatpak mounts this file into every sandboxed app instance.
+FLATPAK_INFO = Path("/.flatpak-info")
+
+
+def running_in_flatpak(info_path: Path = FLATPAK_INFO) -> bool:
+    """True when running inside a Flatpak sandbox."""
+    return info_path.exists()
+
 
 def releases_api_url() -> str:
     return f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=100"
@@ -137,9 +145,18 @@ def format_release_notes(release: ReleaseInfo) -> str:
     return "\n\n---\n\n".join(sections)
 
 
-def pick_asset(release: ReleaseInfo, platform: str = sys.platform) -> ReleaseAsset | None:
-    """The artifact for this platform (macOS .dmg, Windows .zip, else None)."""
-    suffix = {"darwin": ".dmg", "win32": ".zip"}.get(platform)
+def pick_asset(
+    release: ReleaseInfo,
+    platform: str = sys.platform,
+    in_flatpak: bool | None = None,
+) -> ReleaseAsset | None:
+    """The artifact for this platform: macOS .dmg, Windows .zip, Linux
+    .flatpak inside the sandbox / .tar.gz outside; None when unknown."""
+    if platform.startswith("linux"):
+        flatpak = running_in_flatpak() if in_flatpak is None else in_flatpak
+        suffix = ".flatpak" if flatpak else ".tar.gz"
+    else:
+        suffix = {"darwin": ".dmg", "win32": ".zip"}.get(platform)
     if suffix is None:
         return None
     return next((a for a in release.assets if a.name.lower().endswith(suffix)), None)
@@ -185,5 +202,9 @@ def install_action(
         subprocess.run(["open", str(downloaded)], check=False)
     elif platform == "win32":
         subprocess.run(["explorer", "/select,", str(downloaded)], check=False)
+    elif platform.startswith("linux"):
+        # Inside Flatpak this routes through the OpenURI portal, so the host
+        # offers its software installer for the downloaded .flatpak.
+        subprocess.run(["xdg-open", str(downloaded)], check=False)
     else:
         open_url(release.html_url)
