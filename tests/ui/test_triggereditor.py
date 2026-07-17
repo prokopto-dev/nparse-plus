@@ -1,8 +1,12 @@
 """pytest-qt tests for the trigger editor window."""
 
+import io
+import json
+import zipfile
+
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from nparseplus.config.settings import PlayerInfo, Settings
 from nparseplus.core.triggers.builtin import EXPECTED_BUILTIN_COUNT, sync_builtin_triggers
@@ -201,6 +205,157 @@ def test_close_persists_geometry(env: Env) -> None:
     state = env.settings.windows["triggereditor"]
     assert state.geometry == (50, 60, 700, 500)
     assert env.saves == 1
+
+
+def _mute_boxes(monkeypatch) -> dict[str, list[str]]:
+    """Silence the modal result boxes, recording their messages."""
+    shown: dict[str, list[str]] = {"information": [], "warning": []}
+    for kind in shown:
+        monkeypatch.setattr(
+            QMessageBox,
+            kind,
+            staticmethod(lambda *args, _k=kind, **kwargs: shown[_k].append(args[2])),
+        )
+    return shown
+
+
+def _export_to(env: Env, monkeypatch, tmp_path) -> dict:
+    out = tmp_path / "out.json"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), ""))
+    )
+    env.window.export_triggers()
+    return json.loads(out.read_text(encoding="utf-8"))
+
+
+def test_export_all_skips_pristine_builtins(env: Env, monkeypatch, tmp_path) -> None:
+    win = env.window
+    win.new_trigger()
+    win.name_edit.setText("Mine")
+    win.search_edit.setText("hello")
+    builtin_id = next(t.trigger_id for t in env.settings.triggers if t.is_built_in)
+    win.select_trigger(builtin_id)
+    win.name_edit.setText(win.name_edit.text() + " edited")
+    win.tree.setCurrentItem(None)  # no selection -> export everything shareable
+    _mute_boxes(monkeypatch)
+
+    payload = _export_to(env, monkeypatch, tmp_path)
+    assert payload["format"] == "nparseplus-triggers"
+    names = {t["trigger_name"] for t in payload["triggers"]}
+    assert "Mine" in names
+    assert any(name.endswith("edited") for name in names)  # customized built-in ships
+    assert len(payload["triggers"]) == 2  # pristine built-ins do not
+
+
+def test_export_selected_trigger_exports_just_it(env: Env, monkeypatch, tmp_path) -> None:
+    win = env.window
+    builtin = next(t for t in env.settings.triggers if t.is_built_in)
+    win.select_trigger(builtin.trigger_id)
+    _mute_boxes(monkeypatch)
+
+    payload = _export_to(env, monkeypatch, tmp_path)
+    assert [t["trigger_name"] for t in payload["triggers"]] == [builtin.trigger_name]
+
+
+def test_export_selected_folder_exports_its_triggers(env: Env, monkeypatch, tmp_path) -> None:
+    win = env.window
+    for name in ("One", "Two"):
+        win.new_trigger()
+        win.name_edit.setText(name)
+        win.search_edit.setText(f"search {name}")
+    folder = next(
+        win.tree.topLevelItem(i)
+        for i in range(win.tree.topLevelItemCount())
+        if win.tree.topLevelItem(i).text(0) == "Custom"
+    )
+    win.tree.setCurrentItem(folder)
+    _mute_boxes(monkeypatch)
+
+    payload = _export_to(env, monkeypatch, tmp_path)
+    assert {t["trigger_name"] for t in payload["triggers"]} == {"One", "Two"}
+
+
+def test_import_appends_sanitized_and_apply_lands_them(env: Env, monkeypatch, tmp_path) -> None:
+    win = env.window
+    pack = tmp_path / "pack.json"
+    shared = Trigger(
+        trigger_name="Guild FTE",
+        search_text="engages",
+        category="Raids",
+        is_built_in=True,
+        built_in_id="SHOULD-BE-STRIPPED",
+        folder_id="foreign",
+        built_in_folder="Encounters",
+    )
+    pack.write_text(
+        json.dumps(
+            {
+                "format": "nparseplus-triggers",
+                "version": 1,
+                "triggers": [shared.model_dump(mode="json")],
+            }
+        )
+    )
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(pack), ""))
+    )
+    shown = _mute_boxes(monkeypatch)
+
+    win.import_triggers()
+    assert shown["information"] and "Imported 1 trigger" in shown["information"][0]
+    win.apply()
+    saved = next(t for t in env.settings.triggers if t.trigger_name == "Guild FTE")
+    assert saved.is_built_in is False and saved.built_in_id is None
+    assert saved.folder_id is None
+    assert saved.category == "Encounters"
+    assert saved.trigger_id != shared.trigger_id
+    assert any(t.trigger_name == "Guild FTE" for t in env.engine.triggers)
+
+    # Re-importing the same pack only skips duplicates.
+    win.import_triggers()
+    assert "skipped 1 duplicate" in shown["information"][-1]
+    assert sum(t.trigger_name == "Guild FTE" for t in env.settings.triggers) == 1
+
+
+def test_import_gina_gtp_package(env: Env, monkeypatch, tmp_path) -> None:
+    win = env.window
+    gtp = tmp_path / "pack.gtp"
+    xml = (
+        b"<SharedData><TriggerGroups><TriggerGroup><Name>Pack</Name><Triggers>"
+        b"<Trigger><Name>Gina One</Name><TriggerText>{S} hits you</TriggerText>"
+        b"<UseText>True</UseText><DisplayText>ow {S}</DisplayText></Trigger>"
+        b"</Triggers></TriggerGroup></TriggerGroups></SharedData>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("ShareData.xml", xml)
+    gtp.write_bytes(buffer.getvalue())
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(gtp), ""))
+    )
+    _mute_boxes(monkeypatch)
+
+    win.import_triggers()
+    win.apply()
+    imported = next(t for t in env.settings.triggers if t.trigger_name == "Gina One")
+    assert imported.category == "Pack"
+    assert imported.use_regex is True  # tokenized plain text promoted to regex
+
+
+def test_import_invalid_file_warns_and_changes_nothing(env: Env, monkeypatch, tmp_path) -> None:
+    win = env.window
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json at all")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(bad), ""))
+    )
+    shown = _mute_boxes(monkeypatch)
+
+    before = len(env.settings.triggers)
+    win.import_triggers()
+    assert shown["warning"] and "Could not import" in shown["warning"][0]
+    assert len(env.settings.triggers) == before
+    assert len(win.trigger_ids()) == before
 
 
 def test_unsaved_changes_discard_on_close(env: Env, monkeypatch) -> None:

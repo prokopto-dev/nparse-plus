@@ -19,14 +19,17 @@ overlays) and rolls minimal geometry persistence into
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -47,6 +50,8 @@ from PySide6.QtWidgets import (
 from nparseplus.config.settings import Settings, WindowState
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.engine import TriggerEngine
+from nparseplus.core.triggers.exchange import dump_triggers, parse_triggers, sanitize_imported
+from nparseplus.core.triggers.gina import load_gina_triggers
 from nparseplus.core.triggers.model import (
     TimerRestartBehavior,
     TimerType,
@@ -343,6 +348,12 @@ class TriggerEditorWindow(QWidget):
         self.revert_button = QPushButton("Revert built-in")
         self.revert_button.clicked.connect(self.revert_current)
         row.addWidget(self.revert_button)
+        self.import_button = QPushButton("Import…")
+        self.import_button.clicked.connect(self.import_triggers)
+        row.addWidget(self.import_button)
+        self.export_button = QPushButton("Export…")
+        self.export_button.clicked.connect(self.export_triggers)
+        row.addWidget(self.export_button)
         row.addStretch(1)
         self.apply_button = QPushButton("Apply / Save")
         self.apply_button.clicked.connect(self.apply)
@@ -381,7 +392,8 @@ class TriggerEditorWindow(QWidget):
                 folder = folders.get(key)
                 if folder is None:
                     folder = QTreeWidgetItem([key])
-                    folder.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                    # Selectable so Export… can target a whole folder.
+                    folder.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                     folders[key] = folder
                     self.tree.addTopLevelItem(folder)
                 item = QTreeWidgetItem([self._item_label(trigger)])
@@ -733,6 +745,109 @@ class TriggerEditorWindow(QWidget):
         self._working, _changed = sync_builtin_triggers(self._working)
         self._dirty = True
         self._rebuild_tree(select_id=trigger.trigger_id)
+
+    # -- export / import -------------------------------------------------------
+
+    def _export_selection(self) -> tuple[list[Trigger], str]:
+        """Triggers to export for the current tree selection + a file stem.
+
+        A selected trigger exports alone (even a built-in); a selected folder
+        exports its triggers; no selection exports everything. Folder/all
+        scope drops pristine built-ins — every install already ships those.
+        """
+        item = self.tree.currentItem()
+        if item is not None:
+            trigger_id = item.data(0, _ROLE_ID)
+            if trigger_id:
+                trigger = self._trigger_by_id(trigger_id)
+                if trigger is not None:
+                    return [trigger], trigger.trigger_name or "trigger"
+            elif item.parent() is None:
+                ids = [item.child(j).data(0, _ROLE_ID) for j in range(item.childCount())]
+                triggers = [t for tid in ids if (t := self._trigger_by_id(tid)) is not None]
+                shareable = [t for t in triggers if not t.is_built_in or t.customized]
+                return shareable, item.text(0)
+        shareable = [t for t in self._working if not t.is_built_in or t.customized]
+        return shareable, "triggers"
+
+    def export_triggers(self) -> None:
+        self._commit_form()
+        triggers, stem = self._export_selection()
+        if not triggers:
+            QMessageBox.information(
+                self,
+                "Export Triggers",
+                "Nothing to export here — unmodified built-in triggers are part of "
+                "every install, so they are left out of exports.",
+            )
+            return
+        path, _selected = QFileDialog.getSaveFileName(
+            self, "Export Triggers", f"{stem}.json", "Trigger files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(json.dumps(dump_triggers(triggers), indent=2), encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "Export Triggers", f"Could not write the file:\n{exc}")
+            return
+        QMessageBox.information(
+            self, "Export Triggers", f"Exported {len(triggers)} trigger(s) to {path}"
+        )
+
+    @staticmethod
+    def _parse_import(raw: bytes) -> tuple[list[Trigger], int]:
+        """Dispatch by content: GINA (.gtp zip or XML) vs our JSON format."""
+        if raw[:4] == b"PK\x03\x04" or raw.lstrip()[:1] == b"<":
+            return load_gina_triggers(raw)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ValueError(f"not a trigger file: {exc}") from exc
+        return parse_triggers(data), 0
+
+    def import_triggers(self) -> None:
+        self._commit_form()
+        path, _selected = QFileDialog.getOpenFileName(
+            self,
+            "Import Triggers",
+            "",
+            "Trigger files (*.json *.gtp *.xml);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            incoming, unreadable = self._parse_import(Path(path).read_bytes())
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Import Triggers", f"Could not import triggers:\n{exc}")
+            return
+        existing = {
+            ((t.trigger_name or "").lower(), (t.search_text or "").lower()) for t in self._working
+        }
+        added = 0
+        duplicates = 0
+        for trigger in incoming:
+            key = ((trigger.trigger_name or "").lower(), (trigger.search_text or "").lower())
+            if key in existing:
+                duplicates += 1
+                continue
+            existing.add(key)
+            self._working.append(sanitize_imported(trigger))
+            added += 1
+        if added:
+            self._dirty = True
+            self._rebuild_tree()
+        skipped = []
+        if duplicates:
+            skipped.append(f"{duplicates} duplicate(s)")
+        if unreadable:
+            skipped.append(f"{unreadable} unreadable entr{'y' if unreadable == 1 else 'ies'}")
+        message = f"Imported {added} trigger(s)"
+        if skipped:
+            message += f" — skipped {', '.join(skipped)}"
+        if added:
+            message += ".\n\nClick Apply / Save to keep them."
+        QMessageBox.information(self, "Import Triggers", message)
 
     def apply(self) -> None:
         """Push all in-memory edits into settings + engine and persist."""
