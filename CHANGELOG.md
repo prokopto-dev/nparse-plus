@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.5.1 (2026-07-17)
+
+### Bug Fixes
+
+- Spell timer window keeps its size and scrolls on overflow
+  ([`003f586`](https://github.com/prokopto-dev/nparse-plus/commit/003f5869a2b02d2dfa7872f770ac15c3c2d3d30c))
+
+
 ## v1.5.0 (2026-07-17)
 
 ### Bug Fixes
