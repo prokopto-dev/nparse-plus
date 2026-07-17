@@ -133,3 +133,19 @@ package layering needed, and everything above works with less setup:
 - **Log file picker can't see your EQ folder** — it's outside `$HOME`; grant
   access with `flatpak override`
   ([above](#4-eq-installs-outside-your-home-directory)).
+
+## Running the plain (non-Flatpak) Linux build
+
+The release tarball (PyInstaller onedir) applies the same Linux defaults the
+Flatpak launcher does, but only when you haven't set the variables yourself:
+
+- `QT_QPA_PLATFORM=xcb` — overlays run through X11/XWayland so always-on-top
+  and window positioning work (see the troubleshooting note above).
+- `QTWEBENGINE_DISABLE_SANDBOX=1` — set for frozen builds and on kernels
+  that restrict unprivileged user namespaces (Ubuntu 24.04's AppArmor
+  default), where Chromium's sandbox cannot start and the Discord overlay's
+  render processes crash instead. Trade-off: the StreamKit web content runs
+  without Chromium's renderer sandbox — same as the Flatpak, where the
+  sandbox can't nest either. Export `QTWEBENGINE_DISABLE_SANDBOX=0` before
+  launching if you'd rather keep the sandbox and lose the Discord overlay
+  on such systems. Each applied default is printed to stderr at startup.

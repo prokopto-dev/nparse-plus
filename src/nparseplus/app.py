@@ -61,6 +61,52 @@ if TYPE_CHECKING:
 SETTINGS_ENV_VAR = "NPARSEPLUS_SETTINGS"
 
 
+def _runtime_env_defaults(
+    platform: str,
+    environ: dict[str, str],
+    *,
+    frozen: bool,
+    userns_restricted: bool,
+) -> dict[str, str]:
+    """Linux env defaults to ADD (never overriding explicit values).
+
+    - QT_QPA_PLATFORM=xcb: the overlay recipe needs keep-above/self-positioning,
+      which native Wayland windows don't get; EQ under WINE is X11 too. Mirrors
+      packaging/flatpak/nparseplus.sh so tarball/source runs behave the same.
+    - QTWEBENGINE_DISABLE_SANDBOX=1: Chromium's sandbox needs unprivileged user
+      namespaces; frozen bundles and userns-restricted kernels (Ubuntu 24.04
+      AppArmor default) crash the Discord overlay's render processes without
+      this. Scoped narrowly — a user can force it off with an explicit "0".
+    """
+    out: dict[str, str] = {}
+    if not platform.startswith("linux"):
+        return out
+    if "QT_QPA_PLATFORM" not in environ:
+        out["QT_QPA_PLATFORM"] = "xcb"
+    if "QTWEBENGINE_DISABLE_SANDBOX" not in environ and (frozen or userns_restricted):
+        out["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+    return out
+
+
+def _apply_runtime_env_defaults() -> None:
+    """Apply ``_runtime_env_defaults`` — call before any PySide6 import."""
+    restricted = False
+    try:
+        knob = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+        restricted = knob.read_text().strip() == "1"
+    except OSError:
+        pass
+    defaults = _runtime_env_defaults(
+        sys.platform,
+        os.environ,  # type: ignore[arg-type]
+        frozen=bool(getattr(sys, "frozen", False)),
+        userns_restricted=restricted,
+    )
+    for key, value in defaults.items():
+        os.environ[key] = value
+        print(f"nparseplus: defaulting {key}={value}", file=sys.stderr)
+
+
 def _ensure_data_cwd() -> None:
     """Legacy modules open ``data/...`` relative to CWD.
 
@@ -113,6 +159,7 @@ class AppContext:
 
 
 def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext:
+    _apply_runtime_env_defaults()
     _ensure_data_cwd()
 
     if settings_file is None:
@@ -131,6 +178,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
     # Legacy imports come last: helpers.application loads nparse.config.json
     # from the CWD at import time and pulls in Qt.
+    from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtGui import QFontDatabase, QIcon
 
     from nparseplus.helpers import config as legacy_config
@@ -145,6 +193,12 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.ui.spellwindow import SpellTimerWindow
     from nparseplus.ui.triggereditor import TriggerEditorWindow
     from nparseplus.ui.windowlayouts import WindowLayoutManager
+
+    # QtWebEngine (Discord overlay) requires shared GL contexts before the
+    # QApplication exists. Today the helpers.application import chain happens
+    # to pull QtWebEngineWidgets first, which also satisfies it — set the
+    # attribute explicitly so a refactor of that import order can't crash.
+    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 
     app = NomnsParse(list(argv), backend=backend)
     theme.set_theme(settings.general.theme)
@@ -272,6 +326,40 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
 
 def run_app(argv: list[str] | None = None, settings_file: Path | None = None) -> int:
+    # Crash guard first: startup failures land in the log too. In the frozen
+    # app stderr is invisible, so without this a crash leaves no evidence.
+    from nparseplus import crashguard
+    from nparseplus.config.paths import ensure_log_dir
+
+    crash_log = ensure_log_dir() / "crash.log"
+    crashguard.install(crash_log)
+
+    # Frozen app stderr is invisible (Finder launch), so warnings like the
+    # pigparse reconnect reasons vanished. Mirror the nparseplus logger tree
+    # to a rotating file next to the crash log.
+    import logging
+    from logging.handlers import RotatingFileHandler
+
+    handler = RotatingFileHandler(
+        crash_log.with_name("nparseplus.log"), maxBytes=1_000_000, backupCount=1
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    app_logger = logging.getLogger("nparseplus")
+    app_logger.setLevel(logging.INFO)
+    app_logger.addHandler(handler)
+
     ctx = create_app(list(sys.argv) if argv is None else list(argv), settings_file)
     ctx.backend.start()
-    return ctx.app.exec()
+
+    # Slot exceptions route through sys.excepthook, but depending on the
+    # PySide6 version an exception can also propagate out of exec() — log
+    # those and re-enter the loop instead of dying, capped against loops.
+    remaining_restarts = 5
+    while True:
+        try:
+            return ctx.app.exec()
+        except Exception as exc:
+            crashguard.log_exception(exc, crash_log, context="event loop")
+            remaining_restarts -= 1
+            if remaining_restarts < 0:
+                raise

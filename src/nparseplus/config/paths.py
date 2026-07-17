@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from platformdirs import user_cache_dir, user_config_dir
+from platformdirs import user_cache_dir, user_config_dir, user_log_dir
 
 APP_NAME = "nparseplus"
 
@@ -41,5 +41,17 @@ def ensure_config_dir() -> Path:
 def ensure_cache_dir() -> Path:
     """Create the cache directory (and parents) if needed; return it."""
     path = cache_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def log_dir() -> Path:
+    """Per-user log directory for nParse+ (crash log lives here)."""
+    return Path(user_log_dir(APP_NAME))
+
+
+def ensure_log_dir() -> Path:
+    """Create the log directory (and parents) if needed; return it."""
+    path = log_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
