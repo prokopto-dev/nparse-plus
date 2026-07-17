@@ -75,7 +75,12 @@ src/nparseplus/
                         #   hubproto.py + pigparse_hub.py (minimal SignalR JSON hub
                         #   client; signalrcore is probe-only — its sends are broken),
                         #   nparse_ws.py (legacy locationserver wire), worker.py
-  updater.py            # GitHub releases check (prokopto-dev/nparse-plus)
+  updater.py            # GitHub releases check (prokopto-dev/nparse-plus);
+                        # Linux picks .flatpak vs .tar.gz via /.flatpak-info
+  crashguard.py         # excepthooks -> crash.log; run_app also mirrors the
+                        # nparseplus logger tree to nparseplus.log (both in
+                        # platformdirs user_log_dir — frozen stderr is invisible,
+                        # so check these first on any crash/connection report)
   ui/                   # PySide6 windows; overlaybase.py is the shared overlay recipe
   audio/tts.py          # Speaker protocol: macOS `say`, PowerShell, espeak, Null
   data/                 # generated/ported data — regenerate via tools/, never hand-edit JSON
@@ -130,9 +135,15 @@ pyproject.toml) — keep NEW code clean even when touching them.
 when frozen and the legacy config moves to platformdirs). Then ad-hoc
 `codesign` + `uv run dmgbuild -s packaging/dmg_settings.py`. Tag `v<X.Y.Z>`
 (must equal `__version__` AND pyproject) to cut a GitHub release via
-`.github/workflows/release.yml`. The Linux job also wraps the onedir build
-into a `.flatpak` bundle (`packaging/flatpak/` manifest; Linux-only to
-build — CI does it, don't try locally on macOS).
+`.github/workflows/release.yml`. Preferred flow since 1.4: push Conventional
+Commits (`fix:` = patch, `feat:` = minor; `chore`/`ci`/`docs` don't bump) and
+run the Semantic Release workflow (locally via `uv run semantic-release
+version` or `gh workflow run semantic-release.yml`) — it bumps both version
+files, tags, and dispatches release.yml. The Linux job also wraps the onedir
+build into a `.flatpak` bundle (`packaging/flatpak/` manifest; Linux-only to
+build — CI does it, don't try locally on macOS), built with `--repo-url` and
+publishes the OSTree repo to the single-commit `gh-pages` branch (GitHub
+Pages) so `flatpak update` works for bundle installs.
 
 ## Sharing wire cheatsheet (see tools/pigparse_probe_transcript.md)
 
@@ -148,7 +159,7 @@ build — CI does it, don't try locally on macOS).
 
 ## Where things stand
 
-**M0–M5 complete** (~680 tests): full EQTool parity including the network —
+**M0–M6 complete, v1.4.1 released** (~770 tests): full EQTool parity including the network —
 live PigParse hub interop (map dots, shared timers, quake/boat/roll feeds,
 mob-info loot pricing), the self-hostable nparse websocket mode, Night
 Vision fix, self-updater, PyInstaller .app/DMG + release CI. M4 (1.1) added
@@ -166,7 +177,8 @@ scale + tunable z-fade (legacy `maps` keys), raid_mode_auto wiring.
 `git log --oneline` narrates the build milestone by milestone.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
-there too); `upstream` = nomns/nparse. Remaining human steps: push a `v*`
-tag to exercise the release pipeline; confirm bidirectional dots with a
-real EQTool user in-game (probe-level interop is verified). Post-1.0
-parking lot lives in README.md.
+there too); `upstream` = nomns/nparse. The release pipeline is exercised
+through v1.4.1 (semantic-release + platform builds + flatpak repo publish).
+Remaining human step: confirm bidirectional dots with a real EQTool user
+in-game (probe-level interop is verified). Post-1.0 parking lot lives in
+README.md.

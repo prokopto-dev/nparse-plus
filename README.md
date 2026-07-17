@@ -57,9 +57,12 @@ Settings) and offers the download from the tray menu.
 
 Download `nparseplus-<version>-linux-x86_64.flatpak` from the releases page
 and install it with `flatpak install --user <file>` (or a double-click in
-GNOME Software / KDE Discover). **Full instructions — prerequisites, EQ
-installs outside your home directory, GNOME tray icon, updating,
-troubleshooting — are in [docs/install-flatpak.md](docs/install-flatpak.md).**
+GNOME Software / KDE Discover). Bundles from v1.4.1 onward configure their
+update source automatically — after installing once, plain `flatpak update`
+picks up new releases (settings survive). **Full instructions —
+prerequisites, EQ installs outside your home directory, GNOME tray icon,
+updating, troubleshooting — are in
+[docs/install-flatpak.md](docs/install-flatpak.md).**
 
 ## Install & run (from source)
 
@@ -132,11 +135,14 @@ Flatpak bundle in CI and attach them to a GitHub release
 ([.github/workflows/release.yml](.github/workflows/release.yml)). The
 Flatpak wraps the PyInstaller onedir build via the manifest in
 [packaging/flatpak/](packaging/flatpak/); building it locally needs a Linux
-box with `flatpak-builder` (commands are in the manifest header).
+box with `flatpak-builder` (commands are in the manifest header). Each
+release also publishes the Flatpak OSTree repo to GitHub Pages
+(`gh-pages` branch), which is what makes `flatpak update` work.
 
-The incremental-update plan for 1.4+ is documented in
-[docs/incremental-updates.md](docs/incremental-updates.md). Version 1.4.0 is
-the one-time full bootstrap; signed patch updates can begin with 1.4.1.
+The incremental-update plan for the standalone builds is documented in
+[docs/incremental-updates.md](docs/incremental-updates.md). The Flatpak
+half is live since v1.4.1 (OSTree delta updates via the published repo);
+signed tufup patches for the DMG/zip/tarball remain planned.
 
 ## Status / roadmap
 
@@ -166,7 +172,9 @@ the one-time full bootstrap; signed patch updates can begin with 1.4.1.
   hide-others'-dots map toggle, in-game `show_/hide_/toggle_<window>`
   chat commands, and a light theme.
 - **Parking lot:** notarization + Windows signing/installer, Flathub
-  submission (a `.flatpak` bundle ships with each release since 1.3),
+  submission (a `.flatpak` bundle ships with each release since 1.3, and a
+  self-hosted repo makes `flatpak update` work since 1.4.1), GPG-signing
+  the flatpak repo, tufup patch updates for the standalone builds,
   3D map view.
 
 ## License & credits

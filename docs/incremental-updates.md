@@ -1,5 +1,12 @@
 # Incremental updates from 1.4 onward
 
+> **Status (2026-07-17):** the Flatpak half is live — since v1.4.1 every
+> release publishes the OSTree repo to GitHub Pages (`gh-pages` branch) and
+> bundles are built with `--repo-url`, so `flatpak update` performs native
+> incremental updates. tufup for the standalone DMG/zip/tarball builds is
+> still unimplemented; those remain full downloads offered by the in-app
+> release check.
+
 ## Decision
 
 Use [tufup](https://github.com/dennisvang/tufup) for the standalone macOS,
@@ -22,9 +29,12 @@ binary patch chains.
 - **Skipped releases:** tufup can apply a chain of consecutive patches. If that
   chain is missing, invalid, or larger than the current archive, it falls back
   to the full archive.
-- **Flatpak:** the standalone `.flatpak` bundle remains a full download. Delta
-  updates become available when users install nParse+ from a configured Flatpak
-  remote, where OSTree owns content deduplication and update transactions.
+- **Flatpak:** the standalone `.flatpak` bundle remains a full download, but
+  installing it configures the published repo as its origin remote
+  (`build-bundle --repo-url`), after which `flatpak update` pulls
+  incrementally — OSTree owns content deduplication and update transactions.
+  Live since v1.4.1; the repo is unsigned for now (HTTPS-anchored), GPG
+  signing is in the parking lot.
 
 The existing GitHub release check can remain the user-facing announcement and
 fallback. It queries published releases, semantically sorts them, and shows

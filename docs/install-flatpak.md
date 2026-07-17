@@ -149,6 +149,17 @@ package layering needed, and everything above works with less setup:
 - **Log file picker can't see your EQ folder** — it's outside `$HOME`; grant
   access with `flatpak override`
   ([above](#4-eq-installs-outside-your-home-directory)).
+- **Reporting a crash or connection problem** — since v1.4.1 the app writes
+  two log files; attach them to bug reports:
+
+  ```
+  ~/.var/app/io.github.prokopto_dev.nparse_plus/.local/state/nparseplus/log/crash.log
+  ~/.var/app/io.github.prokopto_dev.nparse_plus/.local/state/nparseplus/log/nparseplus.log
+  ```
+
+  (`crash.log` holds unhandled-error tracebacks; `nparseplus.log` holds
+  warnings such as sharing reconnect reasons. For the non-Flatpak tarball
+  the same files live under `~/.local/state/nparseplus/log/`.)
 
 ## Running the plain (non-Flatpak) Linux build
 
