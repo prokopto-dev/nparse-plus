@@ -130,20 +130,25 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           sed -i "s/@VERSION@/$VERSION/; s/@DATE@/$(date -u +%Y-%m-%d)/" \
             packaging/flatpak/io.github.prokopto_dev.nparse_plus.metainfo.xml
+          echo "[$(date -u +%H:%M:%S)] flatpak-builder: build + export (~1 min)"
           flatpak-builder --user --force-clean --repo=flatpak-repo \
             --gpg-sign="$FLATPAK_GPG_KEY_ID" flatpak-builddir \
             packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml
           # Sign the repo summary too (what clients verify on update).
+          echo "[$(date -u +%H:%M:%S)] build-update-repo: re-sign summary (seconds)"
           flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" flatpak-repo
           # --repo-url: installing the bundle configures its origin remote,
           # so `flatpak update` finds future releases without extra setup.
           # --gpg-keys embeds the public key, making that remote VERIFIED.
+          echo "[$(date -u +%H:%M:%S)] build-bundle: xz-compressing ~650 MB into" \
+            "the .flatpak — SILENT FOR ~5 MINUTES, this is the slow part"
           flatpak build-bundle \
             --repo-url="$FLATPAK_REPO_URL" \
             --gpg-keys=packaging/flatpak/nparseplus-repo.gpg \
             flatpak-repo \
             "dist/nparseplus-$VERSION-linux-x86_64.flatpak" \
             io.github.prokopto_dev.nparse_plus
+          echo "[$(date -u +%H:%M:%S)] bundle done"
       - name: Smoke-test Flatpak bundle
         run: |
           VERSION="${RELEASE_TAG#v}"
