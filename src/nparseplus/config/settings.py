@@ -132,6 +132,63 @@ class YouSpell(BaseModel):
     seconds_left: int
 
 
+class SpawnMarker(BaseModel):
+    """A user-placed spawn-point timer on the map (nparse #10 / eqtool #190).
+
+    ``ends_at`` is the running countdown's absolute naive-local end; None (or
+    a past time) restores in the idle/popped state.
+    """
+
+    x: float
+    y: float
+    z: float
+    length_s: int = 10
+    ends_at: datetime | None = None
+
+
+class WaypointMarker(BaseModel):
+    """A user-placed map waypoint (the single navigation WayPoint, or a named
+    user waypoint such as a corpse marker)."""
+
+    x: float
+    y: float
+    z: float
+    icon: str = "waypoint"
+    name: str = ""
+
+
+class ZoneMarkers(BaseModel):
+    """Per-zone persisted map markers, keyed by the map-file short zone key."""
+
+    spawn_points: list[SpawnMarker] = Field(default_factory=list)
+    way_point: WaypointMarker | None = None
+    user_waypoints: list[WaypointMarker] = Field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return not (self.spawn_points or self.way_point or self.user_waypoints)
+
+
+class MapMarkerStore:
+    """Load/save gate the map canvas uses (the legacy maps code must not grow
+    its own settings-writing conventions — this is the only bridge)."""
+
+    def __init__(self, settings: Settings, request_save: Callable[[], None] | None = None):
+        self._settings = settings
+        self._request_save = request_save
+
+    def load(self, zone_key: str) -> ZoneMarkers:
+        return self._settings.map_markers.get(zone_key) or ZoneMarkers()
+
+    def save(self, zone_key: str, markers: ZoneMarkers) -> None:
+        if markers.empty:
+            self._settings.map_markers.pop(zone_key, None)
+        else:
+            self._settings.map_markers[zone_key] = markers
+        if self._request_save is not None:
+            self._request_save()
+
+
 class SavedTimer(BaseModel):
     """A persisted respawn/custom timer row (nparse #57).
 
@@ -177,6 +234,10 @@ class Settings(BaseModel):
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
+    # Persisted map markers per zone short key (nparse #10 / eqtool #190).
+    # Deliberately in the NEW settings, not the legacy maps config: durable
+    # user data that must outlive the planned maps-window rebuild.
+    map_markers: dict[str, ZoneMarkers] = Field(default_factory=dict)
     players: list[PlayerInfo] = Field(default_factory=list)
     triggers: list[Trigger] = Field(default_factory=list)
     # Raw legacy custom timers ([name, matchtext, "hh:mm:ss"]) kept verbatim so a

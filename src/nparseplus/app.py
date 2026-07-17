@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from nparseplus.composition import Backend, build_backend
 from nparseplus.config.settings import (
     DebouncedSaver,
+    MapMarkerStore,
     Settings,
     WindowState,
     load_settings,
@@ -207,6 +208,12 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         app.maps_window.tracking_radius_provider = lambda: tracking_distance(
             backend.player.player_class, backend.player.tracking_skill
         )
+        # Persistent map markers: the maps window loaded its first map before
+        # the store existed, so restore that zone's markers now.
+        app.maps_window._map.marker_store = MapMarkerStore(
+            settings, request_save=saver.request_save
+        )
+        app.maps_window._map.restore_markers()
     app.attach_backend_ui(
         bridge,
         spell_window,

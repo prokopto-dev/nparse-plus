@@ -200,6 +200,9 @@ class SpawnPoint(QGraphicsItemGroup):
         self.text = text
 
         self.timer = QTimer()
+        # The canvas persists running countdowns (double-click restarts happen
+        # inside the item, out of the canvas's sight).
+        self.on_state_change = None
 
     def _update(self):
         if self.timer:
@@ -234,6 +237,8 @@ class SpawnPoint(QGraphicsItemGroup):
         self._end_time = timestamp + datetime.timedelta(seconds=self.length)
         if self.timer:
             self._update()
+        if self.on_state_change:
+            self.on_state_change()
 
     def stop(self):
         self.text.setHtml(f"<font color='green' align='center'>{self.name.upper()}</font>")

@@ -2,7 +2,7 @@
 import math
 import os
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import colorhash
 import pathvalidate
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
+from nparseplus.config.settings import SpawnMarker, WaypointMarker, ZoneMarkers
 from nparseplus.helpers import config, text_time_to_seconds, to_range
 from nparseplus.parsers.maps.mapclasses import (
     YOU_COLOR,
@@ -65,6 +66,9 @@ class MapCanvas(QGraphicsView):
         self._flash_timer.timeout.connect(self._flash_pulse)
         self._tracking_circles = {}  # name -> QGraphicsEllipseItem (true radius)
         self.map_loaded_callback = None  # set by the Maps window
+        # Persistent user markers (nparse #10 / eqtool #190): app.py injects a
+        # config.settings.MapMarkerStore; None keeps markers session-only.
+        self.marker_store = None
 
     def load_map(self, map_name, keep_loc=False):
         self.clear_flash()
@@ -102,6 +106,7 @@ class MapCanvas(QGraphicsView):
             self._scene.addItem(self._mouse_location)
             config.data["maps"]["last_zone"] = self._data.zone
             config.save()
+            self.restore_markers()
             if keep_loc and old_player_data:
                 self.add_player("__you__", old_player_data.timestamp, old_player_data.location)
             if self.map_loaded_callback:
@@ -416,6 +421,122 @@ class MapCanvas(QGraphicsView):
 
         self.update_()
 
+    # Persistent user markers (nparse #10 / eqtool #190) --------------------
+
+    def _marker_zone_key(self):
+        if not self._data:
+            return None
+        return self._data.short_zone_key or self._data.zone.strip().lower()
+
+    def persist_markers(self):
+        """Snapshot spawn points, the way point, and persistent user waypoints
+        into the marker store (a no-op without one)."""
+        zone_key = self._marker_zone_key()
+        if self.marker_store is None or not zone_key:
+            return
+        spawns = [
+            SpawnMarker(
+                x=spawn.location.x,
+                y=spawn.location.y,
+                z=spawn.location.z,
+                length_s=int(spawn.length),
+                ends_at=getattr(spawn, "_end_time", None),
+            )
+            for spawn in self._data.spawns
+        ]
+        way_point = None
+        if self._data.way_point:
+            loc = self._data.way_point.location
+            way_point = WaypointMarker(x=loc.x, y=loc.y, z=loc.z)
+        user_waypoints = [
+            WaypointMarker(
+                x=waypoint.location.x,
+                y=waypoint.location.y,
+                z=waypoint.location.z,
+                icon=getattr(waypoint, "icon_key", "waypoint"),
+                name=waypoint.name,
+            )
+            for waypoint in self._data.waypoints.values()
+            if getattr(waypoint, "persistent", False)
+        ]
+        self.marker_store.save(
+            zone_key,
+            ZoneMarkers(spawn_points=spawns, way_point=way_point, user_waypoints=user_waypoints),
+        )
+
+    def restore_markers(self):
+        """Rebuild this zone's persisted markers as fresh scene items (the
+        scene is cleared on every load_map). Idempotent — app.py also calls it
+        once after injecting the store, since the first load ran without one."""
+        zone_key = self._marker_zone_key()
+        if self.marker_store is None or not zone_key:
+            return
+        markers = self.marker_store.load(zone_key)
+        for spawn in self._data.spawns:
+            self._scene.removeItem(spawn)
+        self._data.spawns = []
+        self.clear_way_point(persist=False)
+        now = datetime.now()
+        for saved in markers.spawn_points:
+            spawn = self._add_spawn_item(MapPoint(x=saved.x, y=saved.y, z=saved.z), saved.length_s)
+            if saved.ends_at is not None and saved.ends_at > now:
+                spawn.start(timestamp=saved.ends_at - timedelta(seconds=saved.length_s))
+            else:
+                spawn.stop()
+        if markers.way_point:
+            self.set_way_point(
+                markers.way_point.x, markers.way_point.y, markers.way_point.z, persist=False
+            )
+        self.update_()
+
+    def _add_spawn_item(self, location, seconds):
+        spawn = SpawnPoint(location=location, length=seconds)
+        # Double-click restarts the countdown inside the item; persist that.
+        spawn.on_state_change = self.persist_markers
+        self._scene.addItem(spawn)
+        self._data.spawns.append(spawn)
+        return spawn
+
+    def create_spawn_point(self, x, y, seconds):
+        spawn = self._add_spawn_item(
+            MapPoint(x=x, y=y, z=self._data.geometry.z_groups[self._z_index]), seconds
+        )
+        spawn.start()
+        self.persist_markers()
+        return spawn
+
+    def delete_spawn_point_at(self, pos):
+        pixmap = self._scene.itemAt(pos.x(), pos.y(), QTransform())
+        if pixmap:
+            group = pixmap.parentItem()
+            if group in self._data.spawns:
+                self._data.spawns.remove(group)
+                self._scene.removeItem(group)
+                self.persist_markers()
+
+    def clear_spawn_points(self):
+        for spawn in self._data.spawns:
+            self._scene.removeItem(spawn)
+        self._data.spawns = []
+        self.persist_markers()
+
+    def set_way_point(self, x, y, z=None, persist=True):
+        self.clear_way_point(persist=False)
+        z = z if z is not None else self._data.geometry.z_groups[self._z_index]
+        self._data.way_point = WayPoint(location=MapPoint(x=x, y=y, z=z))
+        self._scene.addItem(self._data.way_point.pixmap)
+        self._scene.addItem(self._data.way_point.line)
+        if persist:
+            self.persist_markers()
+
+    def clear_way_point(self, persist=True):
+        if self._data.way_point:
+            self._scene.removeItem(self._data.way_point.pixmap)
+            self._scene.removeItem(self._data.way_point.line)
+        self._data.way_point = None
+        if persist:
+            self.persist_markers()
+
     def enterEvent(self, event):
         if config.data["maps"]["show_mouse_location"]:
             self._mouse_location.setVisible(True)
@@ -505,51 +626,20 @@ class MapCanvas(QGraphicsView):
 
             if dialog.exec():
                 spawn_time = text_time_to_seconds(dialog.textValue())
-                spawn = SpawnPoint(
-                    location=MapPoint(
-                        x=pos.x(), y=pos.y(), z=self._data.geometry.z_groups[self._z_index]
-                    ),
-                    length=spawn_time,
-                )
-
-                self._scene.addItem(spawn)
-                self._data.spawns.append(spawn)
-                spawn.start()
+                self.create_spawn_point(pos.x(), pos.y(), spawn_time)
             dialog.deleteLater()
 
         if action == spawn_point_delete:
-            pixmap = self._scene.itemAt(pos.x(), pos.y(), QTransform())
-            if pixmap:
-                group = pixmap.parentItem()
-                if group:
-                    self._data.spawns.remove(group)
-                    self._scene.removeItem(group)
+            self.delete_spawn_point_at(pos)
 
         if action == spawn_point_delete_all:
-            for spawn in self._data.spawns:
-                self._scene.removeItem(spawn)
-            self._data.spawns = []
+            self.clear_spawn_points()
 
         if action == way_point_create:
-            if self._data.way_point:
-                self._scene.removeItem(self._data.way_point.pixmap)
-                self._scene.removeItem(self._data.way_point.line)
-                self._data.way_point = None
-
-            self._data.way_point = WayPoint(
-                location=MapPoint(
-                    x=pos.x(), y=pos.y(), z=self._data.geometry.z_groups[self._z_index]
-                )
-            )
-
-            self._scene.addItem(self._data.way_point.pixmap)
-            self._scene.addItem(self._data.way_point.line)
+            self.set_way_point(pos.x(), pos.y())
 
         if action == way_point_delete:
-            if self._data.way_point:
-                self._scene.removeItem(self._data.way_point.pixmap)
-                self._scene.removeItem(self._data.way_point.line)
-            self._data.way_point = None
+            self.clear_way_point()
 
         if action == pathing_start_recording:
             self.start_path_recording()
