@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QProgressBar,
+    QScrollArea,
+    QSizeGrip,
     QVBoxLayout,
     QWidget,
 )
@@ -236,6 +238,15 @@ class SpellTimerWindow(QWidget):
             f"#SpellTimerGroup {{ color: {colors.heading}; font-weight: bold;"
             f" font-size: {font_size}px; background-color: rgba(0, 68, 0, 160);"
             " padding: 1px 4px; }"
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+            "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
+            "QScrollBar::handle:vertical {"
+            " background: rgba(136, 136, 136, 120); border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+            " background: transparent; }"
+            "QSizeGrip { background: transparent; width: 12px; height: 12px; }"
         )
 
         self._title = QLabel("Spell Timers", self)
@@ -246,12 +257,28 @@ class SpellTimerWindow(QWidget):
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
         self._rows_layout.setSpacing(1)
 
+        # The rows live inside a scroll area so the WINDOW size is the user's
+        # choice: it no longer inflates as rows arrive (and then sticks huge
+        # after they leave) — overflow scrolls instead.
+        rows_host = QWidget(self)
+        host_layout = QVBoxLayout(rows_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(0)
+        host_layout.addLayout(self._rows_layout, 0)
+        host_layout.addStretch(1)
+
+        self._scroll = QScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll.setWidget(rows_host)
+
         container_layout = QVBoxLayout()
         container_layout.setContentsMargins(2, 2, 2, 2)
         container_layout.setSpacing(1)
         container_layout.addWidget(self._title, 0)
-        container_layout.addLayout(self._rows_layout, 0)
-        container_layout.addStretch(1)
+        container_layout.addWidget(self._scroll, 1)
 
         self._container = QFrame(self)
         self._container.setObjectName("SpellTimerContainer")
@@ -261,6 +288,16 @@ class SpellTimerWindow(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._container)
         self.setLayout(outer)
+        self.setMinimumSize(140, 120)
+
+        # Frameless windows have no OS resize border; the corner grip is the
+        # resize affordance. Size changes persist (debounced) below.
+        self._grip = QSizeGrip(self)
+        self._grip.raise_()
+        self._persist_resize = QTimer(self)
+        self._persist_resize.setSingleShot(True)
+        self._persist_resize.setInterval(400)
+        self._persist_resize.timeout.connect(self.persist_state)
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self.refresh)
@@ -370,6 +407,11 @@ class SpellTimerWindow(QWidget):
             self._headers.pop(group).deleteLater()
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
+        # Re-fit the scroll host to the rebuilt content: the scroll area's own
+        # lazy relayout reliably grows it but not shrinks it, which would leave
+        # a stale scroll range after rows leave. (The window itself never
+        # resizes — the user's size is authoritative.)
+        self._scroll.widget().adjustSize()
 
     def _group_label(self, group: str) -> str:
         """Header text: the target name, plus its class when the /who
@@ -474,7 +516,17 @@ class SpellTimerWindow(QWidget):
             super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event) -> None:
-        event.accept()  # deliberately inert: no scroll-through to the game
+        # Reaches here only when the scroll area didn't consume it (nothing
+        # to scroll): stay inert so wheels never pass through to the game.
+        event.accept()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        rect = self.rect()
+        self._grip.move(rect.right() - self._grip.width(), rect.bottom() - self._grip.height())
+        if self.isVisible():
+            # Debounced: persists once the grip-drag (or layout change) settles.
+            self._persist_resize.start()
 
     # -- context menu (manual timer clearing) -----------------------------------
     # Note: with click-through enabled the OS never delivers right-clicks

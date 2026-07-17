@@ -347,6 +347,57 @@ def test_bar_colors_and_time_format():
     assert format_remaining(3723) == "1:02:03"
 
 
+# -- window sizing (user-controlled, scroll on overflow) -----------------------
+
+
+def test_window_keeps_user_size_and_scrolls_on_overflow(qtbot):
+    # Regression: the window grew as rows arrived (layout minimum enforced on
+    # the window) and stayed huge after they left. Rows now live in a scroll
+    # area, so the user's size wins and overflow scrolls.
+    from PySide6.QtWidgets import QApplication
+
+    backend = make_backend()
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    window.resize(220, 300)
+    QApplication.processEvents()
+
+    for i in range(40):
+        backend.timers.add_timer(
+            TimerRow(
+                name=f"filler {i}",
+                group="Timers",
+                updated_at=NOW,
+                ends_at=NOW + timedelta(minutes=5),
+                total_duration_s=300.0,
+            ),
+            allow_duplicates=True,
+        )
+    window.refresh()
+    QApplication.processEvents()
+    assert window.height() == 300  # did not inflate
+    assert window._scroll.verticalScrollBar().maximum() > 0  # overflow scrolls
+
+    backend.timers.clear_all()
+    window.refresh()
+    QApplication.processEvents()
+    assert window.height() == 300  # and did not stay huge either way
+    assert window._scroll.verticalScrollBar().maximum() == 0
+
+
+def test_user_resize_persists_geometry(qtbot):
+    backend = make_backend()
+    saves: list[bool] = []
+    window = SpellTimerWindow(backend, on_save=lambda: saves.append(True))
+    qtbot.addWidget(window)
+    window.show()
+
+    window.resize(250, 333)  # what the size grip does
+    qtbot.waitUntil(lambda: bool(saves), timeout=3000)  # debounced persist
+    assert backend.settings.windows["spells"].geometry[2:] == (250, 333)
+
+
 # -- context menu (manual timer clearing) --------------------------------------
 
 

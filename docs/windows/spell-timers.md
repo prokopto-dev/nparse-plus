@@ -55,6 +55,10 @@ Spell rows show their **gem icon** from the spell data.
   a section header for *Clear group*, or anywhere for *Clear all timers*.
   (With click-through enabled the overlay ignores all clicks, including
   right-clicks — toggle click-through off first.)
+- **You choose the size** — drag the bottom-right corner grip to resize;
+  the window keeps that size (persisted across restarts) and scrolls when
+  there are more rows than fit, instead of growing down your screen and
+  staying huge after the timers clear.
 
 ## Related
 
