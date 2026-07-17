@@ -6,6 +6,62 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.5.0 (2026-07-17)
+
+### Bug Fixes
+
+- Offer the right Linux artifact from the in-app updater
+  ([`516b82c`](https://github.com/prokopto-dev/nparse-plus/commit/516b82c650f5e00b7d210271663d6851212bb91c))
+
+### Continuous Integration
+
+- Deploy versioned docs to gh-pages alongside the flatpak repo
+  ([`0ed1766`](https://github.com/prokopto-dev/nparse-plus/commit/0ed1766c9e48ce96a06e0fbef4cbb18fbdcf9932))
+
+- Export the flatpak public key from the imported secret
+  ([`43d056a`](https://github.com/prokopto-dev/nparse-plus/commit/43d056a54000e3b651dc7ab72f87c68dad97a9ca))
+
+- GPG-sign the flatpak repo, summary, and bundles
+  ([`216d6f8`](https://github.com/prokopto-dev/nparse-plus/commit/216d6f8733a1e88e6e2266b8457274b82c5d2ab0))
+
+- Publish the Flatpak OSTree repo so `flatpak update` works
+  ([`7e84c30`](https://github.com/prokopto-dev/nparse-plus/commit/7e84c30d7e3875584d42fbf5f25a615db8554a27))
+
+- Timestamped phase markers in the flatpak bundle step
+  ([`01ccedc`](https://github.com/prokopto-dev/nparse-plus/commit/01ccedc670516ac068a387bfe4c135e8fc04714e))
+
+### Documentation
+
+- Add Roadmap and Changelog pages to the site
+  ([`7c138fe`](https://github.com/prokopto-dev/nparse-plus/commit/7c138feca2022090c72ff1e5a34045c1f47d1d84))
+
+- Add the MkDocs Material site — 43 pages, versioned via mike
+  ([`56a9118`](https://github.com/prokopto-dev/nparse-plus/commit/56a9118ebb08d437c88521a58bba6b4607cbbfdb))
+
+- Cover the new timer/settings behavior across feature pages
+  ([`eb4321c`](https://github.com/prokopto-dev/nparse-plus/commit/eb4321c6ad1737306771c00271c4a6ed6de52e2a))
+
+- Cover trigger export/import and the GINA .gtp importer
+  ([`533739a`](https://github.com/prokopto-dev/nparse-plus/commit/533739a9817a89a78d1060a97be9e2f64fa0591f))
+
+- Match the 1.4.1 state — flatpak updates, log files, release flow
+  ([`6c699cb`](https://github.com/prokopto-dev/nparse-plus/commit/6c699cbae37b4eb4d4dfa2d31fc5493b466cbd08))
+
+- Shrink the README to quick start + docs-site links
+  ([`aec6053`](https://github.com/prokopto-dev/nparse-plus/commit/aec60533d9a3a668f113c618c724f8fc2723644a))
+
+- Timer section toggles and right-click clearing
+  ([`df10090`](https://github.com/prokopto-dev/nparse-plus/commit/df1009049ed1c601dbce8a34e0c1f4a88d78e8e9))
+
+### Features
+
+- Timer section hide toggles + right-click clear; /who and you-only fixes
+  ([`c22ebbc`](https://github.com/prokopto-dev/nparse-plus/commit/c22ebbc6b9b633c1846ff69a853b76daed029fcd))
+
+- Trigger export/import + GINA .gtp import
+  ([`68f985f`](https://github.com/prokopto-dev/nparse-plus/commit/68f985fdfc7f31245a87dcc92fe4ea2207b3e427))
+
+
 ## v1.4.1 (2026-07-17)
 
 ### Bug Fixes
