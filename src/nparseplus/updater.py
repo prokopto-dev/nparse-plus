@@ -1,10 +1,11 @@
 """Self-updater — GitHub releases check + per-platform install flow.
 
-No in-place binary swap in 1.0 (EQTool's two-phase ping/pong updater is not
-ported): the check compares the latest GitHub release tag against
-``nparseplus.__version__`` with ``packaging.version``; "install" downloads
-the platform artifact to ~/Downloads and opens it (macOS DMG), or falls
-back to opening the release page in a browser.
+No in-place binary swap before 1.4 (EQTool's two-phase ping/pong updater is
+not ported): the check compares published GitHub release tags against
+``nparseplus.__version__`` with ``packaging.version`` and collects every
+intervening release body for the update-details window. "Install" downloads
+the platform artifact to ~/Downloads and opens it (macOS DMG), or falls back
+to opening the release page in a browser.
 
 Qt-free; the tray layer marshals results to the GUI thread itself. Every
 failure — including the repo not existing yet — degrades to "no update".
@@ -33,7 +34,7 @@ TIMEOUT_S = 10.0
 
 
 def releases_api_url() -> str:
-    return f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+    return f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=100"
 
 
 def releases_page_url() -> str:
@@ -48,12 +49,23 @@ class ReleaseAsset(BaseModel):
     size: int = 0
 
 
+class ReleaseNote(BaseModel):
+    """One published release between the installed and target versions."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    version: str
+    body: str = ""
+    html_url: str = ""
+
+
 class ReleaseInfo(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     version: str  # normalized, no leading "v"
     html_url: str
     assets: tuple[ReleaseAsset, ...] = ()
+    notes: tuple[ReleaseNote, ...] = ()
 
 
 def _client(client: httpx.Client | None) -> httpx.Client:
@@ -73,21 +85,56 @@ def check_for_update(
         resp = _client(client).get(releases_api_url())
         resp.raise_for_status()
         payload = resp.json()
-        tag = str(payload.get("tag_name", "")).lstrip("v")
-        latest = Version(tag)
         installed = Version(current or nparseplus.__version__)
+        if not isinstance(payload, list):
+            return None
+        releases: list[tuple[Version, dict]] = []
+        for item in payload:
+            if not isinstance(item, dict) or item.get("draft") or item.get("prerelease"):
+                continue
+            try:
+                version = Version(str(item.get("tag_name", "")).lstrip("v"))
+            except Exception:
+                continue
+            releases.append((version, item))
     except Exception:  # includes InvalidVersion on junk tags
         logger.debug("update check failed", exc_info=True)
         return None
+    releases.sort(key=lambda release: release[0], reverse=True)
+    if not releases:
+        return None
+    latest, latest_payload = releases[0]
     if latest <= installed:
         return None
     return ReleaseInfo(
         version=str(latest),
-        html_url=str(payload.get("html_url", releases_page_url())),
+        html_url=str(latest_payload.get("html_url", releases_page_url())),
         assets=tuple(
-            ReleaseAsset.model_validate(a) for a in payload.get("assets", []) if isinstance(a, dict)
+            ReleaseAsset.model_validate(a)
+            for a in latest_payload.get("assets", [])
+            if isinstance(a, dict)
+        ),
+        notes=tuple(
+            ReleaseNote(
+                version=str(version),
+                body=str(item.get("body") or "").strip(),
+                html_url=str(item.get("html_url") or ""),
+            )
+            for version, item in releases
+            if installed < version <= latest
         ),
     )
+
+
+def format_release_notes(release: ReleaseInfo) -> str:
+    """Markdown for every published version crossed by this update."""
+    sections: list[str] = []
+    for note in release.notes:
+        body = note.body or "No changelog entry was published for this version."
+        sections.append(f"## Version {note.version}\n\n{body}")
+    if not sections:
+        return f"## Version {release.version}\n\nNo changelog entry was published for this version."
+    return "\n\n---\n\n".join(sections)
 
 
 def pick_asset(release: ReleaseInfo, platform: str = sys.platform) -> ReleaseAsset | None:

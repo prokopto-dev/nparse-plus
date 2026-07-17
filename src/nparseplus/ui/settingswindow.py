@@ -49,7 +49,13 @@ from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
 from nparseplus.core import friends, visionfix
 from nparseplus.core.enums import PlayerClass
-from nparseplus.core.events import AfterPlayerChangedEvent
+from nparseplus.core.events import (
+    AfterPlayerChangedEvent,
+    ClassDetectedEvent,
+    PlayerLevelDetectionEvent,
+    WhoPlayerEvent,
+    YouZonedEvent,
+)
 from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.net.discordauth import DiscordAuthResult
@@ -383,9 +389,28 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             self._load_character()
 
     def handle_backend_event(self, event: object) -> None:
-        """Bridge slot (GUI thread): track live character switches."""
+        """Bridge slot (GUI thread): keep the selected active profile current."""
         if isinstance(event, AfterPlayerChangedEvent):
             self.refresh_characters()
+            return
+
+        info = self._selected_player()
+        active = self._backend_character()
+        if info is None or active is None or (info.name, info.server) != active:
+            return
+        if isinstance(event, WhoPlayerEvent):
+            if event.player.name.casefold() != info.name.casefold():
+                return
+            self._refresh_character_fields(
+                player_class=event.player.player_class is not None,
+                level=event.player.level is not None,
+            )
+        elif isinstance(event, ClassDetectedEvent):
+            self._refresh_character_fields(player_class=True)
+        elif isinstance(event, PlayerLevelDetectionEvent):
+            self._refresh_character_fields(level=True)
+        elif isinstance(event, YouZonedEvent):
+            self._refresh_character_fields(zone=True)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -426,6 +451,35 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         for cls, box in self._class_filter_boxes.items():
             box.setChecked(selected is None or int(cls) in selected)
         self._sync_track_enabled()
+
+    def _refresh_character_fields(
+        self,
+        *,
+        player_class: bool = False,
+        level: bool = False,
+        zone: bool = False,
+    ) -> None:
+        """Refresh backend-owned fields without discarding other unsaved edits."""
+        info = self._selected_player()
+        if info is None:
+            return
+        if player_class:
+            if info.player_class is None:
+                self._char_class.setCurrentIndex(0)
+            else:
+                cls = PlayerClass(info.player_class)
+                self._char_class.setCurrentIndex(PLAYER_CLASSES.index(cls) + 1)
+            # The class signal enables Track Skill. Restore its saved value in
+            # case the formerly-unknown class had caused the widget to clear.
+            self._char_track.setValue(info.tracking_skill or 0)
+            self._sync_track_enabled()
+        if level:
+            self._char_level.setValue(info.level or 0)
+        if zone:
+            zone_display = info.zone
+            if self._zones is not None and info.zone:
+                zone_display = self._zones.long_name(info.zone) or info.zone
+            self._char_zone.setCurrentText(zone_display)
 
     def _combo_class(self) -> PlayerClass | None:
         index = self._char_class.currentIndex()

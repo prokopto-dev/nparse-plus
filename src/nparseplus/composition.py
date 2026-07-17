@@ -138,6 +138,8 @@ class Backend:
             self.sharing_client.stop()
         if self.net_worker is not None:
             self.net_worker.stop()
+        if self.pigparse_api is not None:
+            self.pigparse_api.close()
 
 
 def _spells_path(settings: Settings) -> Path:

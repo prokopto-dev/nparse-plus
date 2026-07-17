@@ -40,6 +40,16 @@ class WindowState(BaseModel):
     auto_hide_menu: bool = True
 
 
+class WindowLayoutPreset(BaseModel):
+    """A named snapshot of window positions and sizes.
+
+    Visibility and overlay behavior deliberately remain live settings: a
+    layout only answers where each window belongs and how large it is.
+    """
+
+    geometries: dict[str, tuple[int, int, int, int]] = Field(default_factory=dict)
+
+
 class GeneralSettings(BaseModel):
     eq_log_dir: Path = Field(default_factory=_default_eq_log_dir)
     eq_install_dir: Path | None = None
@@ -236,6 +246,7 @@ class Settings(BaseModel):
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
+    window_layouts: dict[str, WindowLayoutPreset] = Field(default_factory=dict)
     # Persisted map markers per zone short key (nparse #10 / eqtool #190).
     # Deliberately in the NEW settings, not the legacy maps config: durable
     # user data that must outlive the planned maps-window rebuild.

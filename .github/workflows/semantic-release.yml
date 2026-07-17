@@ -1,0 +1,57 @@
+name: Semantic Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: semantic-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Sync dependencies
+        run: uv sync --frozen
+      - name: Verify release candidate
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest
+      - name: Calculate version, update changelog, commit, tag, and push
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          vcs_release: false
+          build: false
+          git_committer_name: github-actions[bot]
+          git_committer_email: 41898282+github-actions[bot]@users.noreply.github.com
+      - name: Summary
+        run: |
+          if [ "${{ steps.release.outputs.released }}" = "true" ]; then
+            echo "Released v${{ steps.release.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No releasable Conventional Commits were found." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Start platform package build
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref "${GITHUB_REF_NAME}" -f tag="${{ steps.release.outputs.tag }}"

@@ -2,9 +2,8 @@
 
 Same shape as :mod:`nparseplus.net.p99wiki`: sync httpx with an injectable
 client, and every failure degrades to ``None``/``[]``/no-op with a warning —
-network trouble must never take down parsing. Per the M3 brief this client
-is stricter than the C# (which uses a default 100 s HttpClient timeout and
-no retry): 5 s timeout, one retry.
+network trouble must never take down parsing. Transient transport/HTTP
+failures receive one courteous delayed retry; permanent 4xx responses do not.
 
 Callers run on a worker thread (``net.worker``), never the driver thread.
 Path-parameter server names are the C# ``Servers`` enum member name
@@ -14,6 +13,8 @@ Path-parameter server names are the C# ``Servers`` enum member name
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 
 import httpx
 from pydantic import TypeAdapter
@@ -29,8 +30,10 @@ from nparseplus.net.pigparse_models import (
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://pigparse.azurewebsites.net"
-TIMEOUT_S = 5.0
+TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 ATTEMPTS = 2  # initial call + one retry
+RETRY_DELAY_S = 0.5
+RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 _ITEMS = TypeAdapter(list[ItemPrice])
 _PLAYERS = TypeAdapter(list[WirePlayerRecord])
@@ -44,11 +47,25 @@ def server_route_name(server: int) -> str:
 
 
 class PigParseApiClient:
-    def __init__(self, base_url: str = BASE_URL, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str = BASE_URL,
+        client: httpx.Client | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self._base = base_url.rstrip("/")
+        self._owns_client = client is None
         self._client = client or httpx.Client(
-            timeout=TIMEOUT_S, headers={"User-Agent": "nparseplus"}
+            timeout=TIMEOUT,
+            follow_redirects=True,
+            headers={"Accept": "application/json", "User-Agent": "nparseplus"},
         )
+        self._sleep = sleep
+
+    def close(self) -> None:
+        """Release the owned connection pool after the network worker stops."""
+        if self._owns_client:
+            self._client.close()
 
     def _request(
         self,
@@ -63,9 +80,19 @@ class PigParseApiClient:
                 resp = self._client.request(method, url, json=json_body, headers=headers)
                 resp.raise_for_status()
                 return resp
-            except Exception:
+            except httpx.HTTPStatusError as exc:
+                retryable = exc.response.status_code in RETRYABLE_STATUS
+                if not retryable or attempt == ATTEMPTS:
+                    logger.warning("pigparse %s %s failed", method, path, exc_info=True)
+                    return None
+            except httpx.RequestError:
                 if attempt == ATTEMPTS:
                     logger.warning("pigparse %s %s failed", method, path, exc_info=True)
+                    return None
+            except Exception:
+                logger.warning("pigparse %s %s failed", method, path, exc_info=True)
+                return None
+            self._sleep(RETRY_DELAY_S)
         return None
 
     def _parse_list(self, adapter: TypeAdapter, resp: httpx.Response | None, what: str) -> list:

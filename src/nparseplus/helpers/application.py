@@ -17,6 +17,7 @@ from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
 from nparseplus.parsers.maps.window import MapsSignals
 from nparseplus.parsers.spells import Spells
+from nparseplus.ui.updatewindow import UpdateAvailableDialog
 
 config.load("nparse.config.json")
 # validate settings file
@@ -56,7 +57,9 @@ class NomnsParse(QApplication):
         self._spell_window = None
         self._save_new_settings = None
         self._backend_windows = {}
+        self._window_layouts = None
         self._available_release = None
+        self._update_window = None
         self.update_available.connect(self._on_update_available)
 
         # Updates
@@ -108,6 +111,36 @@ class NomnsParse(QApplication):
             "Install it from the tray menu.",
             msecs=5000,
         )
+        self._show_update_window()
+
+    def _show_update_window(self):
+        release = self._available_release
+        if release is None:
+            return
+        window = self._update_window
+        if window is None:
+            window = UpdateAvailableDialog(release, str(CURRENT_VERSION))
+            window.install_requested.connect(self._install_available_update)
+            window.open_release_requested.connect(lambda: webbrowser.open(release.html_url))
+            window.finished.connect(self._clear_update_window)
+            self._update_window = window
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def _clear_update_window(self, _result=None):
+        self._update_window = None
+
+    def _install_available_update(self):
+        release = self._available_release
+        if release is None:
+            return
+        threading.Thread(
+            target=updater.install_action,
+            args=(release,),
+            name="update-install",
+            daemon=True,
+        ).start()
 
     @property
     def maps_window(self):
@@ -123,7 +156,14 @@ class NomnsParse(QApplication):
         self._parsers_dict["discord"] = Discord()
         self._parsers = list(self._parsers_dict.values())
 
-    def attach_backend_ui(self, bridge, spell_window, save_new_settings=None, windows=None):
+    def attach_backend_ui(
+        self,
+        bridge,
+        spell_window,
+        save_new_settings=None,
+        windows=None,
+        window_layouts=None,
+    ):
         """Backend mode wiring (called by nparseplus.app.create_app):
         feed LineEvents from the Qt bridge into the legacy parse path and
         hook up the new overlay windows for the tray menu. ``windows`` is an
@@ -133,6 +173,7 @@ class NomnsParse(QApplication):
         self._spell_window = spell_window
         self._save_new_settings = save_new_settings
         self._backend_windows = dict(windows or {})
+        self._window_layouts = window_layouts
         bridge.event_received.connect(self._on_backend_event)
 
     def _on_backend_event(self, event):
@@ -218,6 +259,10 @@ class NomnsParse(QApplication):
             window_action.setChecked(window.isVisible())
             backend_window_actions[window_action] = window
 
+        if self._window_layouts is not None:
+            menu.addSeparator()
+            self._window_layouts.populate_menu(menu)
+
         menu.addSeparator()
         # (the unified "Settings" window arrives via _backend_windows)
         discord_conf_action = menu.addAction("Configure Discord")
@@ -228,14 +273,7 @@ class NomnsParse(QApplication):
 
         if action == check_version_action:
             if self._available_release is not None:
-                # Downloads the platform artifact to ~/Downloads and opens it
-                # (or the release page when there is no artifact).
-                threading.Thread(
-                    target=updater.install_action,
-                    args=(self._available_release,),
-                    name="update-install",
-                    daemon=True,
-                ).start()
+                self._show_update_window()
             else:
                 webbrowser.open(updater.releases_page_url())
 

@@ -8,8 +8,11 @@ from nparseplus.net.pigparse_api import PigParseApiClient, server_route_name
 from nparseplus.net.pigparse_models import WirePlayerRecord
 
 
-def _client(handler) -> PigParseApiClient:
-    return PigParseApiClient(client=httpx.Client(transport=httpx.MockTransport(handler)))
+def _client(handler, sleeps: list[float] | None = None) -> PigParseApiClient:
+    return PigParseApiClient(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=(sleeps.append if sleeps is not None else lambda seconds: None),
+    )
 
 
 def test_server_route_name() -> None:
@@ -124,6 +127,7 @@ def test_boat_activity_and_roll_timers() -> None:
 
 def test_retry_once_then_success() -> None:
     calls = {"n": 0}
+    sleeps: list[float] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
@@ -131,8 +135,20 @@ def test_retry_once_then_success() -> None:
             return httpx.Response(500)
         return httpx.Response(200, json=[])
 
-    assert _client(handler).roll_timers(0) == []
+    assert _client(handler, sleeps).roll_timers(0) == []
     assert calls["n"] == 2
+    assert sleeps == [0.5]
+
+
+def test_permanent_client_error_is_not_retried() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(401)
+
+    assert _client(handler).roll_timers(0) == []
+    assert calls["n"] == 1
 
 
 def test_failures_degrade_to_empty() -> None:

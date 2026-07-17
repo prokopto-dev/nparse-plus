@@ -7,7 +7,12 @@ import pytest
 
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server
-from nparseplus.core.events import AfterPlayerChangedEvent
+from nparseplus.core.events import (
+    AfterPlayerChangedEvent,
+    WhoPlayer,
+    WhoPlayerEvent,
+    YouZonedEvent,
+)
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.settingswindow import UnifiedSettingsWindow
@@ -263,6 +268,36 @@ def test_refresh_tracks_character_switch(qtbot) -> None:
 
     assert window._char_combo.currentText() == "Beeta (blue)"
     assert window._char_level.value() == 12
+
+
+def test_live_who_and_zone_events_refresh_backend_fields_only(qtbot) -> None:
+    profile = PlayerInfo(name="Xantik", server="green", tracking_skill=120)
+    settings = Settings(players=[profile])
+    player = ActivePlayer()
+    player.reset_for("Xantik", Server.GREEN)
+    window = _window(qtbot, settings, backend_player=player)
+    window._char_sharing.setCurrentText("off")  # unrelated unsaved edit
+
+    profile.player_class = int(PlayerClass.DRUID)
+    profile.level = 54
+    window.handle_backend_event(
+        WhoPlayerEvent(
+            timestamp=datetime.now(),
+            player=WhoPlayer(name="Xantik", player_class=PlayerClass.DRUID, level=54),
+        )
+    )
+    assert window._char_class.currentText() == "Druid"
+    assert window._char_level.value() == 54
+    assert window._char_track.value() == 120
+    assert window._char_track.isEnabled()
+    assert window._char_sharing.currentText() == "off"
+
+    profile.zone = "gfaydark"
+    window.handle_backend_event(
+        YouZonedEvent(timestamp=datetime.now(), long_name="greater faydark", short_name="gfaydark")
+    )
+    assert window._char_zone.currentText() == "greater faydark"
+    assert window._char_sharing.currentText() == "off"
 
 
 def test_friends_page_load_and_push_round_trip(qtbot, tmp_path: Path) -> None:

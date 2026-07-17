@@ -11,6 +11,7 @@ from nparseplus.updater import (
     ReleaseInfo,
     check_for_update,
     download_asset,
+    format_release_notes,
     install_action,
     pick_asset,
 )
@@ -19,6 +20,8 @@ RELEASE_JSON = {
     "tag_name": "v9.9.9",
     "html_url": "https://github.com/prokopto-dev/nparse-plus/releases/tag/v9.9.9",
     "prerelease": False,
+    "draft": False,
+    "body": "- Added the newest feature.",
     "assets": [
         {"name": "nParse+-9.9.9.dmg", "browser_download_url": "https://dl.test/a.dmg", "size": 5},
         {
@@ -37,7 +40,14 @@ def _client(handler) -> httpx.Client:
 
 def _release_handler(request: httpx.Request) -> httpx.Response:
     assert "api.github.com" in request.url.host
-    return httpx.Response(200, json=RELEASE_JSON)
+    older = {
+        **RELEASE_JSON,
+        "tag_name": "v5.0.0",
+        "html_url": "https://github.com/prokopto-dev/nparse-plus/releases/tag/v5.0.0",
+        "body": "- Fixed an older bug.",
+        "assets": [],
+    }
+    return httpx.Response(200, json=[older, RELEASE_JSON])
 
 
 def test_newer_release_found() -> None:
@@ -45,6 +55,7 @@ def test_newer_release_found() -> None:
     assert release is not None
     assert release.version == "9.9.9"
     assert len(release.assets) == 3
+    assert [note.version for note in release.notes] == ["9.9.9", "5.0.0"]
 
 
 def test_equal_or_older_release_is_no_update() -> None:
@@ -54,7 +65,7 @@ def test_equal_or_older_release_is_no_update() -> None:
 
 def test_v_prefix_and_junk_tags() -> None:
     def junk(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"tag_name": "not-a-version"})
+        return httpx.Response(200, json=[{"tag_name": "not-a-version"}])
 
     assert check_for_update(current="1.0.0", client=_client(junk)) is None
 
@@ -64,6 +75,30 @@ def test_missing_repo_fails_soft() -> None:
         return httpx.Response(404, json={"message": "Not Found"})
 
     assert check_for_update(current="1.0.0", client=_client(gone)) is None
+
+
+def test_release_history_is_semver_sorted_and_filters_unpublished() -> None:
+    payload = [
+        {"tag_name": "v1.5.0", "body": "five", "assets": []},
+        {"tag_name": "v2.0.0-rc.1", "prerelease": True, "assets": []},
+        {"tag_name": "v1.10.0", "body": "ten", "assets": []},
+        {"tag_name": "v1.6.0", "draft": True, "assets": []},
+    ]
+
+    release = check_for_update(
+        current="1.4.0", client=_client(lambda request: httpx.Response(200, json=payload))
+    )
+
+    assert release is not None and release.version == "1.10.0"
+    assert [note.version for note in release.notes] == ["1.10.0", "1.5.0"]
+
+
+def test_format_release_notes_includes_every_crossed_version() -> None:
+    release = check_for_update(current="1.0.0", client=_client(_release_handler))
+    markdown = format_release_notes(release)
+    assert markdown.index("Version 9.9.9") < markdown.index("Version 5.0.0")
+    assert "newest feature" in markdown
+    assert "older bug" in markdown
 
 
 def test_pick_asset_per_platform() -> None:

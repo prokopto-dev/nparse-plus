@@ -25,6 +25,12 @@ def test_encode_decode_round_trip() -> None:
     assert decoded == {"type": 1, "target": "JoinServerGroup", "arguments": [0]}
 
 
+def test_invocation_can_request_completion() -> None:
+    frame = hubproto.invocation_frame("JoinServerGroup", [0], "42")
+    (decoded,) = hubproto.decode_frames(frame)
+    assert decoded["invocationId"] == "42"
+
+
 def test_decode_multiple_frames_one_payload() -> None:
     raw = '{"type":6}\x1e{"type":1,"target":"PlayerLocationEvent","arguments":[{"name":"A"}]}\x1e'
     frames = hubproto.decode_frames(raw)

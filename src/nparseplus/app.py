@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from nparseplus.ui.mobinfo import MobInfoWindow
     from nparseplus.ui.qtbridge import QtEventBridge
     from nparseplus.ui.spellwindow import SpellTimerWindow
+    from nparseplus.ui.windowlayouts import WindowLayoutManager
 
 # Optional override of the settings.json location (debug/e2e hook).
 SETTINGS_ENV_VAR = "NPARSEPLUS_SETTINGS"
@@ -106,6 +107,7 @@ class AppContext:
     mob_info_window: MobInfoWindow
     console_window: ConsoleWindow
     event_overlay: EventOverlayWindow
+    window_layouts: WindowLayoutManager
     settings: Settings
     save: Callable[[], None]
 
@@ -142,6 +144,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.ui.settingswindow import UnifiedSettingsWindow
     from nparseplus.ui.spellwindow import SpellTimerWindow
     from nparseplus.ui.triggereditor import TriggerEditorWindow
+    from nparseplus.ui.windowlayouts import WindowLayoutManager
 
     app = NomnsParse(list(argv), backend=backend)
     theme.set_theme(settings.general.theme)
@@ -198,6 +201,19 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         backend_player=backend.player,
         zones=backend.zones,
     )
+    layout_windows = {
+        **window_handles,
+        "settings": settings_window,
+        "overlay": event_overlay,
+    }
+    window_layouts = WindowLayoutManager(
+        settings,
+        {key: window for key, window in layout_windows.items() if window is not None},
+        on_save=save,
+        legacy_config=legacy_config.data,
+        on_legacy_save=legacy_config.save,
+        notify=lambda message: app._system_tray.showMessage("Window layouts", message, msecs=3000),
+    )
 
     bridge.event_received.connect(lambda event: _apply_window_command(event, window_handles))
     bridge.event_received.connect(event_overlay.handle_event)
@@ -228,6 +244,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Trigger Editor": trigger_editor,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
+        window_layouts=window_layouts,
     )
     app.aboutToQuit.connect(backend.stop)
     app.aboutToQuit.connect(saver.flush)
@@ -248,6 +265,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         mob_info_window=mob_info_window,
         console_window=console_window,
         event_overlay=event_overlay,
+        window_layouts=window_layouts,
         settings=settings,
         save=save,
     )

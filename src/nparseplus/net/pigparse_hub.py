@@ -6,7 +6,8 @@ Split three ways so the reconnect policy is testable offline:
   real one (negotiate -> websocket -> handshake -> framed JSON, per
   ``net.hubproto``); tests script a fake.
 * ``PigParseHubClient`` — one daemon thread running EQTool's reconnect
-  policy: connect, **JoinServerGroup immediately after every (re)connect**,
+  policy: wait until the character's server is known, connect, **confirm
+  JoinServerGroup after every (re)connect**,
   hold the session (pinging every 15 s), and on close retry after a random
   0-4 s jitter (connect failures wait a flat 5 s). Sends are dropped unless
   connected, like the C# guard.
@@ -25,8 +26,8 @@ import contextlib
 import logging
 import random
 import threading
-import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import websocket
@@ -55,6 +56,13 @@ PING_INTERVAL_S = 15.0
 CONNECT_FAIL_WAIT_S = 5.0  # EQTool: flat 5 s between failed connect attempts
 RECONNECT_JITTER_MAX_S = 4  # EQTool: random 0-4 s after a drop
 SOCKET_TIMEOUT_S = 60.0  # server pings every ~15 s; a silent minute is dead
+SETUP_TIMEOUT_S = 10.0
+
+
+@dataclass
+class _PendingInvocation:
+    done: threading.Event = field(default_factory=threading.Event)
+    error: Exception | None = None
 
 
 class HubTransport(Protocol):
@@ -65,6 +73,7 @@ class HubTransport(Protocol):
 
     def connect(self) -> None: ...  # blocking; raises on failure
     def send_invocation(self, target: str, arguments: list[Any]) -> None: ...
+    def invoke(self, target: str, arguments: list[Any], timeout: float) -> None: ...
     def send_ping(self) -> None: ...
     def close(self) -> None: ...
 
@@ -80,6 +89,9 @@ class RawWsTransport:
         self._send_lock = threading.Lock()
         self._close_notified = False
         self._close_lock = threading.Lock()
+        self._pending: dict[str, _PendingInvocation] = {}
+        self._pending_lock = threading.Lock()
+        self._next_invocation_id = 1
 
     def connect(self) -> None:
         ws_url = hubproto.negotiate(self._url)
@@ -112,7 +124,10 @@ class RawWsTransport:
                         self.on_invocation(
                             str(message.get("target", "")), list(message.get("arguments", []))
                         )
+                    elif kind == hubproto.MSG_COMPLETION:
+                        self._handle_completion(message)
                     elif kind == hubproto.MSG_CLOSE:
+                        error = ConnectionError(str(message.get("error") or "hub closed session"))
                         return
                 raw = self._ws.recv() if self._ws is not None else ""
                 if not raw:
@@ -131,7 +146,25 @@ class RawWsTransport:
         with contextlib.suppress(Exception):
             if self._ws is not None:
                 self._ws.close()
+        self._fail_pending(error or ConnectionError("hub connection closed"))
         self.on_close(error)
+
+    def _handle_completion(self, message: dict[str, Any]) -> None:
+        invocation_id = str(message.get("invocationId", ""))
+        with self._pending_lock:
+            pending = self._pending.get(invocation_id)
+        if pending is None:
+            return
+        if message.get("error"):
+            pending.error = RuntimeError(str(message["error"]))
+        pending.done.set()
+
+    def _fail_pending(self, error: Exception) -> None:
+        with self._pending_lock:
+            pending = list(self._pending.values())
+        for invocation in pending:
+            invocation.error = error
+            invocation.done.set()
 
     def _send_raw(self, frame: str) -> None:
         ws = self._ws
@@ -142,6 +175,23 @@ class RawWsTransport:
 
     def send_invocation(self, target: str, arguments: list[Any]) -> None:
         self._send_raw(hubproto.invocation_frame(target, arguments))
+
+    def invoke(self, target: str, arguments: list[Any], timeout: float) -> None:
+        """Send an invocation and wait for the server's completion frame."""
+        with self._pending_lock:
+            invocation_id = str(self._next_invocation_id)
+            self._next_invocation_id += 1
+            pending = _PendingInvocation()
+            self._pending[invocation_id] = pending
+        try:
+            self._send_raw(hubproto.invocation_frame(target, arguments, invocation_id))
+            if not pending.done.wait(timeout):
+                raise TimeoutError(f"hub {target} acknowledgement timed out")
+            if pending.error is not None:
+                raise pending.error
+        finally:
+            with self._pending_lock:
+                self._pending.pop(invocation_id, None)
 
     def send_ping(self) -> None:
         self._send_raw(hubproto.ping_frame())
@@ -195,7 +245,7 @@ class PigParseHubClient:
         on_inbound: Callable[[RemoteEvent], None] = lambda event: None,
         transport_factory: Callable[[str], HubTransport] = RawWsTransport,
         rng: random.Random | None = None,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], None] | None = None,
         ping_interval_s: float = PING_INTERVAL_S,
     ) -> None:
         self._url = url
@@ -209,6 +259,7 @@ class PigParseHubClient:
         self._connected = threading.Event()
         self._session_closed = threading.Event()
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self._status = "stopped"
 
@@ -220,11 +271,13 @@ class PigParseHubClient:
         if self._thread is not None:
             return
         self._stop.clear()
+        self._wake.clear()
         self._thread = threading.Thread(target=self._run, name="pigparse-hub", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         transport = self._transport
         if transport is not None:
             with contextlib.suppress(Exception):
@@ -236,11 +289,16 @@ class PigParseHubClient:
         self._status = "stopped"
 
     def set_server(self, server: int | None) -> None:
-        """Remember the server; (re)join its group if the change is live."""
+        """Remember the server and reconnect so stale group membership is removed."""
         changed = server != self._server
         self._server = server
-        if changed and server is not None and self._connected.is_set():
-            self._invoke("JoinServerGroup", [server])
+        if not changed:
+            return
+        self._wake.set()
+        transport = self._transport
+        if transport is not None:
+            with contextlib.suppress(Exception):
+                transport.close()
 
     def send_location(
         self,
@@ -298,35 +356,66 @@ class PigParseHubClient:
         """No such wire on the PigParse hub — corpse waypoints are an
         nparse-websocket-mode feature only."""
 
-    def _invoke(self, target: str, arguments: list[Any]) -> None:
+    def _invoke(self, target: str, arguments: list[Any]) -> bool:
         """C# guard: invocations are silently dropped unless connected."""
         transport = self._transport
         if transport is None or not self._connected.is_set():
-            return
+            return False
         try:
             transport.send_invocation(target, arguments)
-        except Exception:
+            return True
+        except Exception as exc:
             logger.warning("pigparse hub send %s failed", target, exc_info=True)
+            self._handle_close(exc)
+            with contextlib.suppress(Exception):
+                transport.close()
+            return False
 
     # --- connection loop (the one client thread) -------------------------------
 
     def _run(self) -> None:
+        # ``set_server`` may have woken us before the thread started; its
+        # value is already stored, so that initial wake has been consumed.
+        self._wake.clear()
         while not self._stop.is_set():
+            if self._server is None:
+                self._status = "waiting for character"
+                self._wait_for_wake()
+                continue
             transport = self._connect_once()
             if transport is None:
                 if not self._stop.is_set():
                     self._status = f"retrying in {CONNECT_FAIL_WAIT_S:.0f}s"
-                    self._sleep(CONNECT_FAIL_WAIT_S)
+                    self._wait(CONNECT_FAIL_WAIT_S)
                 continue
             self._hold_session(transport)
             if self._stop.is_set():
                 break
+            if self._wake.is_set():
+                self._wake.clear()
+                continue
             jitter = self._rng.randint(0, RECONNECT_JITTER_MAX_S)
             self._status = f"reconnecting in {jitter}s"
-            self._sleep(jitter)
+            self._wait(jitter)
         self._status = "stopped"
 
+    def _wait_for_wake(self) -> None:
+        self._wake.wait()
+        self._wake.clear()
+
+    def _wait(self, seconds: float) -> None:
+        if self._sleep is not None:
+            self._sleep(seconds)
+            self._wake.clear()
+            return
+        self._wake.wait(seconds)
+        self._wake.clear()
+
     def _connect_once(self) -> HubTransport | None:
+        server = self._server
+        if server is None:
+            self._status = "waiting for character"
+            return None
         self._status = "connecting"
         transport = self._transport_factory(self._url)
         transport.on_invocation = self._handle_invocation
@@ -336,15 +425,23 @@ class PigParseHubClient:
         self._session_closed.clear()
         try:
             transport.connect()
+            self._transport = transport
+            self._connected.set()
+            self._status = "joining server group"
+            # Request a completion so "connected" means the PigParse server
+            # actually accepted the group setup, not merely that TCP opened.
+            transport.invoke("JoinServerGroup", [server], SETUP_TIMEOUT_S)
+            if self._server != server or self._session_closed.is_set():
+                raise ConnectionError("character server changed during PigParse setup")
         except Exception:
-            logger.warning("pigparse hub connect failed", exc_info=True)
+            logger.warning("pigparse hub connect/setup failed", exc_info=True)
+            self._connected.clear()
+            if self._transport is transport:
+                self._transport = None
+            with contextlib.suppress(Exception):
+                transport.close()
             return None
-        self._transport = transport
-        self._connected.set()
         self._status = "connected"
-        # EQTool rejoins the server group after every single (re)connect.
-        if self._server is not None:
-            self._invoke("JoinServerGroup", [self._server])
         return transport
 
     def _hold_session(self, transport: HubTransport) -> None:

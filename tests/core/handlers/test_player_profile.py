@@ -9,6 +9,8 @@ from nparseplus.core.events import (
     AfterPlayerChangedEvent,
     ClassDetectedEvent,
     PlayerLevelDetectionEvent,
+    WhoPlayer,
+    WhoPlayerEvent,
     YouZonedEvent,
 )
 from nparseplus.core.handlers.player_profile import PlayerProfileHandler
@@ -107,6 +109,49 @@ def test_zone_change_persists_into_profile() -> None:
         YouZonedEvent(timestamp=T0, long_name="east commonlands", short_name="ecommons")
     )
     assert rig.saves == 1
+
+
+def test_own_who_row_authoritatively_updates_profile() -> None:
+    profile = PlayerInfo(
+        name="Xantik",
+        server="green",
+        player_class=int(PlayerClass.CLERIC),
+        level=55,
+    )
+    rig = Rig(profile)
+    rig.bus.publish(
+        WhoPlayerEvent(
+            timestamp=T0,
+            player=WhoPlayer(
+                name="xantik",
+                player_class=PlayerClass.DRUID,
+                level=54,
+                guild_name="Bregan D'Aerth",
+            ),
+        )
+    )
+    assert rig.player.player_class is PlayerClass.DRUID
+    assert rig.player.level == 54  # /who also catches a level lost to death
+    assert rig.player.guild_name == "Bregan D'Aerth"
+    assert profile.player_class == int(PlayerClass.DRUID)
+    assert profile.level == 54
+    assert profile.guild_name == "Bregan D'Aerth"
+    assert rig.saves == 1
+
+
+def test_other_players_who_rows_do_not_change_active_profile() -> None:
+    profile = PlayerInfo(name="Xantik", server="green", level=54)
+    rig = Rig(profile)
+    rig.bus.publish(
+        WhoPlayerEvent(
+            timestamp=T0,
+            player=WhoPlayer(name="Someoneelse", player_class=PlayerClass.DRUID, level=60),
+        )
+    )
+    assert rig.player.player_class is None
+    assert rig.player.level is None
+    assert profile.level == 54
+    assert rig.saves == 0
 
 
 def test_no_server_is_inert() -> None:

@@ -10,6 +10,8 @@ Ports three EQTool behaviors that previously had no home here:
   no class is set yet (never overwrites a user-chosen class).
 * PlayerLevelDetectionHandler.cs: a detected level only ever raises the known
   level.
+* The active character's own /who row is authoritative for class, level, and
+  guild, including a level lost to death.
 
 Zone changes persist into the profile too (EQTool's YouZonedHandler saves on
 zone change; our handlers.you_zoned keeps owning ActivePlayer.zone).
@@ -30,6 +32,7 @@ from nparseplus.core.events import (
     AfterPlayerChangedEvent,
     ClassDetectedEvent,
     PlayerLevelDetectionEvent,
+    WhoPlayerEvent,
     YouZonedEvent,
 )
 from nparseplus.core.player import ActivePlayer
@@ -52,6 +55,7 @@ class PlayerProfileHandler:
         bus.subscribe(AfterPlayerChangedEvent, self._on_player_changed)
         bus.subscribe(ClassDetectedEvent, self._on_class_detected)
         bus.subscribe(PlayerLevelDetectionEvent, self._on_level_detected)
+        bus.subscribe(WhoPlayerEvent, self._on_who_player)
         bus.subscribe(YouZonedEvent, self._on_zoned)
 
     def _profile(self) -> PlayerInfo | None:
@@ -97,6 +101,33 @@ class PlayerProfileHandler:
         info = self._profile()
         if info is not None:
             info.level = event.player_level
+            self._save()
+
+    def _on_who_player(self, event: WhoPlayerEvent) -> None:
+        """Use the active character's own /who row as authoritative profile data."""
+        who = event.player
+        if not self.player.name or who.name.casefold() != self.player.name.casefold():
+            return
+        info = self._profile()
+        changed = False
+
+        if who.player_class is not None:
+            self.player.player_class = who.player_class
+            if info is not None and info.player_class != int(who.player_class):
+                info.player_class = int(who.player_class)
+                changed = True
+        if who.level is not None:
+            self.player.level = who.level
+            if info is not None and info.level != who.level:
+                info.level = who.level
+                changed = True
+        if who.guild_name:
+            self.player.guild_name = who.guild_name
+            if info is not None and info.guild_name != who.guild_name:
+                info.guild_name = who.guild_name
+                changed = True
+
+        if changed:
             self._save()
 
     def _on_zoned(self, event: YouZonedEvent) -> None:

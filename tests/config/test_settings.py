@@ -9,6 +9,7 @@ from nparseplus.config.settings import (
     DebouncedSaver,
     PlayerInfo,
     Settings,
+    WindowLayoutPreset,
     WindowState,
     get_player,
     load_settings,
@@ -31,6 +32,9 @@ def test_populated_roundtrip(tmp_path: Path) -> None:
     original.general.font_size = 14
     original.sharing.mode = "nparse"
     original.windows["maps"] = WindowState(geometry=(10, 20, 300, 400), opacity=0.8, shown=True)
+    original.window_layouts["Laptop mode"] = WindowLayoutPreset(
+        geometries={"maps": (0, 0, 800, 600), "spells": (800, 0, 220, 600)}
+    )
     original.players.append(PlayerInfo(name="Xantik", server="green", level=54))
     original.triggers.append(
         Trigger(
@@ -43,6 +47,7 @@ def test_populated_roundtrip(tmp_path: Path) -> None:
     loaded = load_settings(path)
     assert loaded == original
     assert loaded.windows["maps"].geometry == (10, 20, 300, 400)
+    assert loaded.window_layouts["Laptop mode"].geometries["spells"] == (800, 0, 220, 600)
     assert loaded.triggers[0].trigger_id == original.triggers[0].trigger_id
 
 

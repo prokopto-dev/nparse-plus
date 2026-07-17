@@ -1,5 +1,12 @@
 # nParse+ (nparseplus)
 
+[![CI](https://github.com/prokopto-dev/nparse-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/prokopto-dev/nparse-plus/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/prokopto-dev/nparse-plus/graph/badge.svg)](https://codecov.io/gh/prokopto-dev/nparse-plus)
+[![Latest release](https://img.shields.io/github/v/release/prokopto-dev/nparse-plus)](https://github.com/prokopto-dev/nparse-plus/releases/latest)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#install-macos)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 **An EverQuest Project 1999 companion overlay for macOS, Windows, and Linux.**
 
 nParse+ tails your EQ log file and gives you, in real time: per-target spell/buff
@@ -90,7 +97,8 @@ Settings persist to `settings.json` in your platform config directory
 
 ```bash
 uv sync                                   # deps (incl. dev group)
-uv run pytest                             # ~460 tests, a few seconds
+uv run pytest                             # ~750 tests, a few seconds
+uv run pytest --cov=nparseplus --cov-branch --cov-report=term-missing
 uv run ruff check . && uv run ruff format .
 QT_QPA_PLATFORM=offscreen uv run pytest   # headless (CI does this)
 ```
@@ -99,6 +107,16 @@ See [CLAUDE.md](CLAUDE.md) for the architecture guide — the one rule that
 matters most: **`nparseplus.core` (and `config`/`net`) never import Qt**; a
 test enforces it. Parsers/handlers are 1:1 ports of EQTool's C# (pinned commit
 in [CREDITS.md](CREDITS.md)) and the `EQtoolsTests` corpus is our golden spec.
+
+Commits use [Conventional Commits](https://www.conventionalcommits.org/):
+`feat:` creates a minor release, `fix:` and `perf:` create a patch release,
+and `feat!:`/`fix!:` or a `BREAKING CHANGE:` footer creates a major release.
+Run the **Semantic Release** workflow when the release branch is ready; it
+calculates the version, updates `pyproject.toml`, `nparseplus.__version__`, and
+`CHANGELOG.md`, commits and tags the result, and lets the tag-triggered package
+workflow build the release. Because GitHub does not start another workflow for
+tags created with `GITHUB_TOKEN`, Semantic Release also dispatches the package
+workflow explicitly.
 
 ## Building the packages
 
@@ -115,6 +133,10 @@ Flatpak bundle in CI and attach them to a GitHub release
 Flatpak wraps the PyInstaller onedir build via the manifest in
 [packaging/flatpak/](packaging/flatpak/); building it locally needs a Linux
 box with `flatpak-builder` (commands are in the manifest header).
+
+The incremental-update plan for 1.4+ is documented in
+[docs/incremental-updates.md](docs/incremental-updates.md). Version 1.4.0 is
+the one-time full bootstrap; signed patch updates can begin with 1.4.1.
 
 ## Status / roadmap
 

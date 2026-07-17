@@ -5,7 +5,8 @@ invocation path is broken, so nParse+ speaks the wire protocol directly —
 it is tiny: an HTTP negotiate, a websocket upgrade, a one-line handshake,
 then ``\\x1e``-separated JSON frames. Message types used here:
 
-    1  Invocation       (both directions; we send without invocationId)
+    1  Invocation       (both directions)
+    3  Completion       (server acknowledgement for setup invocations)
     6  Ping             (server every ~15 s; client must ping too)
     7  Close
 
@@ -26,6 +27,7 @@ HANDSHAKE_FRAME = '{"protocol":"json","version":1}' + RECORD_SEPARATOR
 NEGOTIATE_TIMEOUT_S = 10.0
 
 MSG_INVOCATION = 1
+MSG_COMPLETION = 3
 MSG_PING = 6
 MSG_CLOSE = 7
 
@@ -54,9 +56,16 @@ def decode_frames(raw: str | bytes) -> list[dict[str, Any]]:
     return frames
 
 
-def invocation_frame(target: str, arguments: list[Any]) -> str:
-    """A non-blocking invocation (no invocationId -> no completion reply)."""
-    return encode_frame({"type": MSG_INVOCATION, "target": target, "arguments": arguments})
+def invocation_frame(target: str, arguments: list[Any], invocation_id: str | None = None) -> str:
+    """Build an invocation, optionally requesting a completion reply."""
+    message: dict[str, Any] = {
+        "type": MSG_INVOCATION,
+        "target": target,
+        "arguments": arguments,
+    }
+    if invocation_id is not None:
+        message["invocationId"] = invocation_id
+    return encode_frame(message)
 
 
 def ping_frame() -> str:

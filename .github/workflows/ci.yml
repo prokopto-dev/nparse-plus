@@ -5,6 +5,10 @@ on:
     branches: [master, main]
   pull_request:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   test:
     strategy:
@@ -31,4 +35,29 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
       - name: Tests
+        if: runner.os != 'Linux'
         run: uv run pytest
+      - name: Tests with coverage
+        if: runner.os == 'Linux'
+        run: >-
+          uv run pytest
+          --cov=nparseplus
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+      - name: Upload coverage artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: coverage.xml
+          disable_search: true
+          fail_ci_if_error: false

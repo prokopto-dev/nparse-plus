@@ -6,6 +6,7 @@ deterministic — no real sockets, no real time (``sleep`` is recorded).
 """
 
 import random
+import threading
 
 from nparseplus.core.events import (
     CustomTimerReceivedRemoteEvent,
@@ -14,7 +15,8 @@ from nparseplus.core.events import (
     PlayerDisconnectReceivedRemoteEvent,
 )
 from nparseplus.core.geometry import Loc
-from nparseplus.net.pigparse_hub import CONNECT_FAIL_WAIT_S, PigParseHubClient
+from nparseplus.net import hubproto
+from nparseplus.net.pigparse_hub import CONNECT_FAIL_WAIT_S, PigParseHubClient, RawWsTransport
 
 CAMEL_PLAYER = {
     "name": "Soandso",
@@ -54,6 +56,12 @@ class FakeHubTransport:
         self.sent.append((target, arguments))
         self.log.append(f"send:{target}")
         self._maybe_drop()
+
+    def invoke(self, target: str, arguments: list, timeout: float) -> None:
+        self.sent.append((target, arguments))
+        self.log.append(f"send:{target}")
+        if self.behavior == "join-fail":
+            raise TimeoutError("scripted setup timeout")
 
     def send_ping(self) -> None:
         self.log.append("ping")
@@ -130,7 +138,8 @@ def test_connect_failure_waits_flat_5s() -> None:
 
 def test_no_join_without_server() -> None:
     h = Harness(plan=["drop"], server=None)
-    h.run()
+    assert h.client._connect_once() is None
+    assert h.client.status == "waiting for character"
     assert not any(entry.startswith("send:") for entry in h.log)
 
 
@@ -251,12 +260,55 @@ def test_dragon_roar_without_full_coords_has_no_location() -> None:
     transport.close()
 
 
-def test_set_server_rejoins_live_connection() -> None:
-    h = Harness(plan=["hold"])
+def test_set_server_reconnects_to_avoid_stale_group_membership() -> None:
+    h = Harness(plan=["hold", "hold"])
     transport = h.client._connect_once()
     assert transport is not None
     h.client.set_server(1)  # Green -> Blue while connected
-    assert ("JoinServerGroup", [1]) in transport.sent
-    h.client.set_server(1)  # unchanged: no duplicate join
-    assert transport.sent.count(("JoinServerGroup", [1])) == 1
-    transport.close()
+    assert transport.closed is True
+    assert ("JoinServerGroup", [1]) not in transport.sent
+
+    replacement = h.client._connect_once()
+    assert replacement is not None
+    assert replacement.sent[0] == ("JoinServerGroup", [1])
+    h.client.set_server(1)  # unchanged: keep the new connection
+    assert replacement.closed is False
+    replacement.close()
+
+
+def test_join_must_be_acknowledged_before_connected() -> None:
+    h = Harness(plan=["join-fail"])
+    assert h.client._connect_once() is None
+    assert not h.client._connected.is_set()
+    assert h.transports[0].closed is True
+
+
+def test_raw_transport_waits_for_completion_frame() -> None:
+    transport = RawWsTransport("https://hub.test/PP")
+    sent: list[str] = []
+    frame_sent = threading.Event()
+    errors: list[Exception] = []
+
+    def send_raw(frame: str) -> None:
+        sent.append(frame)
+        frame_sent.set()
+
+    transport._send_raw = send_raw  # type: ignore[method-assign]
+
+    def invoke() -> None:
+        try:
+            transport.invoke("JoinServerGroup", [0], timeout=1.0)
+        except Exception as exc:  # pragma: no cover - assertion records it
+            errors.append(exc)
+
+    thread = threading.Thread(target=invoke)
+    thread.start()
+    assert frame_sent.wait(1.0)
+    (message,) = hubproto.decode_frames(sent[0])
+    transport._handle_completion(
+        {"type": hubproto.MSG_COMPLETION, "invocationId": message["invocationId"]}
+    )
+    thread.join(timeout=1.0)
+
+    assert errors == []
+    assert not thread.is_alive()
