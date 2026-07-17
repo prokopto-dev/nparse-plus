@@ -85,17 +85,19 @@ the EQ install, with backups).
   the `.flatpak` once configures its origin remote automatically, and from
   then on plain `flatpak update` picks up new nParse+ releases alongside
   everything else. Updates are incremental (only changed files download).
-- **Installed from an older bundle?** Wire it up once by hand:
+- **Installed from an older bundle?** Wire it up once by hand — the repo is
+  GPG-signed and the `.flatpakrepo` file carries the public key, so no extra
+  flags are needed:
 
   ```bash
-  flatpak remote-add --user --no-gpg-verify nparseplus \
-    https://prokopto-dev.github.io/nparse-plus/repo
+  flatpak remote-add --user nparseplus \
+    https://prokopto-dev.github.io/nparse-plus/nparseplus.flatpakrepo
   flatpak update
   ```
 
-  (`--no-gpg-verify` because the repo is unsigned — trust is anchored in the
-  HTTPS connection to GitHub Pages, the same as downloading the bundle from
-  the releases page.)
+  (If you previously added the remote with `--no-gpg-verify`, run
+  `flatpak remote-delete --user nparseplus` first and re-add it as above to
+  get signature verification.)
 - The in-app update check still notifies you from the tray either way, and
   downloading a newer `.flatpak` over the top keeps working too.
 

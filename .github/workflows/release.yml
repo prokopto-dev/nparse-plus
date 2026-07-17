@@ -15,6 +15,10 @@ env:
   # OSTree repo published to GitHub Pages (gh-pages branch) so
   # `flatpak update` works for sideloaded bundle installs too.
   FLATPAK_REPO_URL: https://prokopto-dev.github.io/nparse-plus/repo
+  # Signing key fingerprint (public half committed at
+  # packaging/flatpak/nparseplus-repo.gpg; private half in the
+  # FLATPAK_GPG_PRIVATE_KEY repo secret).
+  FLATPAK_GPG_KEY_ID: 8E0BE7F401945E39444ECF38512B0BCC20C269BC
 
 jobs:
   check-version:
@@ -106,6 +110,10 @@ jobs:
           tar -C dist -czf "dist/nparseplus-$VERSION-linux-x86_64.tar.gz" nparseplus
       - name: Install flatpak-builder
         run: sudo apt-get install -y flatpak flatpak-builder dbus
+      - name: Import Flatpak signing key
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: printf '%s' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
       - name: Install Flatpak runtime
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -116,12 +124,17 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           sed -i "s/@VERSION@/$VERSION/; s/@DATE@/$(date -u +%Y-%m-%d)/" \
             packaging/flatpak/io.github.prokopto_dev.nparse_plus.metainfo.xml
-          flatpak-builder --user --force-clean --repo=flatpak-repo flatpak-builddir \
+          flatpak-builder --user --force-clean --repo=flatpak-repo \
+            --gpg-sign="$FLATPAK_GPG_KEY_ID" flatpak-builddir \
             packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml
+          # Sign the repo summary too (what clients verify on update).
+          flatpak build-update-repo --gpg-sign="$FLATPAK_GPG_KEY_ID" flatpak-repo
           # --repo-url: installing the bundle configures its origin remote,
           # so `flatpak update` finds future releases without extra setup.
+          # --gpg-keys embeds the public key, making that remote VERIFIED.
           flatpak build-bundle \
             --repo-url="$FLATPAK_REPO_URL" \
+            --gpg-keys=packaging/flatpak/nparseplus-repo.gpg \
             flatpak-repo \
             "dist/nparseplus-$VERSION-linux-x86_64.flatpak" \
             io.github.prokopto_dev.nparse_plus
@@ -150,8 +163,11 @@ jobs:
           grep -F "$FLATPAK_REPO_URL" remotes.txt \
             || { echo "::error::bundle origin remote is not $FLATPAK_REPO_URL"; exit 1; }
           # ...and the repo we are about to publish must actually serve the
-          # app ref (same check a client's `flatpak update` performs).
-          flatpak remote-add --user --no-gpg-verify localtest "file://$(pwd)/flatpak-repo"
+          # app ref with a VALID SIGNATURE (same checks a client's
+          # `flatpak update` performs — this fails if signing breaks).
+          flatpak remote-add --user \
+            --gpg-import=packaging/flatpak/nparseplus-repo.gpg \
+            localtest "file://$(pwd)/flatpak-repo"
           flatpak remote-ls --user localtest | tee refs.txt
           grep -F "io.github.prokopto_dev.nparse_plus" refs.txt \
             || { echo "::error::app ref missing from the flatpak repo"; exit 1; }
@@ -162,6 +178,9 @@ jobs:
           mkdir site
           cp -a flatpak-repo site/repo
           touch site/.nojekyll
+          # Embedded public key: remote-add from these files verifies with
+          # zero flags.
+          GPG_KEY_B64=$(base64 -w0 packaging/flatpak/nparseplus-repo.gpg)
           cat > site/nparseplus.flatpakref <<EOF
           [Flatpak Ref]
           Name=io.github.prokopto_dev.nparse_plus
@@ -171,6 +190,7 @@ jobs:
           IsRuntime=false
           SuggestRemoteName=nparseplus
           RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          GPGKey=$GPG_KEY_B64
           EOF
           cat > site/nparseplus.flatpakrepo <<EOF
           [Flatpak Repo]
@@ -178,6 +198,7 @@ jobs:
           Url=$FLATPAK_REPO_URL
           Homepage=https://github.com/${GITHUB_REPOSITORY}
           Comment=nParse+ EverQuest P99 log-parsing overlay
+          GPGKey=$GPG_KEY_B64
           EOF
           cat > site/index.html <<EOF
           <!doctype html><title>nParse+ flatpak repo</title>

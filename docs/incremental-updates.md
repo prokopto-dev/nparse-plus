@@ -3,9 +3,11 @@
 > **Status (2026-07-17):** the Flatpak half is live — since v1.4.1 every
 > release publishes the OSTree repo to GitHub Pages (`gh-pages` branch) and
 > bundles are built with `--repo-url`, so `flatpak update` performs native
-> incremental updates. tufup for the standalone DMG/zip/tarball builds is
-> still unimplemented; those remain full downloads offered by the in-app
-> release check.
+> incremental updates. The repo and bundles are GPG-signed (public key at
+> `packaging/flatpak/nparseplus-repo.gpg`, private key in the
+> `FLATPAK_GPG_PRIVATE_KEY` repo secret). tufup for the standalone
+> DMG/zip/tarball builds is still unimplemented; those remain full downloads
+> offered by the in-app release check.
 
 ## Decision
 
@@ -33,8 +35,8 @@ binary patch chains.
   installing it configures the published repo as its origin remote
   (`build-bundle --repo-url`), after which `flatpak update` pulls
   incrementally — OSTree owns content deduplication and update transactions.
-  Live since v1.4.1; the repo is unsigned for now (HTTPS-anchored), GPG
-  signing is in the parking lot.
+  Live since v1.4.1, GPG-signed (commits, summary, and bundles; the embedded
+  public key makes the auto-configured remote a verifying one).
 
 The existing GitHub release check can remain the user-facing announcement and
 fallback. It queries published releases, semantically sorts them, and shows

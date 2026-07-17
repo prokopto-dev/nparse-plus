@@ -173,9 +173,8 @@ signed tufup patches for the DMG/zip/tarball remain planned.
   chat commands, and a light theme.
 - **Parking lot:** notarization + Windows signing/installer, Flathub
   submission (a `.flatpak` bundle ships with each release since 1.3, and a
-  self-hosted repo makes `flatpak update` work since 1.4.1), GPG-signing
-  the flatpak repo, tufup patch updates for the standalone builds,
-  3D map view.
+  GPG-signed self-hosted repo makes `flatpak update` work since 1.4.1),
+  tufup patch updates for the standalone builds, 3D map view.
 
 ## License & credits
 
