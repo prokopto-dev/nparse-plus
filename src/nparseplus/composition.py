@@ -34,6 +34,7 @@ from nparseplus.core.handlers.random_roll import RandomRollHandler
 from nparseplus.core.handlers.ring_war import RingWarHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
+from nparseplus.core.handlers.timer_persistence import TimerPersistenceHandler
 from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
 from nparseplus.core.inventory import InventoryWatcher
@@ -112,6 +113,7 @@ class Backend:
     pigparse_api: PigParseApiClient | None = None
     net_worker: NetWorker | None = None
     player_tracker: PlayerTrackerHandler | None = None
+    timer_persistence: TimerPersistenceHandler | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -124,6 +126,10 @@ class Backend:
 
     def stop(self) -> None:
         self.driver.stop()
+        if self.timer_persistence is not None:
+            # After the driver thread is joined: quit-time seconds-left for the
+            # you_spells store (the app's aboutToQuit save flush runs next).
+            self.timer_persistence.export_now()
         if self.sharing_client is not None:
             self.sharing_client.stop()
         if self.net_worker is not None:
@@ -220,9 +226,16 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         return info.timer_recast if info is not None else "RestartCurrentTimer"
 
     player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=submit)
+    profile_handler = PlayerProfileHandler(bus, player, settings, request_save=request_save)
+    # Constructed (= subscribed) after PlayerProfileHandler: restore-on-player-
+    # change needs the profile's class/level already loaded into ActivePlayer.
+    timer_persistence = TimerPersistenceHandler(
+        bus, player, settings, timers, spells, request_save=request_save
+    )
     handlers: list[object] = [
         YouZonedHandler(bus, player),
-        PlayerProfileHandler(bus, player, settings, request_save=request_save),
+        profile_handler,
+        timer_persistence,
         player_tracker,
         SpellTimerHandler(
             bus,
@@ -303,5 +316,6 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         pigparse_api=pigparse_api,
         net_worker=net_worker,
         player_tracker=player_tracker,
+        timer_persistence=timer_persistence,
         _retained=[chat_commands, sink, *handlers],
     )

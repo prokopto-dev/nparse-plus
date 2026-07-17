@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import threading
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -125,6 +126,19 @@ class YouSpell(BaseModel):
     seconds_left: int
 
 
+class SavedTimer(BaseModel):
+    """A persisted respawn/custom timer row (nparse #57).
+
+    Unlike YouSpell's seconds-left (buff clocks freeze while camped), respawns
+    keep counting in real time, so the absolute end is stored. Naive local
+    datetime — the whole pipeline compares naive.
+    """
+
+    name: str
+    ends_at: datetime
+    total_duration_s: float
+
+
 class PlayerInfo(BaseModel):
     name: str
     server: str
@@ -142,6 +156,7 @@ class PlayerInfo(BaseModel):
     # spells (EQTool's ShowSpellsForClasses null default).
     show_spells_for_classes: list[int] | None = None
     you_spells: list[YouSpell] = Field(default_factory=list)
+    respawn_timers: list[SavedTimer] = Field(default_factory=list)
     best_dps: float = 0.0
 
 

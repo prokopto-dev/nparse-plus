@@ -81,6 +81,17 @@ class YouSpellSnapshot(BaseModel):
     total_seconds_left: int
 
 
+class RespawnTimerSnapshot(BaseModel):
+    """Persisted respawn/custom TimerRow (nparse #57). Respawns keep counting
+    while camped, so the absolute (naive local) end time is stored."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    ends_at: datetime
+    total_duration_s: float
+
+
 class TimersService:
     def __init__(self) -> None:
         self._rows: list[Row] = []
@@ -321,6 +332,37 @@ class TimersService:
                 )
             )
         if saved:
+            self._notify()
+
+    def export_respawn_timers(self, group: str, now: datetime) -> list[RespawnTimerSnapshot]:
+        """Still-running TimerRows of one group (respawn/custom timers)."""
+        return [
+            RespawnTimerSnapshot(
+                name=row.name, ends_at=row.ends_at, total_duration_s=row.total_duration_s
+            )
+            for row in self._rows
+            if isinstance(row, TimerRow) and _eq(row.group, group) and row.ends_at > now
+        ]
+
+    def restore_respawn_timers(
+        self, saved: Sequence[RespawnTimerSnapshot], group: str, now: datetime
+    ) -> None:
+        """Rebuild saved TimerRows; anything that expired while away is dropped."""
+        restored = False
+        for item in saved:
+            if item.ends_at <= now:
+                continue
+            self._rows.append(
+                TimerRow(
+                    name=item.name,
+                    group=group,
+                    updated_at=now,
+                    ends_at=item.ends_at,
+                    total_duration_s=item.total_duration_s,
+                )
+            )
+            restored = True
+        if restored:
             self._notify()
 
 
