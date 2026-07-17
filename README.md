@@ -144,7 +144,7 @@ box with `flatpak-builder` (commands are in the manifest header).
   hide-others'-dots map toggle, in-game `show_/hide_/toggle_<window>`
   chat commands, and a light theme.
 - **Parking lot:** notarization + Windows signing/installer, Flathub
-  submission (a `.flatpak` bundle ships with each release since 1.2),
+  submission (a `.flatpak` bundle ships with each release since 1.3),
   3D map view.
 
 ## License & credits
