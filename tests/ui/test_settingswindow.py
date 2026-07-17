@@ -265,6 +265,27 @@ def test_refresh_tracks_character_switch(qtbot) -> None:
     assert window._char_level.value() == 12
 
 
+def test_friends_page_load_and_push_round_trip(qtbot, tmp_path: Path) -> None:
+    (tmp_path / "Xantik_P1999Green.ini").write_text("[Friends]\nFriend0=Alice\n")
+    (tmp_path / "Beeta_P1999Green.ini").write_text("[Friends]\nFriend0=Bob\n")
+    window = _window(qtbot)
+    window._install_dir.edit.setText(str(tmp_path))
+    window._friends_server.setCurrentText("P1999Green")
+
+    window._load_friends()
+    assert window._friends_text.toPlainText() == "Alice\nBob"
+
+    window._friends_text.setPlainText("Alice\nBob\nCara")
+    window._push_friends()
+    for name in ("Xantik", "Beeta"):
+        text = (tmp_path / f"{name}_P1999Green.ini").read_text()
+        assert "Friend2=Cara" in text
+    assert (tmp_path / "friends_backup" / "Xantik_P1999Green.ini").exists()
+    assert (
+        "3 friends" in window._friends_status.text() or "Pushed 3" in window._friends_status.text()
+    )
+
+
 def test_all_classes_checked_round_trips_to_none(qtbot) -> None:
     settings = Settings()
     settings.players.append(PlayerInfo(name="Xantik", server="green", show_spells_for_classes=None))

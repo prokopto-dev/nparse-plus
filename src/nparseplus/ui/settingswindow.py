@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSlider,
     QSpinBox,
@@ -45,7 +46,7 @@ from PySide6.QtWidgets import (
 
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
-from nparseplus.core import visionfix
+from nparseplus.core import friends, visionfix
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import AfterPlayerChangedEvent
 from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
@@ -168,6 +169,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         for name, builder in (
             ("General", self._build_general),
             ("Character", self._build_character),
+            ("Friends", self._build_friends),
             ("Spell Timers", self._build_spell_timers),
             ("Maps", self._build_maps),
             ("Windows", self._build_windows_grid),
@@ -428,6 +430,73 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             if info.zone:
                 player.zone = info.zone
             player.tracking_skill = info.tracking_skill or None
+
+    # -- Friends (EQ client [Friends] ini sync, EQTool SettingsGeneral) -------------------
+
+    def _build_friends(self) -> QWidget:
+        layout = QVBoxLayout()
+        form = QFormLayout()
+        self._friends_server = QComboBox(self)
+        self._friends_server.addItems(list(friends.SERVER_SUFFIXES))
+        self._friends_server.currentIndexChanged.connect(lambda _i: self._load_friends())
+        form.addRow("Server", self._friends_server)
+        layout.addLayout(form)
+        self._friends_text = QPlainTextEdit(self)
+        self._friends_text.setPlaceholderText("One friend name per line…")
+        layout.addWidget(self._friends_text, 1)
+        buttons = QHBoxLayout()
+        load_button = QPushButton("Load from characters", self)
+        load_button.clicked.connect(self._load_friends)
+        push_button = QPushButton("Push to all characters", self)
+        push_button.clicked.connect(self._push_friends)
+        buttons.addWidget(load_button)
+        buttons.addWidget(push_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        self._friends_status = QLabel(
+            "Merges every character's in-game friends list on the selected server; "
+            "Push writes the merged list back (originals backed up to friends_backup/).",
+            self,
+        )
+        self._friends_status.setWordWrap(True)
+        self._friends_status.setStyleSheet("color: #888888; font-size: 11px;")
+        layout.addWidget(self._friends_status)
+        page = QWidget(self)
+        page.setLayout(layout)
+        return page
+
+    def _friends_files(self) -> list[Path]:
+        eq_dir = self._install_dir.path() or str(self._settings.general.eq_install_dir or "")
+        if not eq_dir:
+            return []
+        suffix = friends.SERVER_SUFFIXES[self._friends_server.currentText()]
+        return friends.friend_ini_files(Path(eq_dir), suffix)
+
+    def _load_friends(self) -> None:
+        files = self._friends_files()
+        if not files:
+            self._friends_status.setText(
+                "No character ini files found — set the EQ install directory on General."
+            )
+            self._friends_text.setPlainText("")
+            return
+        merged = friends.merged_friends(files)
+        self._friends_text.setPlainText("\n".join(merged))
+        self._friends_status.setText(f"{len(merged)} friends across {len(files)} character(s).")
+
+    def _push_friends(self) -> None:
+        files = self._friends_files()
+        if not files:
+            self._friends_status.setText("No character ini files found for this server.")
+            return
+        names = self._friends_text.toPlainText().splitlines()
+        errors = friends.push_friends(files, names)
+        if errors:
+            self._friends_status.setText("Some files failed: " + "; ".join(errors))
+        else:
+            self._friends_status.setText(
+                f"Pushed {len(friends.normalize_names(names))} friends to {len(files)} file(s)."
+            )
 
     # -- Spell Timers -------------------------------------------------------------------
 
