@@ -28,6 +28,7 @@ from nparseplus.core.handlers.group_leader import GroupLeaderHandler
 from nparseplus.core.handlers.mend_wounds import MendWoundsHandler
 from nparseplus.core.handlers.pet import PetHandler
 from nparseplus.core.handlers.player_profile import PlayerProfileHandler
+from nparseplus.core.handlers.player_tracker import PlayerTrackerHandler
 from nparseplus.core.handlers.quake import QuakeHandler
 from nparseplus.core.handlers.random_roll import RandomRollHandler
 from nparseplus.core.handlers.ring_war import RingWarHandler
@@ -109,6 +110,7 @@ class Backend:
     sharing_client: SharingClient | None = None
     pigparse_api: PigParseApiClient | None = None
     net_worker: NetWorker | None = None
+    player_tracker: PlayerTrackerHandler | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -210,9 +212,11 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
 
+    player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=submit)
     handlers: list[object] = [
         YouZonedHandler(bus, player),
         PlayerProfileHandler(bus, player, settings, request_save=request_save),
+        player_tracker,
         SpellTimerHandler(bus, player, spells, timers, spell_settings=settings.spellwindow),
         DpsHandler(bus, player, fights),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs),
@@ -254,6 +258,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     driver.on_tick.append(archiver.tick)
     driver.on_tick.append(sharing.tick)
     driver.on_tick.append(api_timers.tick)
+    driver.on_tick.append(player_tracker.tick)
 
     return Backend(
         settings=settings,
@@ -272,5 +277,6 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         sharing_client=sharing_client,
         pigparse_api=pigparse_api,
         net_worker=net_worker,
+        player_tracker=player_tracker,
         _retained=[chat_commands, sink, *handlers],
     )

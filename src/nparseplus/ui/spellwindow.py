@@ -282,10 +282,15 @@ class SpellTimerWindow(QWidget):
         for group in order:
             header = self._headers.get(group)
             if header is None:
-                header = QLabel(group.strip() or group, self._container)
+                header = QLabel(self._group_label(group), self._container)
                 header.setObjectName("SpellTimerGroup")
                 header.setProperty("group_key", group)
                 self._headers[group] = header
+            else:
+                # Target class can arrive later (PlayerTracker /who sync).
+                label = self._group_label(group)
+                if header.text() != label:
+                    header.setText(label)
             self._rows_layout.addWidget(header)
             header.show()
             used_headers.add(group)
@@ -307,6 +312,17 @@ class SpellTimerWindow(QWidget):
             self._headers.pop(group).deleteLater()
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
+
+    def _group_label(self, group: str) -> str:
+        """Header text: the target name, plus its class when the /who
+        roster knows it (EQTool's TargetClassString next to the group)."""
+        label = group.strip() or group
+        tracker = getattr(self._backend, "player_tracker", None)
+        if tracker is not None and group != YOU_GROUP:
+            player_class = tracker.get_class(group)
+            if player_class is not None:
+                label = f"{label}  ({player_class.display_name})"
+        return label
 
     def current_groups(self) -> list[str]:
         """Group keys in on-screen order (test/debug hook)."""

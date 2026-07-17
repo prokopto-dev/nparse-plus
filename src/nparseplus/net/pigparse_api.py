@@ -98,14 +98,30 @@ class PigParseApiClient:
         resp = self._request("POST", "api/player/getbynames", {"Players": names, "Server": server})
         return self._parse_list(_PLAYERS, resp, "players_by_names")
 
-    def upsert_players(self, players: list[WirePlayerRecord], server: int) -> None:
-        """POST api/player/upsertplayers — share newly-learned player facts."""
+    def upsert_players(self, players: list, server: int) -> None:
+        """POST api/player/upsertplayers — share newly-learned player facts.
+
+        Accepts WirePlayerRecord or any core-side object with name /
+        guild_name / player_class / level attributes (core never imports
+        wire models)."""
         if not players:
             return
+        records = [
+            p
+            if isinstance(p, WirePlayerRecord)
+            else WirePlayerRecord(
+                name=p.name,
+                guild_name=p.guild_name or None,
+                server=server,
+                player_class=int(p.player_class) if p.player_class is not None else None,
+                level=p.level,
+            )
+            for p in players
+        ]
         self._request(
             "POST",
             "api/player/upsertplayers",
-            {"Players": [p.wire_dump() for p in players], "Server": server},
+            {"Players": [r.wire_dump() for r in records], "Server": server},
         )
 
     # --- zone activity ----------------------------------------------------------
