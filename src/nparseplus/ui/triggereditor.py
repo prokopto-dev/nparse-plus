@@ -150,6 +150,8 @@ class TriggerEditorWindow(QWidget):
         self._extra_groups: set[str] = set()
         #: Set False (e.g. in tests) to skip the unsaved-changes prompt on close.
         self.confirm_unsaved = True
+        #: Set False (e.g. in tests) to skip the delete-group confirmation prompt.
+        self.confirm_delete = True
 
         self.setWindowTitle("Trigger Editor")
         self.setWindowFlags(Qt.WindowType.Window)
@@ -496,6 +498,24 @@ class TriggerEditorWindow(QWidget):
         self._rebuild_tree()
         return True
 
+    def delete_group(self, group: str) -> bool:
+        """Delete a user group and all its triggers. Refuses if it holds a built-in."""
+        members = [t for t in self._working if self._group_key(t) == group]
+        if any(t.is_built_in for t in members):
+            return False
+        current_removed = self._current in members
+        for trigger in members:
+            self._working.remove(trigger)
+        self._extra_groups.discard(group)
+        if current_removed:
+            self._current = None
+            self._loaded_values = None
+        self._dirty = True
+        self._rebuild_tree()
+        if current_removed:
+            self._load_form(None)
+        return True
+
     def trigger_ids(self) -> list[str]:
         ids: list[str] = []
         for i in range(self.tree.topLevelItemCount()):
@@ -573,16 +593,36 @@ class TriggerEditorWindow(QWidget):
     def _show_folder_context_menu(self, group: str, global_pos) -> None:
         menu = QMenu(self.tree)
         rename_action = menu.addAction("Rename group…")
+        delete_action = menu.addAction("Delete group…")
         new_action = menu.addAction("New group…")
         chosen = menu.exec(global_pos)
         if chosen is rename_action:
             name, ok = QInputDialog.getText(self, "Rename group", "New name:", text=group)
             if ok and name.strip():
                 self.rename_group(group, name.strip())
+        elif chosen is delete_action:
+            self._delete_group_prompt(group)
         elif chosen is new_action:
             name, ok = QInputDialog.getText(self, "New group", "Group name:")
             if ok and name.strip():
                 self.create_group(name.strip())
+
+    def _delete_group_prompt(self, group: str) -> None:
+        if self.confirm_delete:
+            count = sum(1 for t in self._working if self._group_key(t) == group)
+            choice = QMessageBox.question(
+                self,
+                "Delete group",
+                f"Delete group '{group}' and its {count} trigger(s)?",
+            )
+            if choice != QMessageBox.StandardButton.Yes:
+                return
+        if not self.delete_group(group):
+            QMessageBox.information(
+                self,
+                "Delete group",
+                "Built-in trigger groups cannot be deleted.",
+            )
 
     # -- form load/commit ---------------------------------------------------------
 

@@ -428,6 +428,83 @@ def test_create_group_shows_empty_folder_until_populated(env: Env) -> None:
     assert win.item_for(nid).parent().text(0) == "Empties"
 
 
+def test_delete_group_removes_all_members(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    a_id = win.current_trigger().trigger_id
+    win.move_trigger_to_group(a_id, "Doomed")
+    win.tree.setCurrentItem(None)
+    win.new_trigger()
+    b_id = win.current_trigger().trigger_id
+    win.move_trigger_to_group(b_id, "Doomed")
+
+    win._dirty = False
+    assert win.delete_group("Doomed") is True
+    assert win._dirty is True
+    assert win._trigger_by_id(a_id) is None
+    assert win._trigger_by_id(b_id) is None
+    assert "Doomed" not in win.folder_names()
+
+
+def test_delete_group_refuses_builtin_folder(env: Env) -> None:
+    win = env.window
+    builtin = next(t for t in win._working if t.is_built_in)
+    folder = builtin.built_in_folder or "Built-in"
+    before = len(win._working)
+    win._dirty = False
+    assert win.delete_group(folder) is False
+    assert len(win._working) == before
+    assert win._dirty is False
+    assert win._trigger_by_id(builtin.trigger_id) is not None
+
+
+def test_delete_group_removes_empty_in_session_group(env: Env) -> None:
+    win = env.window
+    win.create_group("Empties")
+    assert "Empties" in win.folder_names()
+    assert win.delete_group("Empties") is True
+    assert "Empties" not in win.folder_names()
+    assert "Empties" not in win._extra_groups
+
+
+def test_delete_group_clears_current_selection(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    tid = win.current_trigger().trigger_id
+    win.move_trigger_to_group(tid, "Selected")
+    win.select_trigger(tid)
+    assert win.current_trigger() is not None
+
+    assert win.delete_group("Selected") is True
+    assert win._current is None
+
+
+def test_delete_group_then_apply_drops_triggers_from_settings(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    win.name_edit.setText("Gone")
+    tid = win.current_trigger().trigger_id
+    win.move_trigger_to_group(tid, "Trash")
+    win.apply()
+    assert env.settings_trigger(tid) is not None
+
+    win.delete_group("Trash")
+    win.apply()
+    assert env.settings_trigger(tid) is None
+
+
+def test_delete_group_menu_path_without_confirm(env: Env) -> None:
+    win = env.window
+    win.confirm_delete = False
+    win.new_trigger()
+    tid = win.current_trigger().trigger_id
+    win.move_trigger_to_group(tid, "MenuGone")
+
+    win._delete_group_prompt("MenuGone")
+    assert win._trigger_by_id(tid) is None
+    assert "MenuGone" not in win.folder_names()
+
+
 def test_new_trigger_inherits_selected_user_folder(env: Env) -> None:
     win = env.window
     win.new_trigger()
