@@ -6,6 +6,30 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.8.0 (2026-07-18)
+
+### Chores
+
+- Sync uv.lock to the released version
+  ([`d0f1eaa`](https://github.com/prokopto-dev/nparse-plus/commit/d0f1eaaeef61376f9e367950151beafcef416fbe))
+
+### Documentation
+
+- Update CLAUDE.md status for the 1.8 batch
+  ([`c074d93`](https://github.com/prokopto-dev/nparse-plus/commit/c074d93de9f48fe7dfc136944988b086f13366c9))
+
+### Features
+
+- Delete a whole trigger group from the editor
+  ([`72087e9`](https://github.com/prokopto-dev/nparse-plus/commit/72087e93389826a878b83b41459b25ef01bb14a9))
+
+- Edge and corner resizing for frameless windows with persisted geometry
+  ([`0855249`](https://github.com/prokopto-dev/nparse-plus/commit/0855249ab039ee5456ae038bf9774f93d9f5b94c))
+
+- Reset window positions action to bring all windows on-screen
+  ([`59235e5`](https://github.com/prokopto-dev/nparse-plus/commit/59235e58988d6a796f677cadba6f19687d4acd6b))
+
+
 ## v1.7.0 (2026-07-18)
 
 ### Chores
