@@ -206,6 +206,24 @@ narrow (lanes clip). A "Reset Window Positions" tray action
 clamps every managed window back onto a visible screen (manual only; never
 un-hides).
 
+**1.9 batch** (post-1.8.0): TTS reaches full voice parity across platforms.
+`audio/tts.py` `list_voices()` now enumerates per-platform and returns typed
+`VoiceInfo(id, label, engine)` records (stays Qt-free): macOS parses `say
+-v ?`, Windows enumerates BOTH classic SAPI (`GetInstalledVoices`) and the
+modern WinRT "Natural" voices (`AllVoices`) via one PowerShell call — ids are
+engine-prefixed (`sapi:`/`winrt:`) so `WindowsSpeaker._command` picks the
+System.Speech path or the WinRT synthesize-to-WAV + SoundPlayer path (which
+falls back to System.Speech on any error); Linux parses `espeak-ng --voices`,
+and the Flatpak now bundles `espeak-ng` (1.52.0) + `pcaudiolib` modules so
+sandboxed TTS works out of the box. The settings voice combo stores
+`VoiceInfo.id` in userData and the picker/test/apply all key off it. Voice and
+volume changes apply live without a restart: `composition._SwappableSpeaker`
+is one holder shared by the trigger engine and every audio handler, and
+`Backend.rebuild_speaker` (wired to the settings window's `on_audio_changed`
+in `app.py`, fired on Apply only when voice/volume changed) swaps its delegate
+in place and closes the old speaker. NOTE: the WinRT speak path is asserted
+only at command-string level in CI — it needs manual Windows verification.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.4.1 (semantic-release + platform builds + flatpak repo publish).
