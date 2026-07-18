@@ -114,9 +114,6 @@ def _map_trigger(elem: ElementTree.Element, path: list[str]) -> Trigger:
         ],
     )
     comments = _text(elem, "Comments")
-    if len(path) > 1:
-        folder_note = "GINA folder: " + " / ".join(path)
-        comments = f"{comments}\n{folder_note}" if comments else folder_note
     search_text = _text(elem, "TriggerText")
     # GINA's plain-text mode still wildcard-matches {S} placeholders; our
     # non-regex mode is a pure substring test, so tokenized patterns must run
@@ -125,7 +122,7 @@ def _map_trigger(elem: ElementTree.Element, path: list[str]) -> Trigger:
     return Trigger(
         trigger_enabled=True,
         trigger_name=_text(elem, "Name"),
-        category=path[0] if path else "Imported",
+        category=" / ".join(path) if path else "Imported",
         comments=comments,
         search_text=search_text,
         use_regex=use_regex,

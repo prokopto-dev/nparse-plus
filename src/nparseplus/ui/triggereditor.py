@@ -33,8 +33,10 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -93,6 +95,9 @@ _RESTART_BEHAVIORS = [
 ]
 
 _ROLE_ID = Qt.ItemDataRole.UserRole
+#: Folder items carry "builtin" or "user" here so menus/new-trigger can tell
+#: read-only built-in folders from movable user groups.
+_ROLE_FOLDER_KIND = _ROLE_ID + 1
 
 
 def _set_combo(combo: QComboBox, value: str) -> None:
@@ -140,6 +145,9 @@ class TriggerEditorWindow(QWidget):
         self._loaded_values: dict[str, Any] | None = None
         self._loading = False
         self._dirty = False
+        #: User group names with no triggers yet — kept only for this session,
+        #: dropped once a trigger lands in them (or on close).
+        self._extra_groups: set[str] = set()
         #: Set False (e.g. in tests) to skip the unsaved-changes prompt on close.
         self.confirm_unsaved = True
 
@@ -191,6 +199,8 @@ class TriggerEditorWindow(QWidget):
         self.tree.setHeaderHidden(True)
         self.tree.currentItemChanged.connect(self._on_current_item_changed)
         self.tree.itemChanged.connect(self._on_item_changed)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         splitter.addWidget(self.tree)
 
         right = QWidget(self)
@@ -229,6 +239,12 @@ class TriggerEditorWindow(QWidget):
         for key, info in sorted(zonedb.zones.items(), key=lambda kv: kv[1].name.lower()):
             self.zone_combo.addItem(info.name, key)
         form.addRow("Zone", self.zone_combo)
+        self.group_combo = QComboBox()
+        self.group_combo.setEditable(True)
+        self.group_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.group_combo.activated.connect(self._on_group_changed)
+        self.group_combo.lineEdit().editingFinished.connect(self._on_group_changed)
+        form.addRow("Group", self.group_combo)
         self.comments_edit = QPlainTextEdit()
         self.comments_edit.setMaximumHeight(60)
         form.addRow("Comments", self.comments_edit)
@@ -378,6 +394,14 @@ class TriggerEditorWindow(QWidget):
             return f"{name} (customized)"
         return name
 
+    def _make_folder_item(self, key: str) -> QTreeWidgetItem:
+        folder = QTreeWidgetItem([key])
+        # Selectable so Export… can target a whole folder.
+        folder.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        folder.setData(0, _ROLE_FOLDER_KIND, "user")
+        self.tree.addTopLevelItem(folder)
+        return folder
+
     def _rebuild_tree(self, select_id: str | None = None) -> None:
         self._loading = True
         try:
@@ -391,11 +415,12 @@ class TriggerEditorWindow(QWidget):
                 key = self._group_key(trigger)
                 folder = folders.get(key)
                 if folder is None:
-                    folder = QTreeWidgetItem([key])
-                    # Selectable so Export… can target a whole folder.
-                    folder.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                    folder = self._make_folder_item(key)
                     folders[key] = folder
-                    self.tree.addTopLevelItem(folder)
+                if trigger.is_built_in:
+                    folder.setData(0, _ROLE_FOLDER_KIND, "builtin")
+                # A group with real content is no longer a placeholder.
+                self._extra_groups.discard(key)
                 item = QTreeWidgetItem([self._item_label(trigger)])
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(
@@ -404,6 +429,10 @@ class TriggerEditorWindow(QWidget):
                 )
                 item.setData(0, _ROLE_ID, trigger.trigger_id)
                 folder.addChild(item)
+            # Empty user groups created this session get a bare folder row.
+            for key in sorted(self._extra_groups):
+                if key not in folders:
+                    folders[key] = self._make_folder_item(key)
             self.tree.expandAll()
         finally:
             self._loading = False
@@ -424,6 +453,48 @@ class TriggerEditorWindow(QWidget):
 
     def folder_names(self) -> list[str]:
         return [self.tree.topLevelItem(i).text(0) for i in range(self.tree.topLevelItemCount())]
+
+    # -- groups ------------------------------------------------------------------
+
+    def user_group_names(self) -> list[str]:
+        """Sorted group names over user triggers plus empty session groups."""
+        names = {self._group_key(t) for t in self._working if not t.is_built_in}
+        names.update(self._extra_groups)
+        return sorted(names)
+
+    def create_group(self, name: str) -> None:
+        """Register an empty user group so it can be picked before it has rows."""
+        name = name.strip()
+        if not name:
+            return
+        self._extra_groups.add(name)
+        self._rebuild_tree()
+
+    def move_trigger_to_group(self, trigger_id: str, group: str) -> bool:
+        """Reassign a user trigger's group. Built-ins refuse (return False)."""
+        trigger = self._trigger_by_id(trigger_id)
+        if trigger is None or trigger.is_built_in:
+            return False
+        trigger.category = group.strip() or "Custom"
+        self._dirty = True
+        self._extra_groups.discard(group.strip())
+        self._rebuild_tree(select_id=trigger_id)
+        return True
+
+    def rename_group(self, old: str, new: str) -> bool:
+        """Rename a user group. Refuses if it holds any built-in trigger."""
+        members = [t for t in self._working if self._group_key(t) == old]
+        if any(t.is_built_in for t in members):
+            return False
+        new_name = new.strip() or "Custom"
+        for trigger in members:
+            trigger.category = new_name
+        if old in self._extra_groups:
+            self._extra_groups.discard(old)
+            self._extra_groups.add(new_name)
+        self._dirty = True
+        self._rebuild_tree()
+        return True
 
     def trigger_ids(self) -> list[str]:
         ids: list[str] = []
@@ -462,6 +533,56 @@ class TriggerEditorWindow(QWidget):
         if trigger.trigger_enabled != enabled:
             trigger.trigger_enabled = enabled
             self._dirty = True
+
+    # -- context menu ------------------------------------------------------------
+
+    def _on_tree_context_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        if item is None:
+            return
+        global_pos = self.tree.viewport().mapToGlobal(pos)
+        trigger_id = item.data(0, _ROLE_ID)
+        if trigger_id:
+            trigger = self._trigger_by_id(trigger_id)
+            if trigger is None or trigger.is_built_in:
+                return  # built-in triggers cannot be moved
+            self._show_trigger_context_menu(trigger, global_pos)
+        elif item.data(0, _ROLE_FOLDER_KIND) == "user":
+            self._show_folder_context_menu(item.text(0), global_pos)
+
+    def _show_trigger_context_menu(self, trigger: Trigger, global_pos) -> None:
+        menu = QMenu(self.tree)
+        submenu = menu.addMenu("Move to group")
+        actions: dict[Any, str] = {}
+        for name in self.user_group_names():
+            if name == self._group_key(trigger):
+                continue
+            actions[submenu.addAction(name)] = name
+        submenu.addSeparator()
+        new_action = submenu.addAction("New group…")
+        chosen = menu.exec(global_pos)
+        if chosen is None:
+            return
+        if chosen is new_action:
+            name, ok = QInputDialog.getText(self, "New group", "Group name:")
+            if ok and name.strip():
+                self.move_trigger_to_group(trigger.trigger_id, name.strip())
+        elif chosen in actions:
+            self.move_trigger_to_group(trigger.trigger_id, actions[chosen])
+
+    def _show_folder_context_menu(self, group: str, global_pos) -> None:
+        menu = QMenu(self.tree)
+        rename_action = menu.addAction("Rename group…")
+        new_action = menu.addAction("New group…")
+        chosen = menu.exec(global_pos)
+        if chosen is rename_action:
+            name, ok = QInputDialog.getText(self, "Rename group", "New name:", text=group)
+            if ok and name.strip():
+                self.rename_group(group, name.strip())
+        elif chosen is new_action:
+            name, ok = QInputDialog.getText(self, "New group", "Group name:")
+            if ok and name.strip():
+                self.create_group(name.strip())
 
     # -- form load/commit ---------------------------------------------------------
 
@@ -528,6 +649,7 @@ class TriggerEditorWindow(QWidget):
             self.search_edit.setText(values["search_text"])
             self.regex_check.setChecked(values["use_regex"])
             _set_combo(self.zone_combo, values["zone"])
+            self._populate_group_combo(trigger)
             self.comments_edit.setPlainText(values["comments"])
             self.basic_display_check.setChecked(values["basic_display_enabled"])
             self.basic_display_edit.setText(values["basic_display_text"])
@@ -557,6 +679,41 @@ class TriggerEditorWindow(QWidget):
             self._loaded_values = self._form_values()
         finally:
             self._loading = False
+
+    def _populate_group_combo(self, trigger: Trigger) -> None:
+        """Fill the group combo for the loaded trigger (called under _loading).
+
+        Built-ins show their read-only ``built_in_folder``; user triggers get
+        the editable list of user group names. This lives OUTSIDE the
+        _form_values diff machinery — group moves rebuild the tree.
+        """
+        self.group_combo.clear()
+        if trigger.is_built_in:
+            label = trigger.built_in_folder or "Built-in"
+            self.group_combo.addItem(label)
+            self.group_combo.setEnabled(False)
+            self.group_combo.setCurrentText(label)
+            return
+        self.group_combo.setEnabled(True)
+        for name in self.user_group_names():
+            self.group_combo.addItem(name)
+        self.group_combo.setCurrentText(self._group_key(trigger))
+
+    def _on_group_changed(self, *_args: Any) -> None:
+        """Move the current user trigger when its group combo is edited.
+
+        No-op while loading, for built-ins, or when the text is unchanged —
+        never runs inside the _commit_form re-entrancy.
+        """
+        if self._loading:
+            return
+        trigger = self._current
+        if trigger is None or trigger.is_built_in:
+            return
+        group = self.group_combo.currentText().strip()
+        if not group or group == self._group_key(trigger):
+            return
+        self.move_trigger_to_group(trigger.trigger_id, group)
 
     def _form_values(self) -> dict[str, Any]:
         return {
@@ -672,12 +829,23 @@ class TriggerEditorWindow(QWidget):
 
     # -- actions ---------------------------------------------------------------
 
+    def _selected_user_group(self) -> str | None:
+        """The user group the current selection sits in, if any."""
+        item = self.tree.currentItem()
+        if item is None:
+            return None
+        if item.data(0, _ROLE_ID):
+            item = item.parent()
+        if item is not None and item.data(0, _ROLE_FOLDER_KIND) == "user":
+            return item.text(0)
+        return None
+
     def new_trigger(self) -> None:
         self._commit_form()
         trigger = Trigger(
             trigger_enabled=True,
             trigger_name="New Trigger",
-            category="Custom",
+            category=self._selected_user_group() or "Custom",
             search_text="",
             use_regex=False,
             basic=TriggerOutput(display_text_enabled=True, display_text_color="Red"),
@@ -702,7 +870,8 @@ class TriggerEditorWindow(QWidget):
         copy.built_in_id = None
         copy.customized = False
         copy.built_in_folder = ""
-        copy.category = "Custom"
+        # Built-in copies land in Custom; a user copy keeps its source's group.
+        copy.category = "Custom" if source.is_built_in else (source.category or "Custom")
         # Mark as an intentional copy so sync_builtin_triggers never merges it
         # back into the built-in it was copied from.
         copy.built_in_folder_path = "Custom"

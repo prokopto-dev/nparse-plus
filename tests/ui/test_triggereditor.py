@@ -358,6 +358,129 @@ def test_import_invalid_file_warns_and_changes_nothing(env: Env, monkeypatch, tm
     assert len(win.trigger_ids()) == before
 
 
+def test_move_trigger_to_group_relocates_and_dirties(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    tid = win.current_trigger().trigger_id
+    win._dirty = False
+    assert win.move_trigger_to_group(tid, "My Raid") is True
+    assert win._dirty is True
+    assert win.item_for(tid).parent().text(0) == "My Raid"
+    assert win._trigger_by_id(tid).category == "My Raid"
+
+
+def test_move_trigger_to_group_refuses_builtin(env: Env) -> None:
+    win = env.window
+    builtin = next(t for t in win._working if t.is_built_in)
+    before = builtin.category
+    assert win.move_trigger_to_group(builtin.trigger_id, "Nope") is False
+    assert win._trigger_by_id(builtin.trigger_id).category == before
+
+
+def test_combo_move_relocates_trigger(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    win.name_edit.setText("Combo Move")
+    tid = win.current_trigger().trigger_id
+    win.select_trigger(tid)
+    win.group_combo.setCurrentText("Raiders")
+    win.group_combo.lineEdit().editingFinished.emit()
+    assert win.item_for(tid).parent().text(0) == "Raiders"
+    assert win._trigger_by_id(tid).category == "Raiders"
+
+
+def test_rename_group_rewrites_all_members(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    a_id = win.current_trigger().trigger_id
+    win.move_trigger_to_group(a_id, "Old")
+    win.tree.setCurrentItem(None)
+    win.new_trigger()
+    b_id = win.current_trigger().trigger_id
+    win.move_trigger_to_group(b_id, "Old")
+
+    assert win.rename_group("Old", "New") is True
+    assert win._trigger_by_id(a_id).category == "New"
+    assert win._trigger_by_id(b_id).category == "New"
+    assert "New" in win.folder_names()
+    assert "Old" not in win.folder_names()
+
+
+def test_rename_group_refuses_builtin_folder(env: Env) -> None:
+    win = env.window
+    builtin = next(t for t in win._working if t.is_built_in)
+    folder = builtin.built_in_folder or "Built-in"
+    assert win.rename_group(folder, "Nope") is False
+    assert win._trigger_by_id(builtin.trigger_id).built_in_folder == builtin.built_in_folder
+
+
+def test_create_group_shows_empty_folder_until_populated(env: Env) -> None:
+    win = env.window
+    win.create_group("Empties")
+    assert "Empties" in win.folder_names()
+    win._rebuild_tree()
+    assert "Empties" in win.folder_names()  # survives a rebuild while empty
+
+    win.new_trigger()
+    nid = win.current_trigger().trigger_id
+    win.move_trigger_to_group(nid, "Empties")
+    assert "Empties" not in win._extra_groups  # placeholder dropped once populated
+    assert win.item_for(nid).parent().text(0) == "Empties"
+
+
+def test_new_trigger_inherits_selected_user_folder(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    first = win.current_trigger().trigger_id
+    win.move_trigger_to_group(first, "MyGroup")
+    win.select_trigger(first)
+    win.new_trigger()
+    assert win.current_trigger().category == "MyGroup"
+
+
+def test_apply_persists_moved_categories(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    win.name_edit.setText("Persist")
+    tid = win.current_trigger().trigger_id
+    win.move_trigger_to_group(tid, "Kept")
+    win.apply()
+    saved = env.settings_trigger(tid)
+    assert saved is not None
+    assert saved.category == "Kept"
+
+
+def test_export_import_round_trip_preserves_category(
+    env: Env, monkeypatch, tmp_path, qtbot
+) -> None:
+    win = env.window
+    win.new_trigger()
+    win.name_edit.setText("Raider")
+    win.search_edit.setText("engages you")
+    tid = win.current_trigger().trigger_id
+    win.move_trigger_to_group(tid, "My Raid")
+    win.select_trigger(tid)  # export just this trigger
+    _mute_boxes(monkeypatch)
+    out = tmp_path / "rt.json"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), ""))
+    )
+    win.export_triggers()
+
+    settings2 = Settings(players=[PlayerInfo(name="Frodo", server="green")])
+    settings2.triggers, _ = sync_builtin_triggers([])
+    win2 = TriggerEditorWindow(settings2, FakeEngine(), on_save=lambda: None)
+    win2.confirm_unsaved = False
+    qtbot.addWidget(win2)
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(out), ""))
+    )
+    win2.import_triggers()
+    win2.apply()
+    imported = next(t for t in settings2.triggers if t.trigger_name == "Raider")
+    assert imported.category == "My Raid"
+
+
 def test_unsaved_changes_discard_on_close(env: Env, monkeypatch) -> None:
     win = env.window
     win.confirm_unsaved = True

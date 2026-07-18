@@ -95,14 +95,14 @@ def test_xml_walk_finds_all_triggers_with_categories() -> None:
     triggers, skipped = load_gina_triggers(GINA_XML)
     assert skipped == 0
     assert {t.trigger_name for t in triggers} == {"Rune Counter", "Caster Alert", "Mez Timer"}
-    # Top-level group name becomes the category everywhere...
-    assert all(t.category == "Raid Pack" for t in triggers)
-    assert all(t.trigger_enabled for t in triggers)
-    # ...and nested placement survives in the comments.
+    # The full nested folder path joins into one flat category name.
+    assert _by_name(triggers, "Rune Counter").category == "Raid Pack"
     caster = _by_name(triggers, "Caster Alert")
+    assert caster.category == "Raid Pack / Sebilis"
+    assert _by_name(triggers, "Mez Timer").category == "Raid Pack / Sebilis"
+    assert all(t.trigger_enabled for t in triggers)
+    # Comments carry the trigger's own notes, no folder breadcrumb.
     assert "watch adds" in caster.comments
-    assert "GINA folder: Raid Pack / Sebilis" in caster.comments
-    assert "GINA folder" not in _by_name(triggers, "Rune Counter").comments
 
 
 def test_basic_output_and_tts_map() -> None:
