@@ -11,11 +11,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QCoreApplication, QPoint, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
 from nparseplus.config.settings import Settings, WindowState
+from nparseplus.ui import appquit
 
 
 def format_mmss(seconds: float) -> str:
@@ -117,12 +118,21 @@ class OverlayWindowBase(QWidget):
         if self._on_save is not None:
             self._on_save()
 
+    def _app_quitting(self) -> bool:
+        """True on any quit path — aboutToQuit, tray Quit, or macOS Cmd+Q
+        (which closes windows via closeAllWindows before aboutToQuit fires)."""
+        return self._quitting or appquit.is_quitting() or QCoreApplication.closingDown()
+
     def _on_app_quit(self) -> None:
         self._quitting = True
-        self.persist_state(shown=self.isVisible())
+        # App quit must never flip ``shown`` downward: it already reflects the
+        # last deliberate visibility choice (toggle / user close). On Cmd+Q the
+        # windows were closed by closeAllWindows() before this fires, so
+        # isVisible() would clobber — persist geometry/opacity, keep ``shown``.
+        self.persist_state(shown=self._state.shown)
 
     def closeEvent(self, event) -> None:
-        if not self._quitting:
+        if not self._app_quitting():
             self.persist_state(shown=False)
         super().closeEvent(event)
 

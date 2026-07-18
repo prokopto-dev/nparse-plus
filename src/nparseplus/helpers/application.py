@@ -17,6 +17,7 @@ from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
 from nparseplus.parsers.maps.window import MapsSignals
 from nparseplus.parsers.spells import Spells
+from nparseplus.ui import appquit
 from nparseplus.ui.updatewindow import UpdateAvailableDialog
 
 config.load("nparse.config.json")
@@ -311,6 +312,7 @@ class NomnsParse(QApplication):
 
             self._system_tray.setVisible(False)
             config.APP_EXIT = True
+            appquit.mark_quitting()  # new-core windows skip their shown=False clobber
             self.quit()
 
         elif action in parser_toggles:

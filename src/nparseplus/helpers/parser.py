@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from nparseplus.helpers import config
+from nparseplus.ui import appquit
 
 
 class ParserWindow(QWidget):
@@ -221,7 +222,10 @@ class ParserWindow(QWidget):
 
     # Overrides QWidget to handle this event
     def closeEvent(self, _):
-        if config.APP_EXIT:
+        # APP_EXIT covers the tray Quit action; appquit/closingDown also cover
+        # the macOS Cmd+Q / Dock-quit path (closeAllWindows before the tray
+        # handler runs) so quitting never clobbers `toggled` to False.
+        if config.APP_EXIT or appquit.is_quitting() or QCoreApplication.closingDown():
             return
         # This is triggered if the user closes from the taskbar or from the X if the window is framed
         config.data[self.name]["toggled"] = False
