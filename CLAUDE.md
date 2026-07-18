@@ -190,6 +190,22 @@ context-menu Move/Rename/New group (built-ins read-only), and GINA imports
 map the full nested folder path to `category` ("Raid Pack / Sebilis") instead
 of just the top folder.
 
+**1.8 batch** (post-1.7.0): three window/UX features. The trigger editor can
+delete a whole user group: `ui/triggereditor.py` `delete_group()` +
+context-menu "Delete group…" with a QMessageBox confirm (refuses folders
+holding a built-in). Frameless overlays are now resizable from any edge or
+corner, not just the one grip — `ui/overlaybase.py` grows pure `edge_at`/
+`cursor_for_edges` helpers and an `EdgeResizeMixin` (margin-band hit-test →
+`startSystemResize` + hover resize cursors), keeps the transparent
+`QSizeGrip`, and debounce-persists geometry (guarded so startup restore never
+rewrites settings). The spell-timer window (the headline complaint — only one
+resizable corner before) gains the mixin; DPS/mob-info get sensible minimums
+and the event overlay's lanes-host min width drops 520→200 so the overlay can
+narrow (lanes clip). A "Reset Window Positions" tray action
+(`ui/windowlayouts.py` `reset_onscreen()` + pure `clamp_rect_to_screen`)
+clamps every managed window back onto a visible screen (manual only; never
+un-hides).
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.4.1 (semantic-release + platform builds + flatpak repo publish).
