@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.9.1 (2026-07-18)
+
+### Bug Fixes
+
+- Suppress Windows console window on every TTS utterance
+  ([`6612e1d`](https://github.com/prokopto-dev/nparse-plus/commit/6612e1d299231f0ce101bb6adbb6b0a4eaa6bf35))
+
+
 ## v1.9.0 (2026-07-18)
 
 ### Chores
