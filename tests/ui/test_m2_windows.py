@@ -182,6 +182,40 @@ def test_ch_chip_is_exactly_one_cell_wide(qtbot) -> None:
     assert lane.chips[0].width() == lane.cell_width()
 
 
+def test_ch_lane_target_name_sits_beside_the_lane(qtbot) -> None:
+    """Regression: the target name lives in its own column beside the lane
+    (EQTool's separate grid column), so it cannot cover the "1" marker cell.
+    Long names elide and carry the full name as a tooltip; removal tears out
+    the whole [name | lane] row."""
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.core.events import CompleteHealEvent
+
+    target = "A Really Quite Long Npc Heal Target Name"
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient=target, tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes[target]
+    # The lane itself holds only chips — no name label over the cell strip.
+    assert lane.findChildren(QLabel) == lane.chips
+    # The row holds the name label (full name in the tooltip when elided).
+    assert lane.row is not None
+    row_labels = [w for w in lane.row.findChildren(QLabel) if w not in lane.chips]
+    assert [label.toolTip() for label in row_labels] == [target]
+    row_widgets = [
+        overlay._lanes_layout.itemAt(i).widget() for i in range(overlay._lanes_layout.count())
+    ]
+    assert lane.row in row_widgets
+    # Removal tears out the whole row, name label included.
+    overlay._remove_lane(target)
+    row_widgets = [
+        overlay._lanes_layout.itemAt(i).widget() for i in range(overlay._lanes_layout.count())
+    ]
+    assert lane.row not in row_widgets
+
+
 def test_ch_lane_retention_keeps_lane_after_chips(qtbot) -> None:
     from nparseplus.core.events import CompleteHealEvent
 

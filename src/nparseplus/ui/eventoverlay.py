@@ -19,11 +19,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
+    QHBoxLayout,
     QLabel,
     QProgressBar,
     QSizeGrip,
@@ -49,6 +50,10 @@ DEFAULT_BAR_COLOR = "steelblue"
 # so healers keep a stable anchor for who is being chain-healed.
 CH_CHIP_SECONDS = 11.0
 CH_LANE_HEIGHT = 30
+# The target name sits in its own fixed column beside the graduated lane
+# (EQTool keeps the name in a separate grid column) so it never obscures the
+# "1" second-marker cell; long names elide with the full name as a tooltip.
+CH_LANE_NAME_WIDTH = 110
 # The lane is graduated into 10 one-second cells (EQTool GetOrCreateChain: a
 # 10-cell strip, each ``ActualWidth / 10`` wide, numbered 1..10 in red). A chip
 # is exactly one cell wide and slides ``width + chip.width`` (= 11 cells) over
@@ -91,17 +96,15 @@ class _ChainLane(QFrame):
         self.last_call: datetime = datetime.now()
         # Called (with no args) whenever a chip finishes its slide.
         self.on_chip_done: Callable[[], None] | None = None
+        # The [name | lane] row container this lane sits in (set by the
+        # overlay when it builds the row; None for a bare lane in tests).
+        self.row: QWidget | None = None
         self.setObjectName("ChChainLane")
         self.setFixedHeight(CH_LANE_HEIGHT)
         self.setStyleSheet(
             "#ChChainLane { background-color: rgba(0, 0, 0, 130);"
             " border: 1px solid rgba(255, 255, 255, 60); border-radius: 3px; }"
         )
-        self._target_label = QLabel(target, self)
-        self._target_label.setStyleSheet("color: #cccccc; font-size: 11px; font-weight: bold;")
-        self._target_label.move(4, 6)
-        self._target_label.raise_()  # keep the name above the painted cell strip
-        self._target_label.show()
 
     def cell_width(self) -> int:
         """Width of one second-marker cell (``width / 10``, EQTool parity)."""
@@ -372,7 +375,7 @@ class EventOverlayWindow(QWidget):
                 100, lambda: self._maybe_remove_lane(t)
             )
             self._chain_lanes[target] = lane
-            self._lanes_layout.addWidget(lane)
+            self._lanes_layout.addWidget(self._build_lane_row(target, lane))
             lane.show()
         lane.last_call = datetime.now()
         lane.add_chip(event.position or "?")
@@ -386,8 +389,28 @@ class EventOverlayWindow(QWidget):
         )
         self._update_visibility()
 
+    def _build_lane_row(self, target: str, lane: _ChainLane) -> QWidget:
+        """[name | lane] row: the target name lives in its own fixed column so
+        it never covers the lane's "1" second-marker cell (EQTool keeps the
+        name in a separate grid column beside the bar)."""
+        row = QWidget(self)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        name = QLabel(row)
+        name.setStyleSheet("color: #cccccc; font-size: 11px; font-weight: bold;")
+        name.setFixedWidth(CH_LANE_NAME_WIDTH)
+        metrics = QFontMetrics(name.font())
+        name.setText(metrics.elidedText(target, Qt.TextElideMode.ElideRight, CH_LANE_NAME_WIDTH))
+        name.setToolTip(target)
+        layout.addWidget(name)
+        layout.addWidget(lane)
+        row.setLayout(layout)
+        lane.row = row
+        return row
+
     def _remove_lane(self, target: str) -> None:
-        """Tear a lane out of the layout and the dict. Idempotent, and
+        """Tear a lane's row out of the layout and the dict. Idempotent, and
         defensive: severs the chip-done callback so any late ``_chip_done``
         (from an animation finishing during teardown) cannot re-enter."""
         lane = self._chain_lanes.pop(target, None)
@@ -395,8 +418,9 @@ class EventOverlayWindow(QWidget):
             return
         lane.on_chip_done = None
         lane.chips.clear()
-        self._lanes_layout.removeWidget(lane)
-        lane.deleteLater()
+        row = lane.row if lane.row is not None else lane
+        self._lanes_layout.removeWidget(row)
+        row.deleteLater()  # the lane (and name label) die with the row
 
     def _maybe_remove_lane(self, target: str) -> None:
         """Remove a lane only when it has no chips in flight AND the retention
