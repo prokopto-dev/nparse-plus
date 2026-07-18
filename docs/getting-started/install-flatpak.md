@@ -62,6 +62,24 @@ Stock GNOME has no system-tray support. Install the
 [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/)
 to get the nParse+ tray menu. KDE, Cinnamon, XFCE, etc. work out of the box.
 
+### Text-to-speech on Linux
+
+The Flatpak bundles the [espeak-ng](https://github.com/espeak-ng/espeak-ng)
+speech engine, so spoken trigger alerts work out of the box — there is nothing
+to install, and the voice list in Settings is populated from espeak-ng's
+voices.
+
+If you run the plain (non-Flatpak) tarball instead, TTS uses espeak-ng from
+your host system, which you must install yourself:
+
+- **Ubuntu / Debian**: `sudo apt install espeak-ng`
+- **Fedora**: `sudo dnf install espeak-ng`
+- **Arch**: `sudo pacman -S espeak-ng`
+
+If espeak-ng is not on the host `PATH`, text-to-speech silently disables (the
+voice list is empty and spoken triggers produce no audio); everything else
+keeps working.
+
 ## 4. EQ installs outside your home directory
 
 The sandbox can read and write files under `$HOME` only. That covers the

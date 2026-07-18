@@ -28,6 +28,35 @@ finish-args:
   #   flatpak override --user --filesystem=/path/to/eq io.github.prokopto_dev.nparse_plus
   - --filesystem=home
 modules:
+  # Bundle a TTS engine so trigger audio / text-to-speech works inside the
+  # sandbox with no host packages: espeak-ng lands at /app/bin/espeak-ng (on
+  # PATH), and find_espeak() in nparseplus/audio/tts.py picks it up. It plays
+  # through the existing --socket=pulseaudio grant (no extra finish-args).
+  #
+  # pcaudiolib is espeak-ng's audio backend (per its README, without it
+  # espeak-ng can only write WAV files, not play sound) — build it first so
+  # espeak-ng's configure detects libpcaudio via pkg-config.
+  #
+  # Both are git checkouts with no committed ./configure, so flatpak-builder's
+  # autotools buildsystem auto-runs ./autogen.sh (NOCONFIGURE=1) before
+  # configure — no shim needed. The generated share/espeak-ng-data voice/dict
+  # data is not matched by flatpak's default cleanup, so it is kept as-is.
+  - name: pcaudiolib
+    buildsystem: autotools
+    no-parallel-make: true
+    sources:
+      - type: git
+        url: https://github.com/espeak-ng/pcaudiolib.git
+        tag: "1.2"
+  - name: espeak-ng
+    buildsystem: autotools
+    no-parallel-make: true
+    sources:
+      - type: git
+        url: https://github.com/espeak-ng/espeak-ng.git
+        tag: "1.52.0"
+    post-install:
+      - ln -sf espeak-ng /app/bin/espeak
   - name: nparseplus
     buildsystem: simple
     build-commands:
