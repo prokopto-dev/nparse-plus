@@ -268,7 +268,9 @@ class EventOverlayWindow(QWidget):
         self._lanes_layout.setSpacing(3)
         self._lanes_host = QWidget(self)
         self._lanes_host.setObjectName("OverlayLanesHost")
-        self._lanes_host.setMinimumWidth(520)
+        # Lanes keep their fixed LANES_WIDTH and simply clip when the window is
+        # narrower than a lane; a low host minimum lets the overlay be narrowed.
+        self._lanes_host.setMinimumWidth(200)
         self._lanes_host.setLayout(self._lanes_layout)
 
         # ``_center_text`` (and the preview alert label) live in their own host

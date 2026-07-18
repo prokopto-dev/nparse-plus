@@ -103,6 +103,7 @@ class DpsMeterWindow(OverlayWindowBase):
         self._rows: dict[tuple[str, str], _AttackerRow] = {}
 
         self.setObjectName("DpsMeterWindow")
+        self.setMinimumSize(220, 140)
         font_size = max(8, backend.settings.general.font_size)
         colors = theme.palette()
         self.setStyleSheet(

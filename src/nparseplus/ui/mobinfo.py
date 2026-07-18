@@ -43,6 +43,7 @@ class MobInfoWindow(OverlayWindowBase):
         )
         self._mob_info = mob_info
         self.setObjectName("MobInfoWindow")
+        self.setMinimumSize(200, 120)
 
         self._name = QLabel("Consider a mob…", self)
         self._name.setObjectName("MobInfoName")

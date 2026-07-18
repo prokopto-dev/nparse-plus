@@ -43,6 +43,7 @@ from nparseplus.core.timers import (
     SpellRow,
 )
 from nparseplus.ui import appquit, theme
+from nparseplus.ui.overlaybase import EdgeResizeMixin
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -221,7 +222,7 @@ class _RowWidget(QFrame):
             self._icon.setVisible(True)
 
 
-class SpellTimerWindow(QWidget):
+class SpellTimerWindow(EdgeResizeMixin, QWidget):
     """Frameless always-on-top overlay listing the backend's timer rows."""
 
     def __init__(
@@ -312,8 +313,10 @@ class SpellTimerWindow(QWidget):
         self.setLayout(outer)
         self.setMinimumSize(140, 120)
 
-        # Frameless windows have no OS resize border; the corner grip is the
-        # resize affordance. Size changes persist (debounced) below.
+        # Frameless windows have no OS resize border; the corner grip is one
+        # resize affordance, edge/corner drag (EdgeResizeMixin) is the other.
+        # Track the mouse so hover moves reach mouseMoveEvent for edge cursors.
+        self.setMouseTracking(True)
         self._grip = QSizeGrip(self)
         self._grip.raise_()
         self._persist_resize = QTimer(self)
@@ -481,6 +484,9 @@ class SpellTimerWindow(QWidget):
             flags |= Qt.WindowType.WindowTransparentForInput
         self.setWindowFlags(flags)
 
+    def _resize_frameless(self) -> bool:
+        return self._state.frameless
+
     def apply_window_state(self) -> None:
         """Re-apply opacity/flags from the (possibly just-edited) state.
         (Copy of OverlayWindowBase.apply_window_state — this window predates
@@ -525,10 +531,13 @@ class SpellTimerWindow(QWidget):
             self.persist_state(shown=False)
         super().closeEvent(event)
 
-    # -- drag-to-move --------------------------------------------------------------
+    # -- drag-to-move / edge-resize ------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._maybe_begin_edge_resize(event.position().toPoint()):
+                event.accept()
+                return
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         else:
@@ -539,6 +548,8 @@ class SpellTimerWindow(QWidget):
             self.move(event.globalPosition().toPoint() - self._drag_offset)
             event.accept()
         else:
+            if not event.buttons():
+                self._update_edge_cursor(event.position().toPoint())
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
