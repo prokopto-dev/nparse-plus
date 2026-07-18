@@ -5,11 +5,24 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
+from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox, QWidget
 
 from nparseplus.config.settings import Settings, WindowLayoutPreset, WindowState
 
 LEGACY_WINDOW_KEYS = frozenset({"maps", "discord"})
+
+
+def clamp_rect_to_screen(
+    rect: tuple[int, int, int, int], screen: tuple[int, int, int, int]
+) -> tuple[int, int, int, int]:
+    """Move/shrink ``rect`` so it lies fully within ``screen`` (x, y, w, h)."""
+    x, y, w, h = rect
+    sx, sy, sw, sh = screen
+    w = min(w, sw)
+    h = min(h, sh)
+    x = max(sx, min(x, sx + sw - w))
+    y = max(sy, min(y, sy + sh - h))
+    return (x, y, w, h)
 
 
 class WindowLayoutManager:
@@ -92,6 +105,33 @@ class WindowLayoutManager:
         self._on_save()
         self._send_notification(f'Applied "{saved_name}".')
 
+    def reset_onscreen(self) -> None:
+        """Clamp every managed window fully onto a visible screen and persist it.
+
+        Manual only (menu action). Never shows hidden windows or alters visibility.
+        """
+        legacy_changed = False
+        for key, window in self._windows.items():
+            screen = QApplication.screenAt(window.frameGeometry().center())
+            if screen is None:
+                screen = QApplication.primaryScreen()
+            available = screen.availableGeometry()
+            geometry = window.geometry()
+            clamped = clamp_rect_to_screen(
+                (geometry.x(), geometry.y(), geometry.width(), geometry.height()),
+                (available.x(), available.y(), available.width(), available.height()),
+            )
+            window.setGeometry(*clamped)
+            if key in LEGACY_WINDOW_KEYS:
+                self._legacy.setdefault(key, {})["geometry"] = list(clamped)
+                legacy_changed = True
+            else:
+                self._settings.windows.setdefault(key, WindowState()).geometry = clamped
+        if legacy_changed and self._on_legacy_save is not None:
+            self._on_legacy_save()
+        self._on_save()
+        self._send_notification("Window positions reset.")
+
     def rename_layout(self, old_name: str, new_name: str) -> str:
         old_saved_name = self._matching_name(old_name)
         if old_saved_name is None:
@@ -119,6 +159,9 @@ class WindowLayoutManager:
         menu = QMenu("Window Layouts", parent)
         parent.addMenu(menu)
         menu.addAction("Save Current Layout…").triggered.connect(self._prompt_save)
+        menu.addAction("Reset Window Positions").triggered.connect(
+            lambda _checked=False: self.reset_onscreen()
+        )
         menu.addSeparator()
         if not self.names:
             empty = menu.addAction("No saved layouts")
