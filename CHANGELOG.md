@@ -6,6 +6,33 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.7.0 (2026-07-18)
+
+### Chores
+
+- Sync uv.lock project version to 1.6.1
+  ([`bc1e2ca`](https://github.com/prokopto-dev/nparse-plus/commit/bc1e2ca003455077b3e5439bb9ac52584340c2b2))
+
+### Documentation
+
+- Update CLAUDE.md status for the 1.7 feature batch
+  ([`4627d10`](https://github.com/prokopto-dev/nparse-plus/commit/4627d106276befccec65087948386475192b0e1d))
+
+### Features
+
+- Named trigger groups with move/rename; GINA imports keep full folder paths
+  ([`88988d2`](https://github.com/prokopto-dev/nparse-plus/commit/88988d27eb31e5e6a47af3deea42ba55c8a4cf8a))
+
+- Preview overlay elements in position mode and allow per-region repositioning
+  ([`bc56a60`](https://github.com/prokopto-dev/nparse-plus/commit/bc56a60e1203e761e83e695ab30a517b5d9654a0))
+
+- Restore last-open windows on launch
+  ([`e478c66`](https://github.com/prokopto-dev/nparse-plus/commit/e478c66fd8839563112e7c0f1161dcd7e7fd3550))
+
+- Sort /random rolls highest-first within their group
+  ([`c2eb338`](https://github.com/prokopto-dev/nparse-plus/commit/c2eb33820d3ffe2e2d0c8ce276ac2d66af803d24))
+
+
 ## v1.6.1 (2026-07-18)
 
 ### Bug Fixes
