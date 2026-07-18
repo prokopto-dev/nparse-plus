@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QPoint, Qt, QTimer
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,7 +42,7 @@ from nparseplus.core.timers import (
     Row,
     SpellRow,
 )
-from nparseplus.ui import theme
+from nparseplus.ui import appquit, theme
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -74,13 +74,18 @@ class BackendLike(Protocol):
 def row_sort_key(row: Row, now: datetime, mode: str) -> tuple:
     """Sort key for rows under one group header.
 
-    ``"alphabetical"`` orders by name; ``"time_remaining"`` (default) orders
-    soonest-to-expire first. Counters have no ``ends_at`` so they sort last
-    under the time mode, name-tiebroken.
+    Rolls always sort by roll value descending (name-casefold tiebreak),
+    regardless of ``mode`` — every roll in a group shares one window, so
+    time-remaining is meaningless between them. Otherwise ``"alphabetical"``
+    orders by name and ``"time_remaining"`` (default) orders soonest-to-expire
+    first; counters have no ``ends_at`` so they sort last under the time mode,
+    name-tiebroken. All keys are ``(number, str)`` tuples so they compare.
     """
     name_key = row.name.casefold()
+    if isinstance(row, RollRow):
+        return (-row.roll, name_key)
     if mode == "alphabetical":
-        return (name_key,)
+        return (0, name_key)
     ends_at = getattr(row, "ends_at", None)
     if ends_at is None:
         return (float("inf"), name_key)
@@ -502,12 +507,21 @@ class SpellTimerWindow(QWidget):
         if self._on_save is not None:
             self._on_save()
 
+    def _app_quitting(self) -> bool:
+        """True on any quit path — aboutToQuit, tray Quit, or macOS Cmd+Q
+        (which closes windows via closeAllWindows before aboutToQuit fires)."""
+        return self._quitting or appquit.is_quitting() or QCoreApplication.closingDown()
+
     def _on_app_quit(self) -> None:
         self._quitting = True
-        self.persist_state(shown=self.isVisible())
+        # App quit must never flip ``shown`` downward: it already reflects the
+        # last deliberate visibility choice (toggle / user close). On Cmd+Q the
+        # windows were closed by closeAllWindows() before this fires, so
+        # isVisible() would clobber — persist geometry/opacity, keep ``shown``.
+        self.persist_state(shown=self._state.shown)
 
     def closeEvent(self, event) -> None:
-        if not self._quitting:
+        if not self._app_quitting():
             self.persist_state(shown=False)
         super().closeEvent(event)
 

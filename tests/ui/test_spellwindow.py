@@ -172,12 +172,81 @@ def test_row_sort_key_helper():
         total_duration_s=90.0,
     )
     counter = CounterRow(name="Tashan", group="Joe", updated_at=NOW)
-    # alphabetical: name-only key.
-    assert row_sort_key(slow, NOW, "alphabetical") == ("slow",)
+    roll = RollRow(
+        name="Joe",
+        group=" Random -- 333",
+        updated_at=NOW,
+        roll=42,
+        max_roll=333,
+        ends_at=NOW + timedelta(seconds=30),
+        total_duration_s=30.0,
+    )
+    # alphabetical: (0, name) so all keys are comparable (number, str) tuples.
+    assert row_sort_key(slow, NOW, "alphabetical") == (0, "slow")
     # time_remaining: seconds-left first, name tiebreak.
     assert row_sort_key(slow, NOW, "time_remaining") == (90.0, "slow")
     # counters have no ends_at -> sort last (infinite), name-tiebroken.
     assert row_sort_key(counter, NOW, "time_remaining") == (float("inf"), "tashan")
+    # rolls sort by roll value descending regardless of mode, name-tiebroken.
+    assert row_sort_key(roll, NOW, "time_remaining") == (-42, "joe")
+    assert row_sort_key(roll, NOW, "alphabetical") == (-42, "joe")
+
+
+ROLL_GROUP = " Random -- 333"
+
+
+def _add_roll(backend, roller: str, value: int) -> None:
+    backend.timers.add_roll(
+        RollRow(
+            name=roller,
+            group=ROLL_GROUP,
+            updated_at=NOW,
+            roll=value,
+            max_roll=333,
+            ends_at=NOW + timedelta(seconds=30),
+            total_duration_s=30.0,
+        )
+    )
+
+
+def _rendered_rolls(window, rollers: set[str]) -> list[str]:
+    return [n for n in window.current_row_names() if n in rollers]
+
+
+def test_rolls_render_highest_first(qtbot):
+    backend = make_backend()
+    _add_roll(backend, "Joe", 42)
+    _add_roll(backend, "Amy", 88)
+    _add_roll(backend, "Zed", 15)
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Highest roll first regardless of insertion order.
+    assert _rendered_rolls(window, {"Joe", "Amy", "Zed"}) == ["Amy", "Joe", "Zed"]
+
+
+def test_rolls_render_highest_first_even_in_alphabetical_mode(qtbot):
+    backend = make_backend()
+    backend.settings.spellwindow.row_sort = "alphabetical"
+    _add_roll(backend, "Joe", 42)
+    _add_roll(backend, "Amy", 88)
+    _add_roll(backend, "Zed", 15)
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Alphabetical mode does not apply to rolls — still roll-descending.
+    assert _rendered_rolls(window, {"Joe", "Amy", "Zed"}) == ["Amy", "Joe", "Zed"]
+
+
+def test_equal_rolls_tiebreak_on_name_casefold(qtbot):
+    backend = make_backend()
+    _add_roll(backend, "zed", 50)
+    _add_roll(backend, "amy", 50)
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Equal roll values -> name casefold ascending.
+    assert _rendered_rolls(window, {"zed", "amy"}) == ["amy", "zed"]
 
 
 def _add_category_rows(backend) -> None:
