@@ -176,6 +176,20 @@ token in `settings.pigparse_account` — never log it) + inventory watcher
 scale + tunable z-fade (legacy `maps` keys), raid_mode_auto wiring.
 `git log --oneline` narrates the build milestone by milestone.
 
+**1.7 batch** (post-1.6.1): four UX features. `/random` rolls now sort
+highest-first within their group regardless of the spell-window sort mode
+(`ui/spellwindow.py` `row_sort_key` special-cases `RollRow`). Windows that
+were open at quit reopen on launch — a Qt-free `ui/appquit.py` quit flag plus
+`QCoreApplication.closingDown()` stops overlay/spell/legacy `closeEvent`
+paths from clobbering `shown`/`toggled` on Cmd+Q. The event overlay's
+position mode now renders sample CH-lane/alert/timer-bar preview widgets (no
+live-state leakage) and supports per-region drag repositioning, persisted via
+`WindowState.overlay_regions` (`None` = legacy stacked layout, no migration).
+Triggers gained named groups: `ui/triggereditor.py` group combo +
+context-menu Move/Rename/New group (built-ins read-only), and GINA imports
+map the full nested folder path to `category` ("Raid Pack / Sebilis") instead
+of just the top folder.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.4.1 (semantic-release + platform builds + flatpak repo publish).
