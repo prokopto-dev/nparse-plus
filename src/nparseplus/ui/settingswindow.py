@@ -147,6 +147,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         *,
         discord_login_fn: Callable[[], DiscordAuthResult | None] = discord_login,
         on_log_dir_changed: Callable[[Path], None] | None = None,
+        on_audio_changed: Callable[[], None] | None = None,
         legacy_config: dict[str, Any] | None = None,
         on_legacy_save: Callable[[], None] | None = None,
         notify_legacy: Callable[[], None] | None = None,
@@ -167,6 +168,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             parent=parent,
         )
         self._on_log_dir_changed = on_log_dir_changed
+        self._on_audio_changed = on_audio_changed
         self._legacy = legacy_config if legacy_config is not None else {}
         self._on_legacy_save = on_legacy_save
         self._notify_legacy = notify_legacy
@@ -854,13 +856,14 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general = self._settings.general
         form = QFormLayout()
         self._voice = QComboBox(self)
-        self._voice.addItem("(system default)")
+        # Store the VoiceInfo.id in userData; index 0 is the empty-id default.
+        self._voice.addItem("(system default)", "")
         for voice in list_voices():
-            self._voice.addItem(voice)
+            self._voice.addItem(voice.label, voice.id)
         if general.tts_voice:
-            index = self._voice.findText(general.tts_voice)
-            if index < 0:
-                self._voice.addItem(general.tts_voice)
+            index = self._voice.findData(general.tts_voice)
+            if index < 0:  # saved voice no longer enumerable — re-add it by id
+                self._voice.addItem(general.tts_voice, general.tts_voice)
                 index = self._voice.count() - 1
             self._voice.setCurrentIndex(index)
         form.addRow("TTS voice", self._voice)
@@ -898,7 +901,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         return self._page(form)
 
     def _test_voice(self) -> None:
-        voice = "" if self._voice.currentIndex() == 0 else self._voice.currentText()
+        voice = self._voice.currentData() or ""  # id in userData; index 0 -> ""
         speaker = default_speaker(voice=voice, volume=self._volume.value() / 100)
         speaker.speak("nParse plus voice test")
 
@@ -1101,13 +1104,16 @@ class UnifiedSettingsWindow(OverlayWindowBase):
     def apply(self) -> None:
         general = self._settings.general
         old_log_dir = str(general.eq_log_dir)
+        old_voice = general.tts_voice
+        old_volume = general.global_audio_volume
         general.eq_log_dir = Path(self._log_dir.path()).expanduser()
         install = self._install_dir.path()
         general.eq_install_dir = Path(install).expanduser() if install else None
         general.update_check = self._update_check.isChecked()
         general.theme = self._theme_combo.currentData()
         general.font_size = self._font_size.value()
-        general.tts_voice = None if self._voice.currentIndex() == 0 else self._voice.currentText()
+        # Persist the VoiceInfo.id from userData (not the label); "" -> None.
+        general.tts_voice = self._voice.currentData() or None
         general.global_audio_volume = self._volume.value()
         general.overlay_text_seconds = self._overlay_seconds.value()
         general.ch_lane_retention_seconds = self._ch_retention.value()
@@ -1143,6 +1149,10 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             self._repaint_maps()  # maps canvas reads its keys at paint time
         if self._on_log_dir_changed is not None and str(general.eq_log_dir) != old_log_dir:
             self._on_log_dir_changed(Path(general.eq_log_dir))
+        if self._on_audio_changed is not None and (
+            general.tts_voice != old_voice or general.global_audio_volume != old_volume
+        ):
+            self._on_audio_changed()  # live-swap the shared TTS speaker
 
     # -- keep normal window mouse behavior (text fields, sliders) ------------------------------
 

@@ -512,3 +512,111 @@ def test_all_classes_checked_round_trips_to_none(qtbot) -> None:
     assert all(box.isChecked() for box in window._class_filter_boxes.values())
     window.apply()
     assert settings.players[0].show_spells_for_classes is None
+
+
+# -- TTS voice picker (id in userData, live swap on apply) ---------------------
+
+
+def _patch_voices(monkeypatch, voices) -> None:
+    from nparseplus.ui import settingswindow
+
+    monkeypatch.setattr(settingswindow, "list_voices", lambda: voices)
+
+
+def test_voice_combo_lists_voices_by_id(qtbot, monkeypatch) -> None:
+    from nparseplus.audio.tts import VoiceInfo
+
+    _patch_voices(
+        monkeypatch,
+        [
+            VoiceInfo(id="say:Alex", label="Alex", engine="say"),
+            VoiceInfo(id="winrt:Zira Desktop", label="Zira", engine="winrt"),
+        ],
+    )
+    window = _window(qtbot)
+    # Index 0 is the empty-id system default; enumerated voices follow, label
+    # shown but id stored in userData.
+    assert window._voice.itemData(0) == ""
+    assert window._voice.itemText(1) == "Alex"
+    assert window._voice.itemData(1) == "say:Alex"
+    assert window._voice.itemText(2) == "Zira"
+    assert window._voice.itemData(2) == "winrt:Zira Desktop"
+
+
+def test_voice_combo_restores_saved_id_not_label(qtbot, monkeypatch) -> None:
+    from nparseplus.audio.tts import VoiceInfo
+
+    _patch_voices(
+        monkeypatch,
+        [VoiceInfo(id="say:Alex", label="Alex"), VoiceInfo(id="winrt:Zira Desktop", label="Zira")],
+    )
+    settings = Settings()
+    settings.general.tts_voice = "winrt:Zira Desktop"
+    window = _window(qtbot, settings)
+    assert window._voice.currentData() == "winrt:Zira Desktop"
+    assert window._voice.currentText() == "Zira"
+
+
+def test_voice_combo_readds_missing_saved_id(qtbot, monkeypatch) -> None:
+    _patch_voices(monkeypatch, [])  # nothing enumerable (e.g. headless platform)
+    settings = Settings()
+    settings.general.tts_voice = "say:Vanished"
+    window = _window(qtbot, settings)
+    assert window._voice.currentData() == "say:Vanished"
+
+
+def test_test_voice_uses_id_and_apply_persists_id(qtbot, monkeypatch) -> None:
+    from nparseplus.audio.tts import VoiceInfo
+    from nparseplus.ui import settingswindow
+
+    _patch_voices(monkeypatch, [VoiceInfo(id="say:Alex", label="Alex")])
+    used: list[tuple[str, float]] = []
+
+    class _FakeSpeaker:
+        def speak(self, text: str) -> None:
+            return
+
+    def _fake_default_speaker(voice="", volume=1.0):
+        used.append((voice, volume))
+        return _FakeSpeaker()
+
+    monkeypatch.setattr(settingswindow, "default_speaker", _fake_default_speaker)
+    settings = Settings()
+    window = _window(qtbot, settings)
+    window._voice.setCurrentIndex(1)  # the Alex row
+    window._test_voice()
+    assert used[-1][0] == "say:Alex"  # id passed to the speaker, not the label
+    window.apply()
+    assert settings.general.tts_voice == "say:Alex"
+
+
+def test_apply_default_voice_stores_none(qtbot, monkeypatch) -> None:
+    from nparseplus.audio.tts import VoiceInfo
+
+    _patch_voices(monkeypatch, [VoiceInfo(id="say:Alex", label="Alex")])
+    settings = Settings()
+    settings.general.tts_voice = "say:Alex"
+    window = _window(qtbot, settings)
+    window._voice.setCurrentIndex(0)  # (system default)
+    window.apply()
+    assert settings.general.tts_voice is None
+
+
+def test_apply_swaps_speaker_only_when_audio_changes(qtbot, monkeypatch) -> None:
+    from nparseplus.audio.tts import VoiceInfo
+
+    _patch_voices(monkeypatch, [VoiceInfo(id="say:Alex", label="Alex")])
+    swaps: list[None] = []
+    settings = Settings()
+    window = _window(qtbot, settings, on_audio_changed=lambda: swaps.append(None))
+    # Nothing touched -> no swap (avoids churning the speaker on every Apply).
+    window.apply()
+    assert swaps == []
+    # Voice change -> one swap.
+    window._voice.setCurrentIndex(1)
+    window.apply()
+    assert swaps == [None]
+    # Volume change (voice steady) -> another swap.
+    window._volume.setValue(50)
+    window.apply()
+    assert len(swaps) == 2

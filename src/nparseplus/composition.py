@@ -94,6 +94,38 @@ class TriggerTimerSink:
             self._timers.remove_row(row)
 
 
+class _SwappableSpeaker:
+    """A Speaker whose delegate can be replaced at runtime.
+
+    ``build_backend`` hands this one object to the trigger engine and every
+    audio handler, so swapping its delegate live-changes the TTS voice for all
+    of them without rebuilding the backend (or restarting the app). Implements
+    the ``Speaker`` protocol (``speak``) plus ``close`` for shutdown parity
+    with ``SubprocessSpeaker``.
+    """
+
+    def __init__(self, delegate: object) -> None:
+        self._delegate = delegate
+
+    def speak(self, text: str) -> None:
+        self._delegate.speak(text)  # type: ignore[attr-defined]
+
+    def close(self) -> None:
+        self._close(self._delegate)
+
+    def swap(self, delegate: object) -> None:
+        old = self._delegate
+        self._delegate = delegate
+        if old is not delegate:
+            self._close(old)  # a SubprocessSpeaker leaks its worker thread otherwise
+
+    @staticmethod
+    def _close(speaker: object) -> None:
+        close = getattr(speaker, "close", None)
+        if callable(close):
+            close()
+
+
 @dataclass
 class Backend:
     """Everything the UI needs a handle on. Qt-free."""
@@ -110,6 +142,7 @@ class Backend:
     fights: FightTracker
     mob_info: MobInfoState
     player_pet: PlayerPet
+    speaker: _SwappableSpeaker
     sharing: SharingCoordinator
     sharing_client: SharingClient | None = None
     pigparse_api: PigParseApiClient | None = None
@@ -125,6 +158,25 @@ class Backend:
         if self.sharing_client is not None:
             self.sharing_client.start()
         self.driver.start()
+
+    def set_speaker(self, speaker: object) -> None:
+        """Live-swap the shared TTS voice. The trigger engine and every audio
+        handler speak through one holder, so replacing its delegate updates
+        them all at once; the previous speaker is closed."""
+        self.speaker.swap(speaker)
+
+    def rebuild_speaker(self) -> None:
+        """Rebuild the shared speaker from the current audio settings and swap
+        it in — the seam the settings window calls when TTS voice/volume change
+        so running handlers stop using the old voice without a restart."""
+        from nparseplus.audio.tts import default_speaker
+
+        self.set_speaker(
+            default_speaker(
+                voice=self.settings.general.tts_voice or "",
+                volume=self.settings.general.global_audio_volume / 100,
+            )
+        )
 
     def stop(self) -> None:
         self.driver.stop()
@@ -169,6 +221,9 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             voice=settings.general.tts_voice or "",
             volume=settings.general.global_audio_volume / 100,
         )
+    # One holder shared by the engine + every audio handler below, so a voice
+    # change only has to swap this delegate (see Backend.rebuild_speaker).
+    speaker = _SwappableSpeaker(speaker)
 
     sink = TriggerTimerSink(timers)
     engine = TriggerEngine(
@@ -327,6 +382,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         fights=fights,
         mob_info=mob_info,
         player_pet=player_pet,
+        speaker=speaker,
         sharing=sharing,
         sharing_client=sharing_client,
         pigparse_api=pigparse_api,

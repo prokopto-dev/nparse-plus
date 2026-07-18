@@ -247,6 +247,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         settings,
         on_save=save,
         on_log_dir_changed=backend.driver.set_log_dir,
+        on_audio_changed=backend.rebuild_speaker,
         legacy_config=legacy_config.data,
         on_legacy_save=legacy_config.save,
         notify_legacy=app._signals["settings"].config_updated.emit,
