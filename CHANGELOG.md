@@ -6,6 +6,22 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.6.0 (2026-07-18)
+
+### Chores
+
+- Sync uv.lock with the v1.5.1 version bump
+  ([`7f59811`](https://github.com/prokopto-dev/nparse-plus/commit/7f598114665248250e8e07ee96b3525dc254c07d))
+
+### Features
+
+- Graduate CH chain lanes into one-second cells and sweep leaked lanes
+  ([`e5da09f`](https://github.com/prokopto-dev/nparse-plus/commit/e5da09f137949333831b59522521fb163378faed))
+
+- Sectioned, sortable spell timers, CH chain tag filter, bard counter toggle
+  ([`97b37b3`](https://github.com/prokopto-dev/nparse-plus/commit/97b37b3a33ce2705cba1579905595b7071f969ef))
+
+
 ## v1.5.1 (2026-07-17)
 
 ### Bug Fixes
