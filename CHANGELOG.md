@@ -6,6 +6,17 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.6.1 (2026-07-18)
+
+### Bug Fixes
+
+- Disable raid-mode spell grouping for now
+  ([`3649555`](https://github.com/prokopto-dev/nparse-plus/commit/364955563e9c2abd9a148c13cb44f8f21e54cf5a))
+
+- Move the CH lane target name into its own column
+  ([`545eb72`](https://github.com/prokopto-dev/nparse-plus/commit/545eb7291c50b58bd3dfbc9ca06cb901fbca4686))
+
+
 ## v1.6.0 (2026-07-18)
 
 ### Chores
