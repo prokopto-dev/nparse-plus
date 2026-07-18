@@ -15,9 +15,12 @@ from nparseplus.audio.tts import (
     NullSpeaker,
     Speaker,
     SubprocessSpeaker,
+    VoiceInfo,
     WindowsSpeaker,
     default_speaker,
+    parse_espeak_voices,
     parse_say_voices,
+    parse_windows_voices,
 )
 
 
@@ -124,6 +127,100 @@ def test_windows_command_is_a_powershell_one_liner() -> None:
         speaker.close()
 
 
+def test_windows_command_empty_and_sapi_prefix_use_system_speech() -> None:
+    # Empty voice -> System.Speech, no SelectVoice.
+    blank = WindowsSpeaker(voice="", volume=0.5)
+    try:
+        script = blank._command("hi")[-1]
+        assert "System.Speech" in script
+        assert "SelectVoice" not in script
+        assert "SynthesizeTextToStream" not in script
+    finally:
+        blank.close()
+
+    # sapi: prefix -> System.Speech with the prefix stripped before SelectVoice.
+    sapi = WindowsSpeaker(voice="sapi:David", volume=0.5)
+    try:
+        script = sapi._command("hi")[-1]
+        assert "System.Speech" in script
+        assert "SelectVoice('David')" in script
+        assert "sapi:" not in script
+    finally:
+        sapi.close()
+
+
+def test_windows_command_winrt_prefix_uses_winrt_synthesis() -> None:
+    speaker = WindowsSpeaker(voice="winrt:Microsoft Aria (Natural)", volume=0.5)
+    try:
+        cmd = speaker._command("it's dead")
+        assert cmd[0] == "powershell"
+        script = cmd[-1]
+        # WinRT branch: matches the DisplayName and synthesises to a stream.
+        assert "Microsoft Aria (Natural)" in script
+        assert "SynthesizeTextToStream" in script
+        assert "SpeechSynthesis.SpeechSynthesizer" in script
+        assert "$s.Options.AudioVolume = 0.50" in script
+        assert "it''s dead" in script  # quote-escaped text
+        # Robustness fallback to System.Speech is present.
+        assert "System.Speech" in script
+    finally:
+        speaker.close()
+
+
+def test_parse_windows_voices_dedupes_preferring_winrt() -> None:
+    stdout = (
+        "SAPI\tMicrosoft David Desktop\n"
+        "SAPI\tMicrosoft Zira Desktop\n"
+        "SAPI\tShared Voice (Natural)\n"
+        "WINRT\tShared Voice (Natural)\n"
+        "WINRT\tMicrosoft Aria\n"
+        "\n"
+    )
+    voices = parse_windows_voices(stdout)
+    by_id = {v.id: v for v in voices}
+
+    david = by_id["sapi:Microsoft David Desktop"]
+    assert david.label == "Microsoft David Desktop"
+    assert david.engine == "sapi"
+
+    aria = by_id["winrt:Microsoft Aria"]
+    assert aria.label == "Microsoft Aria (Natural)"  # (Natural) appended
+    assert aria.engine == "winrt"
+
+    # "Shared Voice (Natural)" appears as both SAPI and WINRT with the same
+    # label; the WinRT record wins and the SAPI one is dropped.
+    shared = [v for v in voices if v.label == "Shared Voice (Natural)"]
+    assert len(shared) == 1
+    assert shared[0].engine == "winrt"
+    assert shared[0].id == "winrt:Shared Voice (Natural)"
+
+
+def test_parse_windows_voices_tolerates_literal_backslash_t() -> None:
+    # Single-quoted PowerShell emits a literal "\t", not a real tab.
+    voices = parse_windows_voices("SAPI\\tMicrosoft David\nWINRT\\tMicrosoft Aria\n")
+    assert voices == [
+        VoiceInfo(id="sapi:Microsoft David", label="Microsoft David", engine="sapi"),
+        VoiceInfo(id="winrt:Microsoft Aria", label="Microsoft Aria (Natural)", engine="winrt"),
+    ]
+
+
+def test_parse_espeak_voices() -> None:
+    stdout = (
+        "Pty Language       Age/Gender VoiceName          File                 Other Languages\n"
+        " 5  af              --/M      Afrikaans           gmw/af\n"
+        " 5  en-us           --/M      English             gmw/en-US\n"
+        " 5  de              --/M      German              gmw/de\n"
+        "\n"
+    )
+    voices = parse_espeak_voices(stdout)
+    assert voices == [
+        VoiceInfo(id="af", label="Afrikaans (af)", engine="espeak"),
+        VoiceInfo(id="en-us", label="English (en-us)", engine="espeak"),
+        VoiceInfo(id="de", label="German (de)", engine="espeak"),
+    ]
+    assert parse_espeak_voices("") == []
+
+
 def test_espeak_command_maps_volume_to_amplitude() -> None:
     speaker = EspeakSpeaker(voice="en-us", volume=0.5, executable="espeak-ng")
     try:
@@ -140,5 +237,19 @@ def test_parse_say_voices() -> None:
         "Ellen               nl_BE    # Hallo, mijn naam is Ellen.\n"
         "not a voice line\n"
     )
-    assert parse_say_voices(output) == ["Alex", "Bad News", "Ellen"]
+    assert parse_say_voices(output) == [
+        VoiceInfo(id="Alex", label="Alex", engine="say"),
+        VoiceInfo(id="Bad News", label="Bad News", engine="say"),
+        VoiceInfo(id="Ellen", label="Ellen", engine="say"),
+    ]
     assert parse_say_voices("") == []
+
+
+def test_say_voice_id_round_trips_through_mac_speaker() -> None:
+    # A say VoiceInfo.id is a bare name -> passed straight through as `voice`.
+    voice = VoiceInfo(id="Alex", label="Alex", engine="say")
+    speaker = MacSaySpeaker(voice=voice.id, volume=1.0)
+    try:
+        assert speaker._command("hi")[1:3] == ["-v", "Alex"]
+    finally:
+        speaker.close()
