@@ -68,21 +68,24 @@ def test_window_state_dict_handling(tmp_path: Path) -> None:
     assert load_settings(path).windows["brand_new_overlay"].shown is True
 
 
-def test_load_ignores_removed_show_trigger_timers_key(tmp_path: Path) -> None:
-    # The old single "Custom Timer" section split into Mob/Roll/Custom; the
-    # show_trigger_timers key was removed. An older settings.json that still
-    # carries it must load without error (extras are ignored) and the new
-    # toggles fall back to their defaults.
+def test_load_ignores_removed_spellwindow_keys(tmp_path: Path) -> None:
+    # Removed keys: show_trigger_timers (the old single "Custom Timer"
+    # section split into Mob/Roll/Custom) and raid_mode_auto (the adaptive
+    # raid regrouping was dropped — targets are always the headers). An
+    # older settings.json still carrying them must load without error
+    # (extras are ignored) and the new toggles fall back to their defaults.
     path = tmp_path / "settings.json"
     save_settings(Settings(), path)
     data = json.loads(path.read_text(encoding="utf-8"))
     data["spellwindow"]["show_trigger_timers"] = False
+    data["spellwindow"]["raid_mode_auto"] = True
     path.write_text(json.dumps(data), encoding="utf-8")
     loaded = load_settings(path)
     assert loaded.spellwindow.show_mob_timers is True
     assert loaded.spellwindow.show_roll_timers is True
     assert loaded.spellwindow.show_custom_timers is True
     assert not hasattr(loaded.spellwindow, "show_trigger_timers")
+    assert not hasattr(loaded.spellwindow, "raid_mode_auto")
 
 
 def test_atomic_write_leaves_valid_json_and_no_tmp(tmp_path: Path) -> None:

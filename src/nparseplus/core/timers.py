@@ -1,10 +1,19 @@
 """TimersService — Qt-free registry of spell/timer/counter/roll rows.
 
 Port of the row bookkeeping in EQTool's SpellWindowViewModel.cs (TryAdd
-overloads, TryRemoveUnambiguousSpell*, UpdateSpells expiry, adaptive
-grouping, ClearYouSpells/AddSavedYouSpells persistence). Rendering (colors,
+overloads, TryRemoveUnambiguousSpell*, UpdateSpells expiry,
+ClearYouSpells/AddSavedYouSpells persistence). Rendering (colors,
 visibility, WPF grouping) stays in the UI layer; this service only owns the
 rows and notifies observers on change.
+
+Deliberate divergence: EQTool's adaptive raid regrouping (UpdateSpells /
+RaidModeEnabled — flipping player buffs to group-by-spell when targets
+outnumber spells) is DISABLED for now. Targets are always the headers and
+spells always the rows. The flip inverted the window's mental model, and
+its global orientation flag desynced from rows whose is_target_player was
+set after add (post-/who), leaving stuck spell-headers the toggle couldn't
+fix. A redesign (per-row orientation tracking) is on the roadmap if raid
+mode returns.
 """
 
 from __future__ import annotations
@@ -119,11 +128,6 @@ class TimersService:
         # Called from tick() with the rows that just expired (nparseplus
         # extension — the C# UpdateSpells drops them silently).
         self.on_expired: list[Callable[[list[Row]], None]] = []
-        # Adaptive grouping state (SpellWindowViewModel.PCSpellsGroupedByTarget).
-        self._pc_grouped_by_target = False
-        # Gate for _adaptive_regroup (EQTool RaidModeEnabled); composition
-        # points this at Settings.spellwindow.raid_mode_auto.
-        self.raid_mode_provider: Callable[[], bool] = lambda: True
 
     # -- observation ---------------------------------------------------------
 
@@ -146,8 +150,6 @@ class TimersService:
     # -- adds (TryAdd overloads) ----------------------------------------------
 
     def add_spell(self, row: SpellRow, overwrite: bool = True) -> SpellRow:
-        if row.is_target_player and self._pc_grouped_by_target and row.group != YOU_GROUP:
-            row.name, row.group = row.group, row.name
         if overwrite:
             existing = next(
                 (
@@ -276,7 +278,6 @@ class TimersService:
 
     def clear_all_other_spells(self) -> None:
         """ClearAllOtherSpells: drop player-target spell rows except your own."""
-        self._pc_grouped_by_target = False
         self._rows = [
             row
             for row in self._rows
@@ -287,7 +288,7 @@ class TimersService:
     # -- time ------------------------------------------------------------------
 
     def tick(self, now: datetime) -> list[Row]:
-        """Remove expired rows; returns them. Also runs adaptive regrouping."""
+        """Remove expired rows; returns them."""
 
         def _is_expired(row: Row) -> bool:
             if isinstance(row, CounterRow):
@@ -298,34 +299,11 @@ class TimersService:
         for row in expired:
             self._rows.remove(row)
 
-        self._adaptive_regroup()
         if expired:
             for callback in list(self.on_expired):
                 callback(expired)
             self._notify()
         return expired
-
-    def _adaptive_regroup(self) -> None:
-        """UpdateSpells: if player-buff rows span more targets than distinct
-        spells, flip to grouping the window by spell instead of by target."""
-        player_spells = [
-            row
-            for row in self._rows
-            if isinstance(row, SpellRow) and row.is_target_player and row.group != YOU_GROUP
-        ]
-        if not self.raid_mode_provider():
-            # Raid mode off: restore per-target grouping if we had flipped.
-            if self._pc_grouped_by_target:
-                for row in player_spells:
-                    row.name, row.group = row.group, row.name
-                self._pc_grouped_by_target = False
-            return
-        groups = {row.group for row in player_spells}
-        names = {row.name for row in player_spells}
-        if len(groups) > len(names):
-            for row in player_spells:
-                row.name, row.group = row.group, row.name
-            self._pc_grouped_by_target = not self._pc_grouped_by_target
 
     # -- persistence (camp/login) -----------------------------------------------
 

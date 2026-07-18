@@ -16,7 +16,6 @@ and timer engine. (Per-class spell filters live on the
 | **Show roll timers** | Show the **Roll Timers** section: Ring 8 and Scout Charisa server roll windows. |
 | **Show custom timers** | Show the **Custom Timers** section: countdowns started by [triggers](../features/triggers.md), [chat commands](../features/chat-timers.md), and shared remote timers. |
 | **Guess ambiguous spells** | When several spells share one cast message, show the best guess instead of nothing. |
-| **Auto raid-mode grouping** | Automatically condense the overlay when many casters are around. |
 | **Announce respawn-timer expiry** | Speak/alert when a [respawn timer](../features/respawn-timers.md) hits zero. |
 | **Buff-fade warning** | Seconds of remaining time at which a buff row switches to its warning state (0 disables). |
 | **Speak buff-fade warnings** | Also speak the warning via [TTS](../features/tts.md). |

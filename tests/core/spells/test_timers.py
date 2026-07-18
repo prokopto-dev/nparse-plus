@@ -188,43 +188,18 @@ def test_export_and_restore_you_spells(timers: TimersService, spell_book: SpellB
     assert rows[0].ends_at == now + timedelta(seconds=100)
 
 
-def test_adaptive_regrouping_swaps_when_targets_exceed_spells(
+def test_grouping_stays_by_target_even_when_targets_exceed_spells(
     timers: TimersService, spell_book: SpellBook
 ) -> None:
-    # Same buff on three targets: window regroups by spell name instead.
+    """Regression: EQTool's adaptive raid regrouping (flip to group-by-spell
+    when targets outnumber spells) is deliberately not ported — targets are
+    ALWAYS the headers and spells the rows, before and after ticks."""
     for target in ("Joe", "Bob", "Ann"):
         timers.add_spell(_spell_row(spell_book, name="Aegolism", group=target, seconds=100))
     timers.tick(T0 + timedelta(seconds=1))
     rows = timers.rows_of(SpellRow)
-    assert {row.group for row in rows} == {"Aegolism"}
-    assert {row.name for row in rows} == {"Joe", "Bob", "Ann"}
-    # New rows added while flipped adopt the flipped orientation.
+    assert {row.group for row in rows} == {"Joe", "Bob", "Ann"}
+    assert {row.name for row in rows} == {"Aegolism"}
+    # New rows keep target-as-group too.
     added = timers.add_spell(_spell_row(spell_book, name="Aegolism", group="Zed", seconds=100))
-    assert added.group == "Aegolism" and added.name == "Zed"
-
-
-def test_raid_mode_off_disables_regrouping(timers: TimersService, spell_book: SpellBook) -> None:
-    timers.raid_mode_provider = lambda: False
-    for target in ("Joe", "Bob", "Ann"):
-        timers.add_spell(_spell_row(spell_book, name="Aegolism", group=target, seconds=100))
-    timers.tick(T0 + timedelta(seconds=1))
-    rows = timers.rows_of(SpellRow)
-    assert {row.group for row in rows} == {"Joe", "Bob", "Ann"}
-    assert {row.name for row in rows} == {"Aegolism"}
-
-
-def test_raid_mode_turned_off_restores_target_grouping(
-    timers: TimersService, spell_book: SpellBook
-) -> None:
-    enabled = True
-    timers.raid_mode_provider = lambda: enabled
-    for target in ("Joe", "Bob", "Ann"):
-        timers.add_spell(_spell_row(spell_book, name="Aegolism", group=target, seconds=100))
-    timers.tick(T0 + timedelta(seconds=1))
-    assert {row.group for row in timers.rows_of(SpellRow)} == {"Aegolism"}
-
-    enabled = False
-    timers.tick(T0 + timedelta(seconds=2))
-    rows = timers.rows_of(SpellRow)
-    assert {row.group for row in rows} == {"Joe", "Bob", "Ann"}
-    assert {row.name for row in rows} == {"Aegolism"}
+    assert added.group == "Zed" and added.name == "Aegolism"

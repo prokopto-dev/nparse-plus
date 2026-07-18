@@ -116,7 +116,10 @@ class SpellWindowSettings(BaseModel):
     # New (EQTool parity) options:
     you_only_spells: bool = False
     show_random_rolls: bool = True
-    raid_mode_auto: bool = True
+    # (Removed: raid_mode_auto — EQTool's adaptive raid regrouping is
+    # disabled for now (desync bug; see core/timers.py); targets are always
+    # the headers. Old keys are ignored on load, like show_trigger_timers
+    # below.)
     # nparseplus extension: how rows sort under each group header. Default
     # "time_remaining" puts the soonest-to-expire row at the top (counters,
     # which never expire, sort last); "alphabetical" is the legacy order.

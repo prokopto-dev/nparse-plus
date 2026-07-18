@@ -30,6 +30,12 @@ the next cast is expected to be declared. Off by default, toggleable.
 fixed period *after* expiry and flash, prompting you to request a rebuff
 or recast on a target — click to dismiss. Toggleable.
 
+**Raid-mode grouping, redesigned** — the EQTool-style "group buffs by
+spell when targets outnumber spells" view is disabled for now: its global
+flip desynced on targets recognized mid-fight, leaving stuck headers. If
+it returns, it will track orientation per row and stay strictly opt-in —
+targets remain the headers by default.
+
 ## Distribution & platform
 
 Longer-horizon packaging work, waiting on time (and in some cases, money):

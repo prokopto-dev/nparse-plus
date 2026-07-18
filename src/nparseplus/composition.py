@@ -157,7 +157,6 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     zones = load_zone_database()
     spells = load_spell_book(_spells_path(settings))
     timers = TimersService()
-    timers.raid_mode_provider = lambda: settings.spellwindow.raid_mode_auto
 
     ctx = ParseContext(bus=bus, player=player, spells=spells, zones=zones, settings=settings)
     pipeline = LogPipeline(build_parser_chain(), ctx)

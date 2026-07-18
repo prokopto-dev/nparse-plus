@@ -50,8 +50,6 @@ Spell rows show their **gem icon** from the spell data.
   in [Settings → Spell Timers](../settings/spell-timers.md). Ambiguous
   casts (several spells share one cast message) show a best guess when
   enabled.
-- **Raid mode** — with many casters around, rows can auto-group to stay
-  readable (Auto raid-mode grouping in Settings → Spell Timers).
 - **Hide whole sections** — don't care about Boats, Mob Timers, Roll Timers,
   or Custom Timers? Each built-in section (and random rolls) has its own show/
   hide toggle in [Settings → Spell Timers](../settings/spell-timers.md).

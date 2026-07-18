@@ -658,13 +658,6 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "closest-level guess. Off: ambiguous casts start no timer."
         )
         form.addRow("Guess ambiguous spells", self._best_guess)
-        self._raid_mode = QCheckBox(self)
-        self._raid_mode.setChecked(spellwindow.raid_mode_auto)
-        self._raid_mode.setToolTip(
-            "When buff rows span more targets than distinct spells (raids), "
-            "regroup the window by spell instead of by target."
-        )
-        form.addRow("Auto raid-mode grouping", self._raid_mode)
         self._respawn_audio = QCheckBox(self)
         self._respawn_audio.setChecked(spellwindow.respawn_expiry_audio)
         self._respawn_audio.setToolTip(
@@ -1133,7 +1126,6 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.show_roll_timers = self._show_roll_timers.isChecked()
         spellwindow.show_custom_timers = self._show_custom_timers.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
-        spellwindow.raid_mode_auto = self._raid_mode.isChecked()
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()
         spellwindow.buff_fade_warning_seconds = self._buff_fade_secs.value()
         spellwindow.buff_fade_warning_audio = self._buff_fade_audio.isChecked()

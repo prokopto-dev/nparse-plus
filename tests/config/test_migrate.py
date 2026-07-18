@@ -121,7 +121,6 @@ def test_migrate_maps_and_spellwindow(tmp_path: Path) -> None:
     # New options keep their defaults.
     assert spells.you_only_spells is False
     assert spells.show_random_rolls is True
-    assert spells.raid_mode_auto is True
 
 
 def test_migrate_window_states(tmp_path: Path) -> None:
