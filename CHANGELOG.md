@@ -6,6 +6,30 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.9.0 (2026-07-18)
+
+### Chores
+
+- Sync uv.lock to current package version
+  ([`cec7c49`](https://github.com/prokopto-dev/nparse-plus/commit/cec7c49303135dcecc3ef54b6ef5632fbe1222c9))
+
+### Documentation
+
+- Update CLAUDE.md status for the 1.9 batch
+  ([`134f9f3`](https://github.com/prokopto-dev/nparse-plus/commit/134f9f3c899d598c8d65d14f095ddccd125d5815))
+
+### Features
+
+- Bundle espeak-ng in the Flatpak so Linux TTS works out of the box
+  ([`4495103`](https://github.com/prokopto-dev/nparse-plus/commit/44951038edd39930ab395010a05a6453a4be5e10))
+
+- Enumerate all TTS voices on Windows (SAPI + WinRT natural) and Linux espeak-ng
+  ([`1c175a0`](https://github.com/prokopto-dev/nparse-plus/commit/1c175a0dedcfde0125665e3bd4c1b429cccfb05e))
+
+- Voice picker lists every installed voice and applies without restart
+  ([`7e7539a`](https://github.com/prokopto-dev/nparse-plus/commit/7e7539aedb3d3366a13ad02952b7887dfec53963))
+
+
 ## v1.8.0 (2026-07-18)
 
 ### Chores
