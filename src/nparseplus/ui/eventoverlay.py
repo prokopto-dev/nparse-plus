@@ -18,8 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QSizeGrip,
+    QStyle,
+    QStyleOption,
     QVBoxLayout,
     QWidget,
 )
@@ -47,7 +49,20 @@ DEFAULT_BAR_COLOR = "steelblue"
 # so healers keep a stable anchor for who is being chain-healed.
 CH_CHIP_SECONDS = 11.0
 CH_LANE_HEIGHT = 30
+# The lane is graduated into 10 one-second cells (EQTool GetOrCreateChain: a
+# 10-cell strip, each ``ActualWidth / 10`` wide, numbered 1..10 in red). A chip
+# is exactly one cell wide and slides ``width + chip.width`` (= 11 cells) over
+# ``CH_CHIP_SECONDS`` (11 s), so each cell is exactly 1 s of travel and the
+# 10-cell bar spans ~one 10 s Complete Heal cast.
+CH_LANE_CELLS = 10
 DEFAULT_CH_LANE_RETENTION_S = 20.0
+# Safety-net sweep: the one-shot removal timers give prompt cleanup in the
+# normal case, but if a chip's ``finished`` signal never fires (animation torn
+# down mid-flight) its lane's chip list never empties and the normal removal
+# gate stays false forever. This periodic sweep force-removes any lane idle
+# past ``max(retention, chip flight) + grace`` regardless of chip bookkeeping.
+CH_LANE_SWEEP_MS = 1000
+CH_LANE_FORCE_GRACE_S = 1.0
 
 
 def resolve_color(token: str | None, fallback: str) -> str:
@@ -85,17 +100,58 @@ class _ChainLane(QFrame):
         self._target_label = QLabel(target, self)
         self._target_label.setStyleSheet("color: #cccccc; font-size: 11px; font-weight: bold;")
         self._target_label.move(4, 6)
+        self._target_label.raise_()  # keep the name above the painted cell strip
         self._target_label.show()
+
+    def cell_width(self) -> int:
+        """Width of one second-marker cell (``width / 10``, EQTool parity)."""
+        return max(1, self.width() // CH_LANE_CELLS)
+
+    def cell_geometry(self) -> list[QRect]:
+        """The 10 second-marker cell rects, left to right. Test/paint hook so the
+        cell layout is derived from the *current* width, never a hardcoded 520."""
+        cw = self.cell_width()
+        return [QRect(i * cw, 0, cw, self.height()) for i in range(CH_LANE_CELLS)]
+
+    def paintEvent(self, event) -> None:
+        # Divergence from EQTool: EQTool builds the 10-cell strip as a StackPanel
+        # of Border children sitting behind a transparent animation Canvas. Here
+        # the strip is static (fixed geometry) so we paint it directly on the
+        # lane's own surface — cheaper than 20 child widgets, and it renders
+        # behind the chip/target QLabels automatically (child widgets paint on
+        # top of the parent's paintEvent).
+        opt = QStyleOption()
+        opt.initFrom(self)
+        painter = QPainter(self)
+        # Let the stylesheet background/border/radius render first.
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, painter, self)
+        painter.setFont(self.font())
+        border = QColor("whitesmoke")
+        red = QColor("red")
+        height = self.height()
+        for i, rect in enumerate(self.cell_geometry()):
+            x, cw = rect.x(), rect.width()
+            painter.setPen(QPen(border, 1))  # 1px left/right verticals
+            painter.drawLine(x, 0, x, height)
+            painter.drawLine(x + cw - 1, 0, x + cw - 1, height)
+            painter.setPen(QPen(border, 2))  # 2px bottom accent
+            painter.drawLine(x, height - 1, x + cw, height - 1)
+            painter.setPen(red)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(i + 1))
+        painter.end()
 
     def add_chip(self, position: str) -> QLabel:
         chip = QLabel(position, self)
         chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        chip.setFixedSize(56, CH_LANE_HEIGHT - 6)
+        # Pin the chip to exactly one second-marker cell (EQTool: chip width =
+        # ActualWidth / 10) so each cell stays exactly 1 s of chip travel.
+        chip.setFixedSize(self.cell_width(), CH_LANE_HEIGHT - 6)
         chip.setStyleSheet(
             "background-color: forestgreen; color: white; font-weight: bold;"
             " border: 1px solid black; border-radius: 3px;"
         )
         chip.move(self.width(), 3)  # enter from the right edge
+        chip.raise_()  # chips slide on top of the painted cell strip
         chip.show()
         self.chips.append(chip)
 
@@ -199,6 +255,11 @@ class EventOverlayWindow(QWidget):
         self._bar_timer = QTimer(self)
         self._bar_timer.setInterval(BAR_TICK_MS)
         self._bar_timer.timeout.connect(self._tick_bars)
+
+        # Safety net for CH lanes: runs only while lanes exist (see sweep).
+        self._sweep_timer = QTimer(self)
+        self._sweep_timer.setInterval(CH_LANE_SWEEP_MS)
+        self._sweep_timer.timeout.connect(self._sweep_lanes)
 
         # Position-mode chrome (hidden unless editing).
         self._edit_hint = QLabel(
@@ -315,6 +376,8 @@ class EventOverlayWindow(QWidget):
             lane.show()
         lane.last_call = datetime.now()
         lane.add_chip(event.position or "?")
+        if not self._sweep_timer.isActive():
+            self._sweep_timer.start()
         # Re-check just past the retention window of THIS call; earlier
         # timers fire harmlessly (retention not yet elapsed).
         QTimer.singleShot(
@@ -322,6 +385,18 @@ class EventOverlayWindow(QWidget):
             lambda: self._maybe_remove_lane(target),
         )
         self._update_visibility()
+
+    def _remove_lane(self, target: str) -> None:
+        """Tear a lane out of the layout and the dict. Idempotent, and
+        defensive: severs the chip-done callback so any late ``_chip_done``
+        (from an animation finishing during teardown) cannot re-enter."""
+        lane = self._chain_lanes.pop(target, None)
+        if lane is None:
+            return
+        lane.on_chip_done = None
+        lane.chips.clear()
+        self._lanes_layout.removeWidget(lane)
+        lane.deleteLater()
 
     def _maybe_remove_lane(self, target: str) -> None:
         """Remove a lane only when it has no chips in flight AND the retention
@@ -331,9 +406,21 @@ class EventOverlayWindow(QWidget):
             return
         idle_s = (datetime.now() - lane.last_call).total_seconds()
         if not lane.chips and idle_s >= self._ch_lane_retention_s:
-            self._lanes_layout.removeWidget(lane)
-            lane.deleteLater()
-            del self._chain_lanes[target]
+            self._remove_lane(target)
+        self._update_visibility()
+
+    def _sweep_lanes(self) -> None:
+        """Safety net: force-remove any lane idle past the retention window and
+        the chip flight time, regardless of chip bookkeeping. This catches the
+        leak where a chip's ``finished`` signal never fires and the normal
+        ``_maybe_remove_lane`` gate (``not lane.chips``) stays false forever."""
+        now = datetime.now()
+        force_after = max(self._ch_lane_retention_s, CH_CHIP_SECONDS) + CH_LANE_FORCE_GRACE_S
+        for target, lane in list(self._chain_lanes.items()):
+            if (now - lane.last_call).total_seconds() >= force_after:
+                self._remove_lane(target)
+        if not self._chain_lanes:
+            self._sweep_timer.stop()
         self._update_visibility()
 
     def _on_overlay_event(self, event: OverlayEvent) -> None:

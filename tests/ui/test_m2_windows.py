@@ -149,6 +149,39 @@ def test_event_overlay_ch_chain_lanes(qtbot) -> None:
     assert overlay.is_active()
 
 
+def test_ch_lane_has_ten_second_marker_cells(qtbot) -> None:
+    """The lane is graduated into 10 one-second marker cells, each width/10
+    (EQTool GetOrCreateChain's 10-cell strip), derived from the current width."""
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes["Tanky"]
+    cells = lane.cell_geometry()
+    assert len(cells) == 10
+    expected = lane.width() // 10
+    assert all(cell.width() == expected for cell in cells)
+    # Cells tile the lane left-to-right from x=0.
+    assert [cell.x() for cell in cells] == [i * expected for i in range(10)]
+
+
+def test_ch_chip_is_exactly_one_cell_wide(qtbot) -> None:
+    """A chip spans exactly one second-marker cell so each cell is 1 s of travel."""
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes["Tanky"]
+    assert lane.chips
+    assert lane.chips[0].width() == lane.cell_width()
+
+
 def test_ch_lane_retention_keeps_lane_after_chips(qtbot) -> None:
     from nparseplus.core.events import CompleteHealEvent
 
@@ -183,6 +216,56 @@ def test_ch_lane_never_removed_with_chips_in_flight(qtbot) -> None:
     lane.last_call = lane.last_call - timedelta(seconds=999)
     overlay._maybe_remove_lane("Tanky")
     assert "Tanky" in overlay.current_chain_lanes()
+
+
+def test_ch_lane_sweep_force_removes_stuck_lane(qtbot) -> None:
+    """Regression: a lane whose chips never empty (e.g. a chip animation's
+    ``finished`` never fired) must still be force-removed by the sweep once it
+    is idle past the force threshold — it must not linger indefinitely."""
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow(ch_lane_retention_s=20.0)
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes["Tanky"]
+    # Simulate a wedged chip whose _chip_done never runs: the chips list never
+    # empties, so _maybe_remove_lane's gate would stay false forever.
+    lane.chips.append(QLabel("stuck", lane))
+    lane.last_call = lane.last_call - timedelta(seconds=999)
+    overlay._sweep_lanes()
+    assert "Tanky" not in overlay._chain_lanes
+    assert "Tanky" not in overlay.current_chain_lanes()
+    # Gone from the layout too.
+    lane_widgets = [
+        overlay._lanes_layout.itemAt(i).widget() for i in range(overlay._lanes_layout.count())
+    ]
+    assert lane not in lane_widgets
+    # Sweep timer stands down once no lanes remain.
+    assert not overlay._sweep_timer.isActive()
+
+
+def test_ch_lane_sweep_keeps_recent_lane(qtbot) -> None:
+    """Non-regression: a lane with a recent last_call (still within the force
+    window) survives the sweep even if it has chips in flight."""
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.core.events import CompleteHealEvent
+
+    overlay = EventOverlayWindow(ch_lane_retention_s=20.0)
+    qtbot.addWidget(overlay)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    lane = overlay._chain_lanes["Tanky"]
+    lane.chips.append(QLabel("inflight", lane))
+    lane.last_call = datetime.now()
+    overlay._sweep_lanes()
+    assert "Tanky" in overlay._chain_lanes
+    assert overlay._sweep_timer.isActive()
 
 
 def test_event_overlay_position_mode_persists_geometry(qtbot) -> None:
