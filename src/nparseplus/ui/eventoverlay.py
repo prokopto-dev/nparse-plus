@@ -34,14 +34,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from nparseplus.config.settings import WindowState
+from nparseplus.config.settings import OverlayRegion, WindowState
 from nparseplus.core.events import CompleteHealEvent, OverlayEvent, TimerBarEvent
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
 BAR_WIDTH = 320
+LANES_WIDTH = 520
 DEFAULT_TEXT_COLOR = "red"
 DEFAULT_BAR_COLOR = "steelblue"
+
+# Positioning-mode chrome.
+EDIT_HINT_HEIGHT = 56
+# The stacked layout's outer margins (mirrors the main QVBoxLayout margins);
+# region-mode anchors measure from these lines.
+REGION_MARGIN_TOP = 40
+REGION_MARGIN_BOTTOM = 60
 
 # CH chain lane (EQTool EventOverlay.xaml.cs): each CH call is a green chip
 # labeled with the caster's position, sliding across the lane over the CH
@@ -143,8 +151,9 @@ class _ChainLane(QFrame):
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(i + 1))
         painter.end()
 
-    def add_chip(self, position: str) -> QLabel:
-        chip = QLabel(position, self)
+    def _make_chip(self, text: str) -> QLabel:
+        """Build a green CH chip (styling shared by live and static chips)."""
+        chip = QLabel(text, self)
         chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # Pin the chip to exactly one second-marker cell (EQTool: chip width =
         # ActualWidth / 10) so each cell stays exactly 1 s of chip travel.
@@ -153,6 +162,10 @@ class _ChainLane(QFrame):
             "background-color: forestgreen; color: white; font-weight: bold;"
             " border: 1px solid black; border-radius: 3px;"
         )
+        return chip
+
+    def add_chip(self, position: str) -> QLabel:
+        chip = self._make_chip(position)
         chip.move(self.width(), 3)  # enter from the right edge
         chip.raise_()  # chips slide on top of the painted cell strip
         chip.show()
@@ -164,6 +177,18 @@ class _ChainLane(QFrame):
         animation.setEndValue(QPoint(-chip.width(), 3))
         animation.finished.connect(lambda: self._chip_done(chip))
         animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        return chip
+
+    def add_static_chip(self, text: str, cell_index: int) -> QLabel:
+        """A non-animated chip pinned onto a fixed cell (positioning-mode
+        preview only): NOT appended to ``self.chips`` so it never participates
+        in live chip bookkeeping or the lane-removal gate."""
+        chip = self._make_chip(text)
+        cells = self.cell_geometry()
+        idx = max(0, min(cell_index, len(cells) - 1))
+        chip.move(cells[idx].x(), 3)
+        chip.raise_()
+        chip.show()
         return chip
 
     def _chip_done(self, chip: QLabel) -> None:
@@ -214,6 +239,9 @@ class EventOverlayWindow(QWidget):
         self._text_color = ""
         self._bars: dict[str, _TimerBar] = {}
         self._chain_lanes: dict[str, _ChainLane] = {}
+        # Positioning-mode sample widgets: tracked ONLY here, never registered
+        # in ``_bars``/``_chain_lanes`` and never written to ``_center_text``.
+        self._preview_widgets: list[QWidget] = []
 
         self._center_text = QLabel("", self)
         self._center_text.setObjectName("EventOverlayText")
@@ -230,25 +258,48 @@ class EventOverlayWindow(QWidget):
         self._bars_layout.setContentsMargins(0, 0, 0, 0)
         self._bars_layout.setSpacing(2)
 
-        bars_host = QWidget(self)
-        bars_host.setFixedWidth(BAR_WIDTH)
-        bars_host.setLayout(self._bars_layout)
+        self._bars_host = QWidget(self)
+        self._bars_host.setObjectName("OverlayBarsHost")
+        self._bars_host.setFixedWidth(BAR_WIDTH)
+        self._bars_host.setLayout(self._bars_layout)
 
         self._lanes_layout = QVBoxLayout()
         self._lanes_layout.setContentsMargins(0, 0, 0, 0)
         self._lanes_layout.setSpacing(3)
-        lanes_host = QWidget(self)
-        lanes_host.setMinimumWidth(520)
-        lanes_host.setLayout(self._lanes_layout)
+        self._lanes_host = QWidget(self)
+        self._lanes_host.setObjectName("OverlayLanesHost")
+        self._lanes_host.setMinimumWidth(520)
+        self._lanes_host.setLayout(self._lanes_layout)
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(20, 40, 20, 60)
-        layout.addWidget(lanes_host, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch(2)
-        layout.addWidget(self._center_text, 0)
-        layout.addStretch(3)
-        layout.addWidget(bars_host, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.setLayout(layout)
+        # ``_center_text`` (and the preview alert label) live in their own host
+        # so the alert region can be positioned independently in region mode.
+        self._alert_layout = QVBoxLayout()
+        self._alert_layout.setContentsMargins(0, 0, 0, 0)
+        self._alert_layout.setSpacing(4)
+        self._alert_layout.addWidget(self._center_text)
+        self._alert_host = QWidget(self)
+        self._alert_host.setObjectName("OverlayAlertHost")
+        self._alert_host.setLayout(self._alert_layout)
+
+        self._main_layout = QVBoxLayout()
+        self._main_layout.setContentsMargins(20, 40, 20, 60)
+        self._main_layout.addWidget(self._lanes_host, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._main_layout.addStretch(2)
+        self._main_layout.addWidget(self._alert_host, 0)
+        self._main_layout.addStretch(3)
+        self._main_layout.addWidget(self._bars_host, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.setLayout(self._main_layout)
+
+        # Small dashed-border title chips shown over each region while editing.
+        self._region_titles: dict[str, QLabel] = {}
+        for key, text in (("lanes", "CH chains"), ("alert", "Alerts"), ("bars", "Timer bars")):
+            chip = QLabel(text, self)
+            chip.setStyleSheet(
+                "color: white; background-color: rgba(30, 60, 120, 220);"
+                " font-size: 11px; font-weight: bold; padding: 1px 4px;"
+            )
+            chip.hide()
+            self._region_titles[key] = chip
 
         self._clear_timer = QTimer(self)
         self._clear_timer.setSingleShot(True)
@@ -280,6 +331,15 @@ class EventOverlayWindow(QWidget):
         self._size_grip.setFixedSize(24, 24)
         self._size_grip.hide()
 
+        # Region-drag bookkeeping (populated while dragging a single region).
+        self._drag_region: str | None = None
+        self._region_drag_start: QPoint | None = None
+        self._region_drag_base = (0, 0)
+
+        # If regions were persisted, switch out of the stacked QVBoxLayout now.
+        if self._region_mode():
+            self._activate_region_layout()
+
         self.hide()
 
     # -- position mode -----------------------------------------------------------
@@ -304,13 +364,19 @@ class EventOverlayWindow(QWidget):
                 | Qt.WindowType.WindowStaysOnTopHint
                 | Qt.WindowType.Tool
             )
-            self._edit_hint.setGeometry(0, 0, self.width(), self.height())
+            # A top strip only, so the sample content beneath stays visible.
+            self._edit_hint.setGeometry(0, 0, self.width(), EDIT_HINT_HEIGHT)
             self._edit_hint.show()
+            self._edit_hint.raise_()
             self._size_grip.move(self.width() - 26, self.height() - 26)
             self._size_grip.show()
+            self._show_preview()
+            self._set_region_chrome(True)
             self.show()
             self.raise_()
         else:
+            self._clear_preview()
+            self._set_region_chrome(False)
             self._edit_hint.hide()
             self._size_grip.hide()
             self._apply_locked_flags()
@@ -326,19 +392,45 @@ class EventOverlayWindow(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        if self._region_mode():
+            self._layout_regions()
         if self._edit_mode:
-            self._edit_hint.setGeometry(0, 0, self.width(), self.height())
+            self._edit_hint.setGeometry(0, 0, self.width(), EDIT_HINT_HEIGHT)
             self._size_grip.move(self.width() - 26, self.height() - 26)
+            self._position_region_chrome()
+
+    def _region_at(self, pos: QPoint) -> str | None:
+        """The region key whose host contains ``pos`` (self-local), or None."""
+        for key, host in self._region_hosts().items():
+            if host.isVisible() and host.geometry().contains(pos):
+                return key
+        return None
 
     def mousePressEvent(self, event) -> None:
         if self._edit_mode and event.button() == Qt.MouseButton.LeftButton:
+            # Hit-test the three regions first; a hit drags that region alone.
+            if self._state is not None:
+                key = self._region_at(event.position().toPoint())
+                if key is not None:
+                    self._begin_region_drag(key, event.globalPosition().toPoint())
+                    event.accept()
+                    return
+            # Miss: fall back to moving the whole window.
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        if self._edit_mode and self._drag_offset is not None:
+        if self._edit_mode and self._drag_region is not None:
+            delta = event.globalPosition().toPoint() - self._region_drag_start
+            region = self._state.overlay_regions[self._drag_region]
+            region.dx = self._region_drag_base[0] + delta.x()
+            region.dy = self._region_drag_base[1] + delta.y()
+            self._layout_regions()
+            self._position_region_chrome()
+            event.accept()
+        elif self._edit_mode and self._drag_offset is not None:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
             event.accept()
         else:
@@ -346,7 +438,154 @@ class EventOverlayWindow(QWidget):
 
     def mouseReleaseEvent(self, event) -> None:
         self._drag_offset = None
+        self._drag_region = None
         super().mouseReleaseEvent(event)
+
+    # -- per-region positioning --------------------------------------------------
+
+    def _region_hosts(self) -> dict[str, QWidget]:
+        return {"lanes": self._lanes_host, "alert": self._alert_host, "bars": self._bars_host}
+
+    def _region_mode(self) -> bool:
+        return self._state is not None and self._state.overlay_regions is not None
+
+    def _begin_region_drag(self, key: str, global_start: QPoint) -> None:
+        # First region drag initializes overlay_regions to defaults matching
+        # the current stacked positions, so the untouched regions don't jump.
+        if self._state.overlay_regions is None:
+            self._state.overlay_regions = {
+                "lanes": OverlayRegion(anchor="top"),
+                "alert": OverlayRegion(anchor="center"),
+                "bars": OverlayRegion(anchor="bottom"),
+            }
+            self._activate_region_layout()
+        region = self._state.overlay_regions.setdefault(key, OverlayRegion())
+        self._drag_region = key
+        self._region_drag_start = global_start
+        self._region_drag_base = (region.dx, region.dy)
+
+    def _activate_region_layout(self) -> None:
+        """Take the three hosts out of the stacked QVBoxLayout so they can be
+        placed manually. The stretch items stay behind harmlessly."""
+        for host in self._region_hosts().values():
+            self._main_layout.removeWidget(host)
+        self._layout_regions()
+
+    def _layout_regions(self) -> None:
+        """Place each host at its anchor line + (dx, dy), centered horizontally
+        on the window center by default. Lanes/bars grow downward from the
+        anchor point; the legacy (None) path never calls this."""
+        regions = self._state.overlay_regions if self._state is not None else None
+        if not regions:
+            return
+        w, h = self.width(), self.height()
+        cx = w // 2
+        defaults = {
+            "lanes": max(LANES_WIDTH, self._lanes_host.sizeHint().width()),
+            "alert": w,
+            "bars": BAR_WIDTH,
+        }
+        for key, host in self._region_hosts().items():
+            region = regions.get(key)
+            if region is None:
+                continue
+            host_w = region.width if region.width is not None else defaults[key]
+            host_h = max(1, host.sizeHint().height())
+            host.resize(host_w, host_h)
+            x = cx + region.dx - host_w // 2
+            if region.anchor == "top":
+                y = REGION_MARGIN_TOP + region.dy
+            elif region.anchor == "center":
+                y = h // 2 + region.dy
+            else:  # bottom
+                y = h - REGION_MARGIN_BOTTOM - host_h + region.dy
+            host.move(x, y)
+            host.show()
+
+    # -- positioning-mode preview & chrome ---------------------------------------
+
+    def _set_region_chrome(self, on: bool) -> None:
+        """Dashed border + title chip on each region host while editing."""
+        for key, host in self._region_hosts().items():
+            title = self._region_titles[key]
+            if on:
+                host.setStyleSheet(
+                    f"#{host.objectName()} {{ border: 1px dashed rgba(255, 255, 255, 170); }}"
+                )
+                title.show()
+                title.raise_()
+            else:
+                host.setStyleSheet("")
+                title.hide()
+        if on:
+            self._position_region_chrome()
+
+    def _position_region_chrome(self) -> None:
+        for key, host in self._region_hosts().items():
+            title = self._region_titles[key]
+            if not title.isVisible():
+                continue
+            title.adjustSize()
+            p = host.pos()
+            title.move(p.x(), max(0, p.y()))
+            title.raise_()
+
+    def _show_preview(self) -> None:
+        """Populate each region with labeled sample content so the user sees
+        where CH lanes, alerts, and timer bars land. Idempotent; adds nothing
+        to live state and publishes no events."""
+        if self._preview_widgets:
+            return
+        # Sample CH lane with two static chips.
+        lane = _ChainLane("Sample Target", self)
+        lane.setFixedWidth(LANES_WIDTH)
+        row = self._build_lane_row("Sample Target", lane)
+        self._lanes_layout.addWidget(row)
+        lane.show()
+        lane.add_static_chip("CH", 2)
+        lane.add_static_chip("CH", 6)
+        self._preview_widgets.append(row)
+
+        # Sample alert label styled exactly like ``_center_text`` (yellow, like
+        # the bard counter). Divergence from the Phase-1 note: inserted into the
+        # alert host's layout (not the main layout) so it rides the alert region.
+        label = QLabel("ENRAGED — sample alert", self)
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: yellow; font-size: 32px; font-weight: bold;")
+        shadow = QGraphicsDropShadowEffect(label)
+        shadow.setOffset(0, 0)
+        shadow.setBlurRadius(8)
+        shadow.setColor(QColor("black"))
+        label.setGraphicsEffect(shadow)
+        self._alert_layout.insertWidget(self._alert_layout.indexOf(self._center_text) + 1, label)
+        label.show()
+        self._preview_widgets.append(label)
+
+        # Sample timer bars (do NOT start ``_bar_timer`` — these never tick).
+        for bar in (
+            self._make_bar_widget("Sample Timer", DEFAULT_BAR_COLOR, 60, 45),
+            self._make_bar_widget("CH Warning", "red", 10, 6),
+        ):
+            self._bars_layout.addWidget(bar)
+            bar.show()
+            self._preview_widgets.append(bar)
+
+        if self._region_mode():
+            self._layout_regions()
+
+    def _clear_preview(self) -> None:
+        """Remove all preview widgets from their layouts. Idempotent."""
+        if not self._preview_widgets:
+            return
+        for widget in self._preview_widgets:
+            for lay in (self._lanes_layout, self._alert_layout, self._bars_layout):
+                lay.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+        self._preview_widgets.clear()
+        if self._region_mode():
+            self._layout_regions()
 
     def mouseDoubleClickEvent(self, event) -> None:
         if self._edit_mode:
@@ -458,24 +697,33 @@ class EventOverlayWindow(QWidget):
         self._clear_timer.start()
         self._update_visibility()
 
+    def _make_bar_widget(
+        self, name: str, color: str | None, total: int, remaining: int
+    ) -> QProgressBar:
+        """Build a styled countdown bar (shared by live bars and preview)."""
+        total = max(1, int(total))
+        bar = QProgressBar(self)
+        bar.setObjectName("EventOverlayBar")
+        bar.setRange(0, total)
+        bar.setValue(max(0, min(total, int(remaining))))
+        bar.setFixedHeight(22)
+        bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        resolved = resolve_color(color, DEFAULT_BAR_COLOR)
+        bar.setStyleSheet(
+            "QProgressBar { background-color: rgba(10, 10, 10, 200);"
+            " border: 1px solid #ffffff; color: #ffffff; font-weight: bold; }"
+            f"QProgressBar::chunk {{ background-color: {resolved}; }}"
+        )
+        bar.setFormat(f"{name}  {max(0, int(remaining))}s")
+        return bar
+
     def _on_timer_bar_event(self, event: TimerBarEvent) -> None:
         existing = self._bars.pop(event.name, None)
         if existing is not None:  # re-raise restarts the bar
             self._bars_layout.removeWidget(existing.widget)
             existing.widget.deleteLater()
         total = max(1, int(event.total_seconds))
-        bar = QProgressBar(self)
-        bar.setObjectName("EventOverlayBar")
-        bar.setRange(0, total)
-        bar.setValue(total)
-        bar.setFixedHeight(22)
-        bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        color = resolve_color(event.bar_color, DEFAULT_BAR_COLOR)
-        bar.setStyleSheet(
-            "QProgressBar { background-color: rgba(10, 10, 10, 200);"
-            " border: 1px solid #ffffff; color: #ffffff; font-weight: bold; }"
-            f"QProgressBar::chunk {{ background-color: {color}; }}"
-        )
+        bar = self._make_bar_widget(event.name, event.bar_color, total, total)
         entry = _TimerBar(
             name=event.name,
             ends_at=datetime.now() + timedelta(seconds=total),
@@ -520,6 +768,10 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _update_visibility(self) -> None:
+        if self._region_mode():
+            # Content height changes (bars/lanes added/removed) shift the
+            # downward-growing regions; keep them anchored.
+            self._layout_regions()
         if self._edit_mode:
             if not self.isVisible():
                 self.show()

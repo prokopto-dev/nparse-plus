@@ -28,6 +28,21 @@ def _default_eq_log_dir() -> Path:
     return Path.home() / "Games/EverQuest/Logs"
 
 
+class OverlayRegion(BaseModel):
+    """Per-region placement for the event overlay's three zones.
+
+    ``anchor`` picks the vertical reference line inside the overlay window
+    (top margin / vertical center / bottom margin); ``dx``/``dy`` nudge the
+    region off that anchor (px, +x right / +y down). ``width`` overrides the
+    region's default host width (None = the region's built-in default).
+    """
+
+    anchor: Literal["top", "center", "bottom"] = "top"
+    dx: int = 0
+    dy: int = 0
+    width: int | None = None
+
+
 class WindowState(BaseModel):
     """Persisted per-window UI state (geometry + overlay flags)."""
 
@@ -38,6 +53,9 @@ class WindowState(BaseModel):
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     shown: bool = False
     auto_hide_menu: bool = True
+    # Event-overlay per-region placement (keys: "lanes", "alert", "bars").
+    # None = the legacy stacked QVBoxLayout (regions not independently placed).
+    overlay_regions: dict[str, OverlayRegion] | None = None
 
 
 class WindowLayoutPreset(BaseModel):

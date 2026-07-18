@@ -7,6 +7,7 @@ from pathlib import Path
 
 from nparseplus.config.settings import (
     DebouncedSaver,
+    OverlayRegion,
     PlayerInfo,
     Settings,
     WindowLayoutPreset,
@@ -66,6 +67,39 @@ def test_window_state_dict_handling(tmp_path: Path) -> None:
     loaded.windows["brand_new_overlay"] = WindowState(shown=True)
     save_settings(loaded, path)
     assert load_settings(path).windows["brand_new_overlay"].shown is True
+
+
+def test_overlay_regions_roundtrip(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    settings = Settings()
+    settings.windows["events"] = WindowState(
+        overlay_regions={
+            "lanes": OverlayRegion(anchor="top", dx=10, dy=-4, width=540),
+            "alert": OverlayRegion(anchor="center", dx=-8, dy=20),
+            "bars": OverlayRegion(anchor="bottom"),
+        }
+    )
+    save_settings(settings, path)
+    loaded = load_settings(path)
+    regions = loaded.windows["events"].overlay_regions
+    assert regions is not None
+    assert regions["lanes"] == OverlayRegion(anchor="top", dx=10, dy=-4, width=540)
+    assert regions["alert"].anchor == "center"
+    assert regions["bars"].width is None
+
+
+def test_legacy_settings_without_overlay_regions_load_none(tmp_path: Path) -> None:
+    # A settings.json predating the feature has no overlay_regions key; it must
+    # load with the field defaulting to None (legacy stacked layout).
+    path = tmp_path / "settings.json"
+    settings = Settings()
+    settings.windows["events"] = WindowState(geometry=(0, 0, 800, 600))
+    save_settings(settings, path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["windows"]["events"]["overlay_regions"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded = load_settings(path)
+    assert loaded.windows["events"].overlay_regions is None
 
 
 def test_load_ignores_removed_spellwindow_keys(tmp_path: Path) -> None:
