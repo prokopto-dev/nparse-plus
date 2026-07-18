@@ -1,8 +1,8 @@
 """RespawnExpiryNotifier — speak when a respawn timer runs out (eqtool #239).
 
 nparseplus addition: the request is an open EQTool issue, nothing to port.
-Watches TimersService.on_expired for "--Dead-- <victim>" rows in the shared
-custom-timer group and announces the pop via the injected Speaker (opt-in,
+Watches TimersService.on_expired for "--Dead-- <victim>" rows in the Mob
+Timers group and announces the pop via the injected Speaker (opt-in,
 ``spellwindow.respawn_expiry_audio``). Runs on the driver thread — the
 Speaker protocol implementations queue onto their own worker.
 """
@@ -12,8 +12,7 @@ from __future__ import annotations
 import re
 
 from nparseplus.config.settings import SpellWindowSettings
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
-from nparseplus.core.timers import Row, TimerRow, TimersService
+from nparseplus.core.timers import MOB_TIMER_GROUP, Row, TimerRow, TimersService
 from nparseplus.core.triggers.engine import Speaker
 
 _DEAD_PREFIX = "--Dead-- "
@@ -35,7 +34,7 @@ class RespawnExpiryNotifier:
         for row in rows:
             if (
                 isinstance(row, TimerRow)
-                and row.group == CUSTOM_TIMER_GROUP
+                and row.group == MOB_TIMER_GROUP
                 and row.name.startswith(_DEAD_PREFIX)
             ):
                 victim = _DUP_SUFFIX.sub("", row.name[len(_DEAD_PREFIX) :])

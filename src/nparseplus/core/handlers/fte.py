@@ -24,10 +24,9 @@ from nparseplus.core.bus import EventBus
 from nparseplus.core.enums import Server
 from nparseplus.core.events import FTEEvent, OverlayEvent
 from nparseplus.core.handlers.base import BaseHandler
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.pigparse import PigParseApi, SubmitFn
 from nparseplus.core.player import ActivePlayer
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import MOB_TIMER_GROUP, TimerRow, TimersService
 from nparseplus.core.triggers.engine import Speaker
 
 NINETY_SEVEN_PERCENT_MOBS = ("Zlandicar", "Dozekar the Cursed", "Lord Yelinak")
@@ -90,7 +89,7 @@ class FTEHandler(BaseHandler):
         self.timers.add_timer(
             TimerRow(
                 name=name,
-                group=CUSTOM_TIMER_GROUP,
+                group=MOB_TIMER_GROUP,
                 updated_at=event.timestamp,
                 ends_at=event.timestamp + timedelta(seconds=seconds),
                 total_duration_s=float(seconds),

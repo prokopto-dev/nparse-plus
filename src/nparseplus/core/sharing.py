@@ -43,9 +43,8 @@ from nparseplus.core.events import (
     WaypointsReceivedRemoteEvent,
 )
 from nparseplus.core.geometry import Loc
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import tracking_distance
-from nparseplus.core.timers import TimerRow
+from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow
 
 if TYPE_CHECKING:
     from nparseplus.config.settings import PlayerInfo, Settings
@@ -226,7 +225,7 @@ class SharingCoordinator:
         pull row LightPink and falls back to the Feign Death icon; our rows
         carry no color/icon — the spell window styles the group.)"""
         ends_at = now + timedelta(seconds=item.duration_in_seconds)
-        existing = self.timers.find(item.name, CUSTOM_TIMER_GROUP)
+        existing = self.timers.find(item.name, TRIGGER_TIMER_GROUP)
         if isinstance(existing, TimerRow):
             existing.ends_at = ends_at
             existing.updated_at = now
@@ -234,7 +233,7 @@ class SharingCoordinator:
         self.timers.add_timer(
             TimerRow(
                 name=item.name,
-                group=CUSTOM_TIMER_GROUP,
+                group=TRIGGER_TIMER_GROUP,
                 updated_at=now,
                 ends_at=ends_at,
                 total_duration_s=float(item.duration_in_seconds),

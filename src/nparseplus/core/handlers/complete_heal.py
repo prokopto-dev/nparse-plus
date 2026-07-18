@@ -14,6 +14,8 @@ The comms parser has already normalized the player's own messages to sender
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from nparseplus.core.bus import EventBus
 from nparseplus.core.ch_chain import CHChainService, parse_ch_message
 from nparseplus.core.enums import CommsChannel
@@ -33,12 +35,14 @@ class CompleteHealCommsHandler(BaseHandler):
         bus: EventBus,
         player: ActivePlayer,
         npcs: frozenset[str] = frozenset(),
-        ch_chain_tag: str = "",
+        ch_chain_tag: Callable[[], str] = lambda: "",
     ) -> None:
         super().__init__(bus, player)
         self.npcs = npcs
-        # Mirrors the ChChainTagOverlay setting: when set, only calls
-        # prefixed with this raid tag are accepted.
+        # Mirrors the ChChainTagOverlay setting: when the provider returns a
+        # non-empty tag, only calls prefixed with that raid tag are accepted.
+        # A live provider (rather than a stored string) lets settings saves
+        # take effect without a restart.
         self.ch_chain_tag = ch_chain_tag
         bus.subscribe(CommsEvent, self._on_comms)
 
@@ -49,7 +53,7 @@ class CompleteHealCommsHandler(BaseHandler):
             event.sender,
             event.content,
             event.timestamp,
-            configured_tag=self.ch_chain_tag,
+            configured_tag=self.ch_chain_tag(),
             npcs=self.npcs,
             line=event.line,
             line_number=event.line_number,

@@ -11,9 +11,8 @@ from nparseplus.core.handlers.api_timers import (
     scout_row,
 )
 from nparseplus.core.handlers.boat import BOATS_GROUP
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import ActivePlayer
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import ROLL_TIMER_GROUP, TimerRow, TimersService
 from nparseplus.core.zones import load_zone_database
 from nparseplus.net.pigparse_models import BoatActivity, RollTimer
 from nparseplus.net.worker import ImmediateWorker
@@ -88,7 +87,7 @@ def test_service_refreshes_every_5_minutes_and_rebuilds_rows() -> None:
     ring_rows = [
         r
         for r in timers.rows_of(TimerRow)
-        if r.group == CUSTOM_TIMER_GROUP and r.name.startswith(RING_ROLL_NAME)
+        if r.group == ROLL_TIMER_GROUP and r.name.startswith(RING_ROLL_NAME)
     ]
     assert len(ring_rows) == 1
 
@@ -99,7 +98,7 @@ def test_service_refreshes_every_5_minutes_and_rebuilds_rows() -> None:
     ring_rows = [
         r
         for r in timers.rows_of(TimerRow)
-        if r.group == CUSTOM_TIMER_GROUP and r.name.startswith(RING_ROLL_NAME)
+        if r.group == ROLL_TIMER_GROUP and r.name.startswith(RING_ROLL_NAME)
     ]
     assert len(ring_rows) == 1  # replaced, not duplicated
 

@@ -106,25 +106,37 @@ def test_guild_call(h: Harness) -> None:
 
 
 def test_configured_tag_is_captured(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "GG"
+    h.comms_handler.ch_chain_tag = lambda: "GG"
     h.push("Hanbox tells the guild, 'GG 001 CH --Beefwich'")
     assert_ch(h, "Beefwich", "Hanbox", "001", tag="GG")
 
 
 def test_configured_tag_mismatch_is_ignored(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "GG"
+    h.comms_handler.ch_chain_tag = lambda: "GG"
     h.push("Hanbox tells the guild, 'CA 001 CH --Beefwich'")
     assert ch_events(h) == []
 
 
+def test_configured_tag_is_live(h: Harness) -> None:
+    # The tag comes from a provider, so changing its underlying value mid-
+    # session re-filters without rebuilding the handler.
+    box = {"tag": "CA"}
+    h.comms_handler.ch_chain_tag = lambda: box["tag"]
+    h.push("Hanbox tells the guild, 'GG 001 CH --Beefwich'")
+    assert ch_events(h) == []
+    box["tag"] = "GG"
+    h.push("Hanbox tells the guild, 'GG 001 CH --Beefwich'")
+    assert_ch(h, "Beefwich", "Hanbox", "001", tag="GG")
+
+
 def test_configured_tag_mismatch_group_message(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "GGG"
+    h.comms_handler.ch_chain_tag = lambda: "GGG"
     h.push("Windarie tells the group, 'Bufzyn 111 --- CH on << Tinialita  >> --- 111'")
     assert ch_events(h) == []
 
 
 def test_your_own_call_sets_caster_you(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "CA"
+    h.comms_handler.ch_chain_tag = lambda: "CA"
     h.push("You say out of character, 'CA 002 CH -- Aaryk'")
     assert_ch(h, "Aaryk", "You", "002", tag="CA")
 
@@ -168,7 +180,7 @@ def test_letter_position_without_trailing_copy(h: Harness) -> None:
 
 
 def test_rch_call_with_tag(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "GG"
+    h.comms_handler.ch_chain_tag = lambda: "GG"
     h.push("Mutao auctions, 'GG RCH AAA -- TARGET'")
     assert_ch(h, "TARGET", "Mutao", "AAA", tag="GG")
 
@@ -214,7 +226,7 @@ def test_should_warn_of_chain_matrix() -> None:
 
 
 def test_warning_when_previous_position_calls(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "CA"
+    h.comms_handler.ch_chain_tag = lambda: "CA"
     h.push("You say out of character, 'CA 002 CH -- Aaryk'")
     assert h.speaker.spoken == []
     h.push("Hanbox says out of character, 'CA 001 CH -- Aaryk'")
@@ -224,7 +236,7 @@ def test_warning_when_previous_position_calls(h: Harness) -> None:
 
 
 def test_no_warning_for_other_positions(h: Harness) -> None:
-    h.comms_handler.ch_chain_tag = "CA"
+    h.comms_handler.ch_chain_tag = lambda: "CA"
     h.push("You say out of character, 'CA 004 CH -- Aaryk'")
     h.push("Hanbox says out of character, 'CA 001 CH -- Aaryk'")
     assert h.speaker.spoken == []

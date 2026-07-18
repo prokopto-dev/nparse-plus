@@ -10,12 +10,11 @@ from tests.core.handlers.conftest import T0, Harness
 
 from nparseplus.core.events import ConfirmedDeathEvent
 from nparseplus.core.handlers.spawn_timer import (
-    CUSTOM_TIMER_GROUP,
     SIRRAN_TIMER_NAME,
     SpawnTimerHandler,
 )
 from nparseplus.core.spells.models import Spell
-from nparseplus.core.timers import SpellRow, TimerRow
+from nparseplus.core.timers import MOB_TIMER_GROUP, SpellRow, TimerRow
 
 
 @pytest.fixture
@@ -54,13 +53,51 @@ def test_happy_path_all_three_messages(h: Harness) -> None:
 def test_slain_timer_number_increment(h: Harness) -> None:
     for _ in range(3):
         h.push("You have slain a frost giant scout!")
-    names = [r.name for r in timer_rows(h)]
+    names = sorted(r.name for r in timer_rows(h))
     assert names == [
         "--Dead-- a frost giant scout",
+        "--Dead-- a frost giant scout_1",
         "--Dead-- a frost giant scout_2",
-        "--Dead-- a frost giant scout_3",
     ]
-    assert all(r.group == CUSTOM_TIMER_GROUP for r in timer_rows(h))
+    assert all(r.group == MOB_TIMER_GROUP for r in timer_rows(h))
+
+
+def test_slain_timer_reuses_base_name_after_expiry(h: Harness) -> None:
+    # Two kills: base + _1. Expire only the base row (the _1 row outlives it),
+    # kill a third: the base name is free again and reused bare.
+    base = "--Dead-- a frost giant scout"
+    h.push("You have slain a frost giant scout!")
+    h.push("You have slain a frost giant scout!")
+    assert sorted(r.name for r in timer_rows(h)) == [base, f"{base}_1"]
+    base_row = h.timers.find(base, MOB_TIMER_GROUP)
+    suffix_row = h.timers.find(f"{base}_1", MOB_TIMER_GROUP)
+    assert base_row is not None and suffix_row is not None
+    suffix_row.ends_at = base_row.ends_at + timedelta(hours=2)
+    h.timers.tick(base_row.ends_at + timedelta(seconds=1))
+    assert h.timers.find(base, MOB_TIMER_GROUP) is None
+    assert h.timers.find(f"{base}_1", MOB_TIMER_GROUP) is not None
+    h.push("You have slain a frost giant scout!", timestamp=T0 + timedelta(minutes=1))
+    assert h.timers.find(base, MOB_TIMER_GROUP) is not None
+    assert sorted(r.name for r in timer_rows(h)) == [base, f"{base}_1"]
+
+
+def test_slain_timer_reuses_freed_suffix(h: Harness) -> None:
+    # Kill twice (base + _1), expire the _1 row while base still runs, kill
+    # again: the smallest free suffix is _1 again, not _2.
+    base = "--Dead-- a frost giant scout"
+    h.push("You have slain a frost giant scout!")
+    h.push("You have slain a frost giant scout!")
+    suffix_row = h.timers.find(f"{base}_1", MOB_TIMER_GROUP)
+    assert suffix_row is not None
+    # Base outlives the suffix row: extend the base's clock, expire only _1.
+    base_row = h.timers.find(base, MOB_TIMER_GROUP)
+    assert base_row is not None
+    base_row.ends_at = suffix_row.ends_at + timedelta(hours=1)
+    h.timers.tick(suffix_row.ends_at + timedelta(seconds=1))
+    assert h.timers.find(f"{base}_1", MOB_TIMER_GROUP) is None
+    h.push("You have slain a frost giant scout!", timestamp=T0 + timedelta(minutes=1))
+    assert h.timers.find(f"{base}_1", MOB_TIMER_GROUP) is not None
+    assert h.timers.find(f"{base}_2", MOB_TIMER_GROUP) is None
 
 
 def test_you_slain_does_not_count(h: Harness) -> None:
@@ -228,7 +265,7 @@ def test_slain_neriak(h: Harness) -> None:
 def test_respawn_timer_uses_zone_spawn_time(h: Harness, zones) -> None:
     h.player.zone = "kael"
     h.push("You have slain Derakor the Vindicator!")
-    row = h.timers.find("--Dead-- Derakor the Vindicator", CUSTOM_TIMER_GROUP)
+    row = h.timers.find("--Dead-- Derakor the Vindicator", MOB_TIMER_GROUP)
     assert row is not None
     assert row.total_duration_s == float(zones.spawn_time("Derakor the Vindicator", "kael"))
     assert row.total_duration_s == 25200.0
@@ -237,14 +274,14 @@ def test_respawn_timer_uses_zone_spawn_time(h: Harness, zones) -> None:
 def test_respawn_timer_zone_default(h: Harness, zones) -> None:
     h.player.zone = "unrest"
     h.push("You have slain a skeleton!")
-    row = h.timers.find("--Dead-- a skeleton", CUSTOM_TIMER_GROUP)
+    row = h.timers.find("--Dead-- a skeleton", MOB_TIMER_GROUP)
     assert row is not None
     assert row.total_duration_s == float(zones.get("unrest").respawn_seconds)
 
 
 def test_pos_boss_starts_sirran_timer(h: Harness) -> None:
     h.push("You have slain Keeper of Souls!")
-    row = h.timers.find(SIRRAN_TIMER_NAME, CUSTOM_TIMER_GROUP)
+    row = h.timers.find(SIRRAN_TIMER_NAME, MOB_TIMER_GROUP)
     assert row is not None
     assert row.total_duration_s == 15 * 60.0
 
@@ -283,4 +320,4 @@ def test_slain_keeps_victim_rows_under_start_new_timer(h: Harness) -> None:
     h.timers.add_spell(_victim_spell_row(h, "a frost giant scout"))
     h.push("You have slain a frost giant scout!")
     assert h.timers.find("Tainted Breath", " a frost giant scout") is not None
-    assert h.timers.find("--Dead-- a frost giant scout", CUSTOM_TIMER_GROUP) is not None
+    assert h.timers.find("--Dead-- a frost giant scout", MOB_TIMER_GROUP) is not None

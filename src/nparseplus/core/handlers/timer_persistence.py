@@ -30,10 +30,14 @@ from typing import TYPE_CHECKING
 from nparseplus.config.settings import SavedTimer, YouSpell, get_player
 from nparseplus.core.bus import EventBus
 from nparseplus.core.events import AfterPlayerChangedEvent, BeforePlayerChangedEvent
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.spells_us import SpellBook
-from nparseplus.core.timers import RespawnTimerSnapshot, TimersService, YouSpellSnapshot
+from nparseplus.core.timers import (
+    MOB_TIMER_GROUP,
+    RespawnTimerSnapshot,
+    TimersService,
+    YouSpellSnapshot,
+)
 
 if TYPE_CHECKING:
     from nparseplus.config.settings import PlayerInfo, Settings
@@ -85,7 +89,7 @@ class TimerPersistenceHandler:
         ]
         info.respawn_timers = [
             SavedTimer(name=snap.name, ends_at=snap.ends_at, total_duration_s=snap.total_duration_s)
-            for snap in self.timers.export_respawn_timers(CUSTOM_TIMER_GROUP, now)
+            for snap in self.timers.export_respawn_timers(MOB_TIMER_GROUP, now)
         ]
         if self._request_save is not None:
             self._request_save()
@@ -106,7 +110,7 @@ class TimerPersistenceHandler:
         self._restoring = True
         try:
             self.timers.clear_you_spells()
-            self.timers.remove_group(CUSTOM_TIMER_GROUP)
+            self.timers.remove_group(MOB_TIMER_GROUP)
             self.timers.restore_you_spells(
                 [
                     YouSpellSnapshot(name=item.name, total_seconds_left=item.seconds_left)
@@ -126,7 +130,7 @@ class TimerPersistenceHandler:
                     )
                     for item in info.respawn_timers
                 ],
-                CUSTOM_TIMER_GROUP,
+                MOB_TIMER_GROUP,
                 now,
             )
         finally:

@@ -12,11 +12,10 @@ from nparseplus.config.settings import PlayerInfo, SavedTimer, Settings, YouSpel
 from nparseplus.core.bus import EventBus
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import AfterPlayerChangedEvent, BeforePlayerChangedEvent
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.handlers.timer_persistence import TimerPersistenceHandler
 from nparseplus.core.player import ActivePlayer, Server
 from nparseplus.core.spells.spells_us import SpellBook, load_spell_book
-from nparseplus.core.timers import YOU_GROUP, SpellRow, TimerRow, TimersService
+from nparseplus.core.timers import MOB_TIMER_GROUP, YOU_GROUP, SpellRow, TimerRow, TimersService
 
 SPELLS_FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "spells_us.txt"
 
@@ -65,7 +64,7 @@ class Env:
         self.timers.add_timer(
             TimerRow(
                 name=name,
-                group=CUSTOM_TIMER_GROUP,
+                group=MOB_TIMER_GROUP,
                 updated_at=self.now,
                 ends_at=self.now + timedelta(seconds=seconds),
                 total_duration_s=seconds,
@@ -114,7 +113,7 @@ def test_restore_on_player_change(env: Env) -> None:
     assert spell_rows[0].ends_at == T0 + timedelta(seconds=120)
     assert [r.name for r in timer_rows] == ["--Dead-- a gnoll"]
     assert timer_rows[0].ends_at == T0 + timedelta(seconds=90)
-    assert timer_rows[0].group == CUSTOM_TIMER_GROUP
+    assert timer_rows[0].group == MOB_TIMER_GROUP
 
 
 def test_expired_respawn_dropped_on_restore(env: Env) -> None:
@@ -158,7 +157,7 @@ def test_no_profile_is_a_noop(spell_book: SpellBook) -> None:
     timers.add_timer(
         TimerRow(
             name="x",
-            group=CUSTOM_TIMER_GROUP,
+            group=MOB_TIMER_GROUP,
             updated_at=T0,
             ends_at=T0 + timedelta(seconds=5),
             total_duration_s=5.0,

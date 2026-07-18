@@ -14,10 +14,9 @@ from nparseplus.core.events import (
     RemoteWaypoint,
     WaypointsReceivedRemoteEvent,
 )
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.sharing import SharingCoordinator
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow, TimersService
 
 T0 = datetime(2026, 7, 8, 12, 0, 0)
 
@@ -112,7 +111,7 @@ def test_custom_timer_adds_row_and_publishes() -> None:
         name="Kael Faction Pull In Progress", duration_in_seconds=90, server=0
     )
     rig.deliver(event)
-    row = rig.timers.find("Kael Faction Pull In Progress", CUSTOM_TIMER_GROUP)
+    row = rig.timers.find("Kael Faction Pull In Progress", TRIGGER_TIMER_GROUP)
     assert isinstance(row, TimerRow)
     assert row.ends_at == T0 + timedelta(seconds=90)
     assert event in rig.published
@@ -136,7 +135,7 @@ def test_custom_timer_wrong_server_dropped() -> None:
     rig = Rig()
     rig.deliver(CustomTimerReceivedRemoteEvent(name="X", duration_in_seconds=90, server=2))
     assert rig.published == []
-    assert rig.timers.find("X", CUSTOM_TIMER_GROUP) is None
+    assert rig.timers.find("X", TRIGGER_TIMER_GROUP) is None
 
 
 def test_waypoint_snapshot_published_without_self_filter() -> None:

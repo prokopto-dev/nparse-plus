@@ -66,6 +66,12 @@ class GeneralSettings(BaseModel):
     # How long a CH chain lane stays visible after the last CH call for its
     # target (chips in flight always keep the lane alive regardless).
     ch_lane_retention_seconds: float = Field(default=20.0, ge=5.0, le=300.0)
+    # Follow only CH calls prefixed with this raid tag (e.g. "GG"); blank =
+    # all calls (EQTool ChChainTagOverlay).
+    ch_chain_tag: str = ""
+    # Bard AoE hit counter: yellow overlay + TTS tally of hits/resists when a
+    # bard swarm session finalizes (EQTool BardCountHandler).
+    bard_count_enabled: bool = True
 
 
 class SharingSettings(BaseModel):
@@ -111,12 +117,22 @@ class SpellWindowSettings(BaseModel):
     you_only_spells: bool = False
     show_random_rolls: bool = True
     raid_mode_auto: bool = True
+    # nparseplus extension: how rows sort under each group header. Default
+    # "time_remaining" puts the soonest-to-expire row at the top (counters,
+    # which never expire, sort last); "alphabetical" is the legacy order.
+    row_sort: Literal["time_remaining", "alphabetical"] = "time_remaining"
     # nparseplus extension: per-category display toggles for the built-in
     # timer sections (display-only — the timers keep running and expiry
     # audio still fires while hidden).
     show_boats: bool = True
+    # show_mob_timers: mob respawn ("--Dead--"), Sirran, FTE-rule countdowns.
+    # show_roll_timers: Ring 8 / Scout Charisa server roll windows.
+    # show_custom_timers: trigger, chat-command, and shared remote timers
+    # (the merged "Custom Timers" heading — replaces the old
+    # show_trigger_timers key, which is now ignored on load).
+    show_mob_timers: bool = True
+    show_roll_timers: bool = True
     show_custom_timers: bool = True
-    show_trigger_timers: bool = True
     # nparseplus extension (EQTool's best-guess is always on): when False,
     # ambiguous cast lines (multiple candidate spells) create no timer.
     best_guess_spells: bool = True

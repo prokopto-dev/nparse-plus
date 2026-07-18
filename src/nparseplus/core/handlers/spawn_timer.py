@@ -43,11 +43,8 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.handlers.base import BaseHandler
 from nparseplus.core.player import ActivePlayer
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import MOB_TIMER_GROUP, TimerRow, TimersService
 from nparseplus.core.zones import ZoneDatabase
-
-# EQTool Models/CustomTimer.CustomerTime — the shared custom-timer group.
-CUSTOM_TIMER_GROUP = "  Custom Timer"
 
 # Plane of Sky bosses whose death starts the Sirran the Lunatic respawn.
 POS_BOSSES = frozenset(
@@ -96,7 +93,6 @@ class SpawnTimerHandler(BaseHandler):
         self._exp_message = False
         self._line_number = _NO_LINE
         self._already_emitted = False
-        self._death_counter = 1
         bus.subscribe(SlainEvent, self._on_slain)
         bus.subscribe(FactionEvent, self._on_faction)
         bus.subscribe(ExpGainedEvent, self._on_exp_gained)
@@ -185,13 +181,11 @@ class SpawnTimerHandler(BaseHandler):
         # same group, so the C# SlainHandler leaves them to expire naturally.
         if self.timer_recast() == "RestartCurrentTimer":
             self.timers.remove_group(f" {victim}" if is_npc else victim)
-        if self.timers.find(name, CUSTOM_TIMER_GROUP) is not None:
-            self._death_counter = 1 if self._death_counter >= 999 else self._death_counter + 1
-            name = f"{name}_{self._death_counter}"
+        name = self._unique_dead_name(name)
         self.timers.add_timer(
             TimerRow(
                 name=name,
-                group=CUSTOM_TIMER_GROUP,
+                group=MOB_TIMER_GROUP,
                 updated_at=timestamp,
                 ends_at=timestamp + timedelta(seconds=spawn_seconds),
                 total_duration_s=float(spawn_seconds),
@@ -202,9 +196,27 @@ class SpawnTimerHandler(BaseHandler):
             self.timers.add_timer(
                 TimerRow(
                     name=SIRRAN_TIMER_NAME,
-                    group=CUSTOM_TIMER_GROUP,
+                    group=MOB_TIMER_GROUP,
                     updated_at=timestamp,
                     ends_at=timestamp + timedelta(seconds=SIRRAN_TIMER_SECONDS),
                     total_duration_s=float(SIRRAN_TIMER_SECONDS),
                 )
             )
+
+    def _unique_dead_name(self, base: str) -> str:
+        """Smallest-free-number suffix for a "--Dead-- <victim>" row.
+
+        Bare ``base`` when no active row owns it; else the smallest ``N >= 1``
+        such that ``f"{base}_{N}"`` is free (scan bounded at 999). Expired rows
+        are dropped by TimersService.tick(), so freed names/suffixes are reused
+        naturally. Diverges from the C# (a monotonic session counter): freed
+        suffixes there climb forever and are never reused. First collision now
+        yields ``_1`` (was ``_2``).
+        """
+        if self.timers.find(base, MOB_TIMER_GROUP) is None:
+            return base
+        for n in range(1, 1000):
+            candidate = f"{base}_{n}"
+            if self.timers.find(candidate, MOB_TIMER_GROUP) is None:
+                return candidate
+        return f"{base}_999"

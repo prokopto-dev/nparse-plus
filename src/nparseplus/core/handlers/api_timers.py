@@ -18,9 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 from nparseplus.core.enums import Boat, RollTimerType
 from nparseplus.core.handlers.boat import BOATS_GROUP, boat_dock_countdowns
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.pigparse import PigParseApi, SubmitFn
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import ROLL_TIMER_GROUP, TimerRow, TimersService
 
 if TYPE_CHECKING:
     from nparseplus.core.player import ActivePlayer
@@ -55,7 +54,7 @@ def scout_row(timers: list[Any], now: datetime) -> TimerRow | None:
         name = f"{SCOUT_TIMER_NAME} (UNKNOWN)"
     return TimerRow(
         name=name,
-        group=CUSTOM_TIMER_GROUP,
+        group=ROLL_TIMER_GROUP,
         updated_at=now,
         ends_at=now + remaining,
         total_duration_s=SCOUT_TOTAL.total_seconds(),
@@ -94,7 +93,7 @@ def quake_row(timers: list[Any], now: datetime) -> TimerRow | None:
             remaining -= RING_ROLL_LEAD
     return TimerRow(
         name=RING_ROLL_NAME,
-        group=CUSTOM_TIMER_GROUP,
+        group=ROLL_TIMER_GROUP,
         updated_at=now,
         ends_at=now + remaining,
         total_duration_s=QUAKE_TOTAL.total_seconds(),
@@ -166,7 +165,7 @@ class ApiTimersService:
 
     def _apply_rolls(self, rolls: list[Any], now: datetime) -> None:
         for row in self.timers.rows_of(TimerRow):
-            if row.group == CUSTOM_TIMER_GROUP and (
+            if row.group == ROLL_TIMER_GROUP and (
                 row.name.startswith(RING_ROLL_NAME) or row.name.startswith(SCOUT_TIMER_NAME)
             ):
                 self.timers.remove_row(row)

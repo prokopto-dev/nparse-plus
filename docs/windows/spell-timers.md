@@ -4,6 +4,11 @@ The Spell Timers overlay lists every active spell, buff, debuff, cooldown,
 counter, and ad-hoc timer as a row with a name, remaining time, and a thin
 progress bar — grouped by target, with your own buffs (**You**) always first.
 
+Within each group, rows are ordered by **time remaining** (soonest-to-expire
+first) by default; switch to **alphabetical** with the *Sort timers by*
+dropdown in [Settings → Spell Timers](../settings/spell-timers.md). Counters
+(which have no countdown) always sort last under time remaining.
+
 ![Spell Timers overlay](../assets/screenshots/window--spell-timers.png)
 
 Open it from the tray → **Spell Timers**.
@@ -23,7 +28,7 @@ Bar colors carry meaning:
 | Green | Beneficial effect (buff, song) |
 | Red | Detrimental effect (debuff, DoT) on the target |
 | Blue | Cooldown (e.g. Harm Touch, Lay on Hands, discipline reuse) |
-| Purple | Ad-hoc timer (trigger timers, [chat-command timers](../features/chat-timers.md), respawn timers) |
+| Purple | Ad-hoc timer (mob/roll timers, custom trigger and [chat-command timers](../features/chat-timers.md), respawn timers) |
 | Amber | Random-roll tracking window |
 
 Spell rows show their **gem icon** from the spell data.
@@ -47,8 +52,8 @@ Spell rows show their **gem icon** from the spell data.
   enabled.
 - **Raid mode** — with many casters around, rows can auto-group to stay
   readable (Auto raid-mode grouping in Settings → Spell Timers).
-- **Hide whole sections** — don't care about Boats, mob respawn timers, or
-  trigger/chat timers? Each built-in section (and random rolls) has a show/
+- **Hide whole sections** — don't care about Boats, Mob Timers, Roll Timers,
+  or Custom Timers? Each built-in section (and random rolls) has its own show/
   hide toggle in [Settings → Spell Timers](../settings/spell-timers.md).
   Hiding is display-only; the timers keep running underneath.
 - **Right-click to clear timers** — right-click a row for *Clear '(name)'*,

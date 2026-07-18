@@ -6,6 +6,7 @@ exact; the pipeline's LineEvent firehose delivers the same payloads live.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import pytest
@@ -19,12 +20,14 @@ from nparseplus.core.timers import CounterRow, TimersService
 
 
 class BardHarness:
-    def __init__(self) -> None:
+    def __init__(self, enabled: Callable[[], bool] = lambda: True) -> None:
         self.bus = EventBus()
         self.player = ActivePlayer(name="Tester")
         self.speaker = FakeSpeaker()
         self.timers = TimersService()
-        self.handler = BardCountHandler(self.bus, self.player, self.speaker, timers=self.timers)
+        self.handler = BardCountHandler(
+            self.bus, self.player, self.speaker, timers=self.timers, enabled=enabled
+        )
         self.collector = EventCollector(self.bus)
         self._counter = 0
 
@@ -62,7 +65,32 @@ def test_hits_and_resists_in_one_session(h: BardHarness) -> None:
 def test_singular_hit_wording(h: BardHarness) -> None:
     h.line("a gnoll winces.")
     h.handler.flush()
+    # The chat-stream record is still written, but a single-hit session is
+    # suppressed from the overlay + TTS (deliberate divergence from the C#).
     assert h.summaries() == ["1 Total | 1 Hit"]
+    assert h.collector.of_type(OverlayEvent) == []
+    assert h.speaker.spoken == []
+
+
+def test_two_hit_session_emits_overlay_and_tts(h: BardHarness) -> None:
+    h.line("a gnoll winces.")
+    h.line("a rat winces.", T0 + timedelta(milliseconds=100))
+    h.handler.flush()
+    assert h.summaries() == ["2 Total | 2 Hits"]
+    assert h.speaker.spoken == ["2 Total | 2 Hits"]
+    overlay = h.collector.of_type(OverlayEvent)
+    assert overlay and overlay[-1].text == "2 Total | 2 Hits"
+
+
+def test_disabled_suppresses_overlay_and_tts() -> None:
+    h = BardHarness(enabled=lambda: False)
+    h.line("Your target resisted the Chords of Dissonance spell.")
+    h.line("Your target resisted the Chords of Dissonance spell.", T0 + timedelta(milliseconds=200))
+    h.handler.flush()
+    assert h.collector.of_type(OverlayEvent) == []
+    assert h.speaker.spoken == []
+    # The persistent chat-stream record is kept regardless of the toggle.
+    assert h.summaries() == ["2 Total | 2 Resists"]
 
 
 def test_bound_by_music_counts_as_hit(h: BardHarness) -> None:

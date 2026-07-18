@@ -22,9 +22,25 @@ from nparseplus.core.spells.spells_us import SPACE_YOU, SpellBook
 # The self-target group constant (EQSpells.SpaceYou).
 YOU_GROUP = SPACE_YOU
 
-# Group for trigger/chat-command timers (EQTool CustomTimer.TargetName is
-# per-timer; we use one shared section like the trigger overlay list).
-TRIGGER_TIMER_GROUP = "Timers"
+# The three built-in timer sections. Their string values carry leading
+# spaces ONLY to order the headers: spellwindow sorts groups casefold with
+# YOU first, and strips the spaces for display. Casefold order of the three
+# is Custom < Mob < Roll (c<m<r); all sort before "Boats" (no leading space),
+# roughly where the old single "  Custom Timer" section sat.
+#
+# TRIGGER_TIMER_GROUP holds trigger-engine, chat-command, AND shared remote
+# timers (EQTool CustomTimer.TargetName is per-timer; we use one shared
+# section). It displays as "Custom Timers" — renamed from the old "Timers"
+# value when the single respawn "Custom Timer" section split into Mob/Roll/
+# Custom.
+TRIGGER_TIMER_GROUP = "  Custom Timers"
+
+# Mob respawn ("--Dead-- <victim>"), Sirran, and FTE-rule countdowns.
+# Persistence and respawn-expiry announcements follow this group.
+MOB_TIMER_GROUP = "  Mob Timers"
+
+# Server roll windows (Ring 8 / Scout Charisa) from the PigParse API.
+ROLL_TIMER_GROUP = "  Roll Timers"
 
 # Counters are dropped when not refreshed for this long (UpdateSpells).
 COUNTER_IDLE_EXPIRY = timedelta(minutes=10)

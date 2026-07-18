@@ -272,9 +272,17 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         ZoneActivityHandler(bus, player, zones, api=pigparse_api, submit=submit),
         DisciplineCooldownHandler(bus, player, timers),
         MendWoundsHandler(bus, player, timers),
-        CompleteHealCommsHandler(bus, player, npcs=npcs),
+        CompleteHealCommsHandler(
+            bus, player, npcs=npcs, ch_chain_tag=lambda: settings.general.ch_chain_tag
+        ),
         CompleteHealHandler(bus, player, speaker=speaker),
-        BardCountHandler(bus, player, speaker=speaker, timers=timers),
+        BardCountHandler(
+            bus,
+            player,
+            speaker=speaker,
+            timers=timers,
+            enabled=lambda: settings.general.bard_count_enabled,
+        ),
         DeathLoopHandler(bus, player, speaker=speaker),
         GroupLeaderHandler(bus, player),
     ]

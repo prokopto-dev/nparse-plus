@@ -9,9 +9,11 @@ import pytest
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.handlers.boat import BOATS_GROUP
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.timers import (
+    MOB_TIMER_GROUP,
+    ROLL_TIMER_GROUP,
+    TRIGGER_TIMER_GROUP,
     YOU_GROUP,
     CounterRow,
     RollRow,
@@ -19,7 +21,12 @@ from nparseplus.core.timers import (
     TimerRow,
     TimersService,
 )
-from nparseplus.ui.spellwindow import SpellTimerWindow, bar_color, format_remaining
+from nparseplus.ui.spellwindow import (
+    SpellTimerWindow,
+    bar_color,
+    format_remaining,
+    row_sort_key,
+)
 
 pytestmark = pytest.mark.qt
 
@@ -41,7 +48,7 @@ def make_backend() -> types.SimpleNamespace:
     timers.add_timer(
         TimerRow(
             name="Custom Timer",
-            group="Timers",
+            group=TRIGGER_TIMER_GROUP,
             updated_at=NOW,
             ends_at=NOW + timedelta(seconds=30),
             total_duration_s=30.0,
@@ -54,7 +61,7 @@ def make_backend() -> types.SimpleNamespace:
 
 def test_rows_render_and_you_group_first(qtbot):
     backend = make_backend()
-    # A group sorting alphabetically before "Timers" — YOU_GROUP must still win.
+    # " a rat " sorts before the YOU group alphabetically — YOU must still win.
     backend.timers.add_spell(
         SpellRow(
             name="Tainted Breath",
@@ -73,9 +80,104 @@ def test_rows_render_and_you_group_first(qtbot):
 
     groups = window.current_groups()
     assert groups[0] == YOU_GROUP
-    assert groups == [YOU_GROUP, " a rat ", "Timers"]
+    # Custom Timers (two leading spaces) sorts before " a rat " (one).
+    assert groups == [YOU_GROUP, TRIGGER_TIMER_GROUP, " a rat "]
     names = window.current_row_names()
-    assert names == ["Clarity", "Tainted Breath", "Custom Timer"]
+    assert names == ["Clarity", "Custom Timer", "Tainted Breath"]
+
+
+def _add_you_spell(backend, name: str, minutes: float) -> None:
+    backend.timers.add_spell(
+        SpellRow(
+            name=name,
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=Spell(id=hash(name) % 9999, name=name),
+            ends_at=NOW + timedelta(minutes=minutes),
+            total_duration_s=minutes * 60.0,
+        )
+    )
+
+
+def test_default_sort_is_time_remaining_soonest_first(qtbot):
+    backend = make_backend()  # seeds Clarity in YOU at +35m
+    _add_you_spell(backend, "Zephyr", 5)  # sooner
+    _add_you_spell(backend, "Alacrity", 60)  # later
+    assert backend.settings.spellwindow.row_sort == "time_remaining"  # default
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Soonest-to-expire first, regardless of name order (YOU group).
+    you = [n for n in window.current_row_names() if n in {"Zephyr", "Clarity", "Alacrity"}]
+    assert you == ["Zephyr", "Clarity", "Alacrity"]
+
+
+def test_alphabetical_sort_ignores_time_remaining(qtbot):
+    backend = make_backend()
+    _add_you_spell(backend, "Zephyr", 5)
+    _add_you_spell(backend, "Alacrity", 60)
+    backend.settings.spellwindow.row_sort = "alphabetical"
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    you = [n for n in window.current_row_names() if n in {"Zephyr", "Clarity", "Alacrity"}]
+    assert you == ["Alacrity", "Clarity", "Zephyr"]
+
+
+def test_time_remaining_sorts_counter_last(qtbot):
+    backend = make_backend()
+    # A counter (no ends_at) shares a group with two timed rows.
+    backend.timers.add_counter(
+        CounterRow(name="Tashan", group="Joe", updated_at=NOW, is_target_player=False)
+    )
+    backend.timers.add_spell(
+        SpellRow(
+            name="Slow",
+            group="Joe",
+            updated_at=NOW,
+            is_target_player=False,
+            spell=Spell(id=11, name="Slow"),
+            ends_at=NOW + timedelta(seconds=90),
+            total_duration_s=90.0,
+            detrimental=True,
+        )
+    )
+    backend.timers.add_spell(
+        SpellRow(
+            name="Malaise",
+            group="Joe",
+            updated_at=NOW,
+            is_target_player=False,
+            spell=Spell(id=12, name="Malaise"),
+            ends_at=NOW + timedelta(seconds=30),
+            total_duration_s=30.0,
+            detrimental=True,
+        )
+    )
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Timed rows soonest-first; the counter (never expires) sorts last.
+    joe_rows = [n for n in window.current_row_names() if n in {"Malaise", "Slow", "Tashan"}]
+    assert joe_rows == ["Malaise", "Slow", "Tashan"]
+
+
+def test_row_sort_key_helper():
+    slow = SpellRow(
+        name="Slow",
+        group="Joe",
+        updated_at=NOW,
+        spell=Spell(id=11, name="Slow"),
+        ends_at=NOW + timedelta(seconds=90),
+        total_duration_s=90.0,
+    )
+    counter = CounterRow(name="Tashan", group="Joe", updated_at=NOW)
+    # alphabetical: name-only key.
+    assert row_sort_key(slow, NOW, "alphabetical") == ("slow",)
+    # time_remaining: seconds-left first, name tiebreak.
+    assert row_sort_key(slow, NOW, "time_remaining") == (90.0, "slow")
+    # counters have no ends_at -> sort last (infinite), name-tiebroken.
+    assert row_sort_key(counter, NOW, "time_remaining") == (float("inf"), "tashan")
 
 
 def _add_category_rows(backend) -> None:
@@ -103,10 +205,19 @@ def _add_category_rows(backend) -> None:
     backend.timers.add_timer(
         TimerRow(
             name="a decaying skeleton",
-            group=CUSTOM_TIMER_GROUP,
+            group=MOB_TIMER_GROUP,
             updated_at=NOW,
             ends_at=NOW + timedelta(minutes=6),
             total_duration_s=360.0,
+        )
+    )
+    backend.timers.add_timer(
+        TimerRow(
+            name="Ring 8 Roll Timer",
+            group=ROLL_TIMER_GROUP,
+            updated_at=NOW,
+            ends_at=NOW + timedelta(minutes=30),
+            total_duration_s=1800.0,
         )
     )
     backend.timers.add_roll(
@@ -136,9 +247,10 @@ def test_you_only_filter_hides_only_other_player_spell_rows(qtbot):
     names = window.current_row_names()
     assert "Aegolism" not in names  # the other player's buff hides
     assert "Clarity" in names  # yours stays
-    assert "Custom Timer" in names  # trigger timer stays
+    assert "Custom Timer" in names  # custom (trigger) timer stays
     assert "Butcherblock to Freeport" in names  # boats stay
-    assert "a decaying skeleton" in names  # respawn timers stay
+    assert "a decaying skeleton" in names  # mob respawn timers stay
+    assert "Ring 8 Roll Timer" in names  # roll timers stay
     assert "Joe" in names  # the roll stays
 
 
@@ -146,8 +258,9 @@ def test_you_only_filter_hides_only_other_player_spell_rows(qtbot):
     ("setting", "gone", "kept"),
     [
         ("show_boats", "Butcherblock to Freeport", "a decaying skeleton"),
-        ("show_custom_timers", "a decaying skeleton", "Butcherblock to Freeport"),
-        ("show_trigger_timers", "Custom Timer", "Butcherblock to Freeport"),
+        ("show_mob_timers", "a decaying skeleton", "Butcherblock to Freeport"),
+        ("show_roll_timers", "Ring 8 Roll Timer", "Butcherblock to Freeport"),
+        ("show_custom_timers", "Custom Timer", "Butcherblock to Freeport"),
         ("show_random_rolls", "Joe", "Custom Timer"),
     ],
 )
@@ -178,6 +291,7 @@ def test_all_categories_visible_by_default(qtbot):
         "Custom Timer",
         "Butcherblock to Freeport",
         "a decaying skeleton",
+        "Ring 8 Roll Timer",
         "Joe",
     ):
         assert name in names
@@ -262,7 +376,7 @@ def test_refresh_drops_removed_rows(qtbot):
     window.refresh()
     assert "Custom Timer" in window.current_row_names()
 
-    row = backend.timers.find("Custom Timer", "Timers")
+    row = backend.timers.find("Custom Timer", TRIGGER_TIMER_GROUP)
     backend.timers.remove_row(row)
     window.refresh()
 
@@ -420,11 +534,11 @@ def test_context_target_resolves_row_header_and_empty(qtbot):
     assert row is not None and row.name == "Clarity"
     assert group == YOU_GROUP
 
-    header = window._headers["Timers"]
+    header = window._headers[TRIGGER_TIMER_GROUP]
     pos = header.mapTo(window, header.rect().center())
     row, group = window._context_target(pos)
     assert row is None
-    assert group == "Timers"
+    assert group == TRIGGER_TIMER_GROUP
 
     row, group = window._context_target(window.rect().bottomRight())
     assert row is None and group is None
@@ -435,10 +549,10 @@ def test_clear_row_group_and_all(qtbot):
     _add_category_rows(backend)
     window = _shown_window(qtbot, backend)
 
-    row = backend.timers.find("Custom Timer", "Timers")
+    row = backend.timers.find("Custom Timer", TRIGGER_TIMER_GROUP)
     window._clear_row(row)
     assert "Custom Timer" not in window.current_row_names()
-    assert backend.timers.find("Custom Timer", "Timers") is None
+    assert backend.timers.find("Custom Timer", TRIGGER_TIMER_GROUP) is None
 
     window._clear_group(BOATS_GROUP)
     assert "Butcherblock to Freeport" not in window.current_row_names()

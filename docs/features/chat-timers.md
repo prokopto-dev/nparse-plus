@@ -19,9 +19,9 @@ PigTimer-<duration>[-<label>]
 | `PigTimer-120-inc` | A 2-minute timer named "inc" |
 | `PigTimer-1:02:00-LongTimer` | A 1 h 2 m timer named "LongTimer" |
 
-Timers appear as rows in the **Timers** section of
+Timers appear as rows in the **Custom Timers** section of
 [Spell Timers](../windows/spell-timers.md). Right-click one to clear it
-early; hide the section entirely with "Show trigger & chat timers" in
+early; hide the section entirely with "Show custom timers" in
 [Settings → Spell Timers](../settings/spell-timers.md).
 
 ## The group-coordination trick

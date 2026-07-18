@@ -611,6 +611,16 @@ class UnifiedSettingsWindow(OverlayWindowBase):
     def _build_spell_timers(self) -> QWidget:
         spellwindow = self._settings.spellwindow
         form = QFormLayout()
+        self._row_sort_combo = QComboBox(self)
+        self._row_sort_combo.addItem("Time remaining", "time_remaining")
+        self._row_sort_combo.addItem("Alphabetical", "alphabetical")
+        self._row_sort_combo.setCurrentIndex(
+            max(self._row_sort_combo.findData(spellwindow.row_sort), 0)
+        )
+        self._row_sort_combo.setToolTip(
+            "Order rows under each header by soonest-to-expire (default) or by name."
+        )
+        form.addRow("Sort timers by", self._row_sort_combo)
         self._you_only = QCheckBox(self)
         self._you_only.setChecked(spellwindow.you_only_spells)
         form.addRow("Show only your own spells", self._you_only)
@@ -622,18 +632,25 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._show_boats = QCheckBox(self)
         self._show_boats.setChecked(spellwindow.show_boats)
         form.addRow("Show boat timers", self._show_boats)
+        self._show_mob_timers = QCheckBox(self)
+        self._show_mob_timers.setChecked(spellwindow.show_mob_timers)
+        self._show_mob_timers.setToolTip(
+            "The Mob Timers section: mob respawn/Sirran countdowns and FTE raid rules."
+        )
+        form.addRow("Show mob timers", self._show_mob_timers)
+        self._show_roll_timers = QCheckBox(self)
+        self._show_roll_timers.setChecked(spellwindow.show_roll_timers)
+        self._show_roll_timers.setToolTip(
+            "The Roll Timers section: Ring 8 and Scout Charisa server roll windows."
+        )
+        form.addRow("Show roll timers", self._show_roll_timers)
         self._show_custom_timers = QCheckBox(self)
         self._show_custom_timers.setChecked(spellwindow.show_custom_timers)
         self._show_custom_timers.setToolTip(
-            "The Custom Timer section: mob death/respawn countdowns, FTE and shared timers."
+            "The Custom Timers section: countdowns from triggers, chat commands, "
+            "and shared remote timers."
         )
-        form.addRow("Show mob respawn timers", self._show_custom_timers)
-        self._show_trigger_timers = QCheckBox(self)
-        self._show_trigger_timers.setChecked(spellwindow.show_trigger_timers)
-        self._show_trigger_timers.setToolTip(
-            "The Timers section: countdowns started by triggers and chat commands."
-        )
-        form.addRow("Show trigger && chat timers", self._show_trigger_timers)
+        form.addRow("Show custom timers", self._show_custom_timers)
         self._best_guess = QCheckBox(self)
         self._best_guess.setChecked(spellwindow.best_guess_spells)
         self._best_guess.setToolTip(
@@ -871,6 +888,20 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._ch_retention.setSingleStep(5.0)
         self._ch_retention.setValue(general.ch_lane_retention_seconds)
         form.addRow("CH lane retention (s)", self._ch_retention)
+        self._ch_tag = QLineEdit(self)
+        self._ch_tag.setText(general.ch_chain_tag)
+        self._ch_tag.setToolTip(
+            "Follow only CH chain calls prefixed with this raid tag "
+            "(e.g. 'GG'). Leave blank to follow all calls."
+        )
+        form.addRow("CH chain tag (blank = all)", self._ch_tag)
+        self._bard_count = QCheckBox(self)
+        self._bard_count.setChecked(general.bard_count_enabled)
+        self._bard_count.setToolTip(
+            "Show the yellow overlay + speak a tally of bard AoE hits/resists "
+            "when a swarm session finalizes (2+ hits only)."
+        )
+        form.addRow("Bard AoE hit counter", self._bard_count)
         return self._page(form)
 
     def _test_voice(self) -> None:
@@ -1087,16 +1118,20 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.global_audio_volume = self._volume.value()
         general.overlay_text_seconds = self._overlay_seconds.value()
         general.ch_lane_retention_seconds = self._ch_retention.value()
+        general.ch_chain_tag = self._ch_tag.text().strip()
+        general.bard_count_enabled = self._bard_count.isChecked()
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()
         self._settings.sharing.mode = self._sharing_mode.currentText()  # type: ignore[assignment]
         self._settings.pigparse_account.inventory_upload = self._inventory_upload.isChecked()
         spellwindow = self._settings.spellwindow
+        spellwindow.row_sort = self._row_sort_combo.currentData()
         spellwindow.you_only_spells = self._you_only.isChecked()
         spellwindow.show_random_rolls = self._show_rolls.isChecked()
         spellwindow.show_boats = self._show_boats.isChecked()
+        spellwindow.show_mob_timers = self._show_mob_timers.isChecked()
+        spellwindow.show_roll_timers = self._show_roll_timers.isChecked()
         spellwindow.show_custom_timers = self._show_custom_timers.isChecked()
-        spellwindow.show_trigger_timers = self._show_trigger_timers.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
         spellwindow.raid_mode_auto = self._raid_mode.isChecked()
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()

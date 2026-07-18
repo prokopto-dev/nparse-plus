@@ -19,6 +19,7 @@ Divergences from the C#:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -78,10 +79,13 @@ class BardCountHandler(BaseHandler):
         speaker: Speaker | None = None,
         timers: TimersService | None = None,
         counter_lists: CounterLists | None = None,
+        enabled: Callable[[], bool] = lambda: True,
     ) -> None:
         super().__init__(bus, player)
         self.speaker = speaker
         self.timers = timers
+        # Live provider so the settings toggle applies without a restart.
+        self.enabled = enabled
         self.lists = counter_lists if counter_lists is not None else load_counter_lists()
         self._sessions: list[_Session] = []
         # Mirrors ActivePlayer.UserCastingSpell for GetActiveSpellName().
@@ -238,6 +242,12 @@ class BardCountHandler(BaseHandler):
                 sender="System",
             )
         )
+        # Deliberate divergence from the C# BardCountHandler, which emits the
+        # yellow overlay + TTS from a single hit: suppress sessions of fewer
+        # than two hits/resists (one stray wince/bind is noise), and honor the
+        # user toggle. The chat-stream record above is kept regardless.
+        if not self.enabled() or total < 2:
+            return
         self.bus.publish(OverlayEvent(text=text, foreground="Yellow"))
         if self.speaker is not None:
             self.speaker.speak(text)

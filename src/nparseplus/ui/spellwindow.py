@@ -30,10 +30,11 @@ from PySide6.QtWidgets import (
 
 from nparseplus.config.settings import Settings, WindowState, find_player
 from nparseplus.core.handlers.boat import BOATS_GROUP
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.matching import hide_spell
 from nparseplus.core.timers import (
+    MOB_TIMER_GROUP,
+    ROLL_TIMER_GROUP,
     TRIGGER_TIMER_GROUP,
     YOU_GROUP,
     CounterRow,
@@ -68,6 +69,22 @@ class BackendLike(Protocol):
     timers: TimersLike
     settings: Settings
     player: ActivePlayer
+
+
+def row_sort_key(row: Row, now: datetime, mode: str) -> tuple:
+    """Sort key for rows under one group header.
+
+    ``"alphabetical"`` orders by name; ``"time_remaining"`` (default) orders
+    soonest-to-expire first. Counters have no ``ends_at`` so they sort last
+    under the time mode, name-tiebroken.
+    """
+    name_key = row.name.casefold()
+    if mode == "alphabetical":
+        return (name_key,)
+    ends_at = getattr(row, "ends_at", None)
+    if ends_at is None:
+        return (float("inf"), name_key)
+    return ((ends_at - now).total_seconds(), name_key)
 
 
 def bar_color(row: Row) -> str:
@@ -321,9 +338,11 @@ class SpellTimerWindow(QWidget):
         sw = self._backend.settings.spellwindow
         if row.group == BOATS_GROUP and not sw.show_boats:
             return True
-        if row.group == CUSTOM_TIMER_GROUP and not sw.show_custom_timers:
+        if row.group == MOB_TIMER_GROUP and not sw.show_mob_timers:
             return True
-        if row.group == TRIGGER_TIMER_GROUP and not sw.show_trigger_timers:
+        if row.group == ROLL_TIMER_GROUP and not sw.show_roll_timers:
+            return True
+        if row.group == TRIGGER_TIMER_GROUP and not sw.show_custom_timers:
             return True
         if isinstance(row, RollRow) and not sw.show_random_rolls:
             return True
@@ -364,6 +383,7 @@ class SpellTimerWindow(QWidget):
             grouped.setdefault(row.group, []).append(row)
         # YOU_GROUP first, then the other targets alphabetically.
         order = sorted(grouped, key=lambda g: (g != YOU_GROUP, g.casefold()))
+        sort_mode = self._backend.settings.spellwindow.row_sort
 
         while self._rows_layout.count():
             self._rows_layout.takeAt(0)
@@ -386,7 +406,7 @@ class SpellTimerWindow(QWidget):
             self._rows_layout.addWidget(header)
             header.show()
             used_headers.add(group)
-            for row in sorted(grouped[group], key=lambda r: r.name.casefold()):
+            for row in sorted(grouped[group], key=lambda r: row_sort_key(r, now, sort_mode)):
                 base = (type(row).__name__, row.name.casefold(), row.group.casefold())
                 index = dup_counter.get(base, 0)
                 dup_counter[base] = index + 1

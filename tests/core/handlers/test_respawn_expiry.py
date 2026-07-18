@@ -9,8 +9,7 @@ from tests.core.handlers.conftest import FakeSpeaker
 
 from nparseplus.config.settings import SpellWindowSettings
 from nparseplus.core.handlers.respawn_expiry import RespawnExpiryNotifier
-from nparseplus.core.handlers.spawn_timer import CUSTOM_TIMER_GROUP
-from nparseplus.core.timers import TimerRow, TimersService
+from nparseplus.core.timers import MOB_TIMER_GROUP, TimerRow, TimersService
 
 T0 = datetime(2026, 7, 8, 21, 59, 36)
 
@@ -25,7 +24,7 @@ def speaker() -> FakeSpeaker:
     return FakeSpeaker()
 
 
-def add_timer(timers: TimersService, name: str, group: str = CUSTOM_TIMER_GROUP) -> None:
+def add_timer(timers: TimersService, name: str, group: str = MOB_TIMER_GROUP) -> None:
     timers.add_timer(
         TimerRow(
             name=name,
