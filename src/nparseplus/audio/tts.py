@@ -57,6 +57,18 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
+def _no_window_creationflags() -> int:
+    """``CREATE_NO_WINDOW`` on Windows, ``0`` everywhere else.
+
+    nParse+ runs as a windowed/frozen GUI with no console, so each child
+    ``powershell`` process would otherwise pop a fresh console window — once
+    per utterance. Mirrors the flag the voice-enumeration path already sets.
+    """
+    if sys.platform.startswith("win"):
+        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return 0
+
+
 class SubprocessSpeaker:
     """Base: queue worker thread that runs one TTS subprocess at a time."""
 
@@ -106,6 +118,7 @@ class SubprocessSpeaker:
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            creationflags=_no_window_creationflags(),
         )
 
     def _command(self, text: str) -> list[str]:
@@ -335,9 +348,6 @@ def parse_windows_voices(stdout: str) -> list[VoiceInfo]:
 
 
 def _list_windows_voices() -> list[VoiceInfo]:
-    creationflags = 0
-    if sys.platform.startswith("win"):
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         result = subprocess.run(
             [
@@ -353,7 +363,7 @@ def _list_windows_voices() -> list[VoiceInfo]:
             capture_output=True,
             text=True,
             timeout=10,
-            creationflags=creationflags,
+            creationflags=_no_window_creationflags(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return []

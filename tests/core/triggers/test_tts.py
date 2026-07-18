@@ -8,6 +8,7 @@ shelling out.
 import threading
 import time
 
+import nparseplus.audio.tts as tts
 from nparseplus.audio.tts import (
     EspeakSpeaker,
     MacSaydSpeaker,
@@ -165,6 +166,34 @@ def test_windows_command_winrt_prefix_uses_winrt_synthesis() -> None:
         assert "System.Speech" in script
     finally:
         speaker.close()
+
+
+def test_no_window_creationflags_set_on_windows(monkeypatch) -> None:
+    monkeypatch.setattr(tts.sys, "platform", "win32")
+    monkeypatch.setattr(tts.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    assert tts._no_window_creationflags() == 0x08000000
+
+
+def test_no_window_creationflags_zero_off_windows(monkeypatch) -> None:
+    monkeypatch.setattr(tts.sys, "platform", "linux")
+    assert tts._no_window_creationflags() == 0
+
+
+def test_utter_suppresses_console_window(monkeypatch) -> None:
+    captured = {}
+    monkeypatch.setattr(tts.sys, "platform", "win32")
+    monkeypatch.setattr(tts.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    def fake_run(cmd, **kwargs):
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    speaker = WindowsSpeaker(voice="", volume=1.0)
+    try:
+        speaker._utter("hi")
+    finally:
+        speaker.close()
+    assert captured["kwargs"]["creationflags"] == 0x08000000
 
 
 def test_parse_windows_voices_dedupes_preferring_winrt() -> None:
