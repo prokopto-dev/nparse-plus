@@ -45,6 +45,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import nparseplus
+from nparseplus import updater
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
 from nparseplus.core import friends, visionfix
@@ -139,6 +141,9 @@ class _WindowRow:
 class UnifiedSettingsWindow(OverlayWindowBase):
     # Emitted from the login worker thread; queued onto the GUI thread.
     _discord_auth_done = Signal(object)
+    # Emitted from the update-check worker thread; carries a ReleaseInfo or
+    # None (up to date / offline), queued onto the GUI thread.
+    _update_status_ready = Signal(object)
 
     def __init__(
         self,
@@ -178,6 +183,8 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._zones = zones
         self._discord_login = discord_login_fn
         self._discord_auth_done.connect(self._finish_discord_login)
+        self._update_status_ready.connect(self._on_update_status_ready)
+        self._update_checking = False
 
         self._sidebar = QListWidget(self)
         self._sidebar.setFixedWidth(140)
@@ -241,6 +248,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._update_check = QCheckBox(self)
         self._update_check.setChecked(general.update_check)
         form.addRow("Check for updates", self._update_check)
+        form.addRow("Version", self._build_version_indicator())
         self._theme_combo = QComboBox(self)
         self._theme_combo.addItem("Dark", "dark")
         self._theme_combo.addItem("Light", "light")
@@ -258,6 +266,66 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
         return self._page(form)
+
+    # -- version / update indicator ------------------------------------------------
+
+    def _build_version_indicator(self) -> QWidget:
+        """The current version + an up-to-date / update-available status badge
+        and a "Check now" button (the version was previously tray-only)."""
+        row = QWidget(self)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self._version_label = QLabel(f"nParse+ {nparseplus.__version__}", self)
+        layout.addWidget(self._version_label)
+        self._update_badge = QLabel("", self)
+        self._update_badge.setObjectName("VersionBadge")
+        layout.addWidget(self._update_badge)
+        layout.addStretch(1)
+        self._update_check_button = QPushButton("Check now", self)
+        self._update_check_button.clicked.connect(self._check_for_update_async)
+        layout.addWidget(self._update_check_button)
+        self._set_update_badge(None, checked=False)
+        return row
+
+    def _set_update_badge(self, release: object, *, checked: bool) -> None:
+        """Style the badge: neutral before a check, green up-to-date, amber
+        when a newer release is available."""
+        if not checked:
+            self._update_badge.setText("")
+            self._update_badge.setStyleSheet("")
+            return
+        if release is None:
+            text, bg = "Up to date", "#2f9e6e"
+        else:
+            text, bg = f"Update available: v{release.version}", "#d99b2b"
+        self._update_badge.setText(text)
+        self._update_badge.setStyleSheet(
+            f"color: white; background-color: {bg}; border-radius: 3px;"
+            " padding: 1px 6px; font-weight: bold; font-size: 11px;"
+        )
+
+    def _check_for_update_async(self) -> None:
+        if self._update_checking:
+            return
+        self._update_checking = True
+        self._update_check_button.setEnabled(False)
+        self._update_badge.setText("Checking…")
+        self._update_badge.setStyleSheet("color: #888888; font-size: 11px;")
+
+        def work() -> None:
+            try:
+                release = updater.check_for_update()
+            except Exception:  # updater already fails soft, but never leak a thread crash
+                release = None
+            self._update_status_ready.emit(release)
+
+        threading.Thread(target=work, name="settings-update-check", daemon=True).start()
+
+    def _on_update_status_ready(self, release: object) -> None:
+        self._update_checking = False
+        self._update_check_button.setEnabled(True)
+        self._set_update_badge(release, checked=True)
 
     # -- Character -------------------------------------------------------------------
 

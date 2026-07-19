@@ -620,3 +620,38 @@ def test_apply_swaps_speaker_only_when_audio_changes(qtbot, monkeypatch) -> None
     window._volume.setValue(50)
     window.apply()
     assert len(swaps) == 2
+
+
+# -- version / update indicator ------------------------------------------------
+
+
+def test_version_indicator_shows_current_version(qtbot) -> None:
+    import nparseplus
+
+    window = _window(qtbot)
+    assert nparseplus.__version__ in window._version_label.text()
+
+
+def test_update_badge_up_to_date(qtbot) -> None:
+    window = _window(qtbot)
+    window._on_update_status_ready(None)  # None => up to date
+    assert "Up to date" in window._update_badge.text()
+
+
+def test_update_badge_update_available(qtbot) -> None:
+    import types
+
+    window = _window(qtbot)
+    window._on_update_status_ready(types.SimpleNamespace(version="9.9.9"))
+    assert "9.9.9" in window._update_badge.text()
+
+
+def test_check_now_runs_updater_and_updates_badge(qtbot, monkeypatch) -> None:
+    import nparseplus.updater as updater_mod
+
+    monkeypatch.setattr(updater_mod, "check_for_update", lambda: None)
+    window = _window(qtbot)
+    with qtbot.waitSignal(window._update_status_ready, timeout=3000):
+        window._check_for_update_async()
+    assert "Up to date" in window._update_badge.text()
+    assert window._update_check_button.isEnabled()
