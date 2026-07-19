@@ -162,6 +162,43 @@ def test_post_expiry_row_flashes_and_click_dismisses(qtbot):
     assert backend.timers.find("Aegolism", YOU_GROUP) is None
 
 
+def test_flash_style_cleared_when_row_recast(qtbot):
+    """Regression: an expired flashing row that is recast must not keep the
+    red/bold flash on its live countdown."""
+    from nparseplus.ui.spellwindow import _RowWidget
+
+    widget = _RowWidget()
+    qtbot.addWidget(widget)
+    expired = SpellRow(
+        name="Aegolism",
+        group="Joe",
+        updated_at=NOW,
+        is_target_player=True,
+        spell=Spell(id=7, name="Aegolism"),
+        ends_at=NOW,
+        total_duration_s=100.0,
+        post_expiry_persist_s=30.0,
+        expired_at=NOW,
+    )
+    widget.update_row(expired, NOW)
+    widget.apply_flash(True)
+    assert widget.expired is True
+    assert widget._value.styleSheet() != ""  # flashing
+    # Recast: a fresh live row reuses the same widget.
+    live = SpellRow(
+        name="Aegolism",
+        group="Joe",
+        updated_at=NOW,
+        is_target_player=True,
+        spell=Spell(id=7, name="Aegolism"),
+        ends_at=NOW + timedelta(minutes=5),
+        total_duration_s=300.0,
+    )
+    widget.update_row(live, NOW)
+    assert widget.expired is False
+    assert widget._value.styleSheet() == ""  # no stale flash styling
+
+
 def test_live_row_is_not_dismissed_by_click(qtbot):
     backend = make_backend()  # Clarity (YOU) is live, not expired
     window = _shown_window(qtbot, backend)

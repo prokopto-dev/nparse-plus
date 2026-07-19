@@ -173,8 +173,12 @@ class _RowWidget(QFrame):
         if expired != self.expired:
             self.expired = expired
             if not expired:
-                # Reused for a live row again — clear any flash styling.
+                # Reused for a live row again — clear ALL flash styling (name and
+                # value) so a recast row's countdown isn't stuck red/bold, and
+                # reset the warning flag so _update_warning re-applies from clean.
                 self._name.setStyleSheet("")
+                self._value.setStyleSheet("")
+                self._warning = False
         if expired:
             # Post-expiry rebuff prompt: no countdown, flashing handled below.
             self._value.setText("REBUFF")
