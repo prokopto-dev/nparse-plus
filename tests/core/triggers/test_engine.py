@@ -373,6 +373,19 @@ def test_end_early_text_cancels_active_timer() -> None:
     assert speaker.spoken == []  # cancelled timers never fire Ended
 
 
+def test_end_early_invalid_regex_is_ignored_not_raised() -> None:
+    # A malformed end-early pattern caches as an uncompilable None and must
+    # never match or raise on the per-line path.
+    trigger = timer_trigger(
+        seconds=400,
+        end_early=[EndEarlyEntry(search_text=r"(unclosed", use_regex=True)],
+    )
+    _, bus, _, timers, _, _ = make_engine(trigger)
+    push(bus, "Your body begins to rot.")  # start the timer
+    push(bus, "an (unclosed paren line")  # bad pattern: no match, no crash
+    assert timers.cancelled == []
+
+
 def test_counter_increments_and_resets_after_inactivity_window() -> None:
     trigger = Trigger(
         trigger_enabled=True,

@@ -19,6 +19,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Protocol
 
 from nparseplus.core.bus import EventBus, Unsubscribe
@@ -346,8 +347,20 @@ def _seconds(value: float) -> timedelta:
     return timedelta(seconds=value)
 
 
-def _safe_regex_match(pattern: str, line: str) -> bool:
+@lru_cache(maxsize=256)
+def _compiled_ignorecase(pattern: str) -> re.Pattern[str] | None:
+    """Compile a case-insensitive end-early pattern once, caching the result.
+
+    _check_end_early runs per log line for every active timer's end-early
+    entries, so compile here (bounded LRU) instead of leaning on the re
+    module's shared, evictable cache. An invalid pattern caches as None.
+    """
     try:
-        return re.search(pattern, line, re.IGNORECASE) is not None
+        return re.compile(pattern, re.IGNORECASE)
     except re.error:
-        return False
+        return None
+
+
+def _safe_regex_match(pattern: str, line: str) -> bool:
+    compiled = _compiled_ignorecase(pattern)
+    return compiled is not None and compiled.search(line) is not None
