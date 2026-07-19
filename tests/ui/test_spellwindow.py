@@ -129,6 +129,49 @@ def test_raid_mode_off_keeps_target_headers(qtbot):
     assert window.current_row_labels().count("Aegolism") == 3
 
 
+def test_post_expiry_row_flashes_and_click_dismisses(qtbot):
+    backend = make_backend()
+    backend.timers.add_spell(
+        SpellRow(
+            name="Aegolism",
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=Spell(id=7, name="Aegolism"),
+            ends_at=NOW + timedelta(seconds=10),
+            total_duration_s=10.0,
+            post_expiry_persist_s=30.0,
+        )
+    )
+    # Cross ends_at: the row lingers with expired_at stamped (flashing state).
+    backend.timers.tick(NOW + timedelta(seconds=11))
+    window = _shown_window(qtbot, backend)
+
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "Aegolism")
+    assert widget.expired is True
+    assert widget._value.text() == "REBUFF"
+    # The flash toggles emphasis styling on/off.
+    window._flash_on = False
+    window._toggle_flash()  # -> on
+    assert widget._name.styleSheet() != ""
+    window._toggle_flash()  # -> off
+    assert widget._name.styleSheet() == ""
+
+    # Left-click over the flashing row dismisses it.
+    pos = widget.mapTo(window, widget.rect().center())
+    assert window._dismiss_expired_at(pos) is True
+    assert backend.timers.find("Aegolism", YOU_GROUP) is None
+
+
+def test_live_row_is_not_dismissed_by_click(qtbot):
+    backend = make_backend()  # Clarity (YOU) is live, not expired
+    window = _shown_window(qtbot, backend)
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "Clarity")
+    assert widget.expired is False
+    pos = widget.mapTo(window, widget.rect().center())
+    assert window._dismiss_expired_at(pos) is False
+    assert backend.timers.find("Clarity", YOU_GROUP) is not None
+
+
 def _add_you_spell(backend, name: str, minutes: float) -> None:
     backend.timers.add_spell(
         SpellRow(

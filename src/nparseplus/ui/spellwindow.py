@@ -49,6 +49,7 @@ from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
 REFRESH_INTERVAL_MS = 250
+FLASH_INTERVAL_MS = 500  # post-expiry rebuff-prompt flash cadence (#16)
 DEFAULT_GEOMETRY = (400, 0, 220, 400)
 
 # Progress-bar chunk colors per row kind.
@@ -121,6 +122,10 @@ class _RowWidget(QFrame):
         self._color = ""
         self._warning_threshold = warning_threshold
         self._warning = False
+        #: True while this row is a post-expiry rebuff prompt (#16) — it drives
+        #: the flash and makes a left-click dismiss the row.
+        self.expired = False
+        self._flash_on = False
 
         self._icon = QLabel(self)
         self._icon.setObjectName("SpellTimerRowIcon")
@@ -164,6 +169,18 @@ class _RowWidget(QFrame):
         self.row = row
         self._name.setText(label if label is not None else row.name)
         self._update_icon(row)
+        expired = isinstance(row, SpellRow) and row.expired_at is not None
+        if expired != self.expired:
+            self.expired = expired
+            if not expired:
+                # Reused for a live row again — clear any flash styling.
+                self._name.setStyleSheet("")
+        if expired:
+            # Post-expiry rebuff prompt: no countdown, flashing handled below.
+            self._value.setText("REBUFF")
+            self._bar.setVisible(False)
+            self.apply_flash(self._flash_on)
+            return
         if isinstance(row, CounterRow):
             self._value.setText(f"x{row.count}")
             self._bar.setVisible(False)
@@ -184,6 +201,16 @@ class _RowWidget(QFrame):
                 f"QProgressBar {{ background-color: {theme.palette().bar_track}; border: none; }}"
                 f"QProgressBar::chunk {{ background-color: {color}; }}"
             )
+
+    def apply_flash(self, on: bool) -> None:
+        """Toggle the post-expiry flash (#16). No-op unless this row is an
+        expired rebuff prompt; the window's flash timer drives ``on``."""
+        self._flash_on = on
+        if not self.expired:
+            return
+        style = f"color: {theme.palette().warning_text}; font-weight: bold;" if on else ""
+        self._name.setStyleSheet(style)
+        self._value.setStyleSheet(style)
 
     def _update_warning(self, row: Row, remaining: float) -> None:
         """Buff-fade pre-warning: the time label turns red inside the window
@@ -324,6 +351,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._refresh_timer.timeout.connect(self.refresh)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
+        # Post-expiry rebuff prompts flash (#16); cheap and always running.
+        self._flash_on = False
+        self._flash_timer = QTimer(self)
+        self._flash_timer.timeout.connect(self._toggle_flash)
+        self._flash_timer.start(FLASH_INTERVAL_MS)
+
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._on_app_quit)
@@ -441,6 +474,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                     self._row_widgets[key] = widget
                 # In a spell section the row shows its target, not the spell.
                 widget.update_row(row, now, label=row.group.strip() if spell_headed else None)
+                widget.apply_flash(self._flash_on)
                 self._rows_layout.addWidget(widget)
                 widget.show()
                 used_rows.add(key)
@@ -454,6 +488,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         # a stale scroll range after rows leave. (The window itself never
         # resizes — the user's size is authoritative.)
         self._scroll.widget().adjustSize()
+
+    def _toggle_flash(self) -> None:
+        """Flip the flash phase and restyle any expired rebuff prompts (#16)."""
+        self._flash_on = not self._flash_on
+        for widget in self._row_widgets.values():
+            widget.apply_flash(self._flash_on)
 
     def _group_label(self, group: str) -> str:
         """Header text: the target name, plus its class when the /who
@@ -573,10 +613,23 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             if self._maybe_begin_edge_resize(event.position().toPoint()):
                 event.accept()
                 return
+            # Click-to-dismiss a post-expiry rebuff prompt (#16) before drag.
+            if self._dismiss_expired_at(event.position().toPoint()):
+                event.accept()
+                return
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         else:
             super().mousePressEvent(event)
+
+    def _dismiss_expired_at(self, pos: QPoint) -> bool:
+        """If ``pos`` is over a flashing post-expiry row, remove it (#16)."""
+        row, _ = self._context_target(pos)
+        if isinstance(row, SpellRow) and row.expired_at is not None:
+            self._backend.timers.remove_row(row)
+            self.refresh()
+            return True
+        return False
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
@@ -643,12 +696,48 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend.timers.clear_all_other_spells()
         self.refresh()
 
+    def _toggle_flash_spell(self, spell_name: str) -> None:
+        """Add/remove a spell from the post-expiry flash allowlist (#16) and
+        apply it live to any loaded rows of that spell."""
+        sw = self._backend.settings.spellwindow
+        key = spell_name.casefold()
+        present = any(n.casefold() == key for n in sw.post_expiry_flash_spells)
+        if present:
+            sw.post_expiry_flash_spells = [
+                n for n in sw.post_expiry_flash_spells if n.casefold() != key
+            ]
+            persist = 0.0
+        else:
+            sw.post_expiry_flash_spells = [*sw.post_expiry_flash_spells, spell_name]
+            sw.post_expiry_flash_enabled = True  # make the per-row toggle self-sufficient
+            persist = float(sw.post_expiry_flash_seconds)
+        for r in self._backend.timers.snapshot():
+            if isinstance(r, SpellRow) and not r.is_cooldown and r.spell.name.casefold() == key:
+                r.post_expiry_persist_s = persist
+                if persist == 0.0:
+                    r.expired_at = None
+        if self._on_save is not None:
+            self._on_save()
+        self.refresh()
+
     def contextMenuEvent(self, event) -> None:
         row, group = self._context_target(event.pos())
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if row is not None:
             menu.addAction(f"Clear '{row.name}'", lambda r=row: self._clear_row(r))
+        if isinstance(row, SpellRow) and not row.is_cooldown:
+            spell_name = row.spell.name
+            flash_action = menu.addAction(
+                "Flash on expiry", lambda n=spell_name: self._toggle_flash_spell(n)
+            )
+            flash_action.setCheckable(True)
+            flash_action.setChecked(
+                any(
+                    n.casefold() == spell_name.casefold()
+                    for n in self._backend.settings.spellwindow.post_expiry_flash_spells
+                )
+            )
         if group is not None:
             label = self._group_label(group)
             menu.addAction(f"Clear group '{label}'", lambda g=group: self._clear_group(g))

@@ -72,6 +72,52 @@ def test_tick_removes_expired(timers: TimersService, spell_book: SpellBook) -> N
     assert [row.name for row in timers.snapshot()] == ["Aegolism"]
 
 
+def test_post_expiry_persist_keeps_row_then_drops(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    """#16: a persisting spell lingers past ends_at (flashing), reports expired
+    exactly once, then drops after its window."""
+    timers.add_spell(_spell_row(spell_book, name="Clarity", seconds=10, post_expiry_persist_s=30))
+    expired_calls: list[list[str]] = []
+    change_calls: list[int] = []
+    timers.on_expired.append(lambda rows: expired_calls.append([r.name for r in rows]))
+    timers.on_change.append(lambda: change_calls.append(1))
+
+    assert timers.tick(T0 + timedelta(seconds=5)) == []  # still live
+    # Crosses ends_at: reported once, but KEPT with expired_at stamped.
+    just = timers.tick(T0 + timedelta(seconds=11))
+    assert [r.name for r in just] == ["Clarity"]
+    row = timers.rows_of(SpellRow)[0]
+    assert isinstance(row, SpellRow) and row.expired_at == T0 + timedelta(seconds=11)
+    # Within the window: kept and NOT re-reported.
+    assert timers.tick(T0 + timedelta(seconds=20)) == []
+    assert len(timers.rows_of(SpellRow)) == 1
+    # Past the window: finally dropped (a change fires, but not on_expired again).
+    assert timers.tick(T0 + timedelta(seconds=42)) == []
+    assert timers.rows_of(SpellRow) == []
+    assert expired_calls == [["Clarity"]]
+    # on_change was registered after the add, so only the crossover stamp and
+    # the final drop notify — the mid-window ticks stay silent.
+    assert change_calls == [1, 1]
+
+
+def test_post_expiry_row_dismissed_immediately_by_remove(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    timers.add_spell(_spell_row(spell_book, name="Clarity", seconds=10, post_expiry_persist_s=30))
+    row = timers.tick(T0 + timedelta(seconds=11))[0]
+    assert timers.remove_row(row) is True
+    assert timers.rows_of(SpellRow) == []
+
+
+def test_zero_persist_expires_normally(timers: TimersService, spell_book: SpellBook) -> None:
+    """Default (no persist) is unchanged: expire and drop on the same tick."""
+    timers.add_spell(_spell_row(spell_book, name="Clarity", seconds=10))
+    expired = timers.tick(T0 + timedelta(seconds=11))
+    assert [r.name for r in expired] == ["Clarity"]
+    assert timers.rows_of(SpellRow) == []
+
+
 def test_counter_increments(timers: TimersService) -> None:
     row = CounterRow(name="Mana Sieve", group=" a mob ", updated_at=T0)
     first = timers.add_counter(row)

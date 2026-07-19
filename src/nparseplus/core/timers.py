@@ -76,6 +76,12 @@ class SpellRow(BaseRow):
     total_duration_s: float
     detrimental: bool = False
     is_cooldown: bool = False
+    # Post-expiration alerts (#16): when > 0, the row is NOT removed the moment
+    # it expires — it lingers this many seconds past ``ends_at`` (flashing in
+    # the UI as a rebuff/recast prompt), with ``expired_at`` stamped once at the
+    # crossover. Opt-in and per-spell; 0 keeps the normal expire-and-drop.
+    post_expiry_persist_s: float = 0.0
+    expired_at: datetime | None = None
 
 
 class TimerRow(BaseRow):
@@ -293,22 +299,48 @@ class TimersService:
     # -- time ------------------------------------------------------------------
 
     def tick(self, now: datetime) -> list[Row]:
-        """Remove expired rows; returns them."""
+        """Remove expired rows; returns them.
 
-        def _is_expired(row: Row) -> bool:
+        A SpellRow with ``post_expiry_persist_s > 0`` is not dropped at
+        ``ends_at``: it lingers (stamping ``expired_at`` once) as a post-expiry
+        alert (#16) and is only removed once its persist window elapses. Such a
+        row still counts as "just expired" on the tick it crosses ``ends_at``,
+        so ``on_expired`` fires exactly once for it, as before.
+        """
+        just_expired: list[Row] = []
+        drop: list[Row] = []
+        changed = False
+        for row in self._rows:
             if isinstance(row, CounterRow):
-                return now - row.updated_at > COUNTER_IDLE_EXPIRY
-            return row.ends_at <= now
+                if now - row.updated_at > COUNTER_IDLE_EXPIRY:
+                    drop.append(row)
+                    just_expired.append(row)
+                continue
+            if row.ends_at > now:
+                continue
+            persist = getattr(row, "post_expiry_persist_s", 0.0)
+            if persist > 0:
+                if row.expired_at is None:
+                    row.expired_at = now
+                    just_expired.append(row)
+                    changed = True
+                if now - row.expired_at > timedelta(seconds=persist):
+                    drop.append(row)
+                continue
+            drop.append(row)
+            just_expired.append(row)
 
-        expired: list[Row] = [row for row in self._rows if _is_expired(row)]
-        for row in expired:
+        for row in drop:
             self._rows.remove(row)
 
-        if expired:
+        if just_expired:
             for callback in list(self.on_expired):
-                callback(expired)
+                callback(just_expired)
+        # Notify on any change: a fresh expiry, a persisted row finally
+        # dropping, or a persist crossover that only stamped ``expired_at``.
+        if drop or changed:
             self._notify()
-        return expired
+        return just_expired
 
     # -- persistence (camp/login) -----------------------------------------------
 

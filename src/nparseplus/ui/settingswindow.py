@@ -687,6 +687,22 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._buff_fade_audio = QCheckBox(self)
         self._buff_fade_audio.setChecked(spellwindow.buff_fade_warning_audio)
         form.addRow("Speak buff-fade warnings", self._buff_fade_audio)
+        self._post_expiry_flash = QCheckBox(self)
+        self._post_expiry_flash.setChecked(spellwindow.post_expiry_flash_enabled)
+        self._post_expiry_flash.setToolTip(
+            "Keep chosen spells on-screen after they expire, flashing as a "
+            "rebuff/recast prompt (click the row to dismiss). Choose which "
+            'spells with each row\'s right-click "Flash on expiry".'
+        )
+        form.addRow("Flash spells after expiry", self._post_expiry_flash)
+        self._post_expiry_secs = QSpinBox(self)
+        self._post_expiry_secs.setRange(1, 300)
+        self._post_expiry_secs.setSuffix(" s")
+        self._post_expiry_secs.setValue(spellwindow.post_expiry_flash_seconds)
+        self._post_expiry_secs.setToolTip(
+            "How long an expired spell keeps flashing before it drops."
+        )
+        form.addRow("Post-expiry flash time", self._post_expiry_secs)
         note = QLabel("Per-class spell filters live on the Character page.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
@@ -1144,6 +1160,8 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()
         spellwindow.buff_fade_warning_seconds = self._buff_fade_secs.value()
         spellwindow.buff_fade_warning_audio = self._buff_fade_audio.isChecked()
+        spellwindow.post_expiry_flash_enabled = self._post_expiry_flash.isChecked()
+        spellwindow.post_expiry_flash_seconds = self._post_expiry_secs.value()
         self._apply_character()
         self._apply_maps()
         self._apply_windows()
