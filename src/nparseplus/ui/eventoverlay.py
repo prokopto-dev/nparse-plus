@@ -62,6 +62,10 @@ CH_LANE_HEIGHT = 30
 # (EQTool keeps the name in a separate grid column) so it never obscures the
 # "1" second-marker cell; long names elide with the full name as a tooltip.
 CH_LANE_NAME_WIDTH = 110
+# The name is right-aligned within that column and sits this many pixels from
+# the lane, so a short target name hugs the lane instead of floating at the
+# far-left of the fixed-width column.
+CH_LANE_NAME_GAP = 8
 # The lane is graduated into 10 one-second cells (EQTool GetOrCreateChain: a
 # 10-cell strip, each ``ActualWidth / 10`` wide, numbered 1..10 in red). A chip
 # is exactly one cell wide and slides ``width + chip.width`` (= 11 cells) over
@@ -631,16 +635,19 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _build_lane_row(self, target: str, lane: _ChainLane) -> QWidget:
-        """[name | lane] row: the target name lives in its own fixed column so
-        it never covers the lane's "1" second-marker cell (EQTool keeps the
-        name in a separate grid column beside the bar)."""
+        """[name | lane] row: the target name lives in its own fixed-width column
+        so it never covers the lane's "1" second-marker cell (EQTool keeps the
+        name in a separate grid column beside the bar). The name is right-aligned
+        within that column and sits ``CH_LANE_NAME_GAP`` px from the lane, so a
+        short name hugs the lane instead of floating at the far-left edge."""
         row = QWidget(self)
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(CH_LANE_NAME_GAP)
         name = QLabel(row)
         name.setStyleSheet("color: #cccccc; font-size: 11px; font-weight: bold;")
         name.setFixedWidth(CH_LANE_NAME_WIDTH)
+        name.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         metrics = QFontMetrics(name.font())
         name.setText(metrics.elidedText(target, Qt.TextElideMode.ElideRight, CH_LANE_NAME_WIDTH))
         name.setToolTip(target)

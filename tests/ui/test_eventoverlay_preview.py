@@ -6,10 +6,11 @@ live state (``_chain_lanes``/``_bars``/``_center_text``) or publishing events.
 """
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QProgressBar
 
 from nparseplus.core.events import TimerBarEvent
-from nparseplus.ui.eventoverlay import EventOverlayWindow
+from nparseplus.ui.eventoverlay import CH_LANE_NAME_GAP, EventOverlayWindow
 
 pytestmark = pytest.mark.qt
 
@@ -95,6 +96,26 @@ def test_double_toggle_does_not_duplicate(qtbot) -> None:
     overlay.set_edit_mode(False)
     overlay.set_edit_mode(False)  # idempotent
     assert overlay._preview_widgets == []
+
+
+def test_ch_lane_name_hugs_the_lane(qtbot) -> None:
+    """The target name is right-aligned in its fixed column and sits an 8px gap
+    from the lane, so a short name hugs the lane instead of floating far to the
+    left of the column."""
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.set_edit_mode(True)
+
+    row = overlay._lanes_layout.itemAt(0).widget()
+    layout = row.layout()
+    # ~8px between the target name and the lane (the reported complaint).
+    assert layout.spacing() == CH_LANE_NAME_GAP == 8
+
+    # [name][lane]: the name is the first item and is right-aligned so it sits
+    # next to the lane rather than at the far-left edge of its column.
+    name = layout.itemAt(0).widget()
+    assert isinstance(name, QLabel)
+    assert bool(name.alignment() & Qt.AlignmentFlag.AlignRight)
 
 
 def test_edit_hint_is_a_top_strip(qtbot) -> None:
