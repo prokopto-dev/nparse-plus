@@ -1,0 +1,27 @@
+name: PR Commit Check
+
+# Enforce that every PR's commits are Conventional Commits that
+# python-semantic-release can version (so a merge cuts the right release).
+# docs/chore/ci-only PRs pass but report "no version bump" — that is allowed.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate Conventional Commits (semantic-release conformance)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          python3 tools/check_conventional_commits.py FETCH_HEAD "$HEAD_SHA"

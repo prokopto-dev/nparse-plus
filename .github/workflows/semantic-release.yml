@@ -1,6 +1,13 @@
 name: Semantic Release
 
 on:
+  # Auto-release on every merge to master: feat/fix/perf commits cut a release,
+  # docs/chore/ci merges no-op (no bump) but still run the ruff+pytest gate.
+  # Loop-safe: semantic-release pushes its version-bump commit/tag with
+  # GITHUB_TOKEN, which does not re-trigger workflows, and that commit is a
+  # non-bumping, changelog-excluded chore.
+  push:
+    branches: [master]
   workflow_dispatch:
 
 permissions:

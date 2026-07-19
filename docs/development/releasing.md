@@ -9,15 +9,22 @@ Commits](https://www.conventionalcommits.org/) and
 - `feat!:` / `BREAKING CHANGE:` → major release
 - `chore:` / `ci:` / `docs:` etc. → no release
 
+Every PR's commits are checked against these types by `pr-commit-check.yml`
+(see [`tools/check_conventional_commits.py`](https://github.com/prokopto-dev/nparse-plus/blob/master/tools/check_conventional_commits.py)),
+so a non-conventional commit can't reach `master`. Merge PRs with a **merge
+commit** (not squash) so the individual conventional commits are preserved for
+versioning.
+
 ## The pipeline
 
-1. **Semantic Release workflow** (manual dispatch, or
-   `uv run semantic-release version` locally): runs the ruff+pytest gate,
-   computes the next version from the commit log, bumps
-   `pyproject.toml` and `nparseplus.__version__`, updates
-   `CHANGELOG.md`, commits, tags `v<X.Y.Z>`, and dispatches the package
-   workflow (tags created with `GITHUB_TOKEN` don't trigger workflows on
-   their own).
+1. **Semantic Release workflow** — runs **automatically on every merge to
+   `master`** (also available via manual dispatch, or `uv run semantic-release
+   version` locally). It runs the ruff+pytest gate, computes the next version
+   from the commit log, bumps `pyproject.toml` and `nparseplus.__version__`,
+   updates `CHANGELOG.md`, commits, tags `v<X.Y.Z>`, and dispatches the package
+   workflow (tags created with `GITHUB_TOKEN` don't trigger workflows on their
+   own). A merge with only `chore`/`ci`/`docs` commits runs the gate and
+   no-ops — no version bump, no release — but CI still builds it.
 2. **Release workflow** (`release.yml`) verifies the tag matches both
    version files, then builds in parallel:
    - macOS DMG (ad-hoc signed)
