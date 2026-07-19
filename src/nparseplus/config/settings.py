@@ -52,6 +52,10 @@ class WindowState(BaseModel):
     frameless: bool = True
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     shown: bool = False
+    # Migrated + persisted, but only the legacy ParserWindow path (helpers/
+    # parser.py hover-reveal menu bar) consumes it — the new overlays have no
+    # such menu bar. Kept write-only for the new windows, and reserved until
+    # the legacy maps/discord windows are rebuilt on the new stack (see #8).
     auto_hide_menu: bool = True
     # Event-overlay per-region placement (keys: "lanes", "alert", "bars").
     # None = the legacy stacked QVBoxLayout (regions not independently placed).
@@ -166,6 +170,14 @@ class SpellWindowSettings(BaseModel):
 
 
 class DiscordSettings(BaseModel):
+    """Discord relay config carried by migration but not yet read at runtime.
+
+    The live discord overlay is still the legacy ParserWindow, which reads its
+    url from the legacy ``nparse.config.json`` (not from here). These fields are
+    migration-preserved placeholders reserved for the discord-window rebuild on
+    the new stack; ``channel`` has no legacy source today either (see #9).
+    """
+
     url: str = ""
     channel: str = ""
 
