@@ -168,6 +168,29 @@ def test_zone_gated_trigger_fires_in_its_zone() -> None:
     assert speaker.spoken == ["AOE"]
 
 
+def _char_scoped_trigger() -> Trigger:
+    return Trigger(
+        trigger_enabled=True,
+        search_text="pull now",
+        use_regex=False,
+        characters=["Frodo"],
+        basic=TriggerOutput(audio_type=TriggerAudioType.TEXT_TO_SPEECH, tts_text="incoming"),
+    )
+
+
+def test_character_scoped_trigger_gated_by_active_player() -> None:
+    # Active character Gandalf: the Frodo-scoped trigger stays silent.
+    _, bus, speaker, _, _, _ = make_engine(_char_scoped_trigger(), name="Gandalf")
+    push(bus, "pull now")
+    assert speaker.spoken == []
+
+    # Same trigger, active character Frodo: it fires (enable/disable is live
+    # off the active ActivePlayer, no re-arming needed).
+    _, bus2, speaker2, _, _, _ = make_engine(_char_scoped_trigger(), name="Frodo")
+    push(bus2, "pull now")
+    assert speaker2.spoken == ["incoming"]
+
+
 def test_first_matching_trigger_consumes_the_line() -> None:
     first = Trigger(
         trigger_enabled=True,

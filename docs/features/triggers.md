@@ -70,6 +70,18 @@ Triggers can be restricted to specific zones, so a Plane of Growth trigger
 never fires from someone quoting the emote in the Commonlands. The
 [built-in](builtin-triggers.md) encounter triggers ship zone-gated.
 
+## Character scope
+
+By default every trigger fires for every character. Scope one to specific
+characters — choose them in the
+[Trigger Editor](../windows/trigger-editor.md) — and it fires only while one
+of those characters is logged in: no [CH-chain](ch-chains.md) alerts on your
+warrior, no FTE calls while leveling an alt. Enabling and disabling is
+automatic as you switch characters, and the default
+[built-ins](builtin-triggers.md) stay global. The scope is per install and is
+cleared on [export/import](#sharing-triggers-export-import) — it names your own
+characters, which mean nothing on someone else's machine.
+
 ## Sharing triggers (export & import)
 
 Triggers travel as plain JSON files, so you can share them with friends

@@ -165,6 +165,11 @@ class Trigger(BaseModel):
     # Zone gate: when set, the trigger only fires while the player is in this
     # zone (short key, case-insensitive). Empty/None means everywhere.
     zone: str | None = None
+    # Character gate: when non-empty, the trigger only fires while one of these
+    # characters is the active player (bare name, case-insensitive, matching the
+    # {c} token). Empty means every character. Scoped via the trigger editor's
+    # per-character control.
+    characters: list[str] = Field(default_factory=list)
     search_text: str = ""
     # None means "not persisted" and defaults to regex mode (EffectiveUseRegex).
     use_regex: bool | None = None
@@ -219,6 +224,17 @@ class Trigger(BaseModel):
 
     def matches_zone(self, current_zone: str | None) -> bool:
         return not self.zone or self.zone.lower() == (current_zone or "").lower()
+
+    def matches_character(self, current_name: str | None) -> bool:
+        """Whether this trigger is active for the given character (bare name).
+
+        Unscoped triggers (empty ``characters``) fire for everyone; otherwise
+        the active character must be one of the scoped names (case-insensitive).
+        """
+        if not self.characters:
+            return True
+        current = (current_name or "").lower()
+        return any(name.lower() == current for name in self.characters)
 
     def effective_basic(self) -> TriggerOutput:
         """Basic output, synthesized from the legacy fields for old triggers."""

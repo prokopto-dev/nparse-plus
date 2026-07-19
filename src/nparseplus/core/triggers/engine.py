@@ -145,6 +145,9 @@ class TriggerEngine:
             # skip triggers restricted to a zone the player isn't currently in
             if not trigger.matches_zone(current_zone):
                 continue
+            # skip triggers scoped to other characters (per-character profiles)
+            if not trigger.matches_character(player_name):
+                continue
             trigger.player_name = player_name
             if not trigger.matches(line):
                 continue
