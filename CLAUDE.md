@@ -137,11 +137,16 @@ pyproject.toml) — keep NEW code clean even when touching them.
 when frozen and the legacy config moves to platformdirs). Then ad-hoc
 `codesign` + `uv run dmgbuild -s packaging/dmg_settings.py`. Tag `v<X.Y.Z>`
 (must equal `__version__` AND pyproject) to cut a GitHub release via
-`.github/workflows/release.yml`. Preferred flow since 1.4: push Conventional
-Commits (`fix:` = patch, `feat:` = minor; `chore`/`ci`/`docs` don't bump) and
-run the Semantic Release workflow (locally via `uv run semantic-release
-version` or `gh workflow run semantic-release.yml`) — it bumps both version
-files, tags, and dispatches release.yml. The Linux job also wraps the onedir
+`.github/workflows/release.yml`. Release flow since 1.11: **merge to master
+auto-runs the Semantic Release workflow** (it also still supports manual
+`gh workflow run semantic-release.yml` / local `uv run semantic-release
+version`). `feat:` = minor, `fix:`/`perf:` = patch, `chore`/`ci`/`docs` don't
+bump (docs/chore merges no-op but still build); it bumps both version files,
+tags, and dispatches release.yml. Every PR's commits are gated against the
+allowed Conventional-Commit types by `pr-commit-check.yml` +
+`tools/check_conventional_commits.py` (types read from
+`[tool.semantic_release.commit_parser_options]`); merge with a **merge commit**,
+not squash, so those commits survive for versioning. The Linux job also wraps the onedir
 build into a `.flatpak` bundle (`packaging/flatpak/` manifest; Linux-only to
 build — CI does it, don't try locally on macOS), built with `--repo-url` and
 publishes the OSTree repo to the single-commit `gh-pages` branch (GitHub
