@@ -160,8 +160,26 @@ def test_first_region_drag_initializes_defaults(qtbot) -> None:
     overlay._begin_region_drag("bars", QPoint(500, 700))
     regions = overlay._state.overlay_regions
     assert regions is not None
-    assert set(regions) == {"lanes", "alert", "bars"}
+    assert set(regions) == {"lanes", "utility", "alert", "bars"}
     assert regions["lanes"].anchor == "top"
+    assert regions["utility"].anchor == "top"
     assert regions["alert"].anchor == "center"
     assert regions["bars"].anchor == "bottom"
     assert overlay._region_mode()
+
+
+def test_layout_regions_backfills_missing_utility(qtbot) -> None:
+    # A layout saved before 1.11 has no "utility" key; the utility host must be
+    # positioned at its default anchor, not stranded at (0, 0).
+    state = WindowState(
+        geometry=(0, 0, 1000, 800),
+        overlay_regions={
+            "lanes": OverlayRegion(anchor="top"),
+            "alert": OverlayRegion(anchor="center"),
+            "bars": OverlayRegion(anchor="bottom"),
+        },
+    )
+    overlay = EventOverlayWindow(state=state)
+    qtbot.addWidget(overlay)
+    overlay._activate_region_layout()
+    assert overlay._utility_host.pos().y() >= REGION_MARGIN_TOP

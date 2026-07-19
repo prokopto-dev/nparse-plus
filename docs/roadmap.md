@@ -10,28 +10,6 @@ Each item below is tracked as a
 area / type / size) — the issues are the live status; this page is the prose
 overview.
 
-## Triggers
-
-**New default utility triggers** — a special header section in the timer
-overlay for utility alerts such as rebuff requests and OOM indicators,
-shipping as new [built-ins](features/builtin-triggers.md).
-
-## Timers & overlays
-
-**CH timer frequency indicator** — an addition to the CH lane: when the
-raid leader calls "healers to 4 seconds", a muted indicator will show when
-the next cast is expected to be declared. Off by default, toggleable.
-
-**Post-expiration spell alerts** — let chosen spell timers persist for a
-fixed period *after* expiry and flash, prompting you to request a rebuff
-or recast on a target — click to dismiss. Toggleable.
-
-**Raid-mode grouping, redesigned** — the EQTool-style "group buffs by
-spell when targets outnumber spells" view is disabled for now: its global
-flip desynced on targets recognized mid-fight, leaving stuck headers. If
-it returns, it will track orientation per row and stay strictly opt-in —
-targets remain the headers by default.
-
 ## Distribution & platform
 
 Longer-horizon packaging work, waiting on time (and in some cases, money):

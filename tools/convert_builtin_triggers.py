@@ -32,6 +32,7 @@ CATEGORY = "Built In"
 EXPECTED_NAMED = 16  # explicit Create*() triggers in All()
 EXPECTED_LEGACY = 15  # BuildLegacy(...) rows in All()
 EXPECTED_AOE = 34  # rows in the EncounterAoes table (lines 415-448)
+EXPECTED_NPARSEPLUS = 2  # nparseplus-only utility built-ins (#14; not from EQTool)
 
 
 def output(
@@ -41,8 +42,14 @@ def output(
     display_text_color: str | None = None,
     audio_type: str = "None",
     tts_text: str = "",
+    overlay_section: str = "alert",
 ) -> dict:
-    """Mirror of C# TriggerOutput (only fields BuiltInTriggers.cs sets)."""
+    """Mirror of C# TriggerOutput (only fields BuiltInTriggers.cs sets).
+
+    ``overlay_section`` is an nparseplus extension (#14): "alert" (default,
+    center text) or "utility" (dedicated utility header section). Only emitted
+    when non-default so the EQTool-ported triggers' JSON is unchanged.
+    """
     out = {
         "display_text_enabled": display_text_enabled,
         "audio_type": audio_type,
@@ -52,6 +59,8 @@ def output(
         out["display_text"] = display_text
     if display_text_color is not None:
         out["display_text_color"] = display_text_color
+    if overlay_section != "alert":
+        out["overlay_section"] = overlay_section
     return out
 
 
@@ -882,15 +891,72 @@ def build_aoe_trigger(spec: dict) -> dict:
     return t
 
 
+def nparseplus_triggers() -> list[dict]:
+    """nparseplus-only utility built-ins (#14) — NOT ported from EQTool.
+
+    These route their display text to the dedicated "utility" overlay header
+    section (overlay_section="utility"), unlike EQTool's center-text alerts.
+    They ship disabled like every other built-in; the "Utility" folder keeps
+    them beside the ported utility one-liners.
+    """
+    triggers = []
+
+    # Rebuff Request: an incoming tell asking for buffs. The sender name class
+    # is single-token ([\w`]+, no space) exactly like the "Tells You" built-in,
+    # so multi-word merchant/NPC senders ("Peron ThreadSpinner tells you, ...")
+    # don't match — real EQ player names are one token.
+    t = base_trigger(
+        "builtin:np-rebuff-request",
+        "Rebuff Request",
+        r"^(?<name>[\w`]+) tells you, '[^']*\b(?:re)?buffs?\b",
+        True,
+        "Utility",
+    )
+    t["basic"] = output(
+        "Rebuff: {name}",
+        display_text_enabled=True,
+        display_text_color="Gold",
+        audio_type="TextToSpeech",
+        tts_text="Buff request from {name}",
+        overlay_section="utility",
+    )
+    triggers.append(t)
+
+    # Out of Mana indicator, routed to the utility section (the ported
+    # builtin:insufficient-mana stays a center-text Combat alert).
+    t = base_trigger(
+        "builtin:np-out-of-mana",
+        "Out of Mana",
+        "^Insufficient Mana to cast this spell!",
+        True,
+        "Utility",
+    )
+    t["basic"] = output(
+        "OOM",
+        display_text_enabled=True,
+        display_text_color="Gold",
+        audio_type="None",
+        tts_text="out of mana",
+        overlay_section="utility",
+    )
+    triggers.append(t)
+
+    return triggers
+
+
 def main() -> None:
     named = named_triggers()
     legacy = [build_legacy(*row) for row in LEGACY_ROWS]
     aoes = [build_aoe_trigger(s) for s in ENCOUNTER_AOES]
-    triggers = named + legacy + aoes
+    nparseplus = nparseplus_triggers()
+    triggers = named + legacy + aoes + nparseplus
 
     assert len(named) == EXPECTED_NAMED, f"named: {len(named)} != {EXPECTED_NAMED}"
     assert len(legacy) == EXPECTED_LEGACY, f"legacy: {len(legacy)} != {EXPECTED_LEGACY}"
     assert len(aoes) == EXPECTED_AOE, f"aoe: {len(aoes)} != {EXPECTED_AOE}"
+    assert len(nparseplus) == EXPECTED_NPARSEPLUS, (
+        f"nparseplus: {len(nparseplus)} != {EXPECTED_NPARSEPLUS}"
+    )
     ids = [t["built_in_id"] for t in triggers]
     assert len(ids) == len(set(ids)), "duplicate built_in_id"
     assert all(i.startswith("builtin:") for i in ids), "bad built_in_id prefix"
@@ -909,12 +975,15 @@ def main() -> None:
                 "builtin:spell-worn-off and builtin:entered-zone on startup. Colors "
                 "are WPF color names as-written. Encounter AOE triggers restrict to "
                 "their zone short name and fire a CountDown timer; search patterns "
-                "are .NET regexes (note (?<name>...) named groups)."
+                "are .NET regexes (note (?<name>...) named groups). The Utility "
+                "folder also carries nparseplus-only built-ins (#14) that route "
+                "their text to the overlay's utility section (overlay_section)."
             ),
             "counts": {
                 "named": len(named),
                 "legacy": len(legacy),
                 "encounter_aoes": len(aoes),
+                "nparseplus": len(nparseplus),
                 "total": len(triggers),
             },
         },

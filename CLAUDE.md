@@ -13,7 +13,7 @@ generated data assets were converted from an earlier commit, `fdd3f25a` — the
 ```bash
 uv sync                                       # install (creates .venv)
 uv run python -m nparseplus                   # run the app (tray + overlays)
-uv run pytest                                 # full suite (~460 tests, fast)
+uv run pytest                                 # full suite (~970 tests, fast)
 QT_QPA_PLATFORM=offscreen uv run pytest       # headless; CI matrix does this
 uv run ruff check . && uv run ruff format .   # lint/format (line length 100)
 uv run pytest tests/core/parsers -q           # scope runs to one area
@@ -177,7 +177,7 @@ any code marker — `# TODO(#NN)` comments must resolve to a real issue number
 
 ## Where things stand
 
-**M0–M6 complete, v1.4.1 released** (~770 tests): full EQTool parity including the network —
+**M0–M6 complete, v1.4.1 released**: full EQTool parity including the network —
 live PigParse hub interop (map dots, shared timers, quake/boat/roll feeds,
 mob-info loot pricing), the self-hostable nparse websocket mode, Night
 Vision fix, self-updater, PyInstaller .app/DMG + release CI. M4 (1.1) added
@@ -242,9 +242,27 @@ in `app.py`, fired on Apply only when voice/volume changed) swaps its delegate
 in place and closes the old speaker. NOTE: the WinRT speak path is asserted
 only at command-string level in CI — it needs manual Windows verification.
 
+**1.11 batch** (post-1.10.0, ~970 tests): four roadmap features + a version
+indicator. Raid-mode grouping returns strictly opt-in with per-row
+orientation — `core/timers.py` `group_rows_for_display()` is a pure,
+stateless recompute of section headers/orientation from the current rows
+(killing the old global-flag stuck-header desync); `spellwindow.refresh`
+consumes it; setting `raid_group_by_spell`. Post-expiry spell alerts: a
+`SpellRow` with `post_expiry_persist_s > 0` lingers past `ends_at` as a
+flashing rebuff prompt (`tick()` stamps `expired_at`; left-click dismisses;
+per-spell allowlist toggled from the row's context menu; `post_expiry_flash_*`
+settings). CH cadence indicator: `ch_chain.parse_ch_cadence` +
+`CompleteHealCadenceEvent` draw a muted next-cast marker in the CH lane when
+the raid leader calls "healers to N" (`ch_cadence_indicator`, opt-in). A
+dedicated event-overlay Utility header section (`OverlayEvent.section` /
+`TriggerOutput.overlay_section`) hosts two nParse+ built-ins (Rebuff Request,
+Out of Mana; converter bumped 65→67). Settings > General now surfaces the app
+version + an up-to-date/update-available badge + Check now (previously
+tray-only).
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
-through v1.4.1 (semantic-release + platform builds + flatpak repo publish).
+through v1.10.0 (semantic-release + platform builds + flatpak repo publish).
 Remaining human step: confirm bidirectional dots with a real EQTool user
 in-game (probe-level interop is verified). Post-1.0 parking lot lives in
 README.md.

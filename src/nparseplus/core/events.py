@@ -194,6 +194,17 @@ class CompleteHealEvent(LogEvent):
     caster: str
 
 
+class CompleteHealCadenceEvent(LogEvent):
+    """A raid-leader CH cadence call ("healers to 4 seconds"), #15.
+
+    ``seconds`` is the declared interval between chained casts. nparseplus
+    extension (no EQTool equivalent); only published when the opt-in
+    ``ch_cadence_indicator`` setting is on.
+    """
+
+    seconds: int
+
+
 class YouHaveFinishedMemorizingEvent(LogEvent):
     spell_name: str
 
@@ -298,6 +309,10 @@ class OverlayEvent(RemoteEvent):
     text: str
     foreground: str = ""  # color token; UI resolves to a brush
     reset: bool = False
+    # Which overlay region renders this alert. "alert" (default) is the center
+    # text; "utility" routes to the dedicated utility header section (#14).
+    # Deliberate nparseplus divergence from EQTool (no per-alert region there).
+    section: str = "alert"
 
 
 class TimerBarEvent(RemoteEvent):

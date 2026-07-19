@@ -103,10 +103,10 @@ def test_legacy_settings_without_overlay_regions_load_none(tmp_path: Path) -> No
 
 
 def test_load_ignores_removed_spellwindow_keys(tmp_path: Path) -> None:
-    # Removed keys: show_trigger_timers (the old single "Custom Timer"
-    # section split into Mob/Roll/Custom) and raid_mode_auto (the adaptive
-    # raid regrouping was dropped — targets are always the headers). An
-    # older settings.json still carrying them must load without error
+    # Removed keys: show_trigger_timers (the old single "Custom Timer" section
+    # split into Mob/Roll/Custom) and raid_mode_auto (the EQTool global-flag
+    # raid regrouping — replaced by the opt-in, per-row raid_group_by_spell in
+    # #17). An older settings.json still carrying them must load without error
     # (extras are ignored) and the new toggles fall back to their defaults.
     path = tmp_path / "settings.json"
     save_settings(Settings(), path)
@@ -120,6 +120,35 @@ def test_load_ignores_removed_spellwindow_keys(tmp_path: Path) -> None:
     assert loaded.spellwindow.show_custom_timers is True
     assert not hasattr(loaded.spellwindow, "show_trigger_timers")
     assert not hasattr(loaded.spellwindow, "raid_mode_auto")
+    # The redesigned raid mode is a NEW, distinct key that defaults off.
+    assert loaded.spellwindow.raid_group_by_spell is False
+
+
+def test_new_1_11_optin_defaults_and_roundtrip(tmp_path: Path) -> None:
+    """The 1.11-batch opt-ins default off and survive a save/load round-trip."""
+    s = Settings()
+    assert s.general.ch_cadence_indicator is False
+    assert s.general.ch_cadence_patterns  # defaults to the stock cadence regexes
+    assert s.spellwindow.raid_group_by_spell is False
+    assert s.spellwindow.post_expiry_flash_enabled is False
+    assert s.spellwindow.post_expiry_flash_seconds == 30
+    assert s.spellwindow.post_expiry_flash_spells == []
+
+    s.general.ch_cadence_indicator = True
+    s.general.ch_cadence_patterns = [r"cadence (\d+)"]
+    s.spellwindow.raid_group_by_spell = True
+    s.spellwindow.post_expiry_flash_enabled = True
+    s.spellwindow.post_expiry_flash_seconds = 45
+    s.spellwindow.post_expiry_flash_spells = ["Clarity", "Aegolism"]
+    path = tmp_path / "settings.json"
+    save_settings(s, path)
+    loaded = load_settings(path)
+    assert loaded.general.ch_cadence_indicator is True
+    assert loaded.general.ch_cadence_patterns == [r"cadence (\d+)"]
+    assert loaded.spellwindow.raid_group_by_spell is True
+    assert loaded.spellwindow.post_expiry_flash_enabled is True
+    assert loaded.spellwindow.post_expiry_flash_seconds == 45
+    assert loaded.spellwindow.post_expiry_flash_spells == ["Clarity", "Aegolism"]
 
 
 def test_atomic_write_leaves_valid_json_and_no_tmp(tmp_path: Path) -> None:

@@ -45,6 +45,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import nparseplus
+from nparseplus import updater
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
 from nparseplus.core import friends, visionfix
@@ -139,6 +141,9 @@ class _WindowRow:
 class UnifiedSettingsWindow(OverlayWindowBase):
     # Emitted from the login worker thread; queued onto the GUI thread.
     _discord_auth_done = Signal(object)
+    # Emitted from the update-check worker thread; carries a ReleaseInfo or
+    # None (up to date / offline), queued onto the GUI thread.
+    _update_status_ready = Signal(object)
 
     def __init__(
         self,
@@ -178,6 +183,8 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._zones = zones
         self._discord_login = discord_login_fn
         self._discord_auth_done.connect(self._finish_discord_login)
+        self._update_status_ready.connect(self._on_update_status_ready)
+        self._update_checking = False
 
         self._sidebar = QListWidget(self)
         self._sidebar.setFixedWidth(140)
@@ -241,6 +248,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._update_check = QCheckBox(self)
         self._update_check.setChecked(general.update_check)
         form.addRow("Check for updates", self._update_check)
+        form.addRow("Version", self._build_version_indicator())
         self._theme_combo = QComboBox(self)
         self._theme_combo.addItem("Dark", "dark")
         self._theme_combo.addItem("Light", "light")
@@ -258,6 +266,66 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
         return self._page(form)
+
+    # -- version / update indicator ------------------------------------------------
+
+    def _build_version_indicator(self) -> QWidget:
+        """The current version + an up-to-date / update-available status badge
+        and a "Check now" button (the version was previously tray-only)."""
+        row = QWidget(self)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self._version_label = QLabel(f"nParse+ {nparseplus.__version__}", self)
+        layout.addWidget(self._version_label)
+        self._update_badge = QLabel("", self)
+        self._update_badge.setObjectName("VersionBadge")
+        layout.addWidget(self._update_badge)
+        layout.addStretch(1)
+        self._update_check_button = QPushButton("Check now", self)
+        self._update_check_button.clicked.connect(self._check_for_update_async)
+        layout.addWidget(self._update_check_button)
+        self._set_update_badge(None, checked=False)
+        return row
+
+    def _set_update_badge(self, release: object, *, checked: bool) -> None:
+        """Style the badge: neutral before a check, green up-to-date, amber
+        when a newer release is available."""
+        if not checked:
+            self._update_badge.setText("")
+            self._update_badge.setStyleSheet("")
+            return
+        if release is None:
+            text, bg = "Up to date", "#2f9e6e"
+        else:
+            text, bg = f"Update available: v{release.version}", "#d99b2b"
+        self._update_badge.setText(text)
+        self._update_badge.setStyleSheet(
+            f"color: white; background-color: {bg}; border-radius: 3px;"
+            " padding: 1px 6px; font-weight: bold; font-size: 11px;"
+        )
+
+    def _check_for_update_async(self) -> None:
+        if self._update_checking:
+            return
+        self._update_checking = True
+        self._update_check_button.setEnabled(False)
+        self._update_badge.setText("Checking…")
+        self._update_badge.setStyleSheet("color: #888888; font-size: 11px;")
+
+        def work() -> None:
+            try:
+                release = updater.check_for_update()
+            except Exception:  # updater already fails soft, but never leak a thread crash
+                release = None
+            self._update_status_ready.emit(release)
+
+        threading.Thread(target=work, name="settings-update-check", daemon=True).start()
+
+    def _on_update_status_ready(self, release: object) -> None:
+        self._update_checking = False
+        self._update_check_button.setEnabled(True)
+        self._set_update_badge(release, checked=True)
 
     # -- Character -------------------------------------------------------------------
 
@@ -653,6 +721,14 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "and shared remote timers."
         )
         form.addRow("Show custom timers", self._show_custom_timers)
+        self._raid_group_by_spell = QCheckBox(self)
+        self._raid_group_by_spell.setChecked(spellwindow.raid_group_by_spell)
+        self._raid_group_by_spell.setToolTip(
+            "Raid mode: when the buffs you cast on other players cover more "
+            "targets than distinct spells, group them by spell (the spell heads, "
+            "targets list). Off by default; targets always stay the headers."
+        )
+        form.addRow("Group buffs by spell (raid mode)", self._raid_group_by_spell)
         self._best_guess = QCheckBox(self)
         self._best_guess.setChecked(spellwindow.best_guess_spells)
         self._best_guess.setToolTip(
@@ -679,6 +755,22 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._buff_fade_audio = QCheckBox(self)
         self._buff_fade_audio.setChecked(spellwindow.buff_fade_warning_audio)
         form.addRow("Speak buff-fade warnings", self._buff_fade_audio)
+        self._post_expiry_flash = QCheckBox(self)
+        self._post_expiry_flash.setChecked(spellwindow.post_expiry_flash_enabled)
+        self._post_expiry_flash.setToolTip(
+            "Keep chosen spells on-screen after they expire, flashing as a "
+            "rebuff/recast prompt (click the row to dismiss). Choose which "
+            'spells with each row\'s right-click "Flash on expiry".'
+        )
+        form.addRow("Flash spells after expiry", self._post_expiry_flash)
+        self._post_expiry_secs = QSpinBox(self)
+        self._post_expiry_secs.setRange(1, 300)
+        self._post_expiry_secs.setSuffix(" s")
+        self._post_expiry_secs.setValue(spellwindow.post_expiry_flash_seconds)
+        self._post_expiry_secs.setToolTip(
+            "How long an expired spell keeps flashing before it drops."
+        )
+        form.addRow("Post-expiry flash time", self._post_expiry_secs)
         note = QLabel("Per-class spell filters live on the Character page.", self)
         note.setStyleSheet("color: #888888; font-size: 11px;")
         form.addRow(note)
@@ -891,6 +983,21 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "(e.g. 'GG'). Leave blank to follow all calls."
         )
         form.addRow("CH chain tag (blank = all)", self._ch_tag)
+        self._ch_cadence = QCheckBox(self)
+        self._ch_cadence.setChecked(general.ch_cadence_indicator)
+        self._ch_cadence.setToolTip(
+            'When the raid leader calls a cadence ("healers to 4 seconds"), show '
+            "a muted marker in the CH lane at the declared second. Off by default."
+        )
+        form.addRow("CH cadence indicator", self._ch_cadence)
+        self._ch_cadence_patterns = QPlainTextEdit(self)
+        self._ch_cadence_patterns.setPlainText("\n".join(general.ch_cadence_patterns))
+        self._ch_cadence_patterns.setFixedHeight(64)
+        self._ch_cadence_patterns.setToolTip(
+            "Regexes that recognize a cadence callout — one per line, each with a "
+            "capturing group ( ) for the seconds. Leave blank to use the defaults."
+        )
+        form.addRow("CH cadence patterns", self._ch_cadence_patterns)
         self._bard_count = QCheckBox(self)
         self._bard_count.setChecked(general.bard_count_enabled)
         self._bard_count.setToolTip(
@@ -1118,6 +1225,12 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.overlay_text_seconds = self._overlay_seconds.value()
         general.ch_lane_retention_seconds = self._ch_retention.value()
         general.ch_chain_tag = self._ch_tag.text().strip()
+        general.ch_cadence_indicator = self._ch_cadence.isChecked()
+        general.ch_cadence_patterns = [
+            line.strip()
+            for line in self._ch_cadence_patterns.toPlainText().splitlines()
+            if line.strip()
+        ]
         general.bard_count_enabled = self._bard_count.isChecked()
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()
@@ -1131,10 +1244,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.show_mob_timers = self._show_mob_timers.isChecked()
         spellwindow.show_roll_timers = self._show_roll_timers.isChecked()
         spellwindow.show_custom_timers = self._show_custom_timers.isChecked()
+        spellwindow.raid_group_by_spell = self._raid_group_by_spell.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()
         spellwindow.buff_fade_warning_seconds = self._buff_fade_secs.value()
         spellwindow.buff_fade_warning_audio = self._buff_fade_audio.isChecked()
+        spellwindow.post_expiry_flash_enabled = self._post_expiry_flash.isChecked()
+        spellwindow.post_expiry_flash_seconds = self._post_expiry_secs.value()
         self._apply_character()
         self._apply_maps()
         self._apply_windows()

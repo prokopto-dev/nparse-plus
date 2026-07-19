@@ -17,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from nparseplus.config.paths import ensure_config_dir, settings_path
+from nparseplus.core.ch_chain import DEFAULT_CH_CADENCE_PATTERNS
 
 # Triggers persist in the engine's own (Qt-free) schema — one model, no drift.
 from nparseplus.core.triggers.model import Trigger
@@ -91,6 +92,16 @@ class GeneralSettings(BaseModel):
     # Follow only CH calls prefixed with this raid tag (e.g. "GG"); blank =
     # all calls (EQTool ChChainTagOverlay).
     ch_chain_tag: str = ""
+    # nparseplus extension (#15): when the raid leader calls a cadence
+    # ("healers to 4 seconds"), draw a muted marker in the CH lane at the
+    # declared second. Off by default; opt-in.
+    ch_cadence_indicator: bool = False
+    # User-editable regexes that recognize a cadence callout — each with a
+    # first capturing group for the seconds (like a trigger's search text).
+    # Defaults to the stock phrasings; empty falls back to the same defaults.
+    ch_cadence_patterns: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_CH_CADENCE_PATTERNS)
+    )
     # Bard AoE hit counter: yellow overlay + TTS tally of hits/resists when a
     # bard swarm session finalizes (EQTool BardCountHandler).
     bard_count_enabled: bool = True
@@ -138,10 +149,15 @@ class SpellWindowSettings(BaseModel):
     # New (EQTool parity) options:
     you_only_spells: bool = False
     show_random_rolls: bool = True
-    # (Removed: raid_mode_auto — EQTool's adaptive raid regrouping is
-    # disabled for now (desync bug; see core/timers.py); targets are always
-    # the headers. Old keys are ignored on load, like show_trigger_timers
-    # below.)
+    # nparseplus extension (#17): EQTool's adaptive raid regrouping, redesigned.
+    # When on AND a target group's distinct targets outnumber its distinct
+    # spells, that group flips to spell-as-header (targets become the rows) so
+    # a raid-wide buff reads as one spell over many people. Strictly opt-in;
+    # targets stay the headers by default. Orientation is derived per group
+    # per render (never persisted), which is what fixes the old global-flag
+    # desync (stuck headers on post-/who target recognition; see
+    # core/timers.py). The old ``raid_mode_auto`` key is ignored on load.
+    raid_group_by_spell: bool = False
     # nparseplus extension: how rows sort under each group header. Default
     # "time_remaining" puts the soonest-to-expire row at the top (counters,
     # which never expire, sort last); "alphabetical" is the legacy order.
@@ -167,6 +183,13 @@ class SpellWindowSettings(BaseModel):
     # fade. 0 disables; the time label also turns red inside the window.
     buff_fade_warning_seconds: int = Field(default=0, ge=0, le=300)
     buff_fade_warning_audio: bool = True
+    # nparseplus extension (#16): post-expiration spell alerts. When enabled,
+    # a spell whose name is in ``post_expiry_flash_spells`` keeps its row for
+    # ``post_expiry_flash_seconds`` after it expires, flashing as a rebuff/
+    # recast prompt (click the row to dismiss). Opt-in and per-spell.
+    post_expiry_flash_enabled: bool = False
+    post_expiry_flash_seconds: int = Field(default=30, ge=1, le=300)
+    post_expiry_flash_spells: list[str] = Field(default_factory=list)
 
 
 class DiscordSettings(BaseModel):

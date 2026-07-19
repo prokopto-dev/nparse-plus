@@ -6,8 +6,12 @@ from __future__ import annotations
 import pytest
 from tests.core.handlers.conftest import T0, FakeSpeaker, Harness
 
-from nparseplus.core.ch_chain import ChainData, should_warn_of_chain
-from nparseplus.core.events import CompleteHealEvent, OverlayEvent
+from nparseplus.core.ch_chain import ChainData, parse_ch_cadence, should_warn_of_chain
+from nparseplus.core.events import (
+    CompleteHealCadenceEvent,
+    CompleteHealEvent,
+    OverlayEvent,
+)
 from nparseplus.core.handlers.complete_heal import (
     CH_WARNING_TEXT,
     CompleteHealCommsHandler,
@@ -240,3 +244,75 @@ def test_no_warning_for_other_positions(h: Harness) -> None:
     h.push("You say out of character, 'CA 004 CH -- Aaryk'")
     h.push("Hanbox says out of character, 'CA 001 CH -- Aaryk'")
     assert h.speaker.spoken == []
+
+
+# -- CH cadence indicator (#15) -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("healers to 4 seconds", 4),
+        ("healers to 3", 3),
+        ("heals to 5", 5),
+        ("chain to 6", 6),
+        ("CH to 2", 2),
+        ("4 second chain", 4),
+        ("3s chain", 3),
+        ("HEALERS TO 7 SECONDS", 7),
+        ("GG 014 CH -- Wreckognize", None),  # a chain call, not a cadence
+        ("healers to 40 people", None),  # out of the [1, 30] range
+        ("healers to 0", None),
+        ("let's get moving", None),
+    ],
+)
+def test_parse_ch_cadence(content: str, expected: int | None) -> None:
+    assert parse_ch_cadence(content) == expected
+
+
+def _cadence_events(h: Harness) -> list[CompleteHealCadenceEvent]:
+    return h.collector.of_type(CompleteHealCadenceEvent)
+
+
+def test_cadence_published_when_enabled(h: Harness) -> None:
+    h.comms_handler.cadence_enabled = lambda: True
+    h.push("Raidleader shouts, 'healers to 4 seconds'")
+    assert [e.seconds for e in _cadence_events(h)] == [4]
+
+
+def test_cadence_ignored_when_disabled(h: Harness) -> None:
+    # cadence_enabled defaults to False.
+    h.push("Raidleader shouts, 'healers to 4 seconds'")
+    assert _cadence_events(h) == []
+
+
+def test_cadence_not_emitted_for_chain_call(h: Harness) -> None:
+    h.comms_handler.cadence_enabled = lambda: True
+    h.push("Curaja shouts, 'GG 014 CH -- Wreckognize'")
+    assert _cadence_events(h) == []
+    assert h.collector.of_type(CompleteHealEvent)  # the chain call still parses
+
+
+def test_parse_ch_cadence_custom_patterns() -> None:
+    # A user regex with a first capturing group for the seconds.
+    assert parse_ch_cadence("cast every 6 now", patterns=[r"every (\d+)"]) == 6
+    # Empty / None falls back to the stock defaults.
+    assert parse_ch_cadence("healers to 4 seconds", patterns=[]) == 4
+    assert parse_ch_cadence("healers to 4 seconds", patterns=None) == 4
+
+
+def test_parse_ch_cadence_tolerates_bad_patterns() -> None:
+    # An invalid regex is skipped (logged), the valid one still matches.
+    assert parse_ch_cadence("healers to 4", patterns=["(unclosed", r"to (\d+)"]) == 4
+    # A pattern without a capturing group never crashes.
+    assert parse_ch_cadence("healers to 4", patterns=[r"healers"]) is None
+
+
+def test_cadence_uses_custom_patterns_provider(h: Harness) -> None:
+    h.comms_handler.cadence_enabled = lambda: True
+    h.comms_handler.cadence_patterns = lambda: [r"cadence (\d+)"]
+    h.push("Raidleader shouts, 'cadence 3 go'")
+    assert [e.seconds for e in _cadence_events(h)] == [3]
+    # The stock "healers to N" phrasing no longer matches once overridden.
+    h.push("Raidleader shouts, 'healers to 4 seconds'")
+    assert [e.seconds for e in _cadence_events(h)] == [3]

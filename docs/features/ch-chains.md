@@ -54,3 +54,16 @@ setting applies immediately, without a restart.
 If you're in the chain, nParse+ tracks the cadence and warns you — on
 screen and spoken — when your slot is coming up, so you start your cast on
 time even when the raid channel is scrolling.
+
+## Cadence indicator
+
+Opt-in. When the raid leader calls a cadence in chat (`healers to 4 seconds`,
+`chain to 3`, `CH to 5`, `4 second chain`), the lane draws a muted marker on
+that second-cell as the next-expected-cast tick, so healers can eyeball the
+called cadence against the graduations. Off by default; enable **CH cadence
+indicator** in [Settings → Audio & Overlays](../settings/audio-overlays.md).
+
+The phrasings it recognizes are **editable regexes**, just like a trigger's
+search text — one per line in **CH cadence patterns**, each with a capturing
+group `( )` for the seconds (e.g. `cadence (\d+)`). Leave the box blank to use
+the stock patterns above.

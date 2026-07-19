@@ -23,7 +23,7 @@ from pathlib import Path
 
 from nparseplus.core.triggers.model import Trigger
 
-EXPECTED_BUILTIN_COUNT = 65
+EXPECTED_BUILTIN_COUNT = 67  # 65 EQTool-ported + 2 nparseplus utility built-ins (#14)
 
 
 def load_builtin_triggers(path: Path | None = None) -> list[Trigger]:

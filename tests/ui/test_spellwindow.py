@@ -86,6 +86,129 @@ def test_rows_render_and_you_group_first(qtbot):
     assert names == ["Clarity", "Custom Timer", "Tainted Breath"]
 
 
+def _add_other_buff(backend, name: str, target: str, minutes: float = 20) -> None:
+    backend.timers.add_spell(
+        SpellRow(
+            name=name,
+            group=target,
+            updated_at=NOW,
+            spell=Spell(id=hash((name, target)) % 9999, name=name),
+            ends_at=NOW + timedelta(minutes=minutes),
+            total_duration_s=minutes * 60.0,
+        )
+    )
+
+
+def test_raid_mode_renders_spell_headers_with_targets(qtbot):
+    backend = make_backend()  # Clarity (YOU) + a Custom Timer
+    for target in ("Joe", "Bob", "Ann"):
+        _add_other_buff(backend, "Aegolism", target)
+    backend.settings.spellwindow.raid_group_by_spell = True
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    headers = window.current_header_texts()
+    # The spell name heads a section; the targets are the rows under it.
+    assert "Aegolism" in headers
+    assert {"Ann", "Bob", "Joe"} <= set(window.current_row_labels())
+    # YOU stays first and target-headed; its own buff still shows the spell name.
+    assert headers[0] == YOU_GROUP.strip() or headers[0] == YOU_GROUP
+    assert "Clarity" in window.current_row_labels()
+
+
+def test_raid_mode_off_keeps_target_headers(qtbot):
+    backend = make_backend()
+    for target in ("Joe", "Bob", "Ann"):
+        _add_other_buff(backend, "Aegolism", target)
+    assert backend.settings.spellwindow.raid_group_by_spell is False  # default
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Targets remain the headers; each row shows the spell.
+    assert {"Ann", "Bob", "Joe"} <= set(window.current_groups())
+    assert window.current_row_labels().count("Aegolism") == 3
+
+
+def test_post_expiry_row_flashes_and_click_dismisses(qtbot):
+    backend = make_backend()
+    backend.timers.add_spell(
+        SpellRow(
+            name="Aegolism",
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=Spell(id=7, name="Aegolism"),
+            ends_at=NOW + timedelta(seconds=10),
+            total_duration_s=10.0,
+            post_expiry_persist_s=30.0,
+        )
+    )
+    # Cross ends_at: the row lingers with expired_at stamped (flashing state).
+    backend.timers.tick(NOW + timedelta(seconds=11))
+    window = _shown_window(qtbot, backend)
+
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "Aegolism")
+    assert widget.expired is True
+    assert widget._value.text() == "REBUFF"
+    # The flash toggles emphasis styling on/off.
+    window._flash_on = False
+    window._toggle_flash()  # -> on
+    assert widget._name.styleSheet() != ""
+    window._toggle_flash()  # -> off
+    assert widget._name.styleSheet() == ""
+
+    # Left-click over the flashing row dismisses it.
+    pos = widget.mapTo(window, widget.rect().center())
+    assert window._dismiss_expired_at(pos) is True
+    assert backend.timers.find("Aegolism", YOU_GROUP) is None
+
+
+def test_flash_style_cleared_when_row_recast(qtbot):
+    """Regression: an expired flashing row that is recast must not keep the
+    red/bold flash on its live countdown."""
+    from nparseplus.ui.spellwindow import _RowWidget
+
+    widget = _RowWidget()
+    qtbot.addWidget(widget)
+    expired = SpellRow(
+        name="Aegolism",
+        group="Joe",
+        updated_at=NOW,
+        is_target_player=True,
+        spell=Spell(id=7, name="Aegolism"),
+        ends_at=NOW,
+        total_duration_s=100.0,
+        post_expiry_persist_s=30.0,
+        expired_at=NOW,
+    )
+    widget.update_row(expired, NOW)
+    widget.apply_flash(True)
+    assert widget.expired is True
+    assert widget._value.styleSheet() != ""  # flashing
+    # Recast: a fresh live row reuses the same widget.
+    live = SpellRow(
+        name="Aegolism",
+        group="Joe",
+        updated_at=NOW,
+        is_target_player=True,
+        spell=Spell(id=7, name="Aegolism"),
+        ends_at=NOW + timedelta(minutes=5),
+        total_duration_s=300.0,
+    )
+    widget.update_row(live, NOW)
+    assert widget.expired is False
+    assert widget._value.styleSheet() == ""  # no stale flash styling
+
+
+def test_live_row_is_not_dismissed_by_click(qtbot):
+    backend = make_backend()  # Clarity (YOU) is live, not expired
+    window = _shown_window(qtbot, backend)
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "Clarity")
+    assert widget.expired is False
+    pos = widget.mapTo(window, widget.rect().center())
+    assert window._dismiss_expired_at(pos) is False
+    assert backend.timers.find("Clarity", YOU_GROUP) is not None
+
+
 def _add_you_spell(backend, name: str, minutes: float) -> None:
     backend.timers.add_spell(
         SpellRow(
@@ -603,7 +726,9 @@ def test_context_target_resolves_row_header_and_empty(qtbot):
     assert row is not None and row.name == "Clarity"
     assert group == YOU_GROUP
 
-    header = window._headers[TRIGGER_TIMER_GROUP]
+    header = next(
+        h for h in window._headers.values() if h.property("group_key") == TRIGGER_TIMER_GROUP
+    )
     pos = header.mapTo(window, header.rect().center())
     row, group = window._context_target(pos)
     assert row is None

@@ -35,7 +35,12 @@ from PySide6.QtWidgets import (
 )
 
 from nparseplus.config.settings import OverlayRegion, WindowState
-from nparseplus.core.events import CompleteHealEvent, OverlayEvent, TimerBarEvent
+from nparseplus.core.events import (
+    CompleteHealCadenceEvent,
+    CompleteHealEvent,
+    OverlayEvent,
+    TimerBarEvent,
+)
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
@@ -106,6 +111,9 @@ class _ChainLane(QFrame):
         self.target = target
         self.chips: list[QLabel] = []
         self.last_call: datetime = datetime.now()
+        # Declared CH cadence in seconds ("healers to 4"), or None (#15). When
+        # set, a muted marker highlights that second-cell as the next-cast tick.
+        self.cadence_seconds: int | None = None
         # Called (with no args) whenever a chip finishes its slide.
         self.on_chip_done: Callable[[], None] | None = None
         # The [name | lane] row container this lane sits in (set by the
@@ -146,6 +154,9 @@ class _ChainLane(QFrame):
         height = self.height()
         for i, rect in enumerate(self.cell_geometry()):
             x, cw = rect.x(), rect.width()
+            # Muted "next expected cast" marker on the declared-cadence cell (#15).
+            if self.cadence_seconds is not None and i + 1 == self.cadence_seconds:
+                painter.fillRect(rect.adjusted(1, 1, -1, -1), QColor(255, 215, 0, 60))
             painter.setPen(QPen(border, 1))  # 1px left/right verticals
             painter.drawLine(x, 0, x, height)
             painter.drawLine(x + cw - 1, 0, x + cw - 1, height)
@@ -243,6 +254,9 @@ class EventOverlayWindow(QWidget):
         self._text_color = ""
         self._bars: dict[str, _TimerBar] = {}
         self._chain_lanes: dict[str, _ChainLane] = {}
+        # Last declared CH cadence (#15); new lanes inherit it, existing lanes
+        # are updated when a fresh callout arrives.
+        self._ch_cadence_seconds: int | None = None
         # Positioning-mode sample widgets: tracked ONLY here, never registered
         # in ``_bars``/``_chain_lanes`` and never written to ``_center_text``.
         self._preview_widgets: list[QWidget] = []
@@ -287,9 +301,31 @@ class EventOverlayWindow(QWidget):
         self._alert_host.setObjectName("OverlayAlertHost")
         self._alert_host.setLayout(self._alert_layout)
 
+        # Dedicated utility header section (#14): a "Utility" header + a stack of
+        # auto-clearing lines for rebuff/OOM-style alerts routed here by triggers
+        # whose output targets section="utility". Header hides when empty.
+        self._utility_layout = QVBoxLayout()
+        self._utility_layout.setContentsMargins(0, 0, 0, 0)
+        self._utility_layout.setSpacing(2)
+        self._utility_header = QLabel("Utility", self)
+        self._utility_header.setObjectName("OverlayUtilityHeader")
+        self._utility_header.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._utility_header.setStyleSheet(
+            "color: #dddddd; background-color: rgba(30, 60, 120, 200);"
+            " font-size: 12px; font-weight: bold; padding: 1px 6px; border-radius: 3px;"
+        )
+        self._utility_header.hide()
+        self._utility_layout.addWidget(self._utility_header, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._utility_host = QWidget(self)
+        self._utility_host.setObjectName("OverlayUtilityHost")
+        self._utility_host.setLayout(self._utility_layout)
+        self._utility_lines: dict[str, QLabel] = {}
+        self._utility_timers: dict[str, QTimer] = {}
+
         self._main_layout = QVBoxLayout()
         self._main_layout.setContentsMargins(20, 40, 20, 60)
         self._main_layout.addWidget(self._lanes_host, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._main_layout.addWidget(self._utility_host, 0, Qt.AlignmentFlag.AlignHCenter)
         self._main_layout.addStretch(2)
         self._main_layout.addWidget(self._alert_host, 0)
         self._main_layout.addStretch(3)
@@ -298,7 +334,12 @@ class EventOverlayWindow(QWidget):
 
         # Small dashed-border title chips shown over each region while editing.
         self._region_titles: dict[str, QLabel] = {}
-        for key, text in (("lanes", "CH chains"), ("alert", "Alerts"), ("bars", "Timer bars")):
+        for key, text in (
+            ("lanes", "CH chains"),
+            ("utility", "Utility"),
+            ("alert", "Alerts"),
+            ("bars", "Timer bars"),
+        ):
             chip = QLabel(text, self)
             chip.setStyleSheet(
                 "color: white; background-color: rgba(30, 60, 120, 220);"
@@ -450,7 +491,23 @@ class EventOverlayWindow(QWidget):
     # -- per-region positioning --------------------------------------------------
 
     def _region_hosts(self) -> dict[str, QWidget]:
-        return {"lanes": self._lanes_host, "alert": self._alert_host, "bars": self._bars_host}
+        return {
+            "lanes": self._lanes_host,
+            "utility": self._utility_host,
+            "alert": self._alert_host,
+            "bars": self._bars_host,
+        }
+
+    def _default_region(self, key: str) -> OverlayRegion:
+        """The stacked-layout default placement for a region host — the single
+        source of truth used to seed and to backfill missing keys (e.g. the
+        'utility' region absent from a layout saved before 1.11)."""
+        return {
+            "lanes": OverlayRegion(anchor="top"),
+            "utility": OverlayRegion(anchor="top", dy=96),
+            "alert": OverlayRegion(anchor="center"),
+            "bars": OverlayRegion(anchor="bottom"),
+        }.get(key, OverlayRegion())
 
     def _region_mode(self) -> bool:
         return self._state is not None and self._state.overlay_regions is not None
@@ -460,12 +517,10 @@ class EventOverlayWindow(QWidget):
         # the current stacked positions, so the untouched regions don't jump.
         if self._state.overlay_regions is None:
             self._state.overlay_regions = {
-                "lanes": OverlayRegion(anchor="top"),
-                "alert": OverlayRegion(anchor="center"),
-                "bars": OverlayRegion(anchor="bottom"),
+                name: self._default_region(name) for name in self._region_hosts()
             }
             self._activate_region_layout()
-        region = self._state.overlay_regions.setdefault(key, OverlayRegion())
+        region = self._state.overlay_regions.setdefault(key, self._default_region(key))
         self._drag_region = key
         self._region_drag_start = global_start
         self._region_drag_base = (region.dx, region.dy)
@@ -488,13 +543,14 @@ class EventOverlayWindow(QWidget):
         cx = w // 2
         defaults = {
             "lanes": max(LANES_WIDTH, self._lanes_host.sizeHint().width()),
+            "utility": max(320, self._utility_host.sizeHint().width()),
             "alert": w,
             "bars": BAR_WIDTH,
         }
         for key, host in self._region_hosts().items():
-            region = regions.get(key)
-            if region is None:
-                continue
+            # Backfill a region absent from a pre-1.11 saved layout (e.g.
+            # 'utility') with its default so the host isn't stranded at (0, 0).
+            region = regions.get(key) or self._default_region(key)
             host_w = region.width if region.width is not None else defaults[key]
             host_h = max(1, host.sizeHint().height())
             host.resize(host_w, host_h)
@@ -542,9 +598,11 @@ class EventOverlayWindow(QWidget):
         to live state and publishes no events."""
         if self._preview_widgets:
             return
-        # Sample CH lane with two static chips.
+        # Sample CH lane with two static chips (and a sample cadence marker so
+        # the muted "next cast" tick is visible while positioning, #15).
         lane = _ChainLane("Sample Target", self)
         lane.setFixedWidth(LANES_WIDTH)
+        lane.cadence_seconds = 4
         row = self._build_lane_row("Sample Target", lane)
         self._lanes_layout.addWidget(row)
         lane.show()
@@ -568,6 +626,16 @@ class EventOverlayWindow(QWidget):
         label.show()
         self._preview_widgets.append(label)
 
+        # Sample utility line under the "Utility" header (#14).
+        self._utility_header.show()
+        util = QLabel("Rebuff: Sample — buff faded", self)
+        util.setObjectName("OverlayUtilityLine")
+        util.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        util.setStyleSheet("color: #ffd479; font-size: 20px; font-weight: bold;")
+        self._utility_layout.addWidget(util, 0, Qt.AlignmentFlag.AlignHCenter)
+        util.show()
+        self._preview_widgets.append(util)
+
         # Sample timer bars (do NOT start ``_bar_timer`` — these never tick).
         for bar in (
             self._make_bar_widget("Sample Timer", DEFAULT_BAR_COLOR, 60, 45),
@@ -585,11 +653,18 @@ class EventOverlayWindow(QWidget):
         if not self._preview_widgets:
             return
         for widget in self._preview_widgets:
-            for lay in (self._lanes_layout, self._alert_layout, self._bars_layout):
+            for lay in (
+                self._lanes_layout,
+                self._alert_layout,
+                self._bars_layout,
+                self._utility_layout,
+            ):
                 lay.removeWidget(widget)
             widget.setParent(None)
             widget.deleteLater()
         self._preview_widgets.clear()
+        if not self._utility_lines:
+            self._utility_header.hide()
         if self._region_mode():
             self._layout_regions()
 
@@ -607,14 +682,24 @@ class EventOverlayWindow(QWidget):
             self._on_overlay_event(event)
         elif isinstance(event, TimerBarEvent):
             self._on_timer_bar_event(event)
+        elif isinstance(event, CompleteHealCadenceEvent):
+            self._on_ch_cadence(event)
         elif isinstance(event, CompleteHealEvent):
             self._on_complete_heal(event)
+
+    def _on_ch_cadence(self, event: CompleteHealCadenceEvent) -> None:
+        """Apply a declared CH cadence to the lanes' muted markers (#15)."""
+        self._ch_cadence_seconds = event.seconds
+        for lane in self._chain_lanes.values():
+            lane.cadence_seconds = event.seconds
+            lane.update()
 
     def _on_complete_heal(self, event: CompleteHealEvent) -> None:
         target = event.recipient or "?"
         lane = self._chain_lanes.get(target)
         if lane is None:
             lane = _ChainLane(target, self)
+            lane.cadence_seconds = self._ch_cadence_seconds
             lane.setFixedWidth(520)
             lane.on_chip_done = lambda t=target: QTimer.singleShot(
                 100, lambda: self._maybe_remove_lane(t)
@@ -696,6 +781,9 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _on_overlay_event(self, event: OverlayEvent) -> None:
+        if event.section == "utility":
+            self._on_utility_event(event)
+            return
         if event.reset:
             # EQTool only clears when the reset matches what is displayed.
             if self._center_text.text() == event.text:
@@ -705,6 +793,49 @@ class EventOverlayWindow(QWidget):
         self._set_text_color(resolve_color(event.foreground, DEFAULT_TEXT_COLOR))
         self._clear_timer.start()
         self._update_visibility()
+
+    def _on_utility_event(self, event: OverlayEvent) -> None:
+        """Render a utility alert line in the dedicated utility section (#14)."""
+        if event.reset:
+            self._remove_utility_line(event.text)
+            return
+        color = resolve_color(event.foreground, DEFAULT_TEXT_COLOR)
+        label = self._utility_lines.get(event.text)
+        if label is None:
+            label = QLabel(event.text, self)
+            label.setObjectName("OverlayUtilityLine")
+            label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            self._utility_layout.addWidget(label, 0, Qt.AlignmentFlag.AlignHCenter)
+            self._utility_lines[event.text] = label
+        label.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: bold;")
+        label.show()
+        # Self-clearing safety net; the trigger engine also sends a reset.
+        timer = self._utility_timers.get(event.text)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda t=event.text: self._remove_utility_line(t))
+            self._utility_timers[event.text] = timer
+        timer.start(self._clear_after_ms)
+        self._utility_header.show()
+        self._update_visibility()
+
+    def _remove_utility_line(self, text: str) -> None:
+        label = self._utility_lines.pop(text, None)
+        if label is not None:
+            self._utility_layout.removeWidget(label)
+            label.deleteLater()
+        timer = self._utility_timers.pop(text, None)
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+        if not self._utility_lines:
+            self._utility_header.hide()
+        self._update_visibility()
+
+    def current_utility_texts(self) -> list[str]:
+        """Utility section line texts (test/debug hook)."""
+        return list(self._utility_lines.keys())
 
     def _make_bar_widget(
         self, name: str, color: str | None, total: int, remaining: int
@@ -785,7 +916,12 @@ class EventOverlayWindow(QWidget):
             if not self.isVisible():
                 self.show()
             return
-        active = bool(self._center_text.text()) or bool(self._bars) or bool(self._chain_lanes)
+        active = (
+            bool(self._center_text.text())
+            or bool(self._bars)
+            or bool(self._chain_lanes)
+            or bool(self._utility_lines)
+        )
         if active and not self.isVisible():
             self.show()
         elif not active and self.isVisible():

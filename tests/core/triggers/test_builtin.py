@@ -11,7 +11,7 @@ from nparseplus.core.triggers.model import Trigger, TriggerAudioType, TriggerOut
 
 def test_load_builtin_triggers_count() -> None:
     triggers = load_builtin_triggers()
-    assert len(triggers) == EXPECTED_BUILTIN_COUNT == 65
+    assert len(triggers) == EXPECTED_BUILTIN_COUNT == 67
 
 
 def test_builtins_are_marked_and_foldered() -> None:
@@ -22,6 +22,38 @@ def test_builtins_are_marked_and_foldered() -> None:
     assert loose == []
     utility = {t.trigger_name for t in triggers if t.built_in_folder == "Utility"}
     assert {"Levitate Fading", "Tells You", "Sense Heading", "Exp Timer"} <= utility
+
+
+def test_nparseplus_utility_builtins_route_to_utility_section() -> None:
+    """#14: the nparseplus-only utility built-ins load disabled, sit in the
+    Utility folder, and target the overlay's utility section."""
+    triggers = load_builtin_triggers()
+    by_id = {t.built_in_id: t for t in triggers}
+    for built_in_id, name in (
+        ("builtin:np-rebuff-request", "Rebuff Request"),
+        ("builtin:np-out-of-mana", "Out of Mana"),
+    ):
+        trigger = by_id[built_in_id]
+        assert trigger.trigger_name == name
+        assert trigger.built_in_folder == "Utility"
+        assert trigger.trigger_enabled is False
+        assert trigger.basic is not None
+        assert trigger.basic.overlay_section == "utility"
+
+
+def test_rebuff_request_matches_buff_tell() -> None:
+    trigger = next(
+        t for t in load_builtin_triggers() if t.built_in_id == "builtin:np-rebuff-request"
+    )
+    trigger.trigger_enabled = True
+    assert trigger.matches("Soandso tells you, 'can I get buffs please'")
+    assert trigger.matches("Soandso tells you, 'rebuff?'")
+    assert not trigger.matches("Soandso tells you, 'where is the group'")
+    assert trigger.expand(trigger.effective_basic().display_text) == "Rebuff: Soandso"
+    # Multi-word merchant/NPC senders must not match (single-token name class,
+    # like the Tells You built-in), even when the tell mentions buffs.
+    assert not trigger.matches("Peron ThreadSpinner tells you, 'I sell buff potions'")
+    assert not trigger.matches("Cleonae Kalen tells you, 'I will rebuff your weapon'")
 
 
 def test_tells_you_ignores_npc_senders_with_spaces() -> None:

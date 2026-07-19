@@ -41,6 +41,7 @@ from nparseplus.core.timers import (
     RollRow,
     Row,
     SpellRow,
+    group_rows_for_display,
 )
 from nparseplus.ui import appquit, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss
@@ -48,6 +49,7 @@ from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
 REFRESH_INTERVAL_MS = 250
+FLASH_INTERVAL_MS = 500  # post-expiry rebuff-prompt flash cadence (#16)
 DEFAULT_GEOMETRY = (400, 0, 220, 400)
 
 # Progress-bar chunk colors per row kind.
@@ -120,6 +122,10 @@ class _RowWidget(QFrame):
         self._color = ""
         self._warning_threshold = warning_threshold
         self._warning = False
+        #: True while this row is a post-expiry rebuff prompt (#16) — it drives
+        #: the flash and makes a left-click dismiss the row.
+        self.expired = False
+        self._flash_on = False
 
         self._icon = QLabel(self)
         self._icon.setObjectName("SpellTimerRowIcon")
@@ -152,12 +158,33 @@ class _RowWidget(QFrame):
         layout.addWidget(self._bar)
         self.setLayout(layout)
 
-    def update_row(self, row: Row, now: datetime) -> None:
-        """Render ``row`` — read-only; never mutates the model."""
+    def update_row(self, row: Row, now: datetime, label: str | None = None) -> None:
+        """Render ``row`` — read-only; never mutates the model.
+
+        ``label`` overrides the displayed name (raid mode shows the target
+        under a spell header instead of the spell name); the row identity used
+        by the context menu stays ``row`` regardless.
+        """
         self.row_name = row.name
         self.row = row
-        self._name.setText(row.name)
+        self._name.setText(label if label is not None else row.name)
         self._update_icon(row)
+        expired = isinstance(row, SpellRow) and row.expired_at is not None
+        if expired != self.expired:
+            self.expired = expired
+            if not expired:
+                # Reused for a live row again — clear ALL flash styling (name and
+                # value) so a recast row's countdown isn't stuck red/bold, and
+                # reset the warning flag so _update_warning re-applies from clean.
+                self._name.setStyleSheet("")
+                self._value.setStyleSheet("")
+                self._warning = False
+        if expired:
+            # Post-expiry rebuff prompt: no countdown, flashing handled below.
+            self._value.setText("REBUFF")
+            self._bar.setVisible(False)
+            self.apply_flash(self._flash_on)
+            return
         if isinstance(row, CounterRow):
             self._value.setText(f"x{row.count}")
             self._bar.setVisible(False)
@@ -178,6 +205,16 @@ class _RowWidget(QFrame):
                 f"QProgressBar {{ background-color: {theme.palette().bar_track}; border: none; }}"
                 f"QProgressBar::chunk {{ background-color: {color}; }}"
             )
+
+    def apply_flash(self, on: bool) -> None:
+        """Toggle the post-expiry flash (#16). No-op unless this row is an
+        expired rebuff prompt; the window's flash timer drives ``on``."""
+        self._flash_on = on
+        if not self.expired:
+            return
+        style = f"color: {theme.palette().warning_text}; font-weight: bold;" if on else ""
+        self._name.setStyleSheet(style)
+        self._value.setStyleSheet(style)
 
     def _update_warning(self, row: Row, remaining: float) -> None:
         """Buff-fade pre-warning: the time label turns red inside the window
@@ -318,6 +355,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._refresh_timer.timeout.connect(self.refresh)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
+        # Post-expiry rebuff prompts flash (#16); cheap and always running.
+        self._flash_on = False
+        self._flash_timer = QTimer(self)
+        self._flash_timer.timeout.connect(self._toggle_flash)
+        self._flash_timer.start(FLASH_INTERVAL_MS)
+
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._on_app_quit)
@@ -381,11 +424,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         show_classes = info.show_spells_for_classes if info is not None else None
         rows = [row for row in rows if not self._row_hidden(row, show_classes)]
 
-        grouped: dict[str, list[Row]] = {}
-        for row in rows:
-            grouped.setdefault(row.group, []).append(row)
-        # YOU_GROUP first, then the other targets alphabetically.
-        order = sorted(grouped, key=lambda g: (g != YOU_GROUP, g.casefold()))
+        # Orientation is computed in the Qt-free core (#17): target-headed by
+        # default, spell-headed for raid buffs only when opt-in AND targets
+        # outnumber spells. Recomputed every tick, so it never gets stuck.
+        display_groups = group_rows_for_display(
+            rows, group_by_spell=self._backend.settings.spellwindow.raid_group_by_spell
+        )
         sort_mode = self._backend.settings.spellwindow.row_sort
 
         while self._rows_layout.count():
@@ -394,22 +438,33 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         used_headers: set[str] = set()
         used_rows: set[tuple[str, str, str, int]] = set()
         dup_counter: dict[tuple[str, str, str], int] = {}
-        for group in order:
-            header = self._headers.get(group)
+        for group in display_groups:
+            spell_headed = group.orientation == "spell"
+            # Header widgets are keyed by (orientation, header) so a spell name
+            # can never collide with a same-named target group.
+            hkey = f"{group.orientation}\x00{group.header}"
+            label = group.header if spell_headed else self._group_label(group.header)
+            header = self._headers.get(hkey)
             if header is None:
-                header = QLabel(self._group_label(group), self._container)
+                header = QLabel(label, self._container)
                 header.setObjectName("SpellTimerGroup")
-                header.setProperty("group_key", group)
-                self._headers[group] = header
-            else:
+                # Only target headers map to a clearable group (context menu).
+                header.setProperty("group_key", None if spell_headed else group.header)
+                self._headers[hkey] = header
+            elif header.text() != label:
                 # Target class can arrive later (PlayerTracker /who sync).
-                label = self._group_label(group)
-                if header.text() != label:
-                    header.setText(label)
+                header.setText(label)
             self._rows_layout.addWidget(header)
             header.show()
-            used_headers.add(group)
-            for row in sorted(grouped[group], key=lambda r: row_sort_key(r, now, sort_mode)):
+            used_headers.add(hkey)
+            # Target sections re-sort live by the user's mode; spell sections
+            # keep the core's deterministic by-target order.
+            ordered = (
+                group.rows
+                if spell_headed
+                else sorted(group.rows, key=lambda r: row_sort_key(r, now, sort_mode))
+            )
+            for row in ordered:
                 base = (type(row).__name__, row.name.casefold(), row.group.casefold())
                 index = dup_counter.get(base, 0)
                 dup_counter[base] = index + 1
@@ -421,13 +476,15 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                         warning_threshold=self._buff_fade_warning_seconds,
                     )
                     self._row_widgets[key] = widget
-                widget.update_row(row, now)
+                # In a spell section the row shows its target, not the spell.
+                widget.update_row(row, now, label=row.group.strip() if spell_headed else None)
+                widget.apply_flash(self._flash_on)
                 self._rows_layout.addWidget(widget)
                 widget.show()
                 used_rows.add(key)
 
-        for group in [g for g in self._headers if g not in used_headers]:
-            self._headers.pop(group).deleteLater()
+        for hkey in [h for h in self._headers if h not in used_headers]:
+            self._headers.pop(hkey).deleteLater()
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
         # Re-fit the scroll host to the rebuilt content: the scroll area's own
@@ -435,6 +492,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         # a stale scroll range after rows leave. (The window itself never
         # resizes — the user's size is authoritative.)
         self._scroll.widget().adjustSize()
+
+    def _toggle_flash(self) -> None:
+        """Flip the flash phase and restyle any expired rebuff prompts (#16)."""
+        self._flash_on = not self._flash_on
+        for widget in self._row_widgets.values():
+            widget.apply_flash(self._flash_on)
 
     def _group_label(self, group: str) -> str:
         """Header text: the target name, plus its class when the /who
@@ -463,6 +526,27 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             widget = self._rows_layout.itemAt(i).widget()
             if isinstance(widget, _RowWidget):
                 out.append(widget.row_name)
+        return out
+
+    def current_header_texts(self) -> list[str]:
+        """Header label texts in on-screen order (test/debug hook). Unlike
+        ``current_groups`` (group keys), this reflects raid-mode spell headers,
+        which have no clearable group key."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, QLabel):
+                out.append(widget.text())
+        return out
+
+    def current_row_labels(self) -> list[str]:
+        """Displayed row labels in on-screen order (test/debug hook) — the
+        target under a raid-mode spell header, else the spell name."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, _RowWidget):
+                out.append(widget._name.text())
         return out
 
     # -- window state ------------------------------------------------------------
@@ -533,10 +617,23 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             if self._maybe_begin_edge_resize(event.position().toPoint()):
                 event.accept()
                 return
+            # Click-to-dismiss a post-expiry rebuff prompt (#16) before drag.
+            if self._dismiss_expired_at(event.position().toPoint()):
+                event.accept()
+                return
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         else:
             super().mousePressEvent(event)
+
+    def _dismiss_expired_at(self, pos: QPoint) -> bool:
+        """If ``pos`` is over a flashing post-expiry row, remove it (#16)."""
+        row, _ = self._context_target(pos)
+        if isinstance(row, SpellRow) and row.expired_at is not None:
+            self._backend.timers.remove_row(row)
+            self.refresh()
+            return True
+        return False
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
@@ -603,12 +700,48 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend.timers.clear_all_other_spells()
         self.refresh()
 
+    def _toggle_flash_spell(self, spell_name: str) -> None:
+        """Add/remove a spell from the post-expiry flash allowlist (#16) and
+        apply it live to any loaded rows of that spell."""
+        sw = self._backend.settings.spellwindow
+        key = spell_name.casefold()
+        present = any(n.casefold() == key for n in sw.post_expiry_flash_spells)
+        if present:
+            sw.post_expiry_flash_spells = [
+                n for n in sw.post_expiry_flash_spells if n.casefold() != key
+            ]
+            persist = 0.0
+        else:
+            sw.post_expiry_flash_spells = [*sw.post_expiry_flash_spells, spell_name]
+            sw.post_expiry_flash_enabled = True  # make the per-row toggle self-sufficient
+            persist = float(sw.post_expiry_flash_seconds)
+        for r in self._backend.timers.snapshot():
+            if isinstance(r, SpellRow) and not r.is_cooldown and r.spell.name.casefold() == key:
+                r.post_expiry_persist_s = persist
+                if persist == 0.0:
+                    r.expired_at = None
+        if self._on_save is not None:
+            self._on_save()
+        self.refresh()
+
     def contextMenuEvent(self, event) -> None:
         row, group = self._context_target(event.pos())
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if row is not None:
             menu.addAction(f"Clear '{row.name}'", lambda r=row: self._clear_row(r))
+        if isinstance(row, SpellRow) and not row.is_cooldown:
+            spell_name = row.spell.name
+            flash_action = menu.addAction(
+                "Flash on expiry", lambda n=spell_name: self._toggle_flash_spell(n)
+            )
+            flash_action.setCheckable(True)
+            flash_action.setChecked(
+                any(
+                    n.casefold() == spell_name.casefold()
+                    for n in self._backend.settings.spellwindow.post_expiry_flash_spells
+                )
+            )
         if group is not None:
             label = self._group_label(group)
             menu.addAction(f"Clear group '{label}'", lambda g=group: self._clear_group(g))

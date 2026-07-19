@@ -17,9 +17,14 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from nparseplus.core.bus import EventBus
-from nparseplus.core.ch_chain import CHChainService, parse_ch_message
+from nparseplus.core.ch_chain import CHChainService, parse_ch_cadence, parse_ch_message
 from nparseplus.core.enums import CommsChannel
-from nparseplus.core.events import CommsEvent, CompleteHealEvent, OverlayEvent
+from nparseplus.core.events import (
+    CommsEvent,
+    CompleteHealCadenceEvent,
+    CompleteHealEvent,
+    OverlayEvent,
+)
 from nparseplus.core.handlers.base import BaseHandler
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.triggers.engine import Speaker
@@ -36,6 +41,8 @@ class CompleteHealCommsHandler(BaseHandler):
         player: ActivePlayer,
         npcs: frozenset[str] = frozenset(),
         ch_chain_tag: Callable[[], str] = lambda: "",
+        cadence_enabled: Callable[[], bool] = lambda: False,
+        cadence_patterns: Callable[[], list[str]] = lambda: [],
     ) -> None:
         super().__init__(bus, player)
         self.npcs = npcs
@@ -44,6 +51,10 @@ class CompleteHealCommsHandler(BaseHandler):
         # A live provider (rather than a stored string) lets settings saves
         # take effect without a restart.
         self.ch_chain_tag = ch_chain_tag
+        # Live providers for the opt-in cadence indicator (#15): the on/off
+        # toggle and the user-editable regexes (empty -> stock defaults).
+        self.cadence_enabled = cadence_enabled
+        self.cadence_patterns = cadence_patterns
         bus.subscribe(CommsEvent, self._on_comms)
 
     def _on_comms(self, event: CommsEvent) -> None:
@@ -60,6 +71,20 @@ class CompleteHealCommsHandler(BaseHandler):
         )
         if parsed is not None:
             self.bus.publish(parsed)
+            return
+        # A cadence callout ("healers to 4") is not a chain call, so it only
+        # reaches here. Off by default; opt-in via ch_cadence_indicator (#15).
+        if self.cadence_enabled():
+            seconds = parse_ch_cadence(event.content, patterns=self.cadence_patterns() or None)
+            if seconds is not None:
+                self.bus.publish(
+                    CompleteHealCadenceEvent(
+                        timestamp=event.timestamp,
+                        line=event.line,
+                        line_number=event.line_number,
+                        seconds=seconds,
+                    )
+                )
 
 
 class CompleteHealHandler(BaseHandler):

@@ -379,9 +379,20 @@ class SpellTimerHandler(BaseHandler):
                 ends_at=timestamp + duration,
                 total_duration_s=duration.total_seconds(),
                 detrimental=spell.is_detrimental,
+                post_expiry_persist_s=self._post_expiry_persist_s(spell),
             ),
             overwrite=overwrite,
         )
+
+    def _post_expiry_persist_s(self, spell: Spell) -> float:
+        """Seconds a just-expired row lingers as a rebuff prompt (#16). 0 unless
+        the opt-in is on and this spell is in the per-spell allowlist."""
+        sw = self.spell_settings
+        if not sw.post_expiry_flash_enabled:
+            return 0.0
+        if spell.name.casefold() in {n.casefold() for n in sw.post_expiry_flash_spells}:
+            return float(sw.post_expiry_flash_seconds)
+        return 0.0
 
     def _discipline_cooldown_seconds(self, spell: Spell, delay_offset_ms: int) -> int:
         base = int((spell.recast_time_ms + delay_offset_ms) / 1000.0)

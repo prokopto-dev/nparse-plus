@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 from tests.core.spells.conftest import T0
 
+from nparseplus.config.settings import SpellWindowSettings
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import LineEvent
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
@@ -210,3 +211,51 @@ def test_npc_detrimental_gets_extra_tick(harness: Harness) -> None:
     assert not rows[0].is_target_player
     # 60 ticks * 6s + the extra 6s grace tick for NPC detrimental timers
     assert rows[0].total_duration_s == 366
+
+
+def _handler_with_settings(ctx: ParseContext, settings: SpellWindowSettings) -> SpellTimerHandler:
+    assert ctx.spells is not None
+    return SpellTimerHandler(
+        ctx.bus, ctx.player, ctx.spells, TimersService(), spell_settings=settings
+    )
+
+
+def test_post_expiry_flag_set_for_allowlisted_spell(ctx: ParseContext) -> None:
+    """#16: an opt-in, allow-listed buff creates a persisting row."""
+    handler = _handler_with_settings(
+        ctx,
+        SpellWindowSettings(
+            post_expiry_flash_enabled=True,
+            post_expiry_flash_seconds=45,
+            post_expiry_flash_spells=["clarity"],  # case-insensitive
+        ),
+    )
+    assert ctx.spells is not None
+    clarity = ctx.spells.spell_by_name("Clarity")
+    assert clarity is not None
+    handler.handle_spell(clarity, SPACE_YOU, 0, T0)
+    row = handler.timers.rows_of(SpellRow)[0]
+    assert isinstance(row, SpellRow) and row.post_expiry_persist_s == 45.0
+
+
+def test_post_expiry_flag_off_by_default(ctx: ParseContext) -> None:
+    handler = _handler_with_settings(ctx, SpellWindowSettings())  # defaults
+    assert ctx.spells is not None
+    clarity = ctx.spells.spell_by_name("Clarity")
+    assert clarity is not None
+    handler.handle_spell(clarity, SPACE_YOU, 0, T0)
+    row = handler.timers.rows_of(SpellRow)[0]
+    assert isinstance(row, SpellRow) and row.post_expiry_persist_s == 0.0
+
+
+def test_post_expiry_flag_only_for_listed_spells(ctx: ParseContext) -> None:
+    handler = _handler_with_settings(
+        ctx,
+        SpellWindowSettings(post_expiry_flash_enabled=True, post_expiry_flash_spells=["Aegolism"]),
+    )
+    assert ctx.spells is not None
+    clarity = ctx.spells.spell_by_name("Clarity")
+    assert clarity is not None
+    handler.handle_spell(clarity, SPACE_YOU, 0, T0)
+    row = handler.timers.rows_of(SpellRow)[0]
+    assert isinstance(row, SpellRow) and row.post_expiry_persist_s == 0.0

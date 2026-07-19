@@ -81,6 +81,7 @@ class _PendingOverlayReset:
     due: datetime
     text: str
     foreground: str
+    section: str = "alert"
 
 
 def _now() -> datetime:
@@ -175,12 +176,16 @@ class TriggerEngine:
         if output.display_text_enabled and output.display_text.strip():
             text = expand(output.display_text)
             color = output.display_text_color or DEFAULT_TEXT_COLOR
-            self.bus.publish(OverlayEvent(text=text, foreground=color, reset=False))
+            section = output.overlay_section or "alert"
+            self.bus.publish(
+                OverlayEvent(text=text, foreground=color, reset=False, section=section)
+            )
             self._pending_resets.append(
                 _PendingOverlayReset(
                     due=self.clock() + _seconds(self.display_text_seconds),
                     text=text,
                     foreground=color,
+                    section=section,
                 )
             )
 
@@ -334,7 +339,12 @@ class TriggerEngine:
         for pending in list(self._pending_resets):
             if now >= pending.due:
                 self.bus.publish(
-                    OverlayEvent(text=pending.text, foreground=pending.foreground, reset=True)
+                    OverlayEvent(
+                        text=pending.text,
+                        foreground=pending.foreground,
+                        reset=True,
+                        section=pending.section,
+                    )
                 )
                 self._pending_resets.remove(pending)
 
