@@ -63,7 +63,7 @@ class MapData(dict):
 
         all_x, all_y, all_z = [], [], []
 
-        # TODO: Remove the references to raw
+        # TODO(#6): Remove the references to raw
         # Create Lines and Points
         for map_file in maps:
             print("Loading: %s" % map_file)

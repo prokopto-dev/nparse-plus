@@ -8,7 +8,7 @@ from nparseplus.core.parsers.base import ParseContext
 
 # (start announcement, boat key, start point) — from EQToolShared/Zones.cs
 # BoatInfo entries with a non-empty StartAnnoucement.
-# TODO: load from data/zones.json "boats" table (start_announcement / boat /
+# TODO(#4): load from data/zones.json "boats" table (start_announcement / boat /
 # start_point fields) once a shared zone database is wired into ParseContext.
 _BOAT_ANNOUNCEMENTS: tuple[tuple[str, str, str], ...] = (
     (
