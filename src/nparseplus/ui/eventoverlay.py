@@ -498,6 +498,17 @@ class EventOverlayWindow(QWidget):
             "bars": self._bars_host,
         }
 
+    def _default_region(self, key: str) -> OverlayRegion:
+        """The stacked-layout default placement for a region host — the single
+        source of truth used to seed and to backfill missing keys (e.g. the
+        'utility' region absent from a layout saved before 1.11)."""
+        return {
+            "lanes": OverlayRegion(anchor="top"),
+            "utility": OverlayRegion(anchor="top", dy=96),
+            "alert": OverlayRegion(anchor="center"),
+            "bars": OverlayRegion(anchor="bottom"),
+        }.get(key, OverlayRegion())
+
     def _region_mode(self) -> bool:
         return self._state is not None and self._state.overlay_regions is not None
 
@@ -506,13 +517,10 @@ class EventOverlayWindow(QWidget):
         # the current stacked positions, so the untouched regions don't jump.
         if self._state.overlay_regions is None:
             self._state.overlay_regions = {
-                "lanes": OverlayRegion(anchor="top"),
-                "utility": OverlayRegion(anchor="top", dy=96),
-                "alert": OverlayRegion(anchor="center"),
-                "bars": OverlayRegion(anchor="bottom"),
+                name: self._default_region(name) for name in self._region_hosts()
             }
             self._activate_region_layout()
-        region = self._state.overlay_regions.setdefault(key, OverlayRegion())
+        region = self._state.overlay_regions.setdefault(key, self._default_region(key))
         self._drag_region = key
         self._region_drag_start = global_start
         self._region_drag_base = (region.dx, region.dy)
@@ -540,9 +548,9 @@ class EventOverlayWindow(QWidget):
             "bars": BAR_WIDTH,
         }
         for key, host in self._region_hosts().items():
-            region = regions.get(key)
-            if region is None:
-                continue
+            # Backfill a region absent from a pre-1.11 saved layout (e.g.
+            # 'utility') with its default so the host isn't stranded at (0, 0).
+            region = regions.get(key) or self._default_region(key)
             host_w = region.width if region.width is not None else defaults[key]
             host_h = max(1, host.sizeHint().height())
             host.resize(host_w, host_h)
@@ -820,6 +828,7 @@ class EventOverlayWindow(QWidget):
         timer = self._utility_timers.pop(text, None)
         if timer is not None:
             timer.stop()
+            timer.deleteLater()
         if not self._utility_lines:
             self._utility_header.hide()
         self._update_visibility()

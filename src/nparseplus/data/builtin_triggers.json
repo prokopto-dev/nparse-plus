@@ -1375,7 +1375,7 @@
       "built_in_folder": "Utility",
       "trigger_enabled": false,
       "trigger_name": "Rebuff Request",
-      "search_text": "^(?<name>[\\w` ]+) tells you, '[^']*\\b(?:re)?buffs?\\b",
+      "search_text": "^(?<name>[\\w`]+) tells you, '[^']*\\b(?:re)?buffs?\\b",
       "use_regex": true,
       "category": "Built In",
       "basic": {

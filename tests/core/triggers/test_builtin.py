@@ -50,6 +50,10 @@ def test_rebuff_request_matches_buff_tell() -> None:
     assert trigger.matches("Soandso tells you, 'rebuff?'")
     assert not trigger.matches("Soandso tells you, 'where is the group'")
     assert trigger.expand(trigger.effective_basic().display_text) == "Rebuff: Soandso"
+    # Multi-word merchant/NPC senders must not match (single-token name class,
+    # like the Tells You built-in), even when the tell mentions buffs.
+    assert not trigger.matches("Peron ThreadSpinner tells you, 'I sell buff potions'")
+    assert not trigger.matches("Cleonae Kalen tells you, 'I will rebuff your weapon'")
 
 
 def test_tells_you_ignores_npc_senders_with_spaces() -> None:

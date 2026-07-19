@@ -901,12 +901,14 @@ def nparseplus_triggers() -> list[dict]:
     """
     triggers = []
 
-    # Rebuff Request: an incoming tell asking for buffs. Same tell-format regex
-    # convention as the "Tells You" built-in (a .NET (?<name>) named group).
+    # Rebuff Request: an incoming tell asking for buffs. The sender name class
+    # is single-token ([\w`]+, no space) exactly like the "Tells You" built-in,
+    # so multi-word merchant/NPC senders ("Peron ThreadSpinner tells you, ...")
+    # don't match — real EQ player names are one token.
     t = base_trigger(
         "builtin:np-rebuff-request",
         "Rebuff Request",
-        r"^(?<name>[\w` ]+) tells you, '[^']*\b(?:re)?buffs?\b",
+        r"^(?<name>[\w`]+) tells you, '[^']*\b(?:re)?buffs?\b",
         True,
         "Utility",
     )
