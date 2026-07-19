@@ -5,6 +5,11 @@ these are the features actively planned, roughly in the order they're
 likely to land. Want something moved up (or something new)?
 [Open an issue](https://github.com/prokopto-dev/nparse-plus/issues).
 
+Each item below is tracked as a
+[GitHub issue](https://github.com/prokopto-dev/nparse-plus/issues) (labelled by
+area / type / size) — the issues are the live status; this page is the prose
+overview.
+
 ## Triggers
 
 **Per-character trigger profiles** — don't care about the
