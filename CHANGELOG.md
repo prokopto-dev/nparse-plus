@@ -6,6 +6,51 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.10.0 (2026-07-19)
+
+### Chores
+
+- **net**: Drop stale Kael-faction sharing TODO in spawn_timer
+  ([`378339d`](https://github.com/prokopto-dev/nparse-plus/commit/378339df5706b0fff4a7f2758dffd23d35b3fc84))
+
+### Documentation
+
+- **settings**: Document vestigial legacy-only settings fields
+  ([`f11d521`](https://github.com/prokopto-dev/nparse-plus/commit/f11d5213fd5dbed7a527890a18b4019f33d544a0))
+
+### Features
+
+- **timers**: Add "clear other players' timers" spell-window action
+  ([`945be0c`](https://github.com/prokopto-dev/nparse-plus/commit/945be0cc93f8a16421e3562c2c5719b968d82524))
+
+- **triggers**: Add a character-scope control to the trigger editor
+  ([`fe76767`](https://github.com/prokopto-dev/nparse-plus/commit/fe767678ac8a77d39881ea96d1da03340c0ad691))
+
+- **triggers**: Honor interrupt_speech by stopping the current utterance
+  ([`7799241`](https://github.com/prokopto-dev/nparse-plus/commit/77992413b7f4cb7b81e263d9286b0408ec1b6eb8))
+
+- **triggers**: Scope triggers to specific characters
+  ([`2deedc7`](https://github.com/prokopto-dev/nparse-plus/commit/2deedc7be88c18b61dd5af7dfe8b08547e2e20db))
+
+### Performance Improvements
+
+- **triggers**: Cache end-early regex compilation off the per-line path
+  ([`d0c520f`](https://github.com/prokopto-dev/nparse-plus/commit/d0c520f589ab1e9611bb300aab40679766f0a1cc))
+
+### Refactoring
+
+- **data**: Source boat announcements from data/zones.json
+  ([`b3b9094`](https://github.com/prokopto-dev/nparse-plus/commit/b3b90948bb359acf0c2efef5182f424ebfecee3e))
+
+- **maps**: Drop the raw scratch dict from legacy MapData
+  ([`8171acd`](https://github.com/prokopto-dev/nparse-plus/commit/8171acd021e4198d4d46e142032434a0cdb488bd))
+
+### Testing
+
+- **net**: Guard the SharingCoordinator inbound drain stays parse-free
+  ([`2d7be3b`](https://github.com/prokopto-dev/nparse-plus/commit/2d7be3b2c33621c6d3eb8773fb0549319f906ecc))
+
+
 ## v1.9.4 (2026-07-19)
 
 ### Bug Fixes
