@@ -1,8 +1,10 @@
 # Built-in triggers
 
-nParse+ ships 65 ready-made triggers, ported 1:1 from
-[EQTool](https://github.com/smasherprog/eqtool)'s built-in library — raid
-AOE countdowns, combat quality-of-life alerts, and utility reminders.
+nParse+ ships 67 ready-made triggers — 65 ported 1:1 from
+[EQTool](https://github.com/smasherprog/eqtool)'s built-in library (raid
+AOE countdowns, combat quality-of-life alerts, and utility reminders) plus
+two nParse+ utility additions that render in the event overlay's dedicated
+**Utility** header section.
 
 **They all start disabled.** Open the
 [Trigger Editor](../windows/trigger-editor.md) and check the ones (or whole
@@ -47,6 +49,8 @@ in its dragon's zone.
 | **Regen Faded** | overlay text |
 | **Sense Heading** | overlay text |
 | **Sense Heading Failed** | overlay text |
+| **Rebuff Request** | utility-section text, spoken alert (nParse+) |
+| **Out of Mana** | utility-section text (nParse+) |
 
 ### Encounters
 

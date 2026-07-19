@@ -57,7 +57,7 @@ from the tray, and you're parsing —
 
 ```bash
 uv sync                                   # deps (incl. dev group)
-uv run pytest                             # ~770 tests, a few seconds
+uv run pytest                             # ~970 tests, a few seconds
 uv run ruff check . && uv run ruff format .
 QT_QPA_PLATFORM=offscreen uv run pytest   # headless (CI does this)
 ```
