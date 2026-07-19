@@ -5,7 +5,6 @@ General global settings setup to provide settings.data
 import json
 import os
 import sys
-from glob import glob
 
 data = {}
 _filename = ""
@@ -244,22 +243,3 @@ def get_setting(setting, default, func=None):
         return setting
     except:
         return default
-
-
-def verify_paths():
-    # verify eq log directory exists
-    try:
-        assert os.path.isdir(os.path.join(data["general"]["eq_log_dir"]))
-    except Exception as e:
-        raise ValueError(
-            "Everquest Log Directory Error",
-            "Everquest log directory needs to be set before proceeding.  Use systemtray icon menu to set.",
-        ) from e
-
-    # verify eq log directory contains log files for reading.
-    log_filter = os.path.join(data["general"]["eq_log_dir"], "eqlog*.*")
-    if not glob(log_filter):
-        raise ValueError(
-            "No Logs Found",
-            "No Everquest log files were found.  Ensure both your directory is set and logging is turned on in your Everquest client.",
-        )

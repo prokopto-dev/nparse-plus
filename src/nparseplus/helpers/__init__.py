@@ -4,13 +4,6 @@ import sys
 from datetime import timedelta
 
 
-def strip_timestamp(line):
-    """
-    Strings EQ Timestamp from log entry.
-    """
-    return line[line.find("]") + 1 :].strip()
-
-
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
