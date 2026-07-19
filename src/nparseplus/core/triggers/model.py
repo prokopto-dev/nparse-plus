@@ -72,6 +72,10 @@ class TriggerOutput(BaseModel):
     tts_text: str = ""
     interrupt_speech: bool = False
     sound_file: str = ""
+    # Which overlay region the display text renders in: "alert" (default,
+    # center text) or "utility" (the dedicated utility header section, #14).
+    # nparseplus extension — EQTool has no per-output region.
+    overlay_section: str = "alert"
 
 
 class EndEarlyEntry(BaseModel):

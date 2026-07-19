@@ -90,6 +90,33 @@ def test_basic_output_tts_and_overlay_with_captures() -> None:
     assert overlay[0].text == "Roger the Rogue hit a poor rabbit for 1000"
     assert overlay[0].foreground == "Orange"
     assert not overlay[0].reset
+    # Default section is the center alert.
+    assert overlay[0].section == "alert"
+
+
+def test_overlay_section_routes_display_and_reset() -> None:
+    """#14: an output targeting section='utility' tags both the alert and its
+    later reset, so the overlay clears the right region."""
+    trigger = Trigger(
+        trigger_enabled=True,
+        trigger_name="Rebuff",
+        search_text="^rebuff me",
+        basic=TriggerOutput(
+            display_text_enabled=True,
+            display_text="Rebuff!",
+            overlay_section="utility",
+        ),
+    )
+    engine, bus, _, _, clock, published = make_engine(trigger)
+    push(bus, "rebuff me")
+    alerts = [e for e in published if isinstance(e, OverlayEvent)]
+    assert len(alerts) == 1
+    assert alerts[0].section == "utility" and alerts[0].reset is False
+
+    clock.advance(10)
+    engine.tick(clock.now)
+    resets = [e for e in published if isinstance(e, OverlayEvent) and e.reset]
+    assert resets and resets[-1].section == "utility"
 
 
 def _tts_trigger(*, interrupt: bool) -> Trigger:

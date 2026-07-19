@@ -160,8 +160,9 @@ def test_first_region_drag_initializes_defaults(qtbot) -> None:
     overlay._begin_region_drag("bars", QPoint(500, 700))
     regions = overlay._state.overlay_regions
     assert regions is not None
-    assert set(regions) == {"lanes", "alert", "bars"}
+    assert set(regions) == {"lanes", "utility", "alert", "bars"}
     assert regions["lanes"].anchor == "top"
+    assert regions["utility"].anchor == "top"
     assert regions["alert"].anchor == "center"
     assert regions["bars"].anchor == "bottom"
     assert overlay._region_mode()

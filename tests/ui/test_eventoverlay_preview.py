@@ -91,7 +91,7 @@ def test_double_toggle_does_not_duplicate(qtbot) -> None:
     overlay.set_edit_mode(True)  # idempotent
     assert overlay._lanes_layout.count() == 1
     assert overlay._bars_layout.count() == 2
-    assert len(overlay._preview_widgets) == 4  # 1 row + 1 alert + 2 bars
+    assert len(overlay._preview_widgets) == 5  # 1 row + 1 alert + 1 utility + 2 bars
 
     overlay.set_edit_mode(False)
     overlay.set_edit_mode(False)  # idempotent

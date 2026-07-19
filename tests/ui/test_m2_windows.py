@@ -168,6 +168,22 @@ def test_ch_lane_has_ten_second_marker_cells(qtbot) -> None:
     assert [cell.x() for cell in cells] == [i * expected for i in range(10)]
 
 
+def test_utility_section_routes_and_clears(qtbot) -> None:
+    """#14: an OverlayEvent with section='utility' lands in the utility section
+    (not the center text), shows its header, and a matching reset clears it."""
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(OverlayEvent(text="Rebuff: Joe", foreground="Gold", section="utility"))
+    assert overlay.current_utility_texts() == ["Rebuff: Joe"]
+    assert overlay.current_text() == ""  # not the center alert
+    assert overlay._utility_header.isVisible()
+    assert overlay.is_active()
+    # A matching reset removes the line and hides the header.
+    overlay.handle_event(OverlayEvent(text="Rebuff: Joe", reset=True, section="utility"))
+    assert overlay.current_utility_texts() == []
+    assert not overlay._utility_header.isVisible()
+
+
 def test_ch_cadence_marks_new_and_existing_lanes(qtbot) -> None:
     """#15: a cadence callout sets the muted marker on existing lanes and is
     inherited by lanes created afterwards; new callouts update everything."""

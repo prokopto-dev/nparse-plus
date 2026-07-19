@@ -5,12 +5,13 @@
   },
   "meta": {
     "category": "Built In",
-    "notes": "Transcribed from BuiltInTriggers.cs (C# builds these in code, so this file is generated from a table embedded in the converter script). built_in_id is the stable identifier; the C# TriggerId is a Guid.NewGuid() minted at runtime and is intentionally omitted. All triggers are seeded disabled (trigger_enabled=false); EQTool auto-enables builtin:vp-hoskar-resto, builtin:dragon-roar, builtin:spell-worn-off and builtin:entered-zone on startup. Colors are WPF color names as-written. Encounter AOE triggers restrict to their zone short name and fire a CountDown timer; search patterns are .NET regexes (note (?<name>...) named groups).",
+    "notes": "Transcribed from BuiltInTriggers.cs (C# builds these in code, so this file is generated from a table embedded in the converter script). built_in_id is the stable identifier; the C# TriggerId is a Guid.NewGuid() minted at runtime and is intentionally omitted. All triggers are seeded disabled (trigger_enabled=false); EQTool auto-enables builtin:vp-hoskar-resto, builtin:dragon-roar, builtin:spell-worn-off and builtin:entered-zone on startup. Colors are WPF color names as-written. Encounter AOE triggers restrict to their zone short name and fire a CountDown timer; search patterns are .NET regexes (note (?<name>...) named groups). The Utility folder also carries nparseplus-only built-ins (#14) that route their text to the overlay's utility section (overlay_section).",
     "counts": {
       "named": 16,
       "legacy": 15,
       "encounter_aoes": 34,
-      "total": 65
+      "nparseplus": 2,
+      "total": 67
     }
   },
   "triggers": [
@@ -1366,6 +1367,42 @@
         "show_in_overlay": true,
         "bar_color": "Orange",
         "icon_name": "Lightning Breath"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:np-rebuff-request",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Rebuff Request",
+      "search_text": "^(?<name>[\\w` ]+) tells you, '[^']*\\b(?:re)?buffs?\\b",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "TextToSpeech",
+        "tts_text": "Buff request from {name}",
+        "display_text": "Rebuff: {name}",
+        "display_text_color": "Gold",
+        "overlay_section": "utility"
+      }
+    },
+    {
+      "is_built_in": true,
+      "built_in_id": "builtin:np-out-of-mana",
+      "built_in_folder": "Utility",
+      "trigger_enabled": false,
+      "trigger_name": "Out of Mana",
+      "search_text": "^Insufficient Mana to cast this spell!",
+      "use_regex": true,
+      "category": "Built In",
+      "basic": {
+        "display_text_enabled": true,
+        "audio_type": "None",
+        "tts_text": "out of mana",
+        "display_text": "OOM",
+        "display_text_color": "Gold",
+        "overlay_section": "utility"
       }
     }
   ]

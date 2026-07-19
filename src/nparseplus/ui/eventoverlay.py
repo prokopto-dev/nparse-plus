@@ -301,9 +301,31 @@ class EventOverlayWindow(QWidget):
         self._alert_host.setObjectName("OverlayAlertHost")
         self._alert_host.setLayout(self._alert_layout)
 
+        # Dedicated utility header section (#14): a "Utility" header + a stack of
+        # auto-clearing lines for rebuff/OOM-style alerts routed here by triggers
+        # whose output targets section="utility". Header hides when empty.
+        self._utility_layout = QVBoxLayout()
+        self._utility_layout.setContentsMargins(0, 0, 0, 0)
+        self._utility_layout.setSpacing(2)
+        self._utility_header = QLabel("Utility", self)
+        self._utility_header.setObjectName("OverlayUtilityHeader")
+        self._utility_header.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._utility_header.setStyleSheet(
+            "color: #dddddd; background-color: rgba(30, 60, 120, 200);"
+            " font-size: 12px; font-weight: bold; padding: 1px 6px; border-radius: 3px;"
+        )
+        self._utility_header.hide()
+        self._utility_layout.addWidget(self._utility_header, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._utility_host = QWidget(self)
+        self._utility_host.setObjectName("OverlayUtilityHost")
+        self._utility_host.setLayout(self._utility_layout)
+        self._utility_lines: dict[str, QLabel] = {}
+        self._utility_timers: dict[str, QTimer] = {}
+
         self._main_layout = QVBoxLayout()
         self._main_layout.setContentsMargins(20, 40, 20, 60)
         self._main_layout.addWidget(self._lanes_host, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._main_layout.addWidget(self._utility_host, 0, Qt.AlignmentFlag.AlignHCenter)
         self._main_layout.addStretch(2)
         self._main_layout.addWidget(self._alert_host, 0)
         self._main_layout.addStretch(3)
@@ -312,7 +334,12 @@ class EventOverlayWindow(QWidget):
 
         # Small dashed-border title chips shown over each region while editing.
         self._region_titles: dict[str, QLabel] = {}
-        for key, text in (("lanes", "CH chains"), ("alert", "Alerts"), ("bars", "Timer bars")):
+        for key, text in (
+            ("lanes", "CH chains"),
+            ("utility", "Utility"),
+            ("alert", "Alerts"),
+            ("bars", "Timer bars"),
+        ):
             chip = QLabel(text, self)
             chip.setStyleSheet(
                 "color: white; background-color: rgba(30, 60, 120, 220);"
@@ -464,7 +491,12 @@ class EventOverlayWindow(QWidget):
     # -- per-region positioning --------------------------------------------------
 
     def _region_hosts(self) -> dict[str, QWidget]:
-        return {"lanes": self._lanes_host, "alert": self._alert_host, "bars": self._bars_host}
+        return {
+            "lanes": self._lanes_host,
+            "utility": self._utility_host,
+            "alert": self._alert_host,
+            "bars": self._bars_host,
+        }
 
     def _region_mode(self) -> bool:
         return self._state is not None and self._state.overlay_regions is not None
@@ -475,6 +507,7 @@ class EventOverlayWindow(QWidget):
         if self._state.overlay_regions is None:
             self._state.overlay_regions = {
                 "lanes": OverlayRegion(anchor="top"),
+                "utility": OverlayRegion(anchor="top", dy=96),
                 "alert": OverlayRegion(anchor="center"),
                 "bars": OverlayRegion(anchor="bottom"),
             }
@@ -502,6 +535,7 @@ class EventOverlayWindow(QWidget):
         cx = w // 2
         defaults = {
             "lanes": max(LANES_WIDTH, self._lanes_host.sizeHint().width()),
+            "utility": max(320, self._utility_host.sizeHint().width()),
             "alert": w,
             "bars": BAR_WIDTH,
         }
@@ -584,6 +618,16 @@ class EventOverlayWindow(QWidget):
         label.show()
         self._preview_widgets.append(label)
 
+        # Sample utility line under the "Utility" header (#14).
+        self._utility_header.show()
+        util = QLabel("Rebuff: Sample — buff faded", self)
+        util.setObjectName("OverlayUtilityLine")
+        util.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        util.setStyleSheet("color: #ffd479; font-size: 20px; font-weight: bold;")
+        self._utility_layout.addWidget(util, 0, Qt.AlignmentFlag.AlignHCenter)
+        util.show()
+        self._preview_widgets.append(util)
+
         # Sample timer bars (do NOT start ``_bar_timer`` — these never tick).
         for bar in (
             self._make_bar_widget("Sample Timer", DEFAULT_BAR_COLOR, 60, 45),
@@ -601,11 +645,18 @@ class EventOverlayWindow(QWidget):
         if not self._preview_widgets:
             return
         for widget in self._preview_widgets:
-            for lay in (self._lanes_layout, self._alert_layout, self._bars_layout):
+            for lay in (
+                self._lanes_layout,
+                self._alert_layout,
+                self._bars_layout,
+                self._utility_layout,
+            ):
                 lay.removeWidget(widget)
             widget.setParent(None)
             widget.deleteLater()
         self._preview_widgets.clear()
+        if not self._utility_lines:
+            self._utility_header.hide()
         if self._region_mode():
             self._layout_regions()
 
@@ -722,6 +773,9 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _on_overlay_event(self, event: OverlayEvent) -> None:
+        if event.section == "utility":
+            self._on_utility_event(event)
+            return
         if event.reset:
             # EQTool only clears when the reset matches what is displayed.
             if self._center_text.text() == event.text:
@@ -731,6 +785,48 @@ class EventOverlayWindow(QWidget):
         self._set_text_color(resolve_color(event.foreground, DEFAULT_TEXT_COLOR))
         self._clear_timer.start()
         self._update_visibility()
+
+    def _on_utility_event(self, event: OverlayEvent) -> None:
+        """Render a utility alert line in the dedicated utility section (#14)."""
+        if event.reset:
+            self._remove_utility_line(event.text)
+            return
+        color = resolve_color(event.foreground, DEFAULT_TEXT_COLOR)
+        label = self._utility_lines.get(event.text)
+        if label is None:
+            label = QLabel(event.text, self)
+            label.setObjectName("OverlayUtilityLine")
+            label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            self._utility_layout.addWidget(label, 0, Qt.AlignmentFlag.AlignHCenter)
+            self._utility_lines[event.text] = label
+        label.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: bold;")
+        label.show()
+        # Self-clearing safety net; the trigger engine also sends a reset.
+        timer = self._utility_timers.get(event.text)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda t=event.text: self._remove_utility_line(t))
+            self._utility_timers[event.text] = timer
+        timer.start(self._clear_after_ms)
+        self._utility_header.show()
+        self._update_visibility()
+
+    def _remove_utility_line(self, text: str) -> None:
+        label = self._utility_lines.pop(text, None)
+        if label is not None:
+            self._utility_layout.removeWidget(label)
+            label.deleteLater()
+        timer = self._utility_timers.pop(text, None)
+        if timer is not None:
+            timer.stop()
+        if not self._utility_lines:
+            self._utility_header.hide()
+        self._update_visibility()
+
+    def current_utility_texts(self) -> list[str]:
+        """Utility section line texts (test/debug hook)."""
+        return list(self._utility_lines.keys())
 
     def _make_bar_widget(
         self, name: str, color: str | None, total: int, remaining: int
@@ -811,7 +907,12 @@ class EventOverlayWindow(QWidget):
             if not self.isVisible():
                 self.show()
             return
-        active = bool(self._center_text.text()) or bool(self._bars) or bool(self._chain_lanes)
+        active = (
+            bool(self._center_text.text())
+            or bool(self._bars)
+            or bool(self._chain_lanes)
+            or bool(self._utility_lines)
+        )
         if active and not self.isVisible():
             self.show()
         elif not active and self.isVisible():
