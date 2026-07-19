@@ -50,7 +50,9 @@ Each trigger can combine any of:
   (Red, Yellow, Gold, Orange, ForestGreen, SteelBlue, MediumPurple, White),
   auto-cleared after the
   [alert duration](../settings/audio-overlays.md).
-- **Audio** — text-to-speech of a separate (usually shorter) phrase.
+- **Audio** — text-to-speech of a separate (usually shorter) phrase, with an
+  optional **interrupt speech** flag that cuts off any in-progress
+  announcement so this one is heard right away ([TTS](tts.md)).
 - **Timer** — a **CountDown** or **CountUp** bar on the Event Overlay (and
   a row in the **Custom Timers** section of
   [Spell Timers](../windows/spell-timers.md)), with:

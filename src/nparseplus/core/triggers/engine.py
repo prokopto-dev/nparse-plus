@@ -46,6 +46,8 @@ class Speaker(Protocol):
 
     def speak(self, text: str) -> None: ...
 
+    def interrupt(self) -> None: ...
+
 
 class TimerSink(Protocol):
     """Receives trigger timers (EQTool's SpellWindowViewModel role)."""
@@ -179,6 +181,10 @@ class TriggerEngine:
             )
 
         if output.audio_type == TriggerAudioType.TEXT_TO_SPEECH and output.tts_text.strip():
+            # interrupt_speech (from GINA/TriggerOutput): cut off whatever is
+            # speaking so this alert is heard now, not behind stale utterances.
+            if output.interrupt_speech:
+                self.speaker.interrupt()
             self.speaker.speak(expand(output.tts_text))
         elif (
             output.audio_type == TriggerAudioType.SOUND_FILE

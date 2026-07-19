@@ -5,6 +5,7 @@ No test here ever spawns a real TTS process: command building is tested via
 shelling out.
 """
 
+import sys
 import threading
 import time
 
@@ -184,16 +185,60 @@ def test_utter_suppresses_console_window(monkeypatch) -> None:
     monkeypatch.setattr(tts.sys, "platform", "win32")
     monkeypatch.setattr(tts.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
 
-    def fake_run(cmd, **kwargs):
-        captured["kwargs"] = kwargs
+    class _FakeProc:
+        def wait(self):
+            return 0
 
-    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    def fake_popen(cmd, **kwargs):
+        captured["kwargs"] = kwargs
+        return _FakeProc()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
     speaker = WindowsSpeaker(voice="", volume=1.0)
     try:
         speaker._utter("hi")
     finally:
         speaker.close()
     assert captured["kwargs"]["creationflags"] == 0x08000000
+
+
+def test_interrupt_clears_pending_queue() -> None:
+    speaker = RecordingSpeaker()
+    try:
+        speaker.speak("blocker")
+        assert speaker.first_started.wait(timeout=5)
+        # worker is busy on "blocker"; queue three more, then interrupt.
+        for i in range(3):
+            speaker.speak(f"msg{i}")
+        speaker.interrupt()  # drop the three still queued
+        speaker.release.set()  # let the in-flight "blocker" finish
+        assert wait_until(lambda: speaker.uttered == ["blocker"])
+        time.sleep(0.05)  # prove nothing queued survived the interrupt
+        assert speaker.uttered == ["blocker"]
+    finally:
+        speaker.release.set()
+        speaker.close()
+
+
+def test_interrupt_terminates_the_in_flight_utterance() -> None:
+    class SleepSpeaker(SubprocessSpeaker):
+        # A real (cross-platform) long-running child so interrupt() must kill it.
+        def _command(self, text: str) -> list[str]:
+            return [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    speaker = SleepSpeaker()
+    proc = None
+    try:
+        speaker.speak("go")
+        assert wait_until(lambda: speaker._current is not None)
+        proc = speaker._current
+        assert proc.poll() is None  # child is running
+        speaker.interrupt()
+        assert wait_until(lambda: proc.poll() is not None)  # terminated promptly
+    finally:
+        if proc is not None:
+            proc.kill()
+        speaker.close()
 
 
 def test_parse_windows_voices_dedupes_preferring_winrt() -> None:

@@ -92,6 +92,33 @@ def test_basic_output_tts_and_overlay_with_captures() -> None:
     assert not overlay[0].reset
 
 
+def _tts_trigger(*, interrupt: bool) -> Trigger:
+    return Trigger(
+        trigger_enabled=True,
+        search_text="pull now",
+        use_regex=False,
+        basic=TriggerOutput(
+            audio_type=TriggerAudioType.TEXT_TO_SPEECH,
+            tts_text="pull",
+            interrupt_speech=interrupt,
+        ),
+    )
+
+
+def test_interrupt_speech_flag_interrupts_before_speaking() -> None:
+    _, bus, speaker, _, _, _ = make_engine(_tts_trigger(interrupt=True))
+    push(bus, "pull now")
+    assert speaker.spoken == ["pull"]
+    assert speaker.interrupts == 1
+
+
+def test_tts_without_interrupt_flag_does_not_interrupt() -> None:
+    _, bus, speaker, _, _, _ = make_engine(_tts_trigger(interrupt=False))
+    push(bus, "pull now")
+    assert speaker.spoken == ["pull"]
+    assert speaker.interrupts == 0
+
+
 def test_overlay_text_resets_after_five_seconds_via_tick() -> None:
     trigger = Trigger(
         trigger_enabled=True,

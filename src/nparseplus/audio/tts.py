@@ -45,11 +45,18 @@ class Speaker(Protocol):
 
     def speak(self, text: str) -> None: ...
 
+    def interrupt(self) -> None:
+        """Stop the current utterance and drop anything still queued."""
+        ...
+
 
 class NullSpeaker:
     """Silently swallows everything (headless / TTS unavailable / tests)."""
 
     def speak(self, text: str) -> None:
+        return
+
+    def interrupt(self) -> None:
         return
 
 
@@ -78,6 +85,7 @@ class SubprocessSpeaker:
         self._queue: deque[str] = deque()
         self._cv = threading.Condition()
         self._closed = False
+        self._current: subprocess.Popen | None = None
         self._thread = threading.Thread(target=self._worker, daemon=True, name="tts-speaker")
         self._thread.start()
 
@@ -91,6 +99,23 @@ class SubprocessSpeaker:
                 self._queue.popleft()  # drop-oldest
             self._queue.append(text)
             self._cv.notify()
+
+    def interrupt(self) -> None:
+        """Stop the current utterance and drop anything still queued.
+
+        Honors a trigger's ``interrupt_speech`` flag: a fresh alert speaks now
+        instead of waiting behind stale ones. Terminating the child process
+        stops playback on ``say`` / ``powershell`` / ``espeak-ng`` alike; the
+        worker's ``proc.wait()`` then returns and it moves on.
+        """
+        with self._cv:
+            self._queue.clear()
+            proc = self._current
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                logger.debug("TTS interrupt terminate failed", exc_info=True)
 
     def close(self) -> None:
         """Stop the worker after any in-flight utterance finishes."""
@@ -113,13 +138,21 @@ class SubprocessSpeaker:
                 logger.exception("TTS utterance failed")
 
     def _utter(self, text: str) -> None:
-        subprocess.run(
+        # Popen (not run) so interrupt() can terminate the in-flight child.
+        proc = subprocess.Popen(
             self._command(text),
-            check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=_no_window_creationflags(),
         )
+        with self._cv:
+            self._current = proc
+        try:
+            proc.wait()
+        finally:
+            with self._cv:
+                if self._current is proc:
+                    self._current = None
 
     def _command(self, text: str) -> list[str]:
         raise NotImplementedError

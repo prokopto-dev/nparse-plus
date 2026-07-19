@@ -18,7 +18,9 @@ extra installs:
 Utterances queue and play one at a time on a background thread, so speech
 never stutters the app. The queue is capped — under heavy spam the oldest
 pending alerts are dropped, because a stale alert in EQ combat is worse
-than none.
+than none. A [trigger](triggers.md) marked **interrupt speech** goes further:
+when it fires it cuts off whatever is speaking and clears the queue so its
+alert is heard immediately (GINA's "interrupt speech" imports carry over).
 
 ## Configuration
 
