@@ -47,6 +47,7 @@ dev = [
 build = [
   "dmgbuild>=1.6.7",
   "pyinstaller>=6.8",
+  "Pillow>=10.3",  # build-time only: PyInstaller's Windows splash rasterizes splash.png
 ]
 docs = [
   "mkdocs-material>=9.5",
