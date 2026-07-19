@@ -6,6 +6,50 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.11.0 (2026-07-19)
+
+### Bug Fixes
+
+- **overlays**: Position the utility region for upgraders and tidy up
+  ([`f42bbed`](https://github.com/prokopto-dev/nparse-plus/commit/f42bbed9caeccd174b6e01c8aea357d8a640493c))
+
+- **timers**: Clear stale post-expiry flash style when a row is recast
+  ([`89e2b53`](https://github.com/prokopto-dev/nparse-plus/commit/89e2b539959191581f999c62db58080902f63f6b))
+
+### Chores
+
+- **deps**: Sync uv.lock project version to match pyproject
+  ([`0b02a2d`](https://github.com/prokopto-dev/nparse-plus/commit/0b02a2d90f247c6e76270f9b5ac1bf53d08c39d8))
+
+### Documentation
+
+- Document the 1.11 opt-in features across settings and windows pages
+  ([`4fc06eb`](https://github.com/prokopto-dev/nparse-plus/commit/4fc06eb0502543deafafc0a3f5965aed2b6b1636))
+
+- Land the 1.11 features and refresh stale references
+  ([`6299f75`](https://github.com/prokopto-dev/nparse-plus/commit/6299f75f81e37b5f01c8d43688a94687fce2ed53))
+
+### Features
+
+- **overlays**: CH cadence indicator in the chain lane
+  ([`6d497b7`](https://github.com/prokopto-dev/nparse-plus/commit/6d497b7821e4ccbf44847ec8479ad0581d2c3aab))
+
+- **overlays**: Make CH cadence detection user-editable regex
+  ([`b11c8af`](https://github.com/prokopto-dev/nparse-plus/commit/b11c8af23679d32f7d23b3cc8f20135cda1e74ac))
+
+- **timers**: Post-expiration spell alerts with click-to-dismiss
+  ([`3fa16b3`](https://github.com/prokopto-dev/nparse-plus/commit/3fa16b3f8a36558a72cde5e9f5b22cea3cb6a791))
+
+- **timers**: Redesign raid-mode grouping with per-row orientation
+  ([`aaa5a89`](https://github.com/prokopto-dev/nparse-plus/commit/aaa5a8927370bfe612b21add6f51a832097dcc5d))
+
+- **triggers**: Utility built-ins routed to a dedicated overlay section
+  ([`b33fb7c`](https://github.com/prokopto-dev/nparse-plus/commit/b33fb7cd08a9bec3484c888e5e27993c5d35d570))
+
+- **ui**: Show app version and update status in Settings
+  ([`69ae6e9`](https://github.com/prokopto-dev/nparse-plus/commit/69ae6e9ea216a21e8c32cb00d2c1aafed4661b86))
+
+
 ## v1.10.0 (2026-07-19)
 
 ### Chores
