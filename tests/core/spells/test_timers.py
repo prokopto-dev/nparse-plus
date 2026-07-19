@@ -142,6 +142,22 @@ def test_clear_you_spells(timers: TimersService, spell_book: SpellBook) -> None:
     assert [row.group for row in timers.snapshot()] == ["Joe"]
 
 
+def test_clear_all_other_spells_keeps_you_and_npc_rows(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    # your own buff (YOU group) survives
+    timers.add_spell(_spell_row(spell_book, name="Clarity", group=YOU_GROUP))
+    # another player's buff is dropped
+    timers.add_spell(_spell_row(spell_book, name="Aegolism", group="Joe"))
+    # a spell landed on an NPC target (not a player) survives
+    timers.add_spell(_spell_row(spell_book, name="Aegolism", group="a mob", is_target_player=False))
+    calls: list[int] = []
+    timers.on_change.append(lambda: calls.append(1))
+    timers.clear_all_other_spells()
+    assert sorted(row.group for row in timers.snapshot()) == sorted([YOU_GROUP, "a mob"])
+    assert calls == [1]
+
+
 def test_clear_all_empties_rows_and_notifies(timers: TimersService, spell_book: SpellBook) -> None:
     timers.add_spell(_spell_row(spell_book, group=YOU_GROUP))
     timers.add_spell(_spell_row(spell_book, name="Aegolism", group="Joe"))

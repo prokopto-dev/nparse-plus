@@ -276,9 +276,11 @@ class TimersService:
         self._rows = [row for row in self._rows if row.group != YOU_GROUP]
         self._notify()
 
-    # TODO(#3): unwired — ClearAllOtherSpells has no nParse+ command/menu yet.
     def clear_all_other_spells(self) -> None:
-        """ClearAllOtherSpells: drop player-target spell rows except your own."""
+        """ClearAllOtherSpells: drop player-target spell rows except your own.
+
+        Wired to the spell-window "Clear other players' timers" context action.
+        """
         self._rows = [
             row
             for row in self._rows
