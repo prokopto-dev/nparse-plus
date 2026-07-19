@@ -80,6 +80,7 @@ def test_sanitize_mints_id_and_strips_builtin_markers() -> None:
         built_in_folder_path="Encounters/Sky",
         folder_id="exporter-folder",
         category="Default",
+        characters=["ExporterOnly"],
     )
     clean = sanitize_imported(source)
     assert clean.trigger_id != source.trigger_id
@@ -89,6 +90,8 @@ def test_sanitize_mints_id_and_strips_builtin_markers() -> None:
     assert clean.built_in_folder == ""
     assert clean.built_in_folder_path == "Custom"
     assert clean.folder_id is None
+    # Character scope names the exporter's characters; an import lands global.
+    assert clean.characters == []
     # A shared built-in keeps its library folder as the category.
     assert clean.category == "Encounters"
     # Payload untouched.

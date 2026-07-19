@@ -19,6 +19,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Protocol
 
 from nparseplus.core.bus import EventBus, Unsubscribe
@@ -45,6 +46,8 @@ class Speaker(Protocol):
     """Text-to-speech sink (structurally matched by nparseplus.audio speakers)."""
 
     def speak(self, text: str) -> None: ...
+
+    def interrupt(self) -> None: ...
 
 
 class TimerSink(Protocol):
@@ -142,6 +145,9 @@ class TriggerEngine:
             # skip triggers restricted to a zone the player isn't currently in
             if not trigger.matches_zone(current_zone):
                 continue
+            # skip triggers scoped to other characters (per-character profiles)
+            if not trigger.matches_character(player_name):
+                continue
             trigger.player_name = player_name
             if not trigger.matches(line):
                 continue
@@ -179,6 +185,10 @@ class TriggerEngine:
             )
 
         if output.audio_type == TriggerAudioType.TEXT_TO_SPEECH and output.tts_text.strip():
+            # interrupt_speech (from GINA/TriggerOutput): cut off whatever is
+            # speaking so this alert is heard now, not behind stale utterances.
+            if output.interrupt_speech:
+                self.speaker.interrupt()
             self.speaker.speak(expand(output.tts_text))
         elif (
             output.audio_type == TriggerAudioType.SOUND_FILE
@@ -340,8 +350,20 @@ def _seconds(value: float) -> timedelta:
     return timedelta(seconds=value)
 
 
-def _safe_regex_match(pattern: str, line: str) -> bool:
+@lru_cache(maxsize=256)
+def _compiled_ignorecase(pattern: str) -> re.Pattern[str] | None:
+    """Compile a case-insensitive end-early pattern once, caching the result.
+
+    _check_end_early runs per log line for every active timer's end-early
+    entries, so compile here (bounded LRU) instead of leaning on the re
+    module's shared, evictable cache. An invalid pattern caches as None.
+    """
     try:
-        return re.search(pattern, line, re.IGNORECASE) is not None
+        return re.compile(pattern, re.IGNORECASE)
     except re.error:
-        return False
+        return None
+
+
+def _safe_regex_match(pattern: str, line: str) -> bool:
+    compiled = _compiled_ignorecase(pattern)
+    return compiled is not None and compiled.search(line) is not None

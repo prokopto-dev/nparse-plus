@@ -93,4 +93,6 @@ def sanitize_imported(trigger: Trigger) -> Trigger:
     copy.built_in_folder_path = "Custom"
     # Folder ids reference the exporter's folders, meaningless here.
     copy.folder_id = None
+    # Character scope names the exporter's characters; an import lands global.
+    copy.characters = []
     return copy

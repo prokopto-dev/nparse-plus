@@ -12,15 +12,6 @@ overview.
 
 ## Triggers
 
-**Per-character trigger profiles** — don't care about the
-[CH chain](features/ch-chains.md) on your warrior? Don't need FTE alerts
-while leveling an alt? Triggers will auto-enable/disable based on which
-character you're logged in as.
-
-**Apply to character(s)** — default triggers stay global, but after
-creating a trigger a button will apply it to all character profiles or
-just a specific one.
-
 **New default utility triggers** — a special header section in the timer
 overlay for utility alerts such as rebuff requests and OOM indicators,
 shipping as new [built-ins](features/builtin-triggers.md).

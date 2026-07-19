@@ -162,6 +162,20 @@ def test_zone_gating() -> None:
     assert unzoned.matches_zone(None)
 
 
+def test_character_gating() -> None:
+    trigger = Trigger(search_text="pull", characters=["Xantik", "Alt"], trigger_enabled=True)
+    assert trigger.matches_character("Xantik")
+    assert trigger.matches_character("xantik")  # case-insensitive
+    assert trigger.matches_character("Alt")
+    assert not trigger.matches_character("Someoneelse")
+    assert not trigger.matches_character("")
+    assert not trigger.matches_character(None)
+    # Unscoped triggers fire for every character (the default).
+    unscoped = Trigger(search_text="anything")
+    assert unscoped.matches_character("Xantik")
+    assert unscoped.matches_character(None)
+
+
 def test_effective_basic_falls_back_to_legacy_fields() -> None:
     legacy = Trigger(
         search_text="x",

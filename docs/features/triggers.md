@@ -50,7 +50,9 @@ Each trigger can combine any of:
   (Red, Yellow, Gold, Orange, ForestGreen, SteelBlue, MediumPurple, White),
   auto-cleared after the
   [alert duration](../settings/audio-overlays.md).
-- **Audio** — text-to-speech of a separate (usually shorter) phrase.
+- **Audio** — text-to-speech of a separate (usually shorter) phrase, with an
+  optional **interrupt speech** flag that cuts off any in-progress
+  announcement so this one is heard right away ([TTS](tts.md)).
 - **Timer** — a **CountDown** or **CountUp** bar on the Event Overlay (and
   a row in the **Custom Timers** section of
   [Spell Timers](../windows/spell-timers.md)), with:
@@ -67,6 +69,18 @@ Each trigger can combine any of:
 Triggers can be restricted to specific zones, so a Plane of Growth trigger
 never fires from someone quoting the emote in the Commonlands. The
 [built-in](builtin-triggers.md) encounter triggers ship zone-gated.
+
+## Character scope
+
+By default every trigger fires for every character. Scope one to specific
+characters — choose them in the
+[Trigger Editor](../windows/trigger-editor.md) — and it fires only while one
+of those characters is logged in: no [CH-chain](ch-chains.md) alerts on your
+warrior, no FTE calls while leveling an alt. Enabling and disabling is
+automatic as you switch characters, and the default
+[built-ins](builtin-triggers.md) stay global. The scope is per install and is
+cleared on [export/import](#sharing-triggers-export-import) — it names your own
+characters, which mean nothing on someone else's machine.
 
 ## Sharing triggers (export & import)
 

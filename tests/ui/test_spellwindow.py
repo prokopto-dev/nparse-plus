@@ -632,6 +632,28 @@ def test_clear_row_group_and_all(qtbot):
     assert window.current_groups() == []
 
 
+def test_clear_other_players_keeps_your_own_and_non_spell_rows(qtbot):
+    backend = make_backend()  # seeds a YOU Clarity + a Custom Timer (TimerRow)
+    backend.timers.add_spell(
+        SpellRow(
+            name="Aegolism",
+            group="Joe",
+            updated_at=NOW,
+            spell=Spell(id=3, name="Aegolism"),
+            ends_at=NOW + timedelta(minutes=35),
+            total_duration_s=35 * 60.0,
+        )
+    )
+    window = _shown_window(qtbot, backend)
+    assert "Joe" in window.current_groups()
+
+    window._clear_other_players()
+    # your own buff and the (non-spell) custom timer survive; Joe's spell is gone.
+    assert window.current_groups() == [YOU_GROUP, TRIGGER_TIMER_GROUP]
+    assert "Aegolism" not in window.current_row_names()
+    assert "Clarity" in window.current_row_names()
+
+
 def test_buff_fade_warning_turns_time_label_red(qtbot):
     backend = make_backend()
     backend.settings.spellwindow.buff_fade_warning_seconds = 30

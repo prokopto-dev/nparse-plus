@@ -92,6 +92,33 @@ def test_basic_output_tts_and_overlay_with_captures() -> None:
     assert not overlay[0].reset
 
 
+def _tts_trigger(*, interrupt: bool) -> Trigger:
+    return Trigger(
+        trigger_enabled=True,
+        search_text="pull now",
+        use_regex=False,
+        basic=TriggerOutput(
+            audio_type=TriggerAudioType.TEXT_TO_SPEECH,
+            tts_text="pull",
+            interrupt_speech=interrupt,
+        ),
+    )
+
+
+def test_interrupt_speech_flag_interrupts_before_speaking() -> None:
+    _, bus, speaker, _, _, _ = make_engine(_tts_trigger(interrupt=True))
+    push(bus, "pull now")
+    assert speaker.spoken == ["pull"]
+    assert speaker.interrupts == 1
+
+
+def test_tts_without_interrupt_flag_does_not_interrupt() -> None:
+    _, bus, speaker, _, _, _ = make_engine(_tts_trigger(interrupt=False))
+    push(bus, "pull now")
+    assert speaker.spoken == ["pull"]
+    assert speaker.interrupts == 0
+
+
 def test_overlay_text_resets_after_five_seconds_via_tick() -> None:
     trigger = Trigger(
         trigger_enabled=True,
@@ -139,6 +166,29 @@ def test_zone_gated_trigger_fires_in_its_zone() -> None:
     _, bus, speaker, _, _, _ = make_engine(zoned, zone="kael")
     push(bus, "The wind begins to blow.")
     assert speaker.spoken == ["AOE"]
+
+
+def _char_scoped_trigger() -> Trigger:
+    return Trigger(
+        trigger_enabled=True,
+        search_text="pull now",
+        use_regex=False,
+        characters=["Frodo"],
+        basic=TriggerOutput(audio_type=TriggerAudioType.TEXT_TO_SPEECH, tts_text="incoming"),
+    )
+
+
+def test_character_scoped_trigger_gated_by_active_player() -> None:
+    # Active character Gandalf: the Frodo-scoped trigger stays silent.
+    _, bus, speaker, _, _, _ = make_engine(_char_scoped_trigger(), name="Gandalf")
+    push(bus, "pull now")
+    assert speaker.spoken == []
+
+    # Same trigger, active character Frodo: it fires (enable/disable is live
+    # off the active ActivePlayer, no re-arming needed).
+    _, bus2, speaker2, _, _, _ = make_engine(_char_scoped_trigger(), name="Frodo")
+    push(bus2, "pull now")
+    assert speaker2.spoken == ["incoming"]
 
 
 def test_first_matching_trigger_consumes_the_line() -> None:
@@ -344,6 +394,19 @@ def test_end_early_text_cancels_active_timer() -> None:
     assert timers.cancelled == ["Word Of Resto"]
     engine.tick(clock.advance(500))
     assert speaker.spoken == []  # cancelled timers never fire Ended
+
+
+def test_end_early_invalid_regex_is_ignored_not_raised() -> None:
+    # A malformed end-early pattern caches as an uncompilable None and must
+    # never match or raise on the per-line path.
+    trigger = timer_trigger(
+        seconds=400,
+        end_early=[EndEarlyEntry(search_text=r"(unclosed", use_regex=True)],
+    )
+    _, bus, _, timers, _, _ = make_engine(trigger)
+    push(bus, "Your body begins to rot.")  # start the timer
+    push(bus, "an (unclosed paren line")  # bad pattern: no match, no crash
+    assert timers.cancelled == []
 
 
 def test_counter_increments_and_resets_after_inactivity_window() -> None:

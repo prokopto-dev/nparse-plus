@@ -23,7 +23,9 @@ class MapData(dict):
     def __init__(self, zone=None):
         super().__init__()
         self.zone = zone
-        self.raw = {"lines": [], "poi": [], "grid": []}
+        # POI source rows (MapPoint) kept for poi_entries(); map lines/grid are
+        # transient scratch built locally in _load().
+        self._poi = []
         self.geometry = None  # MapGeometry
         self.players = {}
         self.spawns = []
@@ -62,8 +64,8 @@ class MapData(dict):
         self._resolve_zone_params(map_file_name)
 
         all_x, all_y, all_z = [], [], []
+        lines, grid = [], []  # transient scratch, consumed below in _load()
 
-        # TODO(#6): Remove the references to raw
         # Create Lines and Points
         for map_file in maps:
             print("Loading: %s" % map_file)
@@ -73,7 +75,7 @@ class MapData(dict):
                     data = [value.strip() for value in line[1:].split(",")]
                     if line_type == "l":  # line
                         x1, y1, z1, x2, y2, z2 = list(map(float, data[0:6]))
-                        self.raw["lines"].append(
+                        lines.append(
                             MapLine(
                                 x1=x1,
                                 y1=y1,
@@ -95,7 +97,7 @@ class MapData(dict):
 
                     elif line_type == "p":  # point
                         x, y, z = map(float, data[0:3])
-                        self.raw["poi"].append(
+                        self._poi.append(
                             MapPoint(
                                 x=x,
                                 y=y,
@@ -128,7 +130,7 @@ class MapData(dict):
         )
 
         for number in range(left, right + 1000, 1000):
-            self.raw["grid"].append(
+            grid.append(
                 MapLine(
                     x1=number,
                     x2=number,
@@ -141,7 +143,7 @@ class MapData(dict):
             )
 
         for number in range(top, bottom + 1000, 1000):
-            self.raw["grid"].append(
+            grid.append(
                 MapLine(
                     y1=number,
                     y2=number,
@@ -155,7 +157,7 @@ class MapData(dict):
 
         self.grid = QGraphicsPathItem()
         line_path = QPainterPath()
-        for line in self.raw["grid"]:
+        for line in grid:
             line_path.moveTo(line.x1, line.y1)
             line_path.lineTo(line.x2, line.y2)
         self.grid.setPath(line_path)
@@ -198,7 +200,7 @@ class MapData(dict):
         # Create QGraphicsPathItem for lines separately per fine z-band,
         # keyed (band, color) to retain colors within each band.
         temp_dict = {}
-        for l in self.raw["lines"]:
+        for l in lines:
             lz = min(l.z1, l.z2)
             band_key = band_key_for(lz, self.band_width)
             if not temp_dict.get(band_key):
@@ -221,7 +223,7 @@ class MapData(dict):
                 entry["paths"].addToGroup(path)
 
         # Create Points of Interest (per-item opacity is applied by z later)
-        for p in self.raw["poi"]:
+        for p in self._poi:
             self.ensure_band(p.z)["poi"].append(PointOfInterest(location=p))
 
         self.geometry = MapGeometry(
@@ -272,7 +274,7 @@ class MapData(dict):
 
     def poi_entries(self):
         """POI labels as (text, x, y, z) tuples for the NPC search index."""
-        return [(p.text, p.x, p.y, p.z) for p in self.raw["poi"]]
+        return [(p.text, p.x, p.y, p.z) for p in self._poi]
 
     @staticmethod
     def get_zone_dict():

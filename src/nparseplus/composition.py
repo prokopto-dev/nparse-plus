@@ -100,8 +100,8 @@ class _SwappableSpeaker:
     ``build_backend`` hands this one object to the trigger engine and every
     audio handler, so swapping its delegate live-changes the TTS voice for all
     of them without rebuilding the backend (or restarting the app). Implements
-    the ``Speaker`` protocol (``speak``) plus ``close`` for shutdown parity
-    with ``SubprocessSpeaker``.
+    the ``Speaker`` protocol (``speak`` / ``interrupt``) plus ``close`` for
+    shutdown parity with ``SubprocessSpeaker``.
     """
 
     def __init__(self, delegate: object) -> None:
@@ -109,6 +109,11 @@ class _SwappableSpeaker:
 
     def speak(self, text: str) -> None:
         self._delegate.speak(text)  # type: ignore[attr-defined]
+
+    def interrupt(self) -> None:
+        interrupt = getattr(self._delegate, "interrupt", None)
+        if callable(interrupt):
+            interrupt()
 
     def close(self) -> None:
         self._close(self._delegate)

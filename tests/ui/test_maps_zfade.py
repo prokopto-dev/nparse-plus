@@ -174,6 +174,18 @@ def test_poi_labels_fade_by_their_own_z(qtbot, synthetic_maps) -> None:
     assert pois["Roof_Boss"].text.opacity() == pytest.approx(0.1)
 
 
+def test_poi_entries_expose_labels_for_search(qtbot, synthetic_maps) -> None:
+    # Regression guard for #6: poi_entries() reads the persisted POI rows
+    # (formerly MapData.raw["poi"]) that feed the NPC-search index in window.py.
+    data = MapData(zone="fadezone")
+    assert data.poi_entries() == [
+        ("King_Arthur", 50.0, 5.0, 0.0),
+        ("Roof_Boss", 50.0, 5.0, 100.0),
+    ]
+    # A zone-less MapData never runs _load(); poi_entries() is still safe/empty.
+    assert MapData().poi_entries() == []
+
+
 def test_player_marker_stays_fully_opaque(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "fadezone")
     canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))

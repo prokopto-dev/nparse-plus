@@ -15,9 +15,13 @@ class FakeSpeaker:
 
     def __init__(self) -> None:
         self.spoken: list[str] = []
+        self.interrupts = 0
 
     def speak(self, text: str) -> None:
         self.spoken.append(text)
+
+    def interrupt(self) -> None:
+        self.interrupts += 1
 
 
 class EventCollector:

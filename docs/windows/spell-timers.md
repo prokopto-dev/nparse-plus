@@ -55,9 +55,10 @@ Spell rows show their **gem icon** from the spell data.
   hide toggle in [Settings → Spell Timers](../settings/spell-timers.md).
   Hiding is display-only; the timers keep running underneath.
 - **Right-click to clear timers** — right-click a row for *Clear '(name)'*,
-  a section header for *Clear group*, or anywhere for *Clear all timers*.
-  (With click-through enabled the overlay ignores all clicks, including
-  right-clicks — toggle click-through off first.)
+  a section header for *Clear group*, or anywhere for *Clear other players'
+  timers* (drops everyone else's spell rows but keeps your own buffs and mob
+  timers) or *Clear all timers*. (With click-through enabled the overlay
+  ignores all clicks, including right-clicks — toggle click-through off first.)
 - **You choose the size** — drag the bottom-right corner grip to resize;
   the window keeps that size (persisted across restarts) and scrolls when
   there are more rows than fit, instead of growing down your screen and

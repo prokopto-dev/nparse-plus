@@ -599,6 +599,10 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend.timers.clear_all()
         self.refresh()
 
+    def _clear_other_players(self) -> None:
+        self._backend.timers.clear_all_other_spells()
+        self.refresh()
+
     def contextMenuEvent(self, event) -> None:
         row, group = self._context_target(event.pos())
         menu = QMenu(self)
@@ -610,5 +614,6 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             menu.addAction(f"Clear group '{label}'", lambda g=group: self._clear_group(g))
         if menu.actions():
             menu.addSeparator()
+        menu.addAction("Clear other players' timers", self._clear_other_players)
         menu.addAction("Clear all timers", self._clear_all)
         menu.exec(event.globalPos())
