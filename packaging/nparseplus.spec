@@ -59,7 +59,10 @@ pyz = PYZ(a.pure)  # noqa: F821
 
 splash_args = []
 # Splash is Windows-only: unsupported on macOS, and it needs tkinter, which
-# the uv-managed Python on the Linux CI runners doesn't ship.
+# the uv-managed Python on the Linux CI runners doesn't ship. It also
+# rasterizes splash.png via Pillow at build time, so Pillow lives in the
+# `build` dependency group (it is NOT a runtime import — do not move it back
+# to [project.dependencies]).
 if sys.platform == "win32":
     splash = Splash(  # noqa: F821
         str(ROOT / "splash.png"),
