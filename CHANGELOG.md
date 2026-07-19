@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.9.2 (2026-07-19)
+
+### Bug Fixes
+
+- Sit CH chain target name 8px from the lane
+  ([`c37ff5e`](https://github.com/prokopto-dev/nparse-plus/commit/c37ff5e385f772f447c391f0c6988603cf24a316))
+
+
 ## v1.9.1 (2026-07-18)
 
 ### Bug Fixes
