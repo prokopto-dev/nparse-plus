@@ -6,6 +6,45 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.9.3 (2026-07-19)
+
+### Build System
+
+- Drop unused Pillow/pydantic-settings, move signalrcore to a probe group
+  ([`0f3a60b`](https://github.com/prokopto-dev/nparse-plus/commit/0f3a60bb11b212c90879b57026e022af332db8a1))
+
+### Chores
+
+- Point code TODOs at their tracking issues
+  ([`72ed74e`](https://github.com/prokopto-dev/nparse-plus/commit/72ed74ea84ade59627e4dd73b399eefaef35bbc8))
+
+### Documentation
+
+- Reconcile EQTool commit refs and wire docs to the issue tracker
+  ([`7256de9`](https://github.com/prokopto-dev/nparse-plus/commit/7256de9766d23e9c2350bfc3fadd24f51420492e))
+
+### Performance Improvements
+
+- Skip redundant DPS best-window rescans on the per-tick path
+  ([`b25b403`](https://github.com/prokopto-dev/nparse-plus/commit/b25b40301343963aa4aba302054fd458afa622b0))
+
+### Refactoring
+
+- Dedupe helpers, drop per-line/per-row allocations, remove dead MapsSignals
+  ([`276c665`](https://github.com/prokopto-dev/nparse-plus/commit/276c6654c2c70b01a67ef7ce87f708bb0bfb94be))
+
+- Remove dead code and orphaned files
+  ([`8236aef`](https://github.com/prokopto-dev/nparse-plus/commit/8236aef71a9155f91e2f2978531a13b667561fe5))
+
+- Retire the backend=None pure-legacy app mode
+  ([`60d64b0`](https://github.com/prokopto-dev/nparse-plus/commit/60d64b0b9c0ab4b484e378eca6b1cc36ae63007d))
+
+### Testing
+
+- Cover LogDriver character-switch and QtEventBridge
+  ([`376f3be`](https://github.com/prokopto-dev/nparse-plus/commit/376f3be4ca0bef4e05b1d9b18e48acd461ae75d3))
+
+
 ## v1.9.2 (2026-07-19)
 
 ### Bug Fixes
