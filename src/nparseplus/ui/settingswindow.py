@@ -653,6 +653,14 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "and shared remote timers."
         )
         form.addRow("Show custom timers", self._show_custom_timers)
+        self._raid_group_by_spell = QCheckBox(self)
+        self._raid_group_by_spell.setChecked(spellwindow.raid_group_by_spell)
+        self._raid_group_by_spell.setToolTip(
+            "Raid mode: when the buffs you cast on other players cover more "
+            "targets than distinct spells, group them by spell (the spell heads, "
+            "targets list). Off by default; targets always stay the headers."
+        )
+        form.addRow("Group buffs by spell (raid mode)", self._raid_group_by_spell)
         self._best_guess = QCheckBox(self)
         self._best_guess.setChecked(spellwindow.best_guess_spells)
         self._best_guess.setToolTip(
@@ -1131,6 +1139,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.show_mob_timers = self._show_mob_timers.isChecked()
         spellwindow.show_roll_timers = self._show_roll_timers.isChecked()
         spellwindow.show_custom_timers = self._show_custom_timers.isChecked()
+        spellwindow.raid_group_by_spell = self._raid_group_by_spell.isChecked()
         spellwindow.best_guess_spells = self._best_guess.isChecked()
         spellwindow.respawn_expiry_audio = self._respawn_audio.isChecked()
         spellwindow.buff_fade_warning_seconds = self._buff_fade_secs.value()

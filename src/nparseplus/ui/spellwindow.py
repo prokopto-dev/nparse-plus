@@ -41,6 +41,7 @@ from nparseplus.core.timers import (
     RollRow,
     Row,
     SpellRow,
+    group_rows_for_display,
 )
 from nparseplus.ui import appquit, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss
@@ -152,11 +153,16 @@ class _RowWidget(QFrame):
         layout.addWidget(self._bar)
         self.setLayout(layout)
 
-    def update_row(self, row: Row, now: datetime) -> None:
-        """Render ``row`` — read-only; never mutates the model."""
+    def update_row(self, row: Row, now: datetime, label: str | None = None) -> None:
+        """Render ``row`` — read-only; never mutates the model.
+
+        ``label`` overrides the displayed name (raid mode shows the target
+        under a spell header instead of the spell name); the row identity used
+        by the context menu stays ``row`` regardless.
+        """
         self.row_name = row.name
         self.row = row
-        self._name.setText(row.name)
+        self._name.setText(label if label is not None else row.name)
         self._update_icon(row)
         if isinstance(row, CounterRow):
             self._value.setText(f"x{row.count}")
@@ -381,11 +387,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         show_classes = info.show_spells_for_classes if info is not None else None
         rows = [row for row in rows if not self._row_hidden(row, show_classes)]
 
-        grouped: dict[str, list[Row]] = {}
-        for row in rows:
-            grouped.setdefault(row.group, []).append(row)
-        # YOU_GROUP first, then the other targets alphabetically.
-        order = sorted(grouped, key=lambda g: (g != YOU_GROUP, g.casefold()))
+        # Orientation is computed in the Qt-free core (#17): target-headed by
+        # default, spell-headed for raid buffs only when opt-in AND targets
+        # outnumber spells. Recomputed every tick, so it never gets stuck.
+        display_groups = group_rows_for_display(
+            rows, group_by_spell=self._backend.settings.spellwindow.raid_group_by_spell
+        )
         sort_mode = self._backend.settings.spellwindow.row_sort
 
         while self._rows_layout.count():
@@ -394,22 +401,33 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         used_headers: set[str] = set()
         used_rows: set[tuple[str, str, str, int]] = set()
         dup_counter: dict[tuple[str, str, str], int] = {}
-        for group in order:
-            header = self._headers.get(group)
+        for group in display_groups:
+            spell_headed = group.orientation == "spell"
+            # Header widgets are keyed by (orientation, header) so a spell name
+            # can never collide with a same-named target group.
+            hkey = f"{group.orientation}\x00{group.header}"
+            label = group.header if spell_headed else self._group_label(group.header)
+            header = self._headers.get(hkey)
             if header is None:
-                header = QLabel(self._group_label(group), self._container)
+                header = QLabel(label, self._container)
                 header.setObjectName("SpellTimerGroup")
-                header.setProperty("group_key", group)
-                self._headers[group] = header
-            else:
+                # Only target headers map to a clearable group (context menu).
+                header.setProperty("group_key", None if spell_headed else group.header)
+                self._headers[hkey] = header
+            elif header.text() != label:
                 # Target class can arrive later (PlayerTracker /who sync).
-                label = self._group_label(group)
-                if header.text() != label:
-                    header.setText(label)
+                header.setText(label)
             self._rows_layout.addWidget(header)
             header.show()
-            used_headers.add(group)
-            for row in sorted(grouped[group], key=lambda r: row_sort_key(r, now, sort_mode)):
+            used_headers.add(hkey)
+            # Target sections re-sort live by the user's mode; spell sections
+            # keep the core's deterministic by-target order.
+            ordered = (
+                group.rows
+                if spell_headed
+                else sorted(group.rows, key=lambda r: row_sort_key(r, now, sort_mode))
+            )
+            for row in ordered:
                 base = (type(row).__name__, row.name.casefold(), row.group.casefold())
                 index = dup_counter.get(base, 0)
                 dup_counter[base] = index + 1
@@ -421,13 +439,14 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                         warning_threshold=self._buff_fade_warning_seconds,
                     )
                     self._row_widgets[key] = widget
-                widget.update_row(row, now)
+                # In a spell section the row shows its target, not the spell.
+                widget.update_row(row, now, label=row.group.strip() if spell_headed else None)
                 self._rows_layout.addWidget(widget)
                 widget.show()
                 used_rows.add(key)
 
-        for group in [g for g in self._headers if g not in used_headers]:
-            self._headers.pop(group).deleteLater()
+        for hkey in [h for h in self._headers if h not in used_headers]:
+            self._headers.pop(hkey).deleteLater()
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
         # Re-fit the scroll host to the rebuilt content: the scroll area's own
@@ -463,6 +482,27 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             widget = self._rows_layout.itemAt(i).widget()
             if isinstance(widget, _RowWidget):
                 out.append(widget.row_name)
+        return out
+
+    def current_header_texts(self) -> list[str]:
+        """Header label texts in on-screen order (test/debug hook). Unlike
+        ``current_groups`` (group keys), this reflects raid-mode spell headers,
+        which have no clearable group key."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, QLabel):
+                out.append(widget.text())
+        return out
+
+    def current_row_labels(self) -> list[str]:
+        """Displayed row labels in on-screen order (test/debug hook) — the
+        target under a raid-mode spell header, else the spell name."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, _RowWidget):
+                out.append(widget._name.text())
         return out
 
     # -- window state ------------------------------------------------------------

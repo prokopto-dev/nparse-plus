@@ -6,20 +6,22 @@ ClearYouSpells/AddSavedYouSpells persistence). Rendering (colors,
 visibility, WPF grouping) stays in the UI layer; this service only owns the
 rows and notifies observers on change.
 
-Deliberate divergence: EQTool's adaptive raid regrouping (UpdateSpells /
-RaidModeEnabled — flipping player buffs to group-by-spell when targets
-outnumber spells) is DISABLED for now. Targets are always the headers and
-spells always the rows. The flip inverted the window's mental model, and
-its global orientation flag desynced from rows whose is_target_player was
-set after add (post-/who), leaving stuck spell-headers the toggle couldn't
-fix. A redesign (per-row orientation tracking) is on the roadmap if raid
-mode returns.
+Raid grouping (EQTool's UpdateSpells / RaidModeEnabled — flipping player
+buffs to group-by-spell when targets outnumber spells) lives in the pure
+``group_rows_for_display`` helper below and is strictly opt-in
+(``raid_group_by_spell``); targets are the headers by default. EQTool's
+version desynced because a single *global* orientation flag drifted from
+rows whose ``is_target_player`` was set after add (post-/who), stranding
+stuck spell-headers. The redesign (#17) derives orientation per group on
+every render from the current row set — nothing is persisted, so a target
+recognized mid-fight just re-groups on the next tick.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from pydantic import BaseModel, ConfigDict
 
@@ -382,3 +384,91 @@ class TimersService:
 
 def _eq(a: str, b: str) -> bool:
     return a.casefold() == b.casefold()
+
+
+# -- display grouping (raid-mode orientation, #17) ----------------------------
+
+
+class DisplayGroup(NamedTuple):
+    """One grouped section of the spell window, with its orientation.
+
+    ``orientation == "target"`` (the default everywhere): ``header`` is a
+    target group key (YOU_GROUP, an NPC/player name, or a built-in timer
+    section) and each row's own ``name`` is the label — targets head, spells
+    list. ``orientation == "spell"`` (raid mode, opt-in): ``header`` is a
+    spell name and each row's ``group`` (the target) is the label — the spell
+    heads, targets list.
+    """
+
+    header: str
+    orientation: str
+    rows: list[Row]
+
+
+def _is_flip_candidate(row: Row) -> bool:
+    """A beneficial buff on another player — the only rows raid mode flips."""
+    return (
+        isinstance(row, SpellRow)
+        and row.is_target_player
+        and row.group != YOU_GROUP
+        and not row.detrimental
+        and not row.is_cooldown
+    )
+
+
+def group_rows_for_display(
+    rows: Sequence[Row], *, group_by_spell: bool = False
+) -> list[DisplayGroup]:
+    """Group ``rows`` into the spell window's ordered, oriented sections.
+
+    Default (``group_by_spell=False``): every section is target-headed —
+    YOU_GROUP first, then the other groups in casefold order (the built-in
+    timer sections carry leading spaces so they sort where they always have).
+    This reproduces the window's long-standing layout exactly.
+
+    Opt-in raid mode (``group_by_spell=True``): when the beneficial buffs on
+    OTHER players span more distinct targets than distinct spells, those buffs
+    flip to spell-headed sections (one per spell, each listing its targets) so
+    a raid-wide buff reads as a single spell over many people. Everything else
+    — YOU_GROUP, NPC targets, the timer sections, detrimental/cooldown rows —
+    stays target-headed. Section order becomes: YOU_GROUP, the spell-headed
+    groups (alphabetical), then the remaining target groups (unchanged order).
+
+    Orientation is recomputed from ``rows`` on every call and never persisted,
+    which is what keeps a target recognized mid-fight (``is_target_player``
+    flipped after the row was added) from stranding a stale header (#17). Rows
+    within each section are returned in a deterministic order (targets by name,
+    spell sections by target); the UI re-sorts for its live sort mode.
+    """
+    candidates = [r for r in rows if group_by_spell and _is_flip_candidate(r)]
+    distinct_targets = {r.group for r in candidates}
+    distinct_spells = {r.name for r in candidates}
+    flip = bool(candidates) and len(distinct_targets) > len(distinct_spells)
+    flipped_ids = {id(r) for r in candidates} if flip else set()
+
+    target_groups: dict[str, list[Row]] = {}
+    for row in rows:
+        if id(row) in flipped_ids:
+            continue
+        target_groups.setdefault(row.group, []).append(row)
+
+    result: list[DisplayGroup] = []
+    if YOU_GROUP in target_groups:
+        you = target_groups.pop(YOU_GROUP)
+        result.append(DisplayGroup(YOU_GROUP, "target", _sorted_by_name(you)))
+
+    if flip:
+        spell_groups: dict[str, list[Row]] = {}
+        for row in candidates:
+            spell_groups.setdefault(row.name, []).append(row)
+        for spell_name in sorted(spell_groups, key=str.casefold):
+            members = sorted(spell_groups[spell_name], key=lambda r: r.group.casefold())
+            result.append(DisplayGroup(spell_name, "spell", members))
+
+    for group in sorted(target_groups, key=str.casefold):
+        result.append(DisplayGroup(group, "target", _sorted_by_name(target_groups[group])))
+    return result
+
+
+def _sorted_by_name(rows: list[Row]) -> list[Row]:
+    return sorted(rows, key=lambda r: r.name.casefold())

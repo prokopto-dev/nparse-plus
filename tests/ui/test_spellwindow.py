@@ -86,6 +86,49 @@ def test_rows_render_and_you_group_first(qtbot):
     assert names == ["Clarity", "Custom Timer", "Tainted Breath"]
 
 
+def _add_other_buff(backend, name: str, target: str, minutes: float = 20) -> None:
+    backend.timers.add_spell(
+        SpellRow(
+            name=name,
+            group=target,
+            updated_at=NOW,
+            spell=Spell(id=hash((name, target)) % 9999, name=name),
+            ends_at=NOW + timedelta(minutes=minutes),
+            total_duration_s=minutes * 60.0,
+        )
+    )
+
+
+def test_raid_mode_renders_spell_headers_with_targets(qtbot):
+    backend = make_backend()  # Clarity (YOU) + a Custom Timer
+    for target in ("Joe", "Bob", "Ann"):
+        _add_other_buff(backend, "Aegolism", target)
+    backend.settings.spellwindow.raid_group_by_spell = True
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    headers = window.current_header_texts()
+    # The spell name heads a section; the targets are the rows under it.
+    assert "Aegolism" in headers
+    assert {"Ann", "Bob", "Joe"} <= set(window.current_row_labels())
+    # YOU stays first and target-headed; its own buff still shows the spell name.
+    assert headers[0] == YOU_GROUP.strip() or headers[0] == YOU_GROUP
+    assert "Clarity" in window.current_row_labels()
+
+
+def test_raid_mode_off_keeps_target_headers(qtbot):
+    backend = make_backend()
+    for target in ("Joe", "Bob", "Ann"):
+        _add_other_buff(backend, "Aegolism", target)
+    assert backend.settings.spellwindow.raid_group_by_spell is False  # default
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    # Targets remain the headers; each row shows the spell.
+    assert {"Ann", "Bob", "Joe"} <= set(window.current_groups())
+    assert window.current_row_labels().count("Aegolism") == 3
+
+
 def _add_you_spell(backend, name: str, minutes: float) -> None:
     backend.timers.add_spell(
         SpellRow(
@@ -603,7 +646,9 @@ def test_context_target_resolves_row_header_and_empty(qtbot):
     assert row is not None and row.name == "Clarity"
     assert group == YOU_GROUP
 
-    header = window._headers[TRIGGER_TIMER_GROUP]
+    header = next(
+        h for h in window._headers.values() if h.property("group_key") == TRIGGER_TIMER_GROUP
+    )
     pos = header.mapTo(window, header.rect().center())
     row, group = window._context_target(pos)
     assert row is None
