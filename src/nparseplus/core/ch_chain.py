@@ -28,6 +28,35 @@ _RCH_WORD_RE = re.compile(r"\bCH\b", re.IGNORECASE)
 _MULTI_SPACE_RE = re.compile(r"\s{2,}")
 _RECIPIENT_KEEP_RE = re.compile(r"[^A-Za-z '`]")
 
+# Raid-leader CH cadence callouts (#15) — "healers to 4 (seconds)",
+# "chain to 3", "CH to 5", or "4 second chain". nparseplus extension (no
+# EQTool equivalent); the number is the seconds between chained casts.
+_CADENCE_RES = (
+    re.compile(r"\b(?:healers?|heals?|chain|ch)\s+to\s+(\d{1,2})\b", re.IGNORECASE),
+    re.compile(
+        r"\b(\d{1,2})\s*(?:s|sec|secs|second|seconds)\s+(?:chain|ch|heals?|casts?)\b",
+        re.IGNORECASE,
+    ),
+)
+# Bounds keep stray numbers ("healers to 40 people") from reading as a cadence.
+_CADENCE_MIN_S = 1
+_CADENCE_MAX_S = 30
+
+
+def parse_ch_cadence(content: str) -> int | None:
+    """The declared seconds-between-casts from a raid CH cadence call, or None.
+
+    Recognizes "healers to N (seconds)", "chain to N", "CH to N", and
+    "N second chain"; N must fall in [1, 30]. Pure and wall-clock-free (#15).
+    """
+    for regex in _CADENCE_RES:
+        match = regex.search(content)
+        if match:
+            seconds = _to_int(match.group(1))
+            if _CADENCE_MIN_S <= seconds <= _CADENCE_MAX_S:
+                return seconds
+    return None
+
 
 @dataclass
 class ChainData:

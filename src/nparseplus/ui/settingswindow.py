@@ -915,6 +915,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "(e.g. 'GG'). Leave blank to follow all calls."
         )
         form.addRow("CH chain tag (blank = all)", self._ch_tag)
+        self._ch_cadence = QCheckBox(self)
+        self._ch_cadence.setChecked(general.ch_cadence_indicator)
+        self._ch_cadence.setToolTip(
+            'When the raid leader calls a cadence ("healers to 4 seconds"), show '
+            "a muted marker in the CH lane at the declared second. Off by default."
+        )
+        form.addRow("CH cadence indicator", self._ch_cadence)
         self._bard_count = QCheckBox(self)
         self._bard_count.setChecked(general.bard_count_enabled)
         self._bard_count.setToolTip(
@@ -1142,6 +1149,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.overlay_text_seconds = self._overlay_seconds.value()
         general.ch_lane_retention_seconds = self._ch_retention.value()
         general.ch_chain_tag = self._ch_tag.text().strip()
+        general.ch_cadence_indicator = self._ch_cadence.isChecked()
         general.bard_count_enabled = self._bard_count.isChecked()
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()

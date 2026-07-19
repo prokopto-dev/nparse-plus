@@ -332,7 +332,11 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         DisciplineCooldownHandler(bus, player, timers),
         MendWoundsHandler(bus, player, timers),
         CompleteHealCommsHandler(
-            bus, player, npcs=npcs, ch_chain_tag=lambda: settings.general.ch_chain_tag
+            bus,
+            player,
+            npcs=npcs,
+            ch_chain_tag=lambda: settings.general.ch_chain_tag,
+            cadence_enabled=lambda: settings.general.ch_cadence_indicator,
         ),
         CompleteHealHandler(bus, player, speaker=speaker),
         BardCountHandler(

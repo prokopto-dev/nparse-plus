@@ -10,7 +10,7 @@ from nparseplus.core.events import DamageEvent, LineEvent, OverlayEvent, TimerBa
 from nparseplus.core.handlers.consider import MobInfoState
 from nparseplus.ui.consolewindow import ConsoleWindow
 from nparseplus.ui.dpswindow import DpsMeterWindow
-from nparseplus.ui.eventoverlay import EventOverlayWindow
+from nparseplus.ui.eventoverlay import EventOverlayWindow, _ChainLane
 from nparseplus.ui.mobinfo import MobInfoWindow
 
 pytestmark = pytest.mark.qt
@@ -166,6 +166,39 @@ def test_ch_lane_has_ten_second_marker_cells(qtbot) -> None:
     assert all(cell.width() == expected for cell in cells)
     # Cells tile the lane left-to-right from x=0.
     assert [cell.x() for cell in cells] == [i * expected for i in range(10)]
+
+
+def test_ch_cadence_marks_new_and_existing_lanes(qtbot) -> None:
+    """#15: a cadence callout sets the muted marker on existing lanes and is
+    inherited by lanes created afterwards; new callouts update everything."""
+    from nparseplus.core.events import CompleteHealCadenceEvent, CompleteHealEvent
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    # A lane exists first; a cadence callout marks it.
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="", position="001", caster="X")
+    )
+    assert overlay._chain_lanes["Tanky"].cadence_seconds is None
+    overlay.handle_event(CompleteHealCadenceEvent(timestamp=T0, seconds=4))
+    assert overlay._chain_lanes["Tanky"].cadence_seconds == 4
+    # A lane created after the callout inherits the current cadence.
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Backup", tag="", position="001", caster="Y")
+    )
+    assert overlay._chain_lanes["Backup"].cadence_seconds == 4
+    # A fresh callout re-marks every lane.
+    overlay.handle_event(CompleteHealCadenceEvent(timestamp=T0, seconds=6))
+    assert overlay._chain_lanes["Tanky"].cadence_seconds == 6
+    assert overlay._chain_lanes["Backup"].cadence_seconds == 6
+
+
+def test_ch_cadence_preview_marker(qtbot) -> None:
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.set_edit_mode(True)
+    lanes = [lane for row in overlay._preview_widgets for lane in row.findChildren(_ChainLane)]
+    assert lanes and all(lane.cadence_seconds == 4 for lane in lanes)
 
 
 def test_ch_chip_is_exactly_one_cell_wide(qtbot) -> None:

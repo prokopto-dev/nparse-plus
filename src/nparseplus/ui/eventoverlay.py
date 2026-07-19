@@ -35,7 +35,12 @@ from PySide6.QtWidgets import (
 )
 
 from nparseplus.config.settings import OverlayRegion, WindowState
-from nparseplus.core.events import CompleteHealEvent, OverlayEvent, TimerBarEvent
+from nparseplus.core.events import (
+    CompleteHealCadenceEvent,
+    CompleteHealEvent,
+    OverlayEvent,
+    TimerBarEvent,
+)
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
@@ -106,6 +111,9 @@ class _ChainLane(QFrame):
         self.target = target
         self.chips: list[QLabel] = []
         self.last_call: datetime = datetime.now()
+        # Declared CH cadence in seconds ("healers to 4"), or None (#15). When
+        # set, a muted marker highlights that second-cell as the next-cast tick.
+        self.cadence_seconds: int | None = None
         # Called (with no args) whenever a chip finishes its slide.
         self.on_chip_done: Callable[[], None] | None = None
         # The [name | lane] row container this lane sits in (set by the
@@ -146,6 +154,9 @@ class _ChainLane(QFrame):
         height = self.height()
         for i, rect in enumerate(self.cell_geometry()):
             x, cw = rect.x(), rect.width()
+            # Muted "next expected cast" marker on the declared-cadence cell (#15).
+            if self.cadence_seconds is not None and i + 1 == self.cadence_seconds:
+                painter.fillRect(rect.adjusted(1, 1, -1, -1), QColor(255, 215, 0, 60))
             painter.setPen(QPen(border, 1))  # 1px left/right verticals
             painter.drawLine(x, 0, x, height)
             painter.drawLine(x + cw - 1, 0, x + cw - 1, height)
@@ -243,6 +254,9 @@ class EventOverlayWindow(QWidget):
         self._text_color = ""
         self._bars: dict[str, _TimerBar] = {}
         self._chain_lanes: dict[str, _ChainLane] = {}
+        # Last declared CH cadence (#15); new lanes inherit it, existing lanes
+        # are updated when a fresh callout arrives.
+        self._ch_cadence_seconds: int | None = None
         # Positioning-mode sample widgets: tracked ONLY here, never registered
         # in ``_bars``/``_chain_lanes`` and never written to ``_center_text``.
         self._preview_widgets: list[QWidget] = []
@@ -542,9 +556,11 @@ class EventOverlayWindow(QWidget):
         to live state and publishes no events."""
         if self._preview_widgets:
             return
-        # Sample CH lane with two static chips.
+        # Sample CH lane with two static chips (and a sample cadence marker so
+        # the muted "next cast" tick is visible while positioning, #15).
         lane = _ChainLane("Sample Target", self)
         lane.setFixedWidth(LANES_WIDTH)
+        lane.cadence_seconds = 4
         row = self._build_lane_row("Sample Target", lane)
         self._lanes_layout.addWidget(row)
         lane.show()
@@ -607,14 +623,24 @@ class EventOverlayWindow(QWidget):
             self._on_overlay_event(event)
         elif isinstance(event, TimerBarEvent):
             self._on_timer_bar_event(event)
+        elif isinstance(event, CompleteHealCadenceEvent):
+            self._on_ch_cadence(event)
         elif isinstance(event, CompleteHealEvent):
             self._on_complete_heal(event)
+
+    def _on_ch_cadence(self, event: CompleteHealCadenceEvent) -> None:
+        """Apply a declared CH cadence to the lanes' muted markers (#15)."""
+        self._ch_cadence_seconds = event.seconds
+        for lane in self._chain_lanes.values():
+            lane.cadence_seconds = event.seconds
+            lane.update()
 
     def _on_complete_heal(self, event: CompleteHealEvent) -> None:
         target = event.recipient or "?"
         lane = self._chain_lanes.get(target)
         if lane is None:
             lane = _ChainLane(target, self)
+            lane.cadence_seconds = self._ch_cadence_seconds
             lane.setFixedWidth(520)
             lane.on_chip_done = lambda t=target: QTimer.singleShot(
                 100, lambda: self._maybe_remove_lane(t)
