@@ -83,6 +83,61 @@ def test_new_trigger_apply_updates_settings_and_engine(env: Env) -> None:
     assert win.item_for(created.trigger_id) is not None
 
 
+# -- character scope (#13) -----------------------------------------------------
+
+
+def _check_character(win, name: str) -> None:
+    lst = win.characters_list
+    for i in range(lst.count()):
+        item = lst.item(i)
+        if item.text() == name:
+            item.setCheckState(Qt.CheckState.Checked)
+            return
+    raise AssertionError(f"character {name!r} not offered in the scope list")
+
+
+def test_new_trigger_lists_roster_unchecked_and_stays_global(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    created = win.current_trigger()
+    # The roster (settings.players) shows; a fresh trigger checks nothing.
+    assert [win.characters_list.item(i).text() for i in range(win.characters_list.count())] == [
+        "Gandalf"
+    ]
+    assert win.characters_list.item(0).checkState() == Qt.CheckState.Unchecked
+    win.apply()
+    assert env.settings_trigger(created.trigger_id).characters == []  # global
+
+
+def test_character_scope_applies_and_roundtrips(env: Env) -> None:
+    win = env.window
+    win.new_trigger()
+    tid = win.current_trigger().trigger_id
+    _check_character(win, "Gandalf")
+    win.apply()
+    assert env.settings_trigger(tid).characters == ["Gandalf"]
+
+    # Reselecting restores the checked scope into the list.
+    win.select_trigger(tid)
+    item = win.characters_list.item(0)
+    assert item.text() == "Gandalf"
+    assert item.checkState() == Qt.CheckState.Checked
+
+
+def test_scope_list_unions_roster_with_profileless_scoped_names(env: Env) -> None:
+    # A trigger scoped to a character with no profile still shows it (checked).
+    env.window._populate_characters(["Legolas"])
+    lst = env.window.characters_list
+    names = [lst.item(i).text() for i in range(lst.count())]
+    assert names == ["Gandalf", "Legolas"]  # sorted union of roster + scope
+    checked = {
+        lst.item(i).text()
+        for i in range(lst.count())
+        if lst.item(i).checkState() == Qt.CheckState.Checked
+    }
+    assert checked == {"Legolas"}
+
+
 def test_checkbox_toggle_flips_enabled_after_apply(env: Env) -> None:
     win = env.window
     trigger_id = win.trigger_ids()[0]

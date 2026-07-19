@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
     QMessageBox,
     QPlainTextEdit,
@@ -241,6 +243,15 @@ class TriggerEditorWindow(QWidget):
         for key, info in sorted(zonedb.zones.items(), key=lambda kv: kv[1].name.lower()):
             self.zone_combo.addItem(info.name, key)
         form.addRow("Zone", self.zone_combo)
+        # Per-character scope: check the characters this trigger applies to;
+        # none checked = every character (populated per-trigger in _load_form).
+        self.characters_list = QListWidget()
+        self.characters_list.setMaximumHeight(84)
+        self.characters_list.setToolTip(
+            "Fire this trigger only for the checked characters.\n"
+            "Leave all unchecked to apply to every character."
+        )
+        form.addRow("Characters", self.characters_list)
         self.group_combo = QComboBox()
         self.group_combo.setEditable(True)
         self.group_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
@@ -641,6 +652,7 @@ class TriggerEditorWindow(QWidget):
             "search_text": trigger.search_text,
             "use_regex": trigger.effective_use_regex,
             "zone": (trigger.zone or "").lower(),
+            "characters": list(trigger.characters),
             "comments": trigger.comments,
             "basic_display_enabled": basic.display_text_enabled,
             "basic_display_text": basic.display_text,
@@ -689,6 +701,7 @@ class TriggerEditorWindow(QWidget):
             self.search_edit.setText(values["search_text"])
             self.regex_check.setChecked(values["use_regex"])
             _set_combo(self.zone_combo, values["zone"])
+            self._populate_characters(values["characters"])
             self._populate_group_combo(trigger)
             self.comments_edit.setPlainText(values["comments"])
             self.basic_display_check.setChecked(values["basic_display_enabled"])
@@ -719,6 +732,33 @@ class TriggerEditorWindow(QWidget):
             self._loaded_values = self._form_values()
         finally:
             self._loading = False
+
+    def _populate_characters(self, scoped: list[str]) -> None:
+        """Fill the character-scope list for the loaded trigger (under _loading).
+
+        Items are the union of the known character profiles and any names the
+        trigger already scopes to (so a scope naming a since-removed character
+        still shows). Checked = in scope; nothing checked = every character.
+        """
+        roster = [p.name for p in self._settings.players if p.name]
+        scoped_lower = {s.lower() for s in scoped}
+        names = sorted({*roster, *scoped}, key=str.lower)
+        self.characters_list.clear()
+        for name in names:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.CheckState.Checked if name.lower() in scoped_lower else Qt.CheckState.Unchecked
+            )
+            self.characters_list.addItem(item)
+
+    def _checked_characters(self) -> list[str]:
+        """Checked character names, sorted so the edit-diff is order-stable."""
+        return sorted(
+            item.text()
+            for i in range(self.characters_list.count())
+            if (item := self.characters_list.item(i)).checkState() == Qt.CheckState.Checked
+        )
 
     def _populate_group_combo(self, trigger: Trigger) -> None:
         """Fill the group combo for the loaded trigger (called under _loading).
@@ -761,6 +801,7 @@ class TriggerEditorWindow(QWidget):
             "search_text": self.search_edit.text(),
             "use_regex": self.regex_check.isChecked(),
             "zone": self.zone_combo.currentData() or "",
+            "characters": self._checked_characters(),
             "comments": self.comments_edit.toPlainText(),
             "basic_display_enabled": self.basic_display_check.isChecked(),
             "basic_display_text": self.basic_display_edit.text(),
@@ -794,6 +835,7 @@ class TriggerEditorWindow(QWidget):
         trigger.search_text = values["search_text"]
         trigger.use_regex = values["use_regex"]
         trigger.zone = values["zone"] or None
+        trigger.characters = list(values["characters"])
         trigger.comments = values["comments"]
 
         basic = trigger.basic

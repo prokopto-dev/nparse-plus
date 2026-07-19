@@ -18,6 +18,10 @@ Open it from the tray → **Trigger Editor**.
     (checkbox). [Tokens](../features/triggers.md#tokens) like `{name}` and
     `{c}` capture parts of the line.
   - **Zone gating** — restrict the trigger to specific zones.
+  - **Characters** — check the character profiles this trigger applies to;
+    leave all unchecked to keep it global. Only fires while a checked
+    character is logged in (see
+    [character scope](../features/triggers.md#character-scope)).
   - **Text output** — the alert text shown on the
     [Event Overlay](event-overlay.md), its color, and whether it's spoken
     via [TTS](../features/tts.md).
