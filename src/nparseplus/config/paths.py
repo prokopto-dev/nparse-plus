@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from platformdirs import user_cache_dir, user_config_dir, user_log_dir
+from platformdirs import user_config_dir, user_log_dir
 
 APP_NAME = "nparseplus"
 
@@ -21,11 +21,6 @@ def config_dir() -> Path:
     return Path(user_config_dir(APP_NAME))
 
 
-def cache_dir() -> Path:
-    """Per-user cache directory for nParse+."""
-    return Path(user_cache_dir(APP_NAME))
-
-
 def settings_path() -> Path:
     """Full path of the main settings file."""
     return config_dir() / SETTINGS_FILENAME
@@ -34,13 +29,6 @@ def settings_path() -> Path:
 def ensure_config_dir() -> Path:
     """Create the config directory (and parents) if needed; return it."""
     path = config_dir()
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def ensure_cache_dir() -> Path:
-    """Create the cache directory (and parents) if needed; return it."""
-    path = cache_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
 

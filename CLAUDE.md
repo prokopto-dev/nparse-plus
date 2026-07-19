@@ -4,7 +4,9 @@ nParse+ is a Python 3.12 EverQuest P99 log-parsing overlay: a fork of
 nomns/nparse rebuilt to feature parity with EQTool/PigParse (C#/WPF). If you
 are porting or checking behavior, the C# source of truth is
 github.com/smasherprog/eqtool at commit `d8e8084f` (see CREDITS.md) — clone it
-somewhere disposable and read it; do not vendor C# into this repo.
+somewhere disposable and read it; do not vendor C# into this repo. (The
+generated data assets were converted from an earlier commit, `fdd3f25a` — the
+`SOURCE_COMMIT` in each `tools/convert_*.py`; CREDITS.md explains both.)
 
 ## Commands
 
@@ -156,6 +158,22 @@ Pages) so `flatpak update` works for bundle installs.
   after 5 idle minutes or camp; 15 s Kael throttle; 4 s roar dedupe.
 - You only receive a zone's players after SENDING a location with that
   zone; the hub echoes your own frames back (coordinator self-filters).
+
+## Tracking future work
+
+Pending features and dev tasks live in **GitHub Issues**
+(github.com/prokopto-dev/nparse-plus/issues), labelled by `area/*` (triggers,
+timers, overlays, maps, net, dps, data, packaging, docs, infra), `type/*`
+(feature, bug, perf, refactor, tech-debt, test, parity), and `size/*` (S/M/L).
+`docs/roadmap.md` is the public prose projection; the issues are the live
+tracker. The "Where things stand" narrative below is shipped-history
+orientation, not the pending-work list.
+
+Agentic loop: list open issues by `area/`+`size/`, pick one, set it in-progress
+(assign / comment), implement to its acceptance criteria (add a test), close it
+on ship referencing the commit/PR. New deferred work opens an issue **before**
+any code marker — `# TODO(#NN)` comments must resolve to a real issue number
+(e.g. `TODO(#5)`), never a bare `TODO`.
 
 ## Where things stand
 

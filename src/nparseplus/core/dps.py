@@ -53,6 +53,10 @@ class FightEntity:
     trailing_damage: int = 0
     # Best damage done in any 12-second window (TotalTwelveSecondDamage).
     best_window_damage: int = 0
+    # len(hits) at the last _update_best_window run. The best window is a pure
+    # function of hits, so it is recomputed only when a hit is appended, not on
+    # every per-tick refresh (which only advances `now`).
+    _best_window_hits: int = field(default=0, repr=False)
 
     def add_damage(self, timestamp: datetime, damage: int) -> None:
         """EntittyDPS.AddDamage — record one hit (misses arrive as 0)."""
@@ -77,11 +81,28 @@ class FightEntity:
         if not self.hits:
             return
         cutoff = now - TRAILING_WINDOW
-        self.trailing_damage = sum(d for t, d in self.hits if t >= cutoff)
+        # Hits are appended in non-decreasing time order (the best-window
+        # two-pointer relies on this too), so the in-window hits are a suffix:
+        # sum from the newest and stop at the first hit older than the cutoff.
+        total = 0
+        for t, d in reversed(self.hits):
+            if t < cutoff:
+                break
+            total += d
+        self.trailing_damage = total
         self._update_best_window()
 
     def _update_best_window(self) -> None:
-        """Port of Update12SecondDmg: the max damage in any 12s span."""
+        """Port of Update12SecondDmg: the max damage in any 12s span.
+
+        The result depends only on ``self.hits`` (never on ``now``), and hits
+        are append-only, so skip the O(n) rescan when no hit has been added
+        since the last run — this keeps the per-tick refresh off the quadratic
+        path while producing an identical value.
+        """
+        if len(self.hits) == self._best_window_hits:
+            return
+        self._best_window_hits = len(self.hits)
         span = self.hits[-1][0] - self.hits[0][0]
         if span < TRAILING_WINDOW:
             self.best_window_damage = max(self.best_window_damage, self.total_damage)

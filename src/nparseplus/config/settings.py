@@ -275,7 +275,6 @@ class PlayerInfo(BaseModel):
     show_spells_for_classes: list[int] | None = None
     you_spells: list[YouSpell] = Field(default_factory=list)
     respawn_timers: list[SavedTimer] = Field(default_factory=list)
-    best_dps: float = 0.0
 
 
 class Settings(BaseModel):

@@ -21,7 +21,7 @@ Spawn timers are only created for victims present in the master NPC list
 one. Kills of the listed Plane of Sky bosses also start the 15-minute
 "--Sirran the Lunatic--" timer.
 
-TODO(M3): EQTool's ZoneActivityTrackingService also shares "Kael faction mob
+TODO(#5): EQTool's ZoneActivityTrackingService also shares "Kael faction mob
 engaged" pulls (DamageEvent target in ZoneDatabase.kael_faction_mobs,
 rate-limited to one send per 15s) over SignalR; the send is network-only and
 is left to the M3 sharing layer.

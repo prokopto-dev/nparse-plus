@@ -121,24 +121,31 @@ class NParseWsClient:
     ) -> None:
         if not self._connected.is_set():
             return
-        # Wire x/y are scene coordinates: scene = (-second, -first) of the
-        # raw /loc order; Loc is (x=second, y=first) -> (-loc.x, -loc.y).
         frame = {
             "type": "location",
             "group_key": self._group_key,
-            "location": {
-                "x": -loc.x,
-                "y": -loc.y,
-                "z": loc.z,
-                "zone": self._long_zone(zone),
-                "player": name,
-                "timestamp": datetime.now().isoformat(),
-            },
+            "location": self._location_dict(name, zone, loc),
         }
         try:
             self._send_raw(json.dumps(frame))
         except Exception:
             logger.warning("nparse ws send failed", exc_info=True)
+
+    def _location_dict(self, name: str, zone: str, loc: Loc) -> dict:
+        """The six shared keys of a location/waypoint frame's inner dict.
+
+        Wire x/y are scene coordinates: scene = (-second, -first) of the raw
+        /loc print order; Loc is (x=second, y=first) -> (-loc.x, -loc.y). Kept
+        in one place so the axis swap is never fixed in only one of two spots.
+        """
+        return {
+            "x": -loc.x,
+            "y": -loc.y,
+            "z": loc.z,
+            "zone": self._long_zone(zone),
+            "player": name,
+            "timestamp": datetime.now().isoformat(),
+        }
 
     def send_waypoint(
         self,
@@ -153,19 +160,13 @@ class NParseWsClient:
         coordinate transform; the server expires it after ``timeout`` minutes."""
         if not self._connected.is_set():
             return
+        location = self._location_dict(name, zone, loc)
+        location["timeout"] = timeout_minutes
+        location["icon"] = icon
         frame = {
             "type": "waypoint",
             "group_key": self._group_key,
-            "location": {
-                "x": -loc.x,
-                "y": -loc.y,
-                "z": loc.z,
-                "zone": self._long_zone(zone),
-                "player": name,
-                "timestamp": datetime.now().isoformat(),
-                "timeout": timeout_minutes,
-                "icon": icon,
-            },
+            "location": location,
         }
         try:
             self._send_raw(json.dumps(frame))

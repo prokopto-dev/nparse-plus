@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+from tests._helpers import FakeSpeaker
+
 from nparseplus.core.bus import EventBus
 from nparseplus.core.events import LineEvent, OverlayEvent, TimerBarEvent
 from nparseplus.core.player import ActivePlayer
@@ -20,14 +22,6 @@ from nparseplus.core.triggers.model import (
 )
 
 T0 = datetime(2026, 7, 14, 12, 0, 0, tzinfo=UTC)
-
-
-class FakeSpeaker:
-    def __init__(self) -> None:
-        self.spoken: list[str] = []
-
-    def speak(self, text: str) -> None:
-        self.spoken.append(text)
 
 
 class FakeTimers:

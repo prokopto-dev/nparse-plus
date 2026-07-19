@@ -11,7 +11,6 @@ from PySide6.QtCore import QObject, Signal
 
 class SettingsSignals(QObject):
     config_updated = Signal()
-    spell_triggers_updated = Signal()
 
     def __init__(self):
         super().__init__()

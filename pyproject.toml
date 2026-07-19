@@ -20,11 +20,8 @@ classifiers = [
 dependencies = [
   "PySide6>=6.7",
   "pydantic>=2.7",
-  "pydantic-settings>=2.3",
   "httpx>=0.27",
-  "signalrcore>=0.9.5",
   "platformdirs>=4.2",
-  "Pillow>=10.3",
   "packaging>=24.0",
   "colorhash>=2.0",
   "pathvalidate>=3.2",
@@ -54,6 +51,12 @@ build = [
 docs = [
   "mkdocs-material>=9.5",
   "mike>=2.1",
+]
+# Only for tools/probe_pigparse.py (a manual wire-protocol probe). The app
+# itself speaks SignalR via the hand-rolled codec in net/hubproto.py — see its
+# docstring — so signalrcore is NOT a runtime dependency.
+probe = [
+  "signalrcore>=0.9.5",
 ]
 
 [tool.hatch.build.targets.wheel]
