@@ -147,6 +147,13 @@ class SharingCoordinator:
     # --- inbound (any thread enqueues; only tick drains) -----------------------
 
     def enqueue_inbound(self, item: object) -> None:
+        """Hand an already-parsed inbound item to the driver tick.
+
+        Net/reader threads do all JSON + wire-DTO parsing (WirePlayer etc.)
+        before calling this, so the driver-tick drain (_dispatch_inbound) only
+        isinstance-dispatches typed events and publishes — no re-parse or
+        per-frame allocation on the hot path. Guarded by test_sharing_inbound.
+        """
         self._inbox.put(item)
 
     # --- driver-thread entry points ---------------------------------------------

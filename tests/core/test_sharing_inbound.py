@@ -147,3 +147,44 @@ def test_waypoint_snapshot_published_without_self_filter() -> None:
     rig.deliver(event)
     # Our own corpse comes back keyed "Name:expiry" and must still render.
     assert event in rig.published
+
+
+def test_inbound_drain_never_reparses_wire_dtos(monkeypatch) -> None:
+    # Wire DTOs (WirePlayer/WireDragonRoar/WireCustomTimer) are parsed on the
+    # net thread before enqueue; the driver-tick drain must only dispatch
+    # already-typed events. Fail if a wire model_validate runs on the drain.
+    from nparseplus.net import pigparse_models
+
+    parsed: list[str] = []
+
+    def _forbidden(name: str):
+        def _spy(*_args, **_kwargs):
+            parsed.append(name)
+
+        return _spy
+
+    for cls in (
+        pigparse_models.WirePlayer,
+        pigparse_models.WireDragonRoar,
+        pigparse_models.WireCustomTimer,
+    ):
+        monkeypatch.setattr(cls, "model_validate", _forbidden(cls.__name__))
+
+    rig = Rig()
+    rig.deliver(OtherPlayerLocationReceivedRemoteEvent(player=remote()))
+    rig.deliver(DragonRoarRemoteEvent(spell_name="Dragon Roar", server=0))
+    rig.deliver(
+        CustomTimerReceivedRemoteEvent(
+            name="Kael Faction Pull In Progress", duration_in_seconds=90, server=0
+        )
+    )
+    rig.deliver(
+        WaypointsReceivedRemoteEvent(
+            zone="gfaydark",
+            waypoints=(RemoteWaypoint(key="Soandso:1789000000", x=1.0, y=2.0, z=0.0),),
+        )
+    )
+
+    assert parsed == []  # drain dispatched typed events with no wire parse
+    # the drain actually ran (custom-timer row landed), so the guard is real
+    assert rig.timers.find("Kael Faction Pull In Progress", TRIGGER_TIMER_GROUP) is not None
