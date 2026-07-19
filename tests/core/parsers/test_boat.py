@@ -1,5 +1,18 @@
+import pytest
+
+from nparseplus.core.bus import EventBus
 from nparseplus.core.events import BoatEvent
+from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.boat import BoatParser
+from nparseplus.core.player import ActivePlayer
+from nparseplus.core.zones import load_zone_database
+
+
+@pytest.fixture
+def ctx() -> ParseContext:
+    # BoatParser reads the boat table off the shared ZoneDatabase, so override
+    # the zone-less parser ctx fixture with one carrying the real zones.json.
+    return ParseContext(bus=EventBus(), player=ActivePlayer(), zones=load_zone_database())
 
 
 def test_barrel_barge(ctx, make_line, spy):
