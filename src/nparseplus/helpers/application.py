@@ -15,7 +15,6 @@ from nparseplus.helpers.logreader import LogReaderSignals
 from nparseplus.helpers.settings import SettingsSignals
 from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
-from nparseplus.parsers.maps.window import MapsSignals
 from nparseplus.parsers.spells import Spells
 from nparseplus.ui import appquit
 from nparseplus.ui.updatewindow import UpdateAvailableDialog
@@ -71,7 +70,6 @@ class NomnsParse(QApplication):
         self._signals = {}
         self._signals["logreader"] = LogReaderSignals()
         self._signals["settings"] = SettingsSignals()
-        self._signals["maps"] = MapsSignals()
         # (location sharing moved to the backend: core.sharing + net/)
 
         # Load Parsers

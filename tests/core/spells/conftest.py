@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from tests._helpers import EventCollector
 
 from nparseplus.core.bus import EventBus
 from nparseplus.core.lineinfo import LineInfo
@@ -32,22 +33,6 @@ def ctx(spell_book: SpellBook) -> ParseContext:
 
 def make_line(message: str, timestamp: datetime = T0, number: int = 1) -> LineInfo:
     return LineInfo(raw=message, message=message, timestamp=timestamp, line_number=number)
-
-
-class EventCollector:
-    """Subscribes to every event type and records what the bus publishes."""
-
-    def __init__(self, bus: EventBus) -> None:
-        self.events: list[object] = []
-        bus.subscribe_all(self.events.append)
-
-    def of_type[E](self, event_type: type[E]) -> list[E]:
-        return [e for e in self.events if type(e) is event_type]
-
-    def single[E](self, event_type: type[E]) -> E:
-        matches = self.of_type(event_type)
-        assert len(matches) == 1, f"expected 1 {event_type.__name__}, got {len(matches)}"
-        return matches[0]
 
 
 @pytest.fixture

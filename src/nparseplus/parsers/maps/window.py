@@ -63,16 +63,6 @@ def format_respawn(seconds):
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
-class MapsSignals(QObject):
-    zoning = Signal()
-    new_zone = Signal(str)
-    location = Signal(str, str)
-    death = Signal(str, str)
-    start_recording = Signal(str)
-    rename_recording = Signal(str)
-    stop_recording = Signal()
-
-
 class WikiSearchBridge(QObject):
     """Marshals P99-wiki worker-thread results onto the GUI thread."""
 
@@ -255,19 +245,18 @@ class Maps(ParserWindow):
             self._map.remove_waypoint(name)
 
     def parse(self, timestamp, text):
-        if text[:23] == "LOADING, PLEASE WAIT...":
-            QApplication.instance()._signals["maps"].zoning.emit()
-        elif text[:16] == "You have entered":
-            QApplication.instance()._signals["maps"].new_zone.emit(text[17:-1])
+        # Zoning ("LOADING, PLEASE WAIT...") and death ("You have been slain")
+        # are handled by the new core (LoadingPleaseWait parser, CorpseWaypoint
+        # handler); the legacy MapsSignals they used to fan out to had no
+        # listeners, so those branches are gone.
+        if text[:16] == "You have entered":
             self._map.load_map(text[17:-1])
         elif ZONE_MATCHER.match(text):
             new_zone = ZONE_MATCHER.match(text).groupdict()["zone"].lower()
             new_zone = MapData.translate_who_zone(new_zone)
             if new_zone not in (self._map._data.zone.lower(), "everquest"):
-                QApplication.instance()._signals["maps"].new_zone.emit(new_zone)
                 self._map.load_map(new_zone, keep_loc=True)
         elif text[:16] == "Your Location is":
-            QApplication.instance()._signals["maps"].location.emit(timestamp.isoformat(), text[17:])
             x, y, z = [float(value) for value in text[17:].strip().split(",")]
             x, y = to_real_xy(x, y)
             radius = self.tracking_radius_provider() if self.tracking_radius_provider else None
@@ -276,22 +265,17 @@ class Maps(ParserWindow):
             )
             self._map.record_path_loc((x, y, z))
         elif text[:16] == "start_recording_":
-            QApplication.instance()._signals["maps"].start_recording.emit(text.split()[0][16:])
             recording_name = text.split()[0][16:]
             if recording_name:
                 recording_name = recording_name.replace("_", " ")
                 self._map.start_path_recording(recording_name)
         elif text[:17] == "rename_recording_":
-            QApplication.instance()._signals["maps"].rename_recording.emit(text.split()[0][17:])
             recording_name = text.split()[0][17:]
             if recording_name:
                 recording_name = recording_name.replace("_", " ")
                 self._map.rename_path_recording(new_name=recording_name)
         elif text[:14] == "stop_recording":
-            QApplication.instance()._signals["maps"].stop_recording.emit()
             self._map.stop_path_recording()
-        elif text[:19] == "You have been slain":
-            QApplication.instance()._signals["maps"].death.emit(timestamp.isoformat(), text)
 
     # events
     def _purge_remote_players(self):

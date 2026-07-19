@@ -12,6 +12,10 @@ from pathlib import Path
 
 import pytest
 
+# FakeSpeaker is re-exported here for the handler test modules that import it
+# from this conftest by path; EventCollector is used by the Harness below.
+from tests._helpers import EventCollector, FakeSpeaker  # noqa: F401
+
 from nparseplus.core.bus import EventBus
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
@@ -28,32 +32,6 @@ from nparseplus.core.zones import ZoneDatabase, load_zone_database
 SPELLS_FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "spells_us.txt"
 
 T0 = datetime(2026, 7, 8, 21, 59, 36)
-
-
-class FakeSpeaker:
-    """Records TTS output (Speaker protocol)."""
-
-    def __init__(self) -> None:
-        self.spoken: list[str] = []
-
-    def speak(self, text: str) -> None:
-        self.spoken.append(text)
-
-
-class EventCollector:
-    """Subscribes to every event type and records what the bus publishes."""
-
-    def __init__(self, bus: EventBus) -> None:
-        self.events: list[object] = []
-        bus.subscribe_all(self.events.append)
-
-    def of_type[E](self, event_type: type[E]) -> list[E]:
-        return [e for e in self.events if type(e) is event_type]
-
-    def single[E](self, event_type: type[E]) -> E:
-        matches = self.of_type(event_type)
-        assert len(matches) == 1, f"expected 1 {event_type.__name__}, got {len(matches)}"
-        return matches[0]
 
 
 class Harness:

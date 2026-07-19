@@ -21,10 +21,10 @@ from nparseplus.core.timers import (
     TimerRow,
     TimersService,
 )
+from nparseplus.ui.overlaybase import format_mmss
 from nparseplus.ui.spellwindow import (
     SpellTimerWindow,
     bar_color,
-    format_remaining,
     row_sort_key,
 )
 
@@ -525,9 +525,9 @@ def test_bar_colors_and_time_format():
     colors = {bar_color(row) for row in (beneficial, detrimental, cooldown, timer, roll)}
     assert len(colors) == 5  # each kind is visually distinct
 
-    assert format_remaining(-5) == "00:00"
-    assert format_remaining(65) == "01:05"
-    assert format_remaining(3723) == "1:02:03"
+    assert format_mmss(-5) == "00:00"
+    assert format_mmss(65) == "01:05"
+    assert format_mmss(3723) == "1:02:03"
 
 
 # -- window sizing (user-controlled, scroll on overflow) -----------------------

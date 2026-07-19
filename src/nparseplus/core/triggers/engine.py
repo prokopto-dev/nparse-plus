@@ -136,7 +136,9 @@ class TriggerEngine:
 
         current_zone = self.player.zone if self.player else ""
         player_name = self.player.name if self.player else ""
-        for trigger in [t for t in self._triggers if t.trigger_enabled]:
+        for trigger in self._triggers:
+            if not trigger.trigger_enabled:
+                continue
             # skip triggers restricted to a zone the player isn't currently in
             if not trigger.matches_zone(current_zone):
                 continue

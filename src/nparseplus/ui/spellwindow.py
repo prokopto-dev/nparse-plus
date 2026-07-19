@@ -43,7 +43,7 @@ from nparseplus.core.timers import (
     SpellRow,
 )
 from nparseplus.ui import appquit, theme
-from nparseplus.ui.overlaybase import EdgeResizeMixin
+from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -101,16 +101,6 @@ def bar_color(row: Row) -> str:
     if isinstance(row, RollRow):
         return COLOR_ROLL
     return COLOR_TIMER
-
-
-def format_remaining(seconds: float) -> str:
-    """mm:ss (or h:mm:ss past the hour), clamped at zero."""
-    total = max(0, int(seconds))
-    minutes, secs = divmod(total, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes:02d}:{secs:02d}"
 
 
 class _RowWidget(QFrame):
@@ -174,9 +164,9 @@ class _RowWidget(QFrame):
             return
         remaining = max(0.0, (row.ends_at - now).total_seconds())
         if isinstance(row, RollRow):
-            self._value.setText(f"{row.roll}/{row.max_roll}  {format_remaining(remaining)}")
+            self._value.setText(f"{row.roll}/{row.max_roll}  {format_mmss(remaining)}")
         else:
-            self._value.setText(format_remaining(remaining))
+            self._value.setText(format_mmss(remaining))
         self._update_warning(row, remaining)
         total = max(row.total_duration_s, 0.001)
         self._bar.setValue(int(min(remaining / total, 1.0) * BAR_MAX))
@@ -337,10 +327,13 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
 
     # -- rendering -------------------------------------------------------------
 
-    def _row_hidden(self, row: Row) -> bool:
+    def _row_hidden(self, row: Row, show_classes: list[int] | None) -> bool:
         """Visibility pass — SpellWindowViewModel.cs order: the YOU group is
         always visible, NPC targets are never hidden, then you_only_spells,
-        then the active character's class filter (HideSpell)."""
+        then the active character's class filter (HideSpell).
+
+        ``show_classes`` is the active character's class filter, resolved once
+        by the caller for the whole refresh pass."""
         if row.group == YOU_GROUP:
             return False
         sw = self._backend.settings.spellwindow
@@ -361,8 +354,6 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             # timers, counters, and rolls are not "spells" and stay visible.
             return True
         if isinstance(row, SpellRow):
-            info = self._active_player_info()
-            show_classes = info.show_spells_for_classes if info is not None else None
             return hide_spell(show_classes, row.spell.class_levels)
         return False
 
@@ -384,7 +375,11 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         """
         now = now if now is not None else datetime.now()
         rows = self._backend.timers.snapshot()
-        rows = [row for row in rows if not self._row_hidden(row)]
+        # The active-character class filter is constant across one refresh pass;
+        # resolve it once here instead of per SpellRow inside _row_hidden.
+        info = self._active_player_info()
+        show_classes = info.show_spells_for_classes if info is not None else None
+        rows = [row for row in rows if not self._row_hidden(row, show_classes)]
 
         grouped: dict[str, list[Row]] = {}
         for row in rows:
