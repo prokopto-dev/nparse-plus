@@ -59,6 +59,22 @@ Spell rows show their **gem icon** from the spell data.
   timers* (drops everyone else's spell rows but keeps your own buffs and mob
   timers) or *Clear all timers*. (With click-through enabled the overlay
   ignores all clicks, including right-clicks — toggle click-through off first.)
+- **Flash on expiry (rebuff prompt)** — flag a spell via its right-click
+  *Flash on expiry* action and, once it expires, its row stays on screen
+  flashing as a rebuff/recast prompt instead of disappearing. Left-click the
+  flashing row to dismiss it. The context action adds the spell to the
+  per-spell allowlist and turns on the global toggle; tune the flash time (and
+  turn the feature off) in [Settings → Spell Timers](../settings/spell-timers.md).
+  Click-to-dismiss needs click-through off (click-through means the OS delivers
+  no clicks).
+- **Raid mode grouping** — with **Group buffs by spell (raid mode)** enabled
+  in [Settings → Spell Timers](../settings/spell-timers.md), the buffs you cast
+  on other players flip to spell-headed groups whenever they cover more
+  distinct targets than distinct spells — one header per spell, one row per
+  target — so a raid-wide buff reads as a single spell over many people. Your
+  own buffs, NPC targets, the built-in sections, and detrimental/cooldown rows
+  keep target headers. Orientation is recomputed every render, so it never gets
+  stuck.
 - **You choose the size** — drag the bottom-right corner grip to resize;
   the window keeps that size (persisted across restarts) and scrolls when
   there are more rows than fit, instead of growing down your screen and

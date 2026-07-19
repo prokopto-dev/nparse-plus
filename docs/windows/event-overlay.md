@@ -1,7 +1,7 @@
 # Event Overlay
 
 The Event Overlay is a full-screen, fully click-through transparent layer
-that sits over the game and renders three kinds of content:
+that sits over the game and renders these kinds of content:
 
 - **Alert text** — big centered outlined messages from
   [triggers](../features/triggers.md) (raid AOE warnings, failed feign,
@@ -9,7 +9,13 @@ that sits over the game and renders three kinds of content:
 - **Timer bars** — countdown bars stacked bottom-center (AOE countdowns,
   trigger timers). Re-triggering a bar restarts it; bars vanish at zero.
 - **CH chain lanes** — one lane per heal target with green chips sliding
-  across it, one per CH call. See [CH chains](../features/ch-chains.md).
+  across it, one per CH call. See [CH chains](../features/ch-chains.md). When
+  the **CH cadence indicator** is on, a muted marker on a lane's second-cell
+  shows the cadence the raid leader called ([Settings → Audio & Overlays](../settings/audio-overlays.md)).
+- **Utility** — a dedicated header section for utility alerts (rebuff
+  requests, out-of-mana). The **Rebuff Request** and **Out of Mana** built-in
+  [triggers](../features/triggers.md) (in the Utility folder, disabled by
+  default) render here.
 
 ![Event Overlay showing an alert and timer bar](../assets/screenshots/window--event-overlay.png)
 
@@ -22,7 +28,8 @@ a dragon roars.
 Tray → **Position Event Overlay** shows the overlay's outline with a size
 grip so you can drag and resize it to sit exactly over your game window.
 **Double-click to lock it in place** when you're done. The geometry
-persists.
+persists. In position mode each region (CH chains, Alerts, Timer bars, and
+the Utility section) can be dragged independently to lay out the overlay.
 
 !!! tip
     Make the overlay match your EQ window, not your whole monitor — alert
