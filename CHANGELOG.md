@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.9.4 (2026-07-19)
+
+### Bug Fixes
+
+- Build the Windows release with the splash's Pillow build-dependency
+  ([`ccb70c0`](https://github.com/prokopto-dev/nparse-plus/commit/ccb70c08a6872b94747522d0440e14b64769b0d7))
+
+### Build System
+
+- Restore Pillow as a build-time dependency for the Windows splash
+  ([`bd10c30`](https://github.com/prokopto-dev/nparse-plus/commit/bd10c30acc53bb0bcd838b92d482f69ce4fc09e3))
+
+
 ## v1.9.3 (2026-07-19)
 
 ### Build System
