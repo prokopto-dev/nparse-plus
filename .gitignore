@@ -74,3 +74,4 @@ nparse.config.json
 # nparseplus
 run-nparse.sh
 AGENTS.md
+tools/*_report.txt

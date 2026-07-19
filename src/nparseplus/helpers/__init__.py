@@ -1,17 +1,7 @@
 import math
 import os
 import sys
-from datetime import datetime, timedelta
-
-
-def parse_line(line):
-    """
-    Parses and then returns an everquest log entry's date and text.
-    """
-    index = line.find("]") + 1
-    sdate = line[1 : index - 1].strip()
-    text = line[index:].strip()
-    return datetime.strptime(sdate, "%a %b %d %H:%M:%S %Y"), text
+from datetime import timedelta
 
 
 def strip_timestamp(line):
@@ -35,11 +25,6 @@ def resource_path(relative_path):
 def to_range(number, min_number, max_number):
     """Returns number of within min/max, else min/max."""
     return min(max_number, max(min_number, number))
-
-
-def within_range(number, min_number, max_number):
-    """Returns true/false if number is within min/max."""
-    return min_number <= number <= max_number
 
 
 def to_real_xy(x, y):

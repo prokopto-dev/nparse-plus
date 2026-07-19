@@ -64,7 +64,6 @@ class ZoneDatabase:
         self.kael_faction_mobs = kael_faction_mobs
         self._name_to_short = zone_name_mapper  # long name (lower) -> short key
         self._who_to_name = zone_who_mapper  # /who name (lower) -> long name (lower)
-        self._boats_by_announcement = {b.start_announcement: b for b in boats}
 
     def get(self, short_name: str) -> ZoneInfo | None:
         return self.zones.get(short_name.lower())
@@ -109,9 +108,6 @@ class ZoneDatabase:
             if entry.name.lower() in npc:
                 return entry.seconds
         return zone.respawn_seconds
-
-    def boat_for_announcement(self, message: str) -> BoatInfo | None:
-        return self._boats_by_announcement.get(message)
 
 
 def _data_path() -> Path:

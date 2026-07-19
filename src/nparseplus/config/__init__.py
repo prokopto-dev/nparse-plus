@@ -2,9 +2,7 @@
 
 from nparseplus.config.migrate import find_legacy_config, migrate_legacy
 from nparseplus.config.paths import (
-    cache_dir,
     config_dir,
-    ensure_cache_dir,
     ensure_config_dir,
     settings_path,
 )
@@ -39,9 +37,7 @@ __all__ = [
     "WindowLayoutPreset",
     "WindowState",
     "YouSpell",
-    "cache_dir",
     "config_dir",
-    "ensure_cache_dir",
     "ensure_config_dir",
     "find_legacy_config",
     "get_player",

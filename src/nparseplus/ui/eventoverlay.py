@@ -796,9 +796,6 @@ class EventOverlayWindow(QWidget):
     def current_text(self) -> str:
         return self._center_text.text()
 
-    def current_text_color(self) -> str:
-        return self._text_color
-
     def current_bar_names(self) -> list[str]:
         out: list[str] = []
         for i in range(self._bars_layout.count()):

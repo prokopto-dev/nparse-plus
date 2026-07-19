@@ -571,8 +571,5 @@ class CustomTrigger:
     def __init__(self, name="", text="", time="", **_):
         self.name, self.text, self.time = name, text, time
 
-    def to_list(self):
-        return [self.name, self.text, self.time]
-
     def __str__(self):
         return f"{self.name},{self.text},{self.time}"

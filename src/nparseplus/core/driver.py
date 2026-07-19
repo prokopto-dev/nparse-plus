@@ -38,7 +38,6 @@ class LogDriver:
         pipeline: LogPipeline,
         bus: EventBus,
         player: ActivePlayer,
-        server_lookup: Callable[[str], object] | None = None,
     ) -> None:
         self.log_dir = log_dir
         self._pipeline = pipeline
@@ -50,10 +49,6 @@ class LogDriver:
         self._last_switch_check = 0.0
         # Called every loop iteration on the driver thread (timer ticking etc.).
         self.on_tick: list[Callable[[datetime], None]] = []
-
-    @property
-    def active_path(self) -> Path | None:
-        return self._tail.path if self._tail else None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
