@@ -655,3 +655,14 @@ def test_check_now_runs_updater_and_updates_badge(qtbot, monkeypatch) -> None:
         window._check_for_update_async()
     assert "Up to date" in window._update_badge.text()
     assert window._update_check_button.isEnabled()
+
+
+def test_ch_cadence_patterns_apply(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    window._ch_cadence.setChecked(True)
+    window._ch_cadence_patterns.setPlainText("cadence (\\d+)\n\n  chain at (\\d+)  ")
+    window.apply()
+    # Blank lines dropped, surrounding whitespace stripped.
+    assert settings.general.ch_cadence_indicator is True
+    assert settings.general.ch_cadence_patterns == ["cadence (\\d+)", "chain at (\\d+)"]

@@ -990,6 +990,14 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "a muted marker in the CH lane at the declared second. Off by default."
         )
         form.addRow("CH cadence indicator", self._ch_cadence)
+        self._ch_cadence_patterns = QPlainTextEdit(self)
+        self._ch_cadence_patterns.setPlainText("\n".join(general.ch_cadence_patterns))
+        self._ch_cadence_patterns.setFixedHeight(64)
+        self._ch_cadence_patterns.setToolTip(
+            "Regexes that recognize a cadence callout — one per line, each with a "
+            "capturing group ( ) for the seconds. Leave blank to use the defaults."
+        )
+        form.addRow("CH cadence patterns", self._ch_cadence_patterns)
         self._bard_count = QCheckBox(self)
         self._bard_count.setChecked(general.bard_count_enabled)
         self._bard_count.setToolTip(
@@ -1218,6 +1226,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.ch_lane_retention_seconds = self._ch_retention.value()
         general.ch_chain_tag = self._ch_tag.text().strip()
         general.ch_cadence_indicator = self._ch_cadence.isChecked()
+        general.ch_cadence_patterns = [
+            line.strip()
+            for line in self._ch_cadence_patterns.toPlainText().splitlines()
+            if line.strip()
+        ]
         general.bard_count_enabled = self._bard_count.isChecked()
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()

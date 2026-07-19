@@ -128,12 +128,14 @@ def test_new_1_11_optin_defaults_and_roundtrip(tmp_path: Path) -> None:
     """The 1.11-batch opt-ins default off and survive a save/load round-trip."""
     s = Settings()
     assert s.general.ch_cadence_indicator is False
+    assert s.general.ch_cadence_patterns  # defaults to the stock cadence regexes
     assert s.spellwindow.raid_group_by_spell is False
     assert s.spellwindow.post_expiry_flash_enabled is False
     assert s.spellwindow.post_expiry_flash_seconds == 30
     assert s.spellwindow.post_expiry_flash_spells == []
 
     s.general.ch_cadence_indicator = True
+    s.general.ch_cadence_patterns = [r"cadence (\d+)"]
     s.spellwindow.raid_group_by_spell = True
     s.spellwindow.post_expiry_flash_enabled = True
     s.spellwindow.post_expiry_flash_seconds = 45
@@ -142,6 +144,7 @@ def test_new_1_11_optin_defaults_and_roundtrip(tmp_path: Path) -> None:
     save_settings(s, path)
     loaded = load_settings(path)
     assert loaded.general.ch_cadence_indicator is True
+    assert loaded.general.ch_cadence_patterns == [r"cadence (\d+)"]
     assert loaded.spellwindow.raid_group_by_spell is True
     assert loaded.spellwindow.post_expiry_flash_enabled is True
     assert loaded.spellwindow.post_expiry_flash_seconds == 45

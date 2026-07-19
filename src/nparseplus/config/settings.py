@@ -17,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from nparseplus.config.paths import ensure_config_dir, settings_path
+from nparseplus.core.ch_chain import DEFAULT_CH_CADENCE_PATTERNS
 
 # Triggers persist in the engine's own (Qt-free) schema — one model, no drift.
 from nparseplus.core.triggers.model import Trigger
@@ -95,6 +96,12 @@ class GeneralSettings(BaseModel):
     # ("healers to 4 seconds"), draw a muted marker in the CH lane at the
     # declared second. Off by default; opt-in.
     ch_cadence_indicator: bool = False
+    # User-editable regexes that recognize a cadence callout — each with a
+    # first capturing group for the seconds (like a trigger's search text).
+    # Defaults to the stock phrasings; empty falls back to the same defaults.
+    ch_cadence_patterns: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_CH_CADENCE_PATTERNS)
+    )
     # Bard AoE hit counter: yellow overlay + TTS tally of hits/resists when a
     # bard swarm session finalizes (EQTool BardCountHandler).
     bard_count_enabled: bool = True

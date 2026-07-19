@@ -291,3 +291,28 @@ def test_cadence_not_emitted_for_chain_call(h: Harness) -> None:
     h.push("Curaja shouts, 'GG 014 CH -- Wreckognize'")
     assert _cadence_events(h) == []
     assert h.collector.of_type(CompleteHealEvent)  # the chain call still parses
+
+
+def test_parse_ch_cadence_custom_patterns() -> None:
+    # A user regex with a first capturing group for the seconds.
+    assert parse_ch_cadence("cast every 6 now", patterns=[r"every (\d+)"]) == 6
+    # Empty / None falls back to the stock defaults.
+    assert parse_ch_cadence("healers to 4 seconds", patterns=[]) == 4
+    assert parse_ch_cadence("healers to 4 seconds", patterns=None) == 4
+
+
+def test_parse_ch_cadence_tolerates_bad_patterns() -> None:
+    # An invalid regex is skipped (logged), the valid one still matches.
+    assert parse_ch_cadence("healers to 4", patterns=["(unclosed", r"to (\d+)"]) == 4
+    # A pattern without a capturing group never crashes.
+    assert parse_ch_cadence("healers to 4", patterns=[r"healers"]) is None
+
+
+def test_cadence_uses_custom_patterns_provider(h: Harness) -> None:
+    h.comms_handler.cadence_enabled = lambda: True
+    h.comms_handler.cadence_patterns = lambda: [r"cadence (\d+)"]
+    h.push("Raidleader shouts, 'cadence 3 go'")
+    assert [e.seconds for e in _cadence_events(h)] == [3]
+    # The stock "healers to N" phrasing no longer matches once overridden.
+    h.push("Raidleader shouts, 'healers to 4 seconds'")
+    assert [e.seconds for e in _cadence_events(h)] == [3]

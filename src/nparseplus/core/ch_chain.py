@@ -14,11 +14,16 @@ heal target.
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 from nparseplus.core.events import CompleteHealEvent
+
+logger = logging.getLogger(__name__)
 
 # A chain entry goes stale when its target has not been called for this long
 # (CompleteHealHandler.GetOrCreateChain).
@@ -30,28 +35,43 @@ _RECIPIENT_KEEP_RE = re.compile(r"[^A-Za-z '`]")
 
 # Raid-leader CH cadence callouts (#15) — "healers to 4 (seconds)",
 # "chain to 3", "CH to 5", or "4 second chain". nparseplus extension (no
-# EQTool equivalent); the number is the seconds between chained casts.
-_CADENCE_RES = (
-    re.compile(r"\b(?:healers?|heals?|chain|ch)\s+to\s+(\d{1,2})\b", re.IGNORECASE),
-    re.compile(
-        r"\b(\d{1,2})\s*(?:s|sec|secs|second|seconds)\s+(?:chain|ch|heals?|casts?)\b",
-        re.IGNORECASE,
-    ),
+# EQTool equivalent). Each pattern is a user-editable regex whose FIRST
+# capturing group is the seconds between chained casts; these are the stock
+# defaults (also the default value of the ch_cadence_patterns setting).
+DEFAULT_CH_CADENCE_PATTERNS: tuple[str, ...] = (
+    r"\b(?:healers?|heals?|chain|ch)\s+to\s+(\d{1,2})\b",
+    r"\b(\d{1,2})\s*(?:s|sec|secs|second|seconds)\s+(?:chain|ch|heals?|casts?)\b",
 )
 # Bounds keep stray numbers ("healers to 40 people") from reading as a cadence.
 _CADENCE_MIN_S = 1
 _CADENCE_MAX_S = 30
 
 
-def parse_ch_cadence(content: str) -> int | None:
+@lru_cache(maxsize=32)
+def _compiled_cadence(patterns: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
+    """Compile (and cache) the cadence patterns; bad regexes are skipped so one
+    typo in a user pattern can't break cadence detection for the rest."""
+    compiled: list[re.Pattern[str]] = []
+    for pattern in patterns:
+        try:
+            compiled.append(re.compile(pattern, re.IGNORECASE))
+        except re.error:
+            logger.warning("CH cadence pattern failed to compile: %r", pattern)
+    return tuple(compiled)
+
+
+def parse_ch_cadence(content: str, patterns: Sequence[str] | None = None) -> int | None:
     """The declared seconds-between-casts from a raid CH cadence call, or None.
 
-    Recognizes "healers to N (seconds)", "chain to N", "CH to N", and
-    "N second chain"; N must fall in [1, 30]. Pure and wall-clock-free (#15).
+    ``patterns`` are user-editable regexes (each with a first capturing group
+    for the number); ``None``/empty falls back to
+    :data:`DEFAULT_CH_CADENCE_PATTERNS`. The matched number must fall in
+    [1, 30]. Pure and wall-clock-free (#15).
     """
-    for regex in _CADENCE_RES:
+    pats = tuple(patterns) if patterns else DEFAULT_CH_CADENCE_PATTERNS
+    for regex in _compiled_cadence(pats):
         match = regex.search(content)
-        if match:
+        if match and match.groups():
             seconds = _to_int(match.group(1))
             if _CADENCE_MIN_S <= seconds <= _CADENCE_MAX_S:
                 return seconds

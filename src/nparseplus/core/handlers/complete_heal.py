@@ -42,6 +42,7 @@ class CompleteHealCommsHandler(BaseHandler):
         npcs: frozenset[str] = frozenset(),
         ch_chain_tag: Callable[[], str] = lambda: "",
         cadence_enabled: Callable[[], bool] = lambda: False,
+        cadence_patterns: Callable[[], list[str]] = lambda: [],
     ) -> None:
         super().__init__(bus, player)
         self.npcs = npcs
@@ -50,8 +51,10 @@ class CompleteHealCommsHandler(BaseHandler):
         # A live provider (rather than a stored string) lets settings saves
         # take effect without a restart.
         self.ch_chain_tag = ch_chain_tag
-        # Live provider for the opt-in ch_cadence_indicator setting (#15).
+        # Live providers for the opt-in cadence indicator (#15): the on/off
+        # toggle and the user-editable regexes (empty -> stock defaults).
         self.cadence_enabled = cadence_enabled
+        self.cadence_patterns = cadence_patterns
         bus.subscribe(CommsEvent, self._on_comms)
 
     def _on_comms(self, event: CommsEvent) -> None:
@@ -72,7 +75,7 @@ class CompleteHealCommsHandler(BaseHandler):
         # A cadence callout ("healers to 4") is not a chain call, so it only
         # reaches here. Off by default; opt-in via ch_cadence_indicator (#15).
         if self.cadence_enabled():
-            seconds = parse_ch_cadence(event.content)
+            seconds = parse_ch_cadence(event.content, patterns=self.cadence_patterns() or None)
             if seconds is not None:
                 self.bus.publish(
                     CompleteHealCadenceEvent(

@@ -62,3 +62,8 @@ Opt-in. When the raid leader calls a cadence in chat (`healers to 4 seconds`,
 that second-cell as the next-expected-cast tick, so healers can eyeball the
 called cadence against the graduations. Off by default; enable **CH cadence
 indicator** in [Settings → Audio & Overlays](../settings/audio-overlays.md).
+
+The phrasings it recognizes are **editable regexes**, just like a trigger's
+search text — one per line in **CH cadence patterns**, each with a capturing
+group `( )` for the seconds (e.g. `cadence (\d+)`). Leave the box blank to use
+the stock patterns above.

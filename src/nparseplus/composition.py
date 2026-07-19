@@ -337,6 +337,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             npcs=npcs,
             ch_chain_tag=lambda: settings.general.ch_chain_tag,
             cadence_enabled=lambda: settings.general.ch_cadence_indicator,
+            cadence_patterns=lambda: settings.general.ch_cadence_patterns,
         ),
         CompleteHealHandler(bus, player, speaker=speaker),
         BardCountHandler(
