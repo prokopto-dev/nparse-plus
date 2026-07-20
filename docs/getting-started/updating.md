@@ -9,7 +9,7 @@ What "install" means depends on your platform:
 
 | Install type | What you get | What you do |
 |---|---|---|
-| macOS DMG | The new `.dmg` downloads and opens | Drag to Applications, re-run the [`xattr` command](install-macos.md#2-clear-the-quarantine-flag) |
+| macOS DMG | The new `.dmg` for your Mac's architecture (Apple Silicon or Intel) downloads and opens | Drag to Applications, re-run the [`xattr` command](install-macos.md#2-clear-the-quarantine-flag) |
 | Windows zip | The new `.zip` downloads | Extract over (or beside) the old folder, run `nparseplus.exe` |
 | Linux tarball | The new `.tar.gz` downloads | Unpack over the old directory |
 | Linux Flatpak | The new `.flatpak` is handed to your software installer — **but see below**, `flatpak update` is better | Confirm the install prompt |

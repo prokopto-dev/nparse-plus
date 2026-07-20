@@ -4,6 +4,8 @@ P99's boats run on fixed schedules, but knowing *where in the cycle* a boat
 is requires seeing it. nParse+ tracks boat sightings and projects the
 schedule forward.
 
+![Boat timers in the Boats section of the Spell Timers window](../assets/screenshots/feature--boats.png)
+
 ## How it works
 
 When a boat's arrival announcement appears in your log (or arrives over the

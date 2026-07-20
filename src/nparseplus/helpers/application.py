@@ -43,6 +43,7 @@ class NomnsParse(QApplication):
     """
 
     update_available = Signal(object)  # ReleaseInfo, emitted off-thread
+    update_checked = Signal(object)  # ReleaseInfo | None — manual tray-check result
 
     def __init__(self, *args, backend):
         super().__init__(*args)
@@ -58,6 +59,7 @@ class NomnsParse(QApplication):
         self._available_release = None
         self._update_window = None
         self.update_available.connect(self._on_update_available)
+        self.update_checked.connect(self._on_update_checked)
 
         self._toggled = False
 
@@ -93,6 +95,25 @@ class NomnsParse(QApplication):
                 self.update_available.emit(release)
 
         threading.Thread(target=work, name="update-check", daemon=True).start()
+
+    def _start_manual_update_check(self):
+        """Tray 'Check for updates' — run the check now and report either way
+        (the startup check above is silent when already up to date)."""
+
+        def work():
+            self.update_checked.emit(updater.check_for_update())
+
+        threading.Thread(target=work, name="update-check-manual", daemon=True).start()
+
+    def _on_update_checked(self, release):
+        if release is not None:
+            self._on_update_available(release)
+        else:
+            self._system_tray.showMessage(
+                "nParse+ update",
+                f"You're on the latest version ({CURRENT_VERSION}).",
+                msecs=4000,
+            )
 
     def _on_update_available(self, release):
         self._available_release = release
@@ -203,6 +224,7 @@ class NomnsParse(QApplication):
             new_version_text = f"Version: {CURRENT_VERSION}"
 
         check_version_action = menu.addAction(new_version_text)
+        check_now_action = menu.addAction("Check for updates")
         if getattr(self._backend, "sharing", None) is not None:
             sharing_status_action = menu.addAction(f"Sharing: {self._backend.sharing.status}")
             sharing_status_action.setEnabled(False)
@@ -247,6 +269,9 @@ class NomnsParse(QApplication):
                 self._show_update_window()
             else:
                 webbrowser.open(updater.releases_page_url())
+
+        elif action == check_now_action:
+            self._start_manual_update_check()
 
         elif action == get_eq_dir_action:
             dir_path = str(

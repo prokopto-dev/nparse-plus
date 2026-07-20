@@ -17,7 +17,7 @@ uv run python tools/capture_screenshots.py --only window--dps-meter,settings--ma
 
 The tool builds each window headless (`QT_QPA_PLATFORM=offscreen`), injects
 synthetic-but-realistic data (real spell/zone/item names), and writes the PNGs
-below. **19 of 22 are automated.** The remaining three need a human on a real
+below. **26 of 29 are automated.** The remaining three need a human on a real
 display (see the ⌨ rows): the hero shot and Discord overlay want the live game,
 and the tray menu's modal `exec` wedges offscreen (`CAPTURE_TRAY=1` attempts it
 on a real display).
@@ -44,6 +44,8 @@ see real context. Retina/2x captures are fine. PNG only.
 | `window--event-overlay.png` | Event Overlay | An alert text + a countdown bar over the game (fire a builtin trigger or a `StartTimer-30`). |
 | `window--console.png` | Console | The console with a dozen log lines, Pause checkbox visible. |
 | `window--trigger-editor.png` | Trigger Editor | Folder tree expanded (Built In folders + a custom folder), a trigger selected showing the form and test box. |
+| `window--spell-timers-raid.png` | Spell Timers | Raid mode (group buffs by spell): one spell header with a row per target. |
+| `window--update-available.png` | Self-updater, Updating | The update dialog: version heading, per-version release notes, View on GitHub / Later / Download buttons. |
 | ⌨ `window--discord.png` | Discord Overlay | The Discord voice overlay over the game with 2+ users, one speaking. |
 
 ## Features
@@ -52,6 +54,11 @@ see real context. Retina/2x captures are fine. PNG only.
 |---|---|---|
 | `feature--ch-chain.png` | CH chains | The Event Overlay with a CH lane and 2–3 chips in flight (raid night material — grab it when you can). |
 | `feature--sharing-dots.png` | Sharing | The map with several shared player dots (a raid or busy zone). |
+| `feature--boats.png` | Boats | The Boats section of Spell Timers with a few boat-route countdowns. |
+| `feature--respawn-timers.png` | Respawn timers | The Mob Timers section with `--Dead--` respawn countdowns (incl. a numbered duplicate). |
+| `feature--roll-rows.png` | Combat | Amber `/random` roll rows (highest first) plus an `xN` resist counter. |
+| `feature--rebuff-flash.png` | Spell Timers | A flagged self-buff that expired, lingering as a flashing **REBUFF** prompt. |
+| `feature--overlay-utility.png` | Event Overlay | The overlay's Utility header section with rebuff / out-of-mana lines. |
 
 ## Settings pages
 
@@ -73,7 +80,7 @@ window with that page selected:
 
 ## Status
 
-22 wanted, **19 captured** by `tools/capture_screenshots.py`. The 3 remaining
+29 wanted, **26 captured** by `tools/capture_screenshots.py`. The 3 remaining
 are the ⌨ (manual) rows above — `home--overview`, `window--discord`, and
 `tray--menu` — which need a real display/game. Rerun the tool after a UI change
 to refresh the automated set; the site tracks reality automatically.

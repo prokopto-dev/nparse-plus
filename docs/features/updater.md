@@ -5,6 +5,10 @@ nParse+ checks the project's
 startup (disable in [Settings → General](../settings/general.md)). Drafts
 and prereleases are ignored; versions are compared properly (1.10 > 1.9).
 
+You can also check on demand: **Check for updates** in the tray menu, or
+**Check now** in [Settings → General](../settings/general.md). Either reports
+back even when you're already on the latest version.
+
 When an update exists:
 
 - the tray menu gains an **Install update vX.Y.Z** entry, and
@@ -12,9 +16,11 @@ When an update exists:
   between yours and the newest**, then downloads the right asset for your
   platform:
 
+![The update dialog listing release notes for every crossed version](../assets/screenshots/window--update-available.png)
+
 | Platform | Asset picked |
 |---|---|
-| macOS | `.dmg` |
+| macOS | the `.dmg` matching your Mac's architecture (`arm64` / `x86_64`) |
 | Windows | `.zip` |
 | Linux (tarball install) | `.tar.gz` |
 | Linux (running inside the Flatpak sandbox) | `.flatpak`, handed to your software installer |

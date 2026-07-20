@@ -39,6 +39,8 @@ loot rolls, so nobody "forgets" the order. Toggle with "Show random rolls"
 in [Settings → Spell Timers](../settings/spell-timers.md). Roll feeds are
 also shared over the [PigParse network](sharing.md).
 
+![Random-roll rows (highest first) and a resist counter in Spell Timers](../assets/screenshots/feature--roll-rows.png)
+
 ## Faction and exp guessing
 
 Kill messages are cross-referenced against the NPC database to guess
