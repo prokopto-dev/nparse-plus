@@ -19,6 +19,11 @@ that sits over the game and renders these kinds of content:
 
 ![Event Overlay showing an alert and timer bar](../assets/screenshots/window--event-overlay.png)
 
+The **Utility** section groups rebuff/out-of-mana alerts under their own header
+(a CH-lane cadence marker rides above it):
+
+![The Event Overlay's Utility section with rebuff and out-of-mana lines](../assets/screenshots/feature--overlay-utility.png)
+
 It never intercepts clicks, has no window chrome at all, and hides itself
 when there's nothing to show — most of the time you forget it exists until
 a dragon roars.

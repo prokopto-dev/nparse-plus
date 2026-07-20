@@ -80,6 +80,15 @@ Spell rows show their **gem icon** from the spell data.
   there are more rows than fit, instead of growing down your screen and
   staying huge after the timers clear.
 
+Raid mode turns a raid-wide buff into one spell header with a row per target:
+
+![Spell Timers in raid mode, grouping a buff by spell with a row per target](../assets/screenshots/window--spell-timers-raid.png)
+
+A buff flagged *Flash on expiry* stays on screen flashing **REBUFF** until you
+left-click to dismiss it:
+
+![A post-expiry rebuff prompt flashing in the Spell Timers window](../assets/screenshots/feature--rebuff-flash.png)
+
 ## Related
 
 - [Respawn & zone timers](../features/respawn-timers.md) also render here

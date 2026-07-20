@@ -11,6 +11,8 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
 - On the [map](../windows/maps.md), when the kill matches a spawn point —
   the countdown draws at the spawn location.
 
+![The Mob Timers section with --Dead-- respawn countdowns](../assets/screenshots/feature--respawn-timers.png)
+
 ## Behavior
 
 - **Timers survive camping.** Respawn timers are saved per character and

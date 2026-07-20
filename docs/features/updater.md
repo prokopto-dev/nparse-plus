@@ -16,6 +16,8 @@ When an update exists:
   between yours and the newest**, then downloads the right asset for your
   platform:
 
+![The update dialog listing release notes for every crossed version](../assets/screenshots/window--update-available.png)
+
 | Platform | Asset picked |
 |---|---|
 | macOS | the `.dmg` matching your Mac's architecture (`arm64` / `x86_64`) |

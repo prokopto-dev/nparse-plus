@@ -492,13 +492,242 @@ def cap_settings(backend, settings) -> None:
         capture(w, name, size=(700, 800))
 
 
+def _spell_window(backend):
+    """A SpellTimerWindow with its live timers stopped, ready to grab."""
+    from nparseplus.ui.spellwindow import SpellTimerWindow
+
+    w = _keep(SpellTimerWindow(backend))
+    w._refresh_timer.stop()
+    w._flash_timer.stop()
+    return w
+
+
+def cap_spell_timers_raid(backend) -> None:
+    from nparseplus.core.timers import YOU_GROUP, SpellRow
+
+    t = backend.timers
+    t.clear_all()
+    t.add_spell(
+        SpellRow(
+            name="Clarity",
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=_spell(backend, "Clarity"),
+            ends_at=NOW + timedelta(minutes=22),
+            total_duration_s=48 * 60.0,
+        )
+    )
+    # The same raid buff on many targets: targets outnumber spells, so raid mode
+    # flips this group to one spell header with a row per target.
+    for target in ("Tankenstein", "Offtank Bob", "Chanter Su", "Healbot", "Rangerella"):
+        t.add_spell(
+            SpellRow(
+                name="Aegolism",
+                group=target,
+                updated_at=NOW,
+                is_target_player=True,
+                spell=_spell(backend, "Aegolism"),
+                ends_at=NOW + timedelta(minutes=78),
+                total_duration_s=90 * 60.0,
+            )
+        )
+    sw = backend.settings.spellwindow
+    previous = sw.raid_group_by_spell
+    sw.raid_group_by_spell = True
+    try:
+        w = _spell_window(backend)
+        w.refresh(now=NOW)
+        capture(w, "window--spell-timers-raid", size=(250, 300))
+    finally:
+        sw.raid_group_by_spell = previous
+
+
+def cap_respawn_timers(backend) -> None:
+    from nparseplus.core.timers import MOB_TIMER_GROUP, TimerRow
+
+    t = backend.timers
+    t.clear_all()
+    # "--Dead-- <victim>" respawn countdowns (a duplicate shows the numbering).
+    for name, secs in (
+        ("--Dead-- a sand giant", 6 * 60 + 30),
+        ("--Dead-- a sand giant", 6 * 60 + 30),
+        ("--Dead-- Vessel Drozlin", 28 * 60),
+    ):
+        t.add_timer(
+            TimerRow(
+                name=name,
+                group=MOB_TIMER_GROUP,
+                updated_at=NOW,
+                ends_at=NOW + timedelta(seconds=secs),
+                total_duration_s=float(secs),
+            ),
+            allow_duplicates=True,
+        )
+    w = _spell_window(backend)
+    w.refresh(now=NOW)
+    capture(w, "feature--respawn-timers", size=(260, 190))
+
+
+def cap_boats(backend) -> None:
+    from nparseplus.core.handlers.boat import BOATS_GROUP
+    from nparseplus.core.timers import TimerRow
+
+    t = backend.timers
+    t.clear_all()
+    for name, mins in (
+        ("Butcherblock → Freeport", 7),
+        ("Freeport → Butcherblock", 3),
+        ("Timorous → Overthere", 11),
+    ):
+        t.add_timer(
+            TimerRow(
+                name=name,
+                group=BOATS_GROUP,
+                updated_at=NOW,
+                ends_at=NOW + timedelta(minutes=mins),
+                total_duration_s=mins * 60.0,
+            ),
+            allow_duplicates=True,
+        )
+    w = _spell_window(backend)
+    w.refresh(now=NOW)
+    capture(w, "feature--boats", size=(290, 175))
+
+
+def cap_roll_rows(backend) -> None:
+    from nparseplus.core.timers import CounterRow, RollRow
+
+    t = backend.timers
+    t.clear_all()
+    roll_group = " Random -- 333"
+    for roller, value in (("Whitewitch", 287), ("Grimtusk", 201), ("Sylvara", 118)):
+        t.add_roll(
+            RollRow(
+                name=roller,
+                group=roll_group,
+                updated_at=NOW,
+                roll=value,
+                max_roll=333,
+                ends_at=NOW + timedelta(seconds=95),
+                total_duration_s=120.0,
+            )
+        )
+    # A resist tally (xN) on the mob.
+    for _ in range(4):
+        t.add_counter(
+            CounterRow(name="Tashan", group="a sand giant", updated_at=NOW, is_target_player=False)
+        )
+    w = _spell_window(backend)
+    w.refresh(now=NOW)
+    capture(w, "feature--roll-rows", size=(270, 230))
+
+
+def cap_rebuff_flash(backend) -> None:
+    from nparseplus.core.timers import YOU_GROUP, SpellRow
+
+    t = backend.timers
+    t.clear_all()
+    t.add_spell(
+        SpellRow(
+            name="Clarity",
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=_spell(backend, "Clarity"),
+            ends_at=NOW + timedelta(minutes=22),
+            total_duration_s=48 * 60.0,
+        )
+    )
+    # An expired self-buff lingering as a flashing REBUFF prompt (#16).
+    t.add_spell(
+        SpellRow(
+            name="Aegolism",
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=_spell(backend, "Aegolism"),
+            ends_at=NOW - timedelta(seconds=5),
+            total_duration_s=90 * 60.0,
+            post_expiry_persist_s=30.0,
+            expired_at=NOW - timedelta(seconds=5),
+        )
+    )
+    w = _spell_window(backend)
+    w._flash_on = True  # freeze in the lit flash phase so REBUFF reads clearly
+    w.refresh(now=NOW)
+    capture(w, "feature--rebuff-flash", size=(250, 170))
+
+
+def cap_update_dialog() -> None:
+    from nparseplus.ui.updatewindow import UpdateAvailableDialog
+    from nparseplus.updater import ReleaseInfo, ReleaseNote
+
+    release = ReleaseInfo(
+        version="1.12.0",
+        html_url="https://github.com/prokopto-dev/nparse-plus/releases/tag/v1.12.0",
+        notes=(
+            ReleaseNote(
+                version="1.12.0",
+                body="- feat: x86_64 (Intel) macOS build\n"
+                '- feat: "Check for updates" tray action\n'
+                "- docs: offscreen screenshot generator",
+            ),
+            ReleaseNote(
+                version="1.11.0",
+                body="- Raid-mode grouping, post-expiry rebuff alerts, CH cadence indicator\n"
+                '- Version badge + "Check now" in Settings',
+            ),
+        ),
+    )
+    w = _keep(UpdateAvailableDialog(release, installed_version="1.10.0"))
+    capture(w, "window--update-available", size=(700, 520))
+
+
+def cap_overlay_utility() -> None:
+    import nparseplus.ui.eventoverlay as eventoverlay
+    from nparseplus.config.settings import WindowState
+    from nparseplus.core.events import CompleteHealCadenceEvent, OverlayEvent, TimerBarEvent
+    from nparseplus.ui.eventoverlay import EventOverlayWindow
+
+    restore = freeze_now(eventoverlay)
+    try:
+        w = _keep(EventOverlayWindow(state=WindowState(geometry=(0, 0, 760, 300))))
+        w.handle_event(CompleteHealCadenceEvent(timestamp=NOW, seconds=4))
+        w.handle_event(
+            OverlayEvent(
+                text="Rebuff: Tankenstein — Aegolism faded",
+                foreground="Gold",
+                section="utility",
+            )
+        )
+        w.handle_event(OverlayEvent(text="Out of Mana", foreground="Red", section="utility"))
+        w.handle_event(TimerBarEvent(name="Rebuff window", total_seconds=30, bar_color="Gold"))
+        w._clear_timer.stop()
+        w._bar_timer.stop()
+        w._sweep_timer.stop()
+        for tmr in w._utility_timers.values():
+            tmr.stop()
+        entry = w._bars.get("Rebuff window")
+        if entry is not None:
+            entry.ends_at = NOW + timedelta(seconds=20)
+            w._render_bar(entry, NOW)
+        capture(w, "feature--overlay-utility", size=(760, 300), backdrop=OVERLAY_BACKDROP)
+    finally:
+        restore()
+
+
 PHASE_A = {
     "window--spell-timers": lambda b, s: cap_spell_timers(b),
+    "window--spell-timers-raid": lambda b, s: cap_spell_timers_raid(b),
+    "feature--respawn-timers": lambda b, s: cap_respawn_timers(b),
+    "feature--boats": lambda b, s: cap_boats(b),
+    "feature--roll-rows": lambda b, s: cap_roll_rows(b),
+    "feature--rebuff-flash": lambda b, s: cap_rebuff_flash(b),
     "window--dps-meter": lambda b, s: cap_dps_meter(b),
     "window--mob-info": lambda b, s: cap_mob_info(b, s),
     "window--console": lambda b, s: cap_console(b, s),
     "window--event-overlay": lambda b, s: cap_event_overlay(),
+    "feature--overlay-utility": lambda b, s: cap_overlay_utility(),
     "feature--ch-chain": lambda b, s: cap_ch_chain(),
+    "window--update-available": lambda b, s: cap_update_dialog(),
     "window--trigger-editor": lambda b, s: cap_trigger_editor(b, s),
     "settings": lambda b, s: cap_settings(b, s),  # emits all settings--*.png
 }
