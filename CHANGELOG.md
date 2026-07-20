@@ -6,6 +6,27 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.13.0 (2026-07-20)
+
+### Continuous Integration
+
+- Cross-compile x86_64 macOS DMG on Apple Silicon
+  ([`a8194f3`](https://github.com/prokopto-dev/nparse-plus/commit/a8194f3a91780f77480be4850fe194cf81eb0817))
+
+### Documentation
+
+- Expand automated screenshot coverage (7 more window states)
+  ([`1f79342`](https://github.com/prokopto-dev/nparse-plus/commit/1f793423a8365b6b65702e03fefc037ed8e0fe48))
+
+- Note the macOS updater picks the arch-matching DMG
+  ([`67619b7`](https://github.com/prokopto-dev/nparse-plus/commit/67619b711c27effd0562c7e1e63e3edcc2e98cd9))
+
+### Features
+
+- Add a "Check for updates" action to the tray menu
+  ([`1061ae1`](https://github.com/prokopto-dev/nparse-plus/commit/1061ae1be973a4d375c015e1f54b995bd1d9e288))
+
+
 ## v1.12.0 (2026-07-20)
 
 ### Continuous Integration
