@@ -111,6 +111,36 @@ def test_pick_asset_per_platform() -> None:
     assert pick_asset(release, "sunos") is None
 
 
+def _dmg(name: str) -> ReleaseAsset:
+    return ReleaseAsset(name=name, browser_download_url=f"https://dl.test/{name}")
+
+
+def test_pick_asset_macos_matches_architecture() -> None:
+    release = ReleaseInfo(
+        version="1.0.0",
+        html_url="https://example/release",
+        assets=(
+            _dmg("nParse+-1.0.0-macos-arm64.dmg"),
+            _dmg("nParse+-1.0.0-macos-x86_64.dmg"),
+        ),
+    )
+    assert pick_asset(release, "darwin", machine="arm64").name.endswith("-macos-arm64.dmg")
+    assert pick_asset(release, "darwin", machine="x86_64").name.endswith("-macos-x86_64.dmg")
+    # amd64 (rarely reported on macOS) normalizes to the x86_64 build.
+    assert pick_asset(release, "darwin", machine="amd64").name.endswith("-macos-x86_64.dmg")
+
+
+def test_pick_asset_macos_falls_back_to_single_dmg() -> None:
+    # Older releases shipped a single arm64-only DMG; an Intel client still gets
+    # *a* DMG (the old behavior) rather than nothing.
+    release = ReleaseInfo(
+        version="1.0.0",
+        html_url="https://example/release",
+        assets=(_dmg("nParse+-1.0.0-macos-arm64.dmg"),),
+    )
+    assert pick_asset(release, "darwin", machine="x86_64").name.endswith("-macos-arm64.dmg")
+
+
 def test_running_in_flatpak_detection(tmp_path: Path) -> None:
     marker = tmp_path / ".flatpak-info"
     assert not updater.running_in_flatpak(marker)

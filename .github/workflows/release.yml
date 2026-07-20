@@ -37,7 +37,19 @@ jobs:
 
   build-macos:
     needs: check-version
-    runs-on: macos-14
+    # One DMG per architecture: macos-14 is Apple Silicon (arm64), macos-13 is
+    # the Intel (x86_64) runner. The spec sets no target_arch, so PyInstaller
+    # builds for the runner's native arch — no cross-compilation. fail-fast off
+    # so a hiccup on one arch doesn't cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,10 +64,12 @@ jobs:
       - name: Ad-hoc codesign
         run: codesign --force --deep -s - "dist/nParse+.app"
       - name: Build DMG
-        run: uv run dmgbuild -s packaging/dmg_settings.py "nParse+" "dist/nParse+-${RELEASE_TAG#v}-macos-arm64.dmg"
+        run: uv run dmgbuild -s packaging/dmg_settings.py "nParse+" "dist/nParse+-${RELEASE_TAG#v}-macos-${{ matrix.arch }}.dmg"
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
+          # Artifact names must be unique per matrix leg (upload-artifact@v4);
+          # the release job downloads all of them with merge-multiple.
+          name: macos-dmg-${{ matrix.arch }}
           path: dist/*.dmg
           if-no-files-found: error
 

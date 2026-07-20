@@ -1,11 +1,16 @@
 # Install on macOS
 
-nParse+ ships as a DMG for Apple Silicon Macs
-(`nParse+-<version>-macos-arm64.dmg`).
+nParse+ ships a DMG for each Mac architecture:
+
+- Apple Silicon (M1/M2/M3…): `nParse+-<version>-macos-arm64.dmg`
+- Intel: `nParse+-<version>-macos-x86_64.dmg`
+
+Not sure which you have?  → **About This Mac**: "Apple M…" is Apple Silicon,
+"Intel Core…" is Intel.
 
 ## 1. Download and install
 
-1. Download the DMG from the
+1. Download the DMG for your architecture from the
    [latest release](https://github.com/prokopto-dev/nparse-plus/releases/latest).
 2. Open it and drag **nParse+** to **Applications**.
 

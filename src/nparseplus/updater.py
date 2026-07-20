@@ -14,6 +14,7 @@ failure — including the repo not existing yet — degrades to "no update".
 from __future__ import annotations
 
 import logging
+import platform as platform_mod
 import subprocess
 import sys
 import webbrowser
@@ -145,13 +146,20 @@ def format_release_notes(release: ReleaseInfo) -> str:
     return "\n\n---\n\n".join(sections)
 
 
+# macOS ships one DMG per architecture (…-macos-arm64.dmg / …-macos-x86_64.dmg).
+# platform.machine() reports the RUNNING interpreter's arch (arm64 native, or
+# x86_64 under Rosetta), which is exactly the build the user needs.
+_MACOS_ARCH = {"arm64": "arm64", "x86_64": "x86_64", "amd64": "x86_64"}
+
+
 def pick_asset(
     release: ReleaseInfo,
     platform: str = sys.platform,
     in_flatpak: bool | None = None,
+    machine: str | None = None,
 ) -> ReleaseAsset | None:
-    """The artifact for this platform: macOS .dmg, Windows .zip, Linux
-    .flatpak inside the sandbox / .tar.gz outside; None when unknown."""
+    """The artifact for this platform: macOS .dmg (arch-matched), Windows .zip,
+    Linux .flatpak inside the sandbox / .tar.gz outside; None when unknown."""
     if platform.startswith("linux"):
         flatpak = running_in_flatpak() if in_flatpak is None else in_flatpak
         suffix = ".flatpak" if flatpak else ".tar.gz"
@@ -159,6 +167,16 @@ def pick_asset(
         suffix = {"darwin": ".dmg", "win32": ".zip"}.get(platform)
     if suffix is None:
         return None
+    if platform == "darwin":
+        arch = _MACOS_ARCH.get((machine or platform_mod.machine()).lower())
+        if arch is not None:
+            match = next(
+                (a for a in release.assets if a.name.lower().endswith(f"-macos-{arch}.dmg")),
+                None,
+            )
+            if match is not None:
+                return match
+        # Fall back to any .dmg — older releases shipped a single arm64 DMG.
     return next((a for a in release.assets if a.name.lower().endswith(suffix)), None)
 
 
