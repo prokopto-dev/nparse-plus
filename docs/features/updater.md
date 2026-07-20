@@ -14,7 +14,7 @@ When an update exists:
 
 | Platform | Asset picked |
 |---|---|
-| macOS | `.dmg` |
+| macOS | the `.dmg` matching your Mac's architecture (`arm64` / `x86_64`) |
 | Windows | `.zip` |
 | Linux (tarball install) | `.tar.gz` |
 | Linux (running inside the Flatpak sandbox) | `.flatpak`, handed to your software installer |
