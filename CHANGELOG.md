@@ -6,6 +6,27 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.12.0 (2026-07-20)
+
+### Continuous Integration
+
+- Enforce Conventional Commits on PRs and auto-release on merge
+  ([`2483176`](https://github.com/prokopto-dev/nparse-plus/commit/2483176daffbab187e8918b84985924c08804431))
+
+### Documentation
+
+- Add offscreen screenshot generator and capture docs screenshots
+  ([`24d8c87`](https://github.com/prokopto-dev/nparse-plus/commit/24d8c8761ba5579abec6053332bed2292250eed5))
+
+- Document auto-release on merge and the PR commit check
+  ([`50aaa7c`](https://github.com/prokopto-dev/nparse-plus/commit/50aaa7c211ab4678463e6a8b210ed118e63f7a6f))
+
+### Features
+
+- Add x86_64 (Intel) macOS build
+  ([`e6b8df6`](https://github.com/prokopto-dev/nparse-plus/commit/e6b8df6e225e4f84f30378c950c9f7ed09f42e9c))
+
+
 ## v1.11.0 (2026-07-19)
 
 ### Bug Fixes
