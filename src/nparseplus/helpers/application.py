@@ -214,8 +214,15 @@ class NomnsParse(QApplication):
                 elif config.data[parser.name]["toggled"] or parser.name == "maps":
                     parser.parse(timestamp, text)
 
-    def _menu(self, event):
-        """Returns a new QMenu for system tray."""
+    def _build_tray_menu(self):
+        """Construct the system-tray context menu without showing it.
+
+        Returns ``(menu, actions)`` where ``actions`` maps the dispatch keys used
+        by :meth:`_menu` to their ``QAction`` (or collection of them). Split out
+        from ``_menu`` so the fully-populated menu can be built — and grabbed for
+        a docs screenshot — without entering the blocking modal ``exec`` loop
+        (``QMenu.exec`` can't be intercepted from Python).
+        """
         menu = QMenu()
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if self._available_release is not None:
@@ -262,18 +269,34 @@ class NomnsParse(QApplication):
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
 
+        actions = {
+            "check_version": check_version_action,
+            "check_now": check_now_action,
+            "get_eq_dir": get_eq_dir_action,
+            "spell_timers": spell_timers_action,
+            "backend_windows": backend_window_actions,
+            "discord_conf": discord_conf_action,
+            "quit": quit_action,
+            "parser_toggles": parser_toggles,
+        }
+        return menu, actions
+
+    def _menu(self, event):
+        """Show the system-tray context menu and act on the chosen entry."""
+        menu, actions = self._build_tray_menu()
+
         action = menu.exec(QCursor.pos())
 
-        if action == check_version_action:
+        if action == actions["check_version"]:
             if self._available_release is not None:
                 self._show_update_window()
             else:
                 webbrowser.open(updater.releases_page_url())
 
-        elif action == check_now_action:
+        elif action == actions["check_now"]:
             self._start_manual_update_check()
 
-        elif action == get_eq_dir_action:
+        elif action == actions["get_eq_dir"]:
             dir_path = str(
                 QFileDialog.getExistingDirectory(None, "Select Everquest Logs Directory")
             )
@@ -287,16 +310,16 @@ class NomnsParse(QApplication):
                 if self._save_new_settings is not None:
                     self._save_new_settings()
 
-        elif spell_timers_action is not None and action == spell_timers_action:
+        elif actions["spell_timers"] is not None and action == actions["spell_timers"]:
             self._spell_window.toggle()
 
-        elif action in backend_window_actions:
-            backend_window_actions[action].toggle()
+        elif action in actions["backend_windows"]:
+            actions["backend_windows"][action].toggle()
 
-        elif action == discord_conf_action:
+        elif action == actions["discord_conf"]:
             self._parsers_dict["discord"].show_settings()
 
-        elif action == quit_action:
+        elif action == actions["quit"]:
             if self._toggled:
                 self._toggle()
 
@@ -305,6 +328,6 @@ class NomnsParse(QApplication):
             appquit.mark_quitting()  # new-core windows skip their shown=False clobber
             self.quit()
 
-        elif action in parser_toggles:
+        elif action in actions["parser_toggles"]:
             parser = [parser for parser in self._parsers if parser.name == action.text().lower()][0]
             parser.toggle()

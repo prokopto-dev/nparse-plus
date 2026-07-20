@@ -20,10 +20,11 @@ while the maps window and tray menu need the full ``NomnsParse`` app
 Phase B backs up and restores the repo-root ``nparse.config.json`` (live,
 gitignored dev state) around its run.
 
-Three shots stay manual (their pages keep the "screenshot pending" placeholder):
+Two shots stay manual (their pages keep the "screenshot pending" placeholder):
 ``home--overview`` (overlays over a live game) and ``window--discord`` (live
-Discord voice) need the real game; ``tray--menu``'s modal ``exec`` wedges the
-offscreen platform (opt in with ``CAPTURE_TRAY=1`` on a real display).
+Discord voice) need the real game. The tray menu captures automatically now —
+built via ``NomnsParse._build_tray_menu`` + ``popup`` so it never enters the
+blocking modal ``exec`` that wedges the offscreen platform.
 """
 
 from __future__ import annotations
@@ -863,53 +864,27 @@ def _inject_map(maps, extra_dots: bool):
 
 
 def _capture_tray(app) -> None:
-    """Grab the real tray QMenu. ``_menu`` ends in a blocking ``menu.exec`` (its
-    return can't be monkeypatched in PySide6), so a QTimer grabs the live popup
-    mid-exec and closes it, which returns exec and lets ``_menu`` finish."""
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication, QMenu
+    """Grab the real system-tray QMenu.
 
-    state = {"tries": 0, "saved": False}
+    The live tray handler (``NomnsParse._menu``) ends in a blocking modal
+    ``menu.exec`` that wedges under the offscreen platform — and ``QMenu.exec``
+    can't be intercepted from Python. So we call ``_build_tray_menu`` (the pure
+    construction half, split out for exactly this) and ``popup`` it instead:
+    ``popup`` is non-blocking, lays the menu out, and lets ``grab`` render it.
+    """
+    from PySide6.QtCore import QPoint, Qt
 
-    def _find_menu():
-        menu = QApplication.activePopupWidget()
-        if isinstance(menu, QMenu):
-            return menu
-        return next(
-            (w for w in QApplication.topLevelWidgets() if isinstance(w, QMenu) and w.isVisible()),
-            None,
-        )
-
-    def grab_popup() -> None:
-        from PySide6.QtCore import Qt
-
-        menu = _find_menu()
-        if menu is not None:
-            # Drop delete-on-close so _menu's post-exec dispatch (comparing the
-            # returned action) can't hit a freed QAction after we close it.
-            menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
-            _keep(menu)
-            _composite_and_save(menu.grab(), "tray--menu", PANEL_BACKDROP, pad=1)
-            state["saved"] = True
-            menu.close()  # returns the modal exec
-            return
-        state["tries"] += 1
-        if state["tries"] < 60:
-            QTimer.singleShot(50, grab_popup)
-        else:  # never appeared — break exec so we don't hang
-            for widget in QApplication.topLevelWidgets():
-                if isinstance(widget, QMenu):
-                    widget.close()
-
-    QTimer.singleShot(50, grab_popup)
-    try:
-        app._menu(None)  # blocks until the popup is closed by grab_popup
-    except Exception:
-        import traceback
-
-        traceback.print_exc()
-    if not state["saved"]:
-        print("  tray--menu: no popup menu appeared", flush=True)
+    menu, _actions = app._build_tray_menu()
+    _keep(menu)
+    # _build_tray_menu sets WA_DeleteOnClose; drop it so close() (below) doesn't
+    # free the menu out from under the grab.
+    menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+    menu.adjustSize()
+    menu.popup(QPoint(0, 0))  # non-blocking (unlike exec); shows + lays out
+    app.processEvents()
+    app.processEvents()
+    _composite_and_save(menu.grab(), "tray--menu", PANEL_BACKDROP, pad=1)
+    menu.close()
 
 
 def _restore_legacy(had: bool, backup: Path, legacy: Path) -> None:
@@ -1000,11 +975,9 @@ def _run_phase_b_captures(scratch_settings: Path, only: set[str] | None) -> None
     finally:
         restore()
 
-    # The tray QMenu ends in a blocking modal exec that wedges under the
-    # offscreen platform inside the full app (and a Python signal can't
-    # interrupt the Qt C++ loop). Opt in with CAPTURE_TRAY=1 on a real display;
-    # otherwise tray--menu is captured manually (see the checklist).
-    if os.environ.get("CAPTURE_TRAY") and (only is None or "tray--menu" in only):
+    # The tray QMenu is built via app._build_tray_menu() + popup (never the
+    # blocking exec), so it captures offscreen like everything else.
+    if only is None or "tray--menu" in only:
         _capture_tray(app)
 
 
