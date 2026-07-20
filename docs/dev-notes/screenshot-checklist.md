@@ -17,10 +17,11 @@ uv run python tools/capture_screenshots.py --only window--dps-meter,settings--ma
 
 The tool builds each window headless (`QT_QPA_PLATFORM=offscreen`), injects
 synthetic-but-realistic data (real spell/zone/item names), and writes the PNGs
-below. **26 of 29 are automated.** The remaining three need a human on a real
-display (see the ⌨ rows): the hero shot and Discord overlay want the live game,
-and the tray menu's modal `exec` wedges offscreen (`CAPTURE_TRAY=1` attempts it
-on a real display).
+below. **27 of 29 are automated.** The remaining two need a human on a real
+display (see the ⌨ rows): the hero shot and Discord overlay want the live game.
+The tray menu now captures automatically — it's built via
+`NomnsParse._build_tray_menu` + `popup` (never the blocking modal `exec`), so it
+renders offscreen like the rest.
 
 Capture tips (for the manual shots): use the **dark theme**, crop tight to the
 window (no desktop), and for overlays capture them **over the game** so readers
@@ -31,7 +32,7 @@ see real context. Retina/2x captures are fine. PNG only.
 | File | Used on | What to capture |
 |---|---|---|
 | ⌨ `home--overview.png` | Home | The money shot: EQ windowed with Spell Timers, DPS Meter, Maps, and an Event Overlay alert visible at once. Mid-fight if possible. |
-| ⌨ `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, window toggles, Window Layouts. |
+| `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, window toggles, Window Layouts. |
 
 ## Windows
 
@@ -80,7 +81,7 @@ window with that page selected:
 
 ## Status
 
-29 wanted, **26 captured** by `tools/capture_screenshots.py`. The 3 remaining
-are the ⌨ (manual) rows above — `home--overview`, `window--discord`, and
-`tray--menu` — which need a real display/game. Rerun the tool after a UI change
-to refresh the automated set; the site tracks reality automatically.
+29 wanted, **27 captured** by `tools/capture_screenshots.py`. The 2 remaining
+are the ⌨ (manual) rows above — `home--overview` and `window--discord` — which
+need a real display/game. Rerun the tool after a UI change to refresh the
+automated set; the site tracks reality automatically.
