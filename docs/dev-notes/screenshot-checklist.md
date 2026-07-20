@@ -5,16 +5,33 @@ they appear on the docs site automatically (no page edits needed — until a
 file exists, its page shows a dashed "screenshot pending" placeholder
 naming it). This file lives in `dev-notes/` and never publishes.
 
-Capture tips: use the **dark theme**, crop tight to the window (no
-desktop), and for overlays capture them **over the game** so readers see
-real context. Retina/2x captures are fine. PNG only.
+## Generating
+
+Most of these are generated offscreen from real UI + simulated data:
+
+```bash
+uv run python tools/capture_screenshots.py            # all automatable shots
+uv run python tools/capture_screenshots.py --phase a  # isolated windows only
+uv run python tools/capture_screenshots.py --only window--dps-meter,settings--maps
+```
+
+The tool builds each window headless (`QT_QPA_PLATFORM=offscreen`), injects
+synthetic-but-realistic data (real spell/zone/item names), and writes the PNGs
+below. **19 of 22 are automated.** The remaining three need a human on a real
+display (see the ⌨ rows): the hero shot and Discord overlay want the live game,
+and the tray menu's modal `exec` wedges offscreen (`CAPTURE_TRAY=1` attempts it
+on a real display).
+
+Capture tips (for the manual shots): use the **dark theme**, crop tight to the
+window (no desktop), and for overlays capture them **over the game** so readers
+see real context. Retina/2x captures are fine. PNG only.
 
 ## Hero & tray
 
 | File | Used on | What to capture |
 |---|---|---|
-| `home--overview.png` | Home | The money shot: EQ windowed with Spell Timers, DPS Meter, Maps, and an Event Overlay alert visible at once. Mid-fight if possible. |
-| `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, window toggles, Window Layouts. |
+| ⌨ `home--overview.png` | Home | The money shot: EQ windowed with Spell Timers, DPS Meter, Maps, and an Event Overlay alert visible at once. Mid-fight if possible. |
+| ⌨ `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, window toggles, Window Layouts. |
 
 ## Windows
 
@@ -27,7 +44,7 @@ real context. Retina/2x captures are fine. PNG only.
 | `window--event-overlay.png` | Event Overlay | An alert text + a countdown bar over the game (fire a builtin trigger or a `StartTimer-30`). |
 | `window--console.png` | Console | The console with a dozen log lines, Pause checkbox visible. |
 | `window--trigger-editor.png` | Trigger Editor | Folder tree expanded (Built In folders + a custom folder), a trigger selected showing the form and test box. |
-| `window--discord.png` | Discord Overlay | The Discord voice overlay over the game with 2+ users, one speaking. |
+| ⌨ `window--discord.png` | Discord Overlay | The Discord voice overlay over the game with 2+ users, one speaking. |
 
 ## Features
 
@@ -56,5 +73,7 @@ window with that page selected:
 
 ## Status
 
-22 wanted, 0 captured. Delete rows from "wanted" mentally as you drop
-files in — the site tracks reality automatically.
+22 wanted, **19 captured** by `tools/capture_screenshots.py`. The 3 remaining
+are the ⌨ (manual) rows above — `home--overview`, `window--discord`, and
+`tray--menu` — which need a real display/game. Rerun the tool after a UI change
+to refresh the automated set; the site tracks reality automatically.

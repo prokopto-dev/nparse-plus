@@ -6,6 +6,7 @@ nParse+ ships prebuilt for all three desktop platforms with every
 | Platform | Download | Guide |
 |---|---|---|
 | macOS (Apple Silicon) | `nParse+-<version>-macos-arm64.dmg` | [Install on macOS](install-macos.md) |
+| macOS (Intel) | `nParse+-<version>-macos-x86_64.dmg` | [Install on macOS](install-macos.md) |
 | Windows (64-bit) | `nparseplus-<version>-win64.zip` | [Install on Windows](install-windows.md) |
 | Linux — Flatpak (recommended) | `nparseplus-<version>-linux-x86_64.flatpak` | [Install on Linux (Flatpak)](install-flatpak.md) |
 | Linux — tarball | `nparseplus-<version>-linux-x86_64.tar.gz` | [Install on Linux (tarball)](install-linux-tarball.md) |
