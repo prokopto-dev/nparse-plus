@@ -37,19 +37,20 @@ jobs:
 
   build-macos:
     needs: check-version
-    # One DMG per architecture: macos-14 is Apple Silicon (arm64), macos-13 is
-    # the Intel (x86_64) runner. The spec sets no target_arch, so PyInstaller
-    # builds for the runner's native arch — no cross-compilation. fail-fast off
-    # so a hiccup on one arch doesn't cancel the other.
+    # One DMG per architecture, both built on Apple Silicon. GitHub retired the
+    # standard macos-13 Intel runner (x86_64 jobs there hang unscheduled), so the
+    # x86_64 build is cross-compiled on the arm64 runner via Rosetta + an x86_64
+    # CPython that uv manages. continue-on-error on the x86_64 leg keeps a
+    # cross-build hiccup from ever blocking the release (arm64/Windows/Linux);
+    # fail-fast off so one arch never cancels the other.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
-            arch: arm64
-          - runner: macos-13
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+          - arch: arm64
+          - arch: x86_64
+    runs-on: macos-14
+    continue-on-error: ${{ matrix.arch == 'x86_64' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,10 +58,29 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
-      - name: Sync dependencies (with build group)
-        run: uv sync --frozen --group build
-      - name: Build .app
-        run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+      - name: Install Rosetta (x86_64 cross-build)
+        if: matrix.arch == 'x86_64'
+        run: softwareupdate --install-rosetta --agree-to-license
+      - name: Build .app (${{ matrix.arch }})
+        run: |
+          set -euxo pipefail
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            # Cross-build: an x86_64 interpreter (run via Rosetta) pulls x86_64
+            # wheels and makes PyInstaller emit an x86_64 app.
+            PY=cpython-3.12-macos-x86_64
+            uv python install "$PY"
+            uv sync --frozen --group build --python "$PY"
+            uv run --python "$PY" pyinstaller packaging/nparseplus.spec --noconfirm
+          else
+            uv sync --frozen --group build
+            uv run pyinstaller packaging/nparseplus.spec --noconfirm
+          fi
+      - name: Verify architecture
+        run: |
+          BIN="dist/nParse+.app/Contents/MacOS/nparseplus"
+          lipo -archs "$BIN"
+          lipo -archs "$BIN" | tr ' ' '\n' | grep -qx "${{ matrix.arch }}" \
+            || { echo "::error::built binary is not ${{ matrix.arch }}"; exit 1; }
       - name: Ad-hoc codesign
         run: codesign --force --deep -s - "dist/nParse+.app"
       - name: Build DMG
