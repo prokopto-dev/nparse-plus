@@ -73,5 +73,8 @@ nparse.config.json
 
 # nparseplus
 run-nparse.sh
+
+# tools/capture_screenshots.py working directory
+.screenshots-scratch/
 AGENTS.md
 tools/*_report.txt
