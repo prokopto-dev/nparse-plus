@@ -5,6 +5,10 @@ nParse+ checks the project's
 startup (disable in [Settings → General](../settings/general.md)). Drafts
 and prereleases are ignored; versions are compared properly (1.10 > 1.9).
 
+You can also check on demand: **Check for updates** in the tray menu, or
+**Check now** in [Settings → General](../settings/general.md). Either reports
+back even when you're already on the latest version.
+
 When an update exists:
 
 - the tray menu gains an **Install update vX.Y.Z** entry, and
