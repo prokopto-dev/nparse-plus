@@ -461,6 +461,20 @@ class UnifiedSettingsWindow(OverlayWindowBase):
 
     def handle_backend_event(self, event: object) -> None:
         """Bridge slot (GUI thread): keep the selected active profile current."""
+        # Early type filter: this slot sees the whole bus firehose (every log
+        # line), but only five event types matter — bail before doing any
+        # character-resolution work per event.
+        if not isinstance(
+            event,
+            (
+                AfterPlayerChangedEvent,
+                WhoPlayerEvent,
+                ClassDetectedEvent,
+                PlayerLevelDetectionEvent,
+                YouZonedEvent,
+            ),
+        ):
+            return
         if isinstance(event, AfterPlayerChangedEvent):
             self.refresh_characters()
             return
@@ -971,6 +985,14 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._overlay_seconds.setSingleStep(0.5)
         self._overlay_seconds.setValue(general.overlay_text_seconds)
         form.addRow("Alert text duration (s)", self._overlay_seconds)
+        self._overlay_shadow = QCheckBox(self)
+        self._overlay_shadow.setChecked(general.overlay_text_shadow)
+        self._overlay_shadow.setToolTip(
+            "Soft shadow behind overlay alert text. Turning it off removes a "
+            "per-repaint blur (helps overlay stutter, especially on macOS). "
+            "Takes effect on restart."
+        )
+        form.addRow("Alert text shadow", self._overlay_shadow)
         self._ch_retention = QDoubleSpinBox(self)
         self._ch_retention.setRange(5.0, 300.0)
         self._ch_retention.setSingleStep(5.0)
@@ -1223,6 +1245,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.tts_voice = self._voice.currentData() or None
         general.global_audio_volume = self._volume.value()
         general.overlay_text_seconds = self._overlay_seconds.value()
+        general.overlay_text_shadow = self._overlay_shadow.isChecked()
         general.ch_lane_retention_seconds = self._ch_retention.value()
         general.ch_chain_tag = self._ch_tag.text().strip()
         general.ch_cadence_indicator = self._ch_cadence.isChecked()

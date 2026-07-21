@@ -147,9 +147,16 @@ def band_opacity(canvas: MapCanvas, z: float) -> float:
     return canvas._data[canvas._data.band_key_for_z(z)]["paths"].opacity()
 
 
+def add_you(canvas: MapCanvas, z: float) -> None:
+    """Location fix + flush of the coalesced render, so assertions on band/POI
+    opacities see the repaint that add_player now only schedules."""
+    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=z))
+    canvas.flush_pending_render()
+
+
 def test_band_opacities_follow_player_z(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
 
     # z=0 band center is 2.5 (width 5): d=2.5 < 10 -> fully opaque.
     assert band_opacity(canvas, 0.0) == pytest.approx(1.0)
@@ -159,7 +166,7 @@ def test_band_opacities_follow_player_z(qtbot, synthetic_maps) -> None:
 
 def test_band_opacities_track_player_moving_up(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=100.0))
+    add_you(canvas, 100.0)
 
     assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
     assert band_opacity(canvas, 0.0) == pytest.approx(0.1)
@@ -167,7 +174,7 @@ def test_band_opacities_track_player_moving_up(qtbot, synthetic_maps) -> None:
 
 def test_poi_labels_fade_by_their_own_z(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
 
     pois = {p.location.text: p for band_key in canvas._data for p in canvas._data[band_key]["poi"]}
     assert pois["King_Arthur"].text.opacity() == pytest.approx(1.0)
@@ -188,13 +195,13 @@ def test_poi_entries_expose_labels_for_search(qtbot, synthetic_maps) -> None:
 
 def test_player_marker_stays_fully_opaque(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
     assert canvas._data.players["__you__"].opacity() == pytest.approx(1.0)
 
 
 def test_show_all_map_levels_zone_never_fades(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "allzone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
 
     assert band_opacity(canvas, 0.0) == pytest.approx(1.0)
     assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
@@ -209,20 +216,20 @@ def test_no_fading_before_first_player_location(qtbot, synthetic_maps) -> None:
 def test_z_fade_can_be_disabled(qtbot, synthetic_maps) -> None:
     config.data["maps"]["z_fade_enabled"] = False
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
     assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
 
 
 def test_z_fade_min_opacity_setting(qtbot, synthetic_maps) -> None:
     config.data["maps"]["z_fade_min_opacity"] = 40
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
     assert band_opacity(canvas, 100.0) == pytest.approx(0.4)
 
 
 def test_metadata_less_zone_fades_only_with_fallback(qtbot, synthetic_maps) -> None:
     canvas = make_canvas(qtbot, "nozone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
     # Default fallback 0: EQTool behavior, no fading.
     assert band_opacity(canvas, 100.0) == pytest.approx(1.0)
 
@@ -257,7 +264,7 @@ def test_map_font_scale_rerenders_poi_labels(qtbot, synthetic_maps) -> None:
 def test_use_z_layers_keeps_tiered_behavior(qtbot, synthetic_maps) -> None:
     config.data["maps"]["use_z_layers"] = True
     canvas = make_canvas(qtbot, "fadezone")
-    canvas.add_player("__you__", datetime.now(), MapPoint(x=0.0, y=0.0, z=0.0))
+    add_you(canvas, 0.0)
 
     current = config.data["maps"]["current_z_alpha"] / 100
     assert band_opacity(canvas, 0.0) == pytest.approx(current)

@@ -223,6 +223,7 @@ class EventOverlayWindow(QWidget):
         ch_lane_retention_s: float = DEFAULT_CH_LANE_RETENTION_S,
         state: WindowState | None = None,
         on_save: Callable[[], None] | None = None,
+        text_shadow: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -230,6 +231,9 @@ class EventOverlayWindow(QWidget):
         self._ch_lane_retention_s = max(0.0, ch_lane_retention_s)
         self._state = state
         self._on_save = on_save
+        # The blur effect is re-evaluated per repaint of this translucent
+        # always-on-top surface — expensive on macOS; setting-gated.
+        self._text_shadow = text_shadow
         self._edit_mode = False
         self._drag_offset: QPoint | None = None
         self.setObjectName("EventOverlayWindow")
@@ -265,11 +269,7 @@ class EventOverlayWindow(QWidget):
         self._center_text.setObjectName("EventOverlayText")
         self._center_text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._center_text.setWordWrap(True)
-        outline = QGraphicsDropShadowEffect(self._center_text)
-        outline.setOffset(0, 0)
-        outline.setBlurRadius(8)
-        outline.setColor(QColor("black"))
-        self._center_text.setGraphicsEffect(outline)
+        self._apply_text_shadow(self._center_text)
         self._set_text_color(DEFAULT_TEXT_COLOR)
 
         self._bars_layout = QVBoxLayout()
@@ -617,11 +617,7 @@ class EventOverlayWindow(QWidget):
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label.setWordWrap(True)
         label.setStyleSheet("color: yellow; font-size: 32px; font-weight: bold;")
-        shadow = QGraphicsDropShadowEffect(label)
-        shadow.setOffset(0, 0)
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor("black"))
-        label.setGraphicsEffect(shadow)
+        self._apply_text_shadow(label)
         self._alert_layout.insertWidget(self._alert_layout.indexOf(self._center_text) + 1, label)
         label.show()
         self._preview_widgets.append(label)
@@ -878,6 +874,18 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     # -- rendering -------------------------------------------------------------
+
+    def _apply_text_shadow(self, label: QLabel) -> None:
+        """Soft black halo behind alert text — skipped when the
+        overlay_text_shadow setting is off (the blur re-renders per repaint
+        of this translucent surface, a macOS compositing cost)."""
+        if not self._text_shadow:
+            return
+        shadow = QGraphicsDropShadowEffect(label)
+        shadow.setOffset(0, 0)
+        shadow.setBlurRadius(8)
+        shadow.setColor(QColor("black"))
+        label.setGraphicsEffect(shadow)
 
     def _set_text_color(self, color: str) -> None:
         if color != self._text_color:

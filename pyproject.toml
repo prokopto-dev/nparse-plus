@@ -38,6 +38,7 @@ nparseplus = "nparseplus.__main__:main"
 [dependency-groups]
 dev = [
   "pytest>=8.2",
+  "pytest-benchmark>=4.0",
   "pytest-cov",
   "pytest-qt",
   "ruff>=0.5",
@@ -95,10 +96,13 @@ output_format = "md"
 mask_initial_release = false
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib"]
+# benchmarks are opt-in (local perf comparison only — CI timing is too noisy
+# to gate on): run them with `uv run pytest -m benchmark`.
+addopts = ["--import-mode=importlib", "-m", "not benchmark"]
 testpaths = ["tests"]
 markers = [
   "qt: tests that require a Qt platform (run with QT_QPA_PLATFORM=offscreen)",
+  "benchmark: local-only perf benchmarks (excluded from the default run)",
 ]
 
 [tool.ruff]

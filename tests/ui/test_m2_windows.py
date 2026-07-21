@@ -110,6 +110,7 @@ def test_mob_info_renders_state(qtbot) -> None:
 def test_console_appends_and_pauses(qtbot) -> None:
     window = ConsoleWindow(Settings())
     qtbot.addWidget(window)
+    window.show()  # hidden consoles buffer to a backlog instead of the widget
     window.handle_event(LineEvent(timestamp=T0, line="You begin casting Clarity.", line_number=1))
     window.handle_event(LineEvent(timestamp=T0, line="You gain experience!!", line_number=2))
     assert window.line_count() >= 2
@@ -117,6 +118,17 @@ def test_console_appends_and_pauses(qtbot) -> None:
     window.set_paused(True)
     window.handle_event(LineEvent(timestamp=T0, line="ignored while paused", line_number=3))
     assert window.line_count() == before
+
+
+def test_console_hidden_backlog_flushes_on_show(qtbot) -> None:
+    window = ConsoleWindow(Settings())
+    qtbot.addWidget(window)
+    for i in range(3):
+        window.handle_event(LineEvent(timestamp=T0, line=f"buffered {i}", line_number=i + 1))
+    assert window.line_count() == 1  # empty document, nothing appended yet
+    window.show()
+    assert window.line_count() == 3
+    assert "buffered 2" in window._text.toPlainText()
 
 
 def test_event_overlay_configurable_duration(qtbot) -> None:

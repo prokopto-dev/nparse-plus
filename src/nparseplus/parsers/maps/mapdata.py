@@ -2,6 +2,7 @@ import csv
 import math
 import pathlib
 from collections import Counter
+from dataclasses import dataclass, field
 
 from PySide6.QtGui import QColor, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItemGroup, QGraphicsPathItem
@@ -19,12 +20,36 @@ MAP_FILES_PATHLIB = pathlib.Path(MAP_FILES_LOCATION)
 ICON_MAP = {"corpse": "data/maps/spawn.png"}
 
 
+@dataclass
+class ParsedMapData:
+    """Everything a zone load needs that can be produced OFF the GUI thread.
+
+    File IO, float parsing, z-grouping, and geometry math live here. QColor
+    and QPainterPath (re-entrant Qt value classes) are safe off-thread; the
+    hard rule is that no QGraphics* scene item and no QPixmap is created
+    before MapData.from_parsed runs on the GUI thread —
+    tests/ui/test_maps_async_load.py poisons them to enforce it.
+    """
+
+    zone: str
+    poi: list[MapPoint] = field(default_factory=list)
+    lines: list[MapLine] = field(default_factory=list)
+    grid_lines: list[MapLine] = field(default_factory=list)
+    geometry: MapGeometry | None = None
+    z_groups: list = field(default_factory=list)
+    spawn_timer_dict: dict = field(default_factory=dict)
+    short_zone_key: str | None = None
+    zone_level_height: float | None = None
+    show_all_map_levels: bool = False
+    band_width: float = band_width_for(None)
+
+
 class MapData(dict):
-    def __init__(self, zone=None):
+    def __init__(self, zone=None, parsed=None):
         super().__init__()
         self.zone = zone
         # POI source rows (MapPoint) kept for poi_entries(); map lines/grid are
-        # transient scratch built locally in _load().
+        # transient scratch consumed by _build().
         self._poi = []
         self.geometry = None  # MapGeometry
         self.players = {}
@@ -39,32 +64,47 @@ class MapData(dict):
         self.show_all_map_levels = False
         self.band_width = band_width_for(None)
 
-        if self.zone is not None:
-            self._load()
+        if parsed is not None:
+            self.zone = parsed.zone
+            self._build(parsed)
+        elif self.zone is not None:
+            self._build(MapData.parse(self.zone))
 
-    def _resolve_zone_params(self, map_file_name):
+    @classmethod
+    def from_parsed(cls, parsed):
+        """GUI-thread half of a background zone load (see MapData.parse)."""
+        return cls(parsed=parsed)
+
+    @staticmethod
+    def _zone_params(zone, map_file_name):
         """Bridge the map-file key to the zone database's short zone key."""
         try:
             zone_db = load_zone_database()
         except Exception:
-            return
-        short_key = zone_db.short_name(self.zone) or map_file_name
-        self.short_zone_key = short_key
+            return map_file_name, None, False
+        short_key = zone_db.short_name(zone) or map_file_name
         zone_info = zone_db.get(short_key)
         if zone_info is not None:
-            self.zone_level_height = zone_info.zone_level_height
-            self.show_all_map_levels = zone_info.show_all_map_levels
-        self.band_width = band_width_for(self.zone_level_height)
+            return short_key, zone_info.zone_level_height, zone_info.show_all_map_levels
+        return short_key, None, False
 
-    def _load(self):
+    @staticmethod
+    def parse(zone):
+        """Parse a zone's map files into a ParsedMapData — pure file IO and
+        math, safe to run on a background thread (no scene items, no config
+        access)."""
+        parsed = ParsedMapData(zone=zone)
         # Get list of all map files for current zone
-        map_file_name = MapData.get_zone_dict()[self.zone.strip().lower()]
+        map_file_name = MapData.get_zone_dict()[zone.strip().lower()]
         maps = MAP_FILES_PATHLIB.glob(f"**/{map_file_name}*.txt")
 
-        self._resolve_zone_params(map_file_name)
+        parsed.short_zone_key, parsed.zone_level_height, parsed.show_all_map_levels = (
+            MapData._zone_params(zone, map_file_name)
+        )
+        parsed.band_width = band_width_for(parsed.zone_level_height)
 
         all_x, all_y, all_z = [], [], []
-        lines, grid = [], []  # transient scratch, consumed below in _load()
+        lines, grid = parsed.lines, parsed.grid_lines
 
         # Create Lines and Points
         for map_file in maps:
@@ -83,7 +123,7 @@ class MapData(dict):
                                 x2=x2,
                                 y2=y2,
                                 z2=z2,
-                                color=self.color_transform(
+                                color=MapData.color_transform(
                                     QColor(int(data[6]), int(data[7]), int(data[8]))
                                 ),
                             )
@@ -97,14 +137,14 @@ class MapData(dict):
 
                     elif line_type == "p":  # point
                         x, y, z = map(float, data[0:3])
-                        self._poi.append(
+                        parsed.poi.append(
                             MapPoint(
                                 x=x,
                                 y=y,
                                 z=z,
                                 size=int(data[6]),
                                 text=str(data[7]),
-                                color=self.color_transform(
+                                color=MapData.color_transform(
                                     QColor(int(data[3]), int(data[4]), int(data[5]))
                                 ),
                             )
@@ -155,15 +195,6 @@ class MapData(dict):
                 )
             )
 
-        self.grid = QGraphicsPathItem()
-        line_path = QPainterPath()
-        for line in grid:
-            line_path.moveTo(line.x1, line.y1)
-            line_path.lineTo(line.x2, line.y2)
-        self.grid.setPath(line_path)
-        self.grid.setPen(QPen(line.color, config.data["maps"]["grid_line_width"]))
-        self.grid.setZValue(0)
-
         # Get z levels
         counter = Counter(all_z)
 
@@ -195,12 +226,58 @@ class MapData(dict):
         if not z_groups:
             z_groups = sorted(counter)
 
-        self._z_groups = z_groups
+        parsed.z_groups = z_groups
+
+        parsed.geometry = MapGeometry(
+            lowest_x=lowest_x,
+            highest_x=highest_x,
+            lowest_y=lowest_y,
+            highest_y=highest_y,
+            lowest_z=lowest_z,
+            highest_z=highest_z,
+            center_x=int(highest_x - (highest_x - lowest_x) / 2),
+            center_y=int(highest_y - (highest_y - lowest_y) / 2),
+            width=int(highest_x - lowest_x),
+            height=int(highest_y - lowest_y),
+            z_groups=z_groups,
+        )
+
+        # Load Spawn Timer Pairs from map_timers.csv
+        with open(MAP_SPAWNTIMES_FILE) as file:
+            reader = csv.reader(file)
+            parsed.spawn_timer_dict = dict(reader)
+
+        return parsed
+
+    def _build(self, parsed):
+        """GUI-thread half: turn a ParsedMapData into scene items."""
+        self.zone = parsed.zone
+        self._poi = parsed.poi
+        self.short_zone_key = parsed.short_zone_key
+        self.zone_level_height = parsed.zone_level_height
+        self.show_all_map_levels = parsed.show_all_map_levels
+        self.band_width = parsed.band_width
+        self.spawn_timer_dict = parsed.spawn_timer_dict
+        self._z_groups = parsed.z_groups
+        self.geometry = parsed.geometry
+
+        self.grid = QGraphicsPathItem()
+        line_path = QPainterPath()
+        grid_color = None
+        for line in parsed.grid_lines:
+            line_path.moveTo(line.x1, line.y1)
+            line_path.lineTo(line.x2, line.y2)
+            grid_color = line.color
+        self.grid.setPath(line_path)
+        self.grid.setPen(
+            QPen(grid_color or QColor(255, 255, 255, 25), config.data["maps"]["grid_line_width"])
+        )
+        self.grid.setZValue(0)
 
         # Create QGraphicsPathItem for lines separately per fine z-band,
         # keyed (band, color) to retain colors within each band.
         temp_dict = {}
-        for l in lines:
+        for l in parsed.lines:
             lz = min(l.z1, l.z2)
             band_key = band_key_for(lz, self.band_width)
             if not temp_dict.get(band_key):
@@ -225,25 +302,6 @@ class MapData(dict):
         # Create Points of Interest (per-item opacity is applied by z later)
         for p in self._poi:
             self.ensure_band(p.z)["poi"].append(PointOfInterest(location=p))
-
-        self.geometry = MapGeometry(
-            lowest_x=lowest_x,
-            highest_x=highest_x,
-            lowest_y=lowest_y,
-            highest_y=highest_y,
-            lowest_z=lowest_z,
-            highest_z=highest_z,
-            center_x=int(highest_x - (highest_x - lowest_x) / 2),
-            center_y=int(highest_y - (highest_y - lowest_y) / 2),
-            width=int(highest_x - lowest_x),
-            height=int(highest_y - lowest_y),
-            z_groups=z_groups,
-        )
-
-        # Load Spawn Timer Pairs from map_timers.csv
-        with open(MAP_SPAWNTIMES_FILE) as file:
-            reader = csv.reader(file)
-            self.spawn_timer_dict = dict(reader)
 
     def get_closest_z_group(self, z):
         closest = min(self._z_groups, key=lambda x: abs(x - z))

@@ -89,13 +89,37 @@ class MobInfoWindow(OverlayWindowBase):
 
         # Poll (cheap) rather than marshalling on_change across threads.
         self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self.refresh)
+        self._refresh_timer.timeout.connect(self._on_refresh_tick)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
         self.restore_visibility()
 
+    def _on_refresh_tick(self) -> None:
+        """Poll-timer entry: no render work while hidden (showEvent re-renders
+        on reopen); refresh() itself stays unguarded for tests/callers."""
+        if self.isVisible():
+            self.refresh()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.refresh()
+
     def refresh(self) -> None:
+        # Skip the label/loot-HTML rebuild when nothing about the considered
+        # mob changed since the last render (the state is mutated in place on
+        # the driver thread; we poll, so compare a value fingerprint).
         mob = self._mob_info
+        fingerprint = (
+            mob.name,
+            mob.zone,
+            mob.is_pet,
+            mob.spawn_seconds,
+            mob.is_notable,
+            tuple(mob.loot),
+        )
+        if fingerprint == getattr(self, "_rendered_fingerprint", None):
+            return
+        self._rendered_fingerprint = fingerprint
         if not mob.name:
             self._name.setText("Consider a mob…")
             self._detail.setText("")

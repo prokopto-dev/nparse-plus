@@ -183,13 +183,20 @@ class NomnsParse(QApplication):
         self._save_new_settings = save_new_settings
         self._backend_windows = dict(windows or {})
         self._window_layouts = window_layouts
-        bridge.event_received.connect(self._on_backend_event)
+        bridge.events_batch.connect(self._on_backend_events)
+
+    def _on_backend_events(self, events):
+        # Delivered on the GUI thread (one coalesced flush per bridge wake-up).
+        # The legacy windows expect (timestamp, text-without-timestamp) tuples.
+        if not self._toggled:
+            return
+        for event in events:
+            if isinstance(event, LineEvent):
+                self._parse((event.timestamp, event.line))
 
     def _on_backend_event(self, event):
-        # Delivered on the GUI thread (queued signal). The legacy windows
-        # expect (timestamp, text-without-timestamp) tuples.
-        if self._toggled and isinstance(event, LineEvent):
-            self._parse((event.timestamp, event.line))
+        # Single-event compatibility path (tests / direct callers).
+        self._on_backend_events([event])
 
     def _toggle(self):
         # Lines arrive via the Qt bridge (attach_backend_ui); _toggled just

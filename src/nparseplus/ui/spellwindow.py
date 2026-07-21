@@ -352,7 +352,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._persist_resize.timeout.connect(self.persist_state)
 
         self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self.refresh)
+        self._refresh_timer.timeout.connect(self._on_refresh_tick)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
         # Post-expiry rebuff prompts flash (#16); cheap and always running.
@@ -369,6 +369,17 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             self.show()
 
     # -- rendering -------------------------------------------------------------
+
+    def _on_refresh_tick(self) -> None:
+        """Poll-timer entry: skip all render work while hidden (showEvent
+        re-renders immediately on reopen). refresh() itself stays unguarded
+        so tests and explicit callers always render."""
+        if self.isVisible():
+            self.refresh()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.refresh()
 
     def _row_hidden(self, row: Row, show_classes: list[int] | None) -> bool:
         """Visibility pass — SpellWindowViewModel.cs order: the YOU group is
@@ -432,8 +443,11 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         )
         sort_mode = self._backend.settings.spellwindow.row_sort
 
-        while self._rows_layout.count():
-            self._rows_layout.takeAt(0)
+        # Widgets in display order; the layout itself is only rebuilt when
+        # this order changes (see below) — per-widget text/flash updates
+        # happen every pass either way.
+        entries: list[QWidget] = []
+        order: list[object] = []
 
         used_headers: set[str] = set()
         used_rows: set[tuple[str, str, str, int]] = set()
@@ -454,8 +468,8 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             elif header.text() != label:
                 # Target class can arrive later (PlayerTracker /who sync).
                 header.setText(label)
-            self._rows_layout.addWidget(header)
-            header.show()
+            entries.append(header)
+            order.append(("H", hkey))
             used_headers.add(hkey)
             # Target sections re-sort live by the user's mode; spell sections
             # keep the core's deterministic by-target order.
@@ -479,14 +493,26 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                 # In a spell section the row shows its target, not the spell.
                 widget.update_row(row, now, label=row.group.strip() if spell_headed else None)
                 widget.apply_flash(self._flash_on)
-                self._rows_layout.addWidget(widget)
-                widget.show()
+                entries.append(widget)
+                order.append(("R", key))
                 used_rows.add(key)
 
         for hkey in [h for h in self._headers if h not in used_headers]:
             self._headers.pop(hkey).deleteLater()
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
+
+        # Only touch the layout when the widget sequence actually changed —
+        # the per-tick takeAt/addWidget/adjustSize teardown forced a full
+        # relayout+repaint 4x/sec even with a completely stable row set.
+        if order == getattr(self, "_layout_order", None):
+            return
+        self._layout_order = order
+        while self._rows_layout.count():
+            self._rows_layout.takeAt(0)
+        for widget in entries:
+            self._rows_layout.addWidget(widget)
+            widget.show()
         # Re-fit the scroll host to the rebuilt content: the scroll area's own
         # lazy relayout reliably grows it but not shrinks it, which would leave
         # a stale scroll range after rows leave. (The window itself never
@@ -495,6 +521,8 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
 
     def _toggle_flash(self) -> None:
         """Flip the flash phase and restyle any expired rebuff prompts (#16)."""
+        if not self.isVisible():
+            return  # refresh() re-applies the phase on reopen
         self._flash_on = not self._flash_on
         for widget in self._row_widgets.values():
             widget.apply_flash(self._flash_on)
