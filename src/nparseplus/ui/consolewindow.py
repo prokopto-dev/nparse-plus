@@ -6,6 +6,7 @@ with timestamps, a pause checkbox, capped at MAX_LINES.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 
 from PySide6.QtGui import QFont
@@ -39,6 +40,11 @@ class ConsoleWindow(OverlayWindowBase):
         )
         self.setObjectName("ConsoleWindow")
 
+        # Lines received while hidden are buffered (bounded) instead of
+        # churning the hidden QPlainTextEdit document per log line; the
+        # backlog is flushed into the widget on show.
+        self._hidden_backlog: deque[str] = deque(maxlen=MAX_LINES)
+
         self._pause = QCheckBox("Pause", self)
         header = QHBoxLayout()
         header.addWidget(QLabel("Log console", self))
@@ -59,10 +65,33 @@ class ConsoleWindow(OverlayWindowBase):
         self.restore_visibility()
 
     def handle_event(self, event: object) -> None:
-        """Connect the Qt bridge's event_received signal here."""
-        if isinstance(event, LineEvent) and not self._pause.isChecked():
-            stamp = event.timestamp.strftime("%H:%M:%S")
-            self._text.appendPlainText(f"[{stamp}] {event.line}")
+        """Single-event slot (kept for tests/direct callers)."""
+        self.handle_events([event])
+
+    def handle_events(self, events: list) -> None:
+        """Bulk bridge slot (``events_batch``): one document append per
+        coalesced flush instead of one per log line."""
+        if self._pause.isChecked():
+            return
+        lines = [
+            f"[{event.timestamp.strftime('%H:%M:%S')}] {event.line}"
+            for event in events
+            if isinstance(event, LineEvent)
+        ]
+        if not lines:
+            return
+        if self.isVisible():
+            self._text.appendPlainText("\n".join(lines))
+        else:
+            self._hidden_backlog.extend(lines)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._hidden_backlog:
+            # One append; embedded newlines still split into one block per
+            # line, and the block cap keeps the scrollback bounded.
+            self._text.appendPlainText("\n".join(self._hidden_backlog))
+            self._hidden_backlog.clear()
 
     # -- test hooks ------------------------------------------------------------
 

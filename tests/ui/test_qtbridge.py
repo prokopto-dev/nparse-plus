@@ -44,3 +44,53 @@ def test_detach_stops_reemission(qtbot) -> None:
     qtbot.wait(50)
 
     assert received == []
+
+
+def _line(i: int) -> LineEvent:
+    return LineEvent(timestamp=NOW, line=f"line {i}", line_number=i)
+
+
+def test_burst_coalesces_into_one_flush_preserving_order(qtbot) -> None:
+    bus = EventBus()
+    bridge = QtEventBridge(bus)
+    received: list[object] = []
+    batches: list[list[object]] = []
+    bridge.event_received.connect(received.append)
+    bridge.events_batch.connect(batches.append)
+
+    events = [_line(i) for i in range(50)]
+    for event in events:
+        bus.publish(event)
+
+    # Everything published before the GUI thread woke rides ONE flush,
+    # batch first, then per-event re-emits in publish order.
+    with qtbot.waitSignal(bridge.events_batch, timeout=1000):
+        pass
+    assert batches == [events]
+    assert received == events
+
+
+def test_flush_now_delivers_buffered_events(qtbot) -> None:
+    bus = EventBus()
+    bridge = QtEventBridge(bus)
+    received: list[object] = []
+    bridge.event_received.connect(received.append)
+
+    events = [_line(i) for i in range(3)]
+    for event in events:
+        bus.publish(event)
+    assert received == []  # nothing delivered synchronously
+    bridge.flush_now()
+    assert received == events
+
+
+def test_detach_drains_the_tail(qtbot) -> None:
+    bus = EventBus()
+    bridge = QtEventBridge(bus)
+    received: list[object] = []
+    bridge.event_received.connect(received.append)
+
+    event = _line(1)
+    bus.publish(event)
+    bridge.detach()  # buffered but undelivered -> drained, not dropped
+    assert received == [event]

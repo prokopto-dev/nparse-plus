@@ -461,6 +461,20 @@ class UnifiedSettingsWindow(OverlayWindowBase):
 
     def handle_backend_event(self, event: object) -> None:
         """Bridge slot (GUI thread): keep the selected active profile current."""
+        # Early type filter: this slot sees the whole bus firehose (every log
+        # line), but only five event types matter — bail before doing any
+        # character-resolution work per event.
+        if not isinstance(
+            event,
+            (
+                AfterPlayerChangedEvent,
+                WhoPlayerEvent,
+                ClassDetectedEvent,
+                PlayerLevelDetectionEvent,
+                YouZonedEvent,
+            ),
+        ):
+            return
         if isinstance(event, AfterPlayerChangedEvent):
             self.refresh_characters()
             return
