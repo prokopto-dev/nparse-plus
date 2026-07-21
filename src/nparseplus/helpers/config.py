@@ -85,7 +85,13 @@ def verify_settings():
 
     # maps
     data["maps"] = data.get("maps", {})
+    data["maps"]["antialias"] = get_setting(data["maps"].get("antialias", True), True)
     data["maps"]["auto_follow"] = get_setting(data["maps"].get("auto_follow", True), True)
+    # Opt-in: cache each z-band's static line group as a device-space pixmap
+    # so auto-follow panning blits instead of re-stroking every segment.
+    # Needs on-hardware validation (memory vs. paint trade-off) before it can
+    # default on — hence False.
+    data["maps"]["band_cache"] = get_setting(data["maps"].get("band_cache", False), False)
     data["maps"]["closest_z_alpha"] = get_setting(
         data["maps"].get("closest_z_alpha", 20), 20, lambda x: 1 <= x <= 100
     )

@@ -11,6 +11,7 @@ from PySide6.QtCore import QCoreApplication, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
+    QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
@@ -55,7 +56,18 @@ class MapCanvas(QGraphicsView):
         self.setContentsMargins(0, 0, 0, 0)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Antialiased map lines are the single largest per-repaint cost on a
+        # 10k+-segment zone; the maps.antialias escape hatch trades edge
+        # smoothness for repaint speed.
+        if config.data["maps"].get("antialias", True):
+            self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Items here are well-behaved (no painter-state leakage), and skipping
+        # the per-item save/restore + antialias dirty-rect padding is a
+        # documented QGraphicsView fast path.
+        self.setOptimizationFlags(
+            QGraphicsView.OptimizationFlag.DontSavePainterState
+            | QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing
+        )
         self._scene = QGraphicsScene()
         self.setScene(self._scene)
         self._scale = config.data["maps"]["scale"]
@@ -182,7 +194,12 @@ class MapCanvas(QGraphicsView):
             self.map_loaded_callback()
 
     def _draw(self):
+        band_cache = config.data["maps"].get("band_cache", False)
         for z in self._data.keys():
+            if band_cache:
+                # Opt-in (maps.band_cache): rasterize the band's static lines
+                # once per zoom level so panning blits instead of re-stroking.
+                self._data[z]["paths"].setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
             self._scene.addItem(self._data[z]["paths"])
             for p in self._data[z]["poi"]:
                 self._scene.addItem(p.text)

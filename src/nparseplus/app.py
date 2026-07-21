@@ -227,6 +227,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         ch_lane_retention_s=settings.general.ch_lane_retention_seconds,
         state=overlay_state,
         on_save=save,
+        text_shadow=settings.general.overlay_text_shadow,
     )
     trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
 
