@@ -6,6 +6,43 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.14.0 (2026-07-21)
+
+### Documentation
+
+- Capture the tray menu screenshot and document the menu
+  ([`1260ff7`](https://github.com/prokopto-dev/nparse-plus/commit/1260ff71f6f5218a1bb8dce82cdf0e040b31fdfd))
+
+### Features
+
+- **maps**: Perf render settings — antialias toggle, band cache, view flags
+  ([`1363577`](https://github.com/prokopto-dev/nparse-plus/commit/1363577ebb97185c033459f51bb9bc335c072870))
+
+### Performance Improvements
+
+- **bridge**: Coalesce queued emissions and early-filter the fan-out
+  ([`d4f1b21`](https://github.com/prokopto-dev/nparse-plus/commit/d4f1b21a09755813e5e2371f60dd42ce49051bef))
+
+- **maps**: Coalesce location-fix repaints and gate static geometry
+  ([`af02041`](https://github.com/prokopto-dev/nparse-plus/commit/af0204188c6f6e0cfc65e21391c0c59d4f948048))
+
+- **maps**: Parse zone files off the GUI thread
+  ([`f524777`](https://github.com/prokopto-dev/nparse-plus/commit/f5247776223ad9ce519151f7f01eaca551473fd2))
+
+- **ui**: Gate polling-window refreshes on visibility and real change
+  ([`ec31aa7`](https://github.com/prokopto-dev/nparse-plus/commit/ec31aa720b8bec6c05957b24a1cc82a992bd0188))
+
+### Refactoring
+
+- Split tray menu construction from its modal exec
+  ([`9eb8b98`](https://github.com/prokopto-dev/nparse-plus/commit/9eb8b9839fbcf53148f79b7685570b5c282bab41))
+
+### Testing
+
+- Raid-combat stress replay, bridge flood test, opt-in benchmarks
+  ([`c456b82`](https://github.com/prokopto-dev/nparse-plus/commit/c456b8294ecf40b2243f30d5c11f4139b1ec1f3f))
+
+
 ## v1.13.0 (2026-07-20)
 
 ### Continuous Integration
