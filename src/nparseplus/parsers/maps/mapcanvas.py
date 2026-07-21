@@ -1,12 +1,13 @@
 # testing
 import math
 import os
+import threading
 import traceback
 from datetime import datetime, timedelta
 
 import colorhash
 import pathvalidate
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QCoreApplication, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
@@ -82,49 +83,103 @@ class MapCanvas(QGraphicsView):
         # Persistent user markers (nparse #10 / eqtool #190): app.py injects a
         # config.settings.MapMarkerStore; None keeps markers session-only.
         self.marker_store = None
+        # Background zone loading: parse runs on a worker thread, the scene
+        # is built on delivery (queued signal); the generation token discards
+        # results of superseded loads on rapid zone changes.
+        self._load_generation = 0
+        self._parsed_ready.connect(self._on_parsed_ready, Qt.ConnectionType.QueuedConnection)
+        # last_zone writes are debounced off the load path (the synchronous
+        # legacy config.save was part of the zoning hitch).
+        self._config_save_timer = QTimer(self)
+        self._config_save_timer.setSingleShot(True)
+        self._config_save_timer.setInterval(1000)
+        self._config_save_timer.timeout.connect(config.save)
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._flush_config_save)
+
+    # (parsed, generation, keep_loc) from the map-loader thread.
+    _parsed_ready = Signal(object, int, bool)
 
     def load_map(self, map_name, keep_loc=False):
+        """Synchronous zone load (startup, menus, tests)."""
         self.clear_flash()
-        old_player_data = None
+        self._load_generation += 1  # supersede any in-flight background load
         try:
-            try:
-                old_player_data = self._data.players["__you__"]
-            except:
-                pass  # no old location for player
             map_data = MapData(str(map_name))
-
         except:
             traceback.print_exc()
-
         else:
-            self._data = map_data
-            self._scene.clear()
-            self._tracking_circles = {}  # items died with the scene
-            self._z_index = 0
-            self._pen_state = None  # force pen-width refresh for the new map
-            self._geometry_state = None  # force POI/spawn geometry pass too
-            self._draw()
-            rect = self._scene.sceneRect()
-            rect.adjust(
-                -self._data.geometry.width * 2,
-                -self._data.geometry.height * 2,
-                self._data.geometry.width * 2,
-                self._data.geometry.height * 2,
-            )
-            self.setSceneRect(rect)
-            self.update()
-            self.update_()
+            self._install_map(map_data, keep_loc)
 
-            self.centerOn(self._data.geometry.center_x, self._data.geometry.center_y)
-            self._mouse_location = MouseLocation()
-            self._scene.addItem(self._mouse_location)
-            config.data["maps"]["last_zone"] = self._data.zone
+    def load_map_async(self, map_name, keep_loc=False):
+        """Background zone load: file parse off the GUI thread (the zoning
+        freeze), scene build on delivery. The previous map stays visible and
+        interactive until the new one is ready."""
+        self.clear_flash()
+        self._load_generation += 1
+        generation = self._load_generation
+        zone = str(map_name)
+
+        def work():
+            try:
+                parsed = MapData.parse(zone)
+            except:
+                traceback.print_exc()
+                return
+            self._parsed_ready.emit(parsed, generation, keep_loc)
+
+        threading.Thread(target=work, name="map-loader", daemon=True).start()
+
+    def _on_parsed_ready(self, parsed, generation, keep_loc):
+        if generation != self._load_generation:
+            return  # superseded by a newer load (or a sync load)
+        try:
+            map_data = MapData.from_parsed(parsed)
+        except:
+            traceback.print_exc()
+            return
+        self._install_map(map_data, keep_loc)
+
+    def _flush_config_save(self):
+        if self._config_save_timer.isActive():
+            self._config_save_timer.stop()
             config.save()
-            self.restore_markers()
-            if keep_loc and old_player_data:
-                self.add_player("__you__", old_player_data.timestamp, old_player_data.location)
-            if self.map_loaded_callback:
-                self.map_loaded_callback()
+
+    def _install_map(self, map_data, keep_loc):
+        old_player_data = None
+        try:
+            old_player_data = self._data.players["__you__"]
+        except:
+            pass  # no old location for player
+        self._data = map_data
+        self._scene.clear()
+        self._tracking_circles = {}  # items died with the scene
+        self._z_index = 0
+        self._pen_state = None  # force pen-width refresh for the new map
+        self._geometry_state = None  # force POI/spawn geometry pass too
+        self._draw()
+        rect = self._scene.sceneRect()
+        rect.adjust(
+            -self._data.geometry.width * 2,
+            -self._data.geometry.height * 2,
+            self._data.geometry.width * 2,
+            self._data.geometry.height * 2,
+        )
+        self.setSceneRect(rect)
+        self.update()
+        self.update_()
+
+        self.centerOn(self._data.geometry.center_x, self._data.geometry.center_y)
+        self._mouse_location = MouseLocation()
+        self._scene.addItem(self._mouse_location)
+        config.data["maps"]["last_zone"] = self._data.zone
+        self._config_save_timer.start()
+        self.restore_markers()
+        if keep_loc and old_player_data:
+            self.add_player("__you__", old_player_data.timestamp, old_player_data.location)
+        if self.map_loaded_callback:
+            self.map_loaded_callback()
 
     def _draw(self):
         for z in self._data.keys():
