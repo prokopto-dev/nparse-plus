@@ -146,26 +146,36 @@ class DpsMeterWindow(OverlayWindowBase):
         self.setLayout(outer)
 
         self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self.refresh)
+        self._refresh_timer.timeout.connect(self._on_refresh_tick)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
         self.restore_visibility()
 
     # -- rendering -------------------------------------------------------------
 
+    def _on_refresh_tick(self) -> None:
+        """Poll-timer entry: no render work while hidden (showEvent re-renders
+        on reopen); refresh() itself stays unguarded for tests/callers."""
+        if self.isVisible():
+            self.refresh()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.refresh()
+
     def refresh(self) -> None:
         """Re-render from ``fights.snapshot()`` (rows are never mutated)."""
         now = datetime.now()
         rows = self._backend.fights.snapshot(now)
+        colors = theme.palette()
 
         # Preserve snapshot order: fights in start order, attackers by damage.
         grouped: dict[str, list[FightRow]] = {}
         for row in rows:
             grouped.setdefault(row.target_name, []).append(row)
 
-        while self._rows_layout.count():
-            self._rows_layout.takeAt(0)
-
+        entries: list[QWidget] = []
+        order: list[object] = []
         used_headers: set[str] = set()
         used_rows: set[tuple[str, str]] = set()
         for target, fight_rows in grouped.items():
@@ -178,11 +188,14 @@ class DpsMeterWindow(OverlayWindowBase):
                 self._headers[target] = header
             suffix = "  (slain)" if first.is_dead else ""
             header.setText(f"{target} — {first.target_total_damage}{suffix}")
-            colors = theme.palette()
-            bg = colors.dps_dead_header if first.is_dead else colors.dps_live_header
-            header.setStyleSheet(f"background-color: {bg};")
-            self._rows_layout.addWidget(header)
-            header.show()
+            # Restyle only on live/slain transitions — a per-tick setStyleSheet
+            # invalidates the header's style cache for no visual change.
+            if getattr(header, "_styled_dead", None) != first.is_dead:
+                header._styled_dead = first.is_dead
+                bg = colors.dps_dead_header if first.is_dead else colors.dps_live_header
+                header.setStyleSheet(f"background-color: {bg};")
+            entries.append(header)
+            order.append(("H", target))
             used_headers.add(target)
             for row in fight_rows:
                 key = (target, row.attacker_name.casefold())
@@ -191,8 +204,8 @@ class DpsMeterWindow(OverlayWindowBase):
                     widget = _AttackerRow(self._container)
                     self._rows[key] = widget
                 widget.update_row(row)
-                self._rows_layout.addWidget(widget)
-                widget.show()
+                entries.append(widget)
+                order.append(("R", key))
                 used_rows.add(key)
 
         for target in [t for t in self._headers if t not in used_headers]:
@@ -201,6 +214,17 @@ class DpsMeterWindow(OverlayWindowBase):
             self._rows.pop(key).deleteLater()
 
         self._footer.setText(self._format_summary(self._backend.fights.session_summary()))
+
+        # Only rebuild the layout when the widget sequence changed (same
+        # dirty-check as the spell window — skip the per-tick relayout).
+        if order == getattr(self, "_layout_order", None):
+            return
+        self._layout_order = order
+        while self._rows_layout.count():
+            self._rows_layout.takeAt(0)
+        for widget in entries:
+            self._rows_layout.addWidget(widget)
+            widget.show()
 
     @staticmethod
     def _format_summary(summary: SessionSummary) -> str:
