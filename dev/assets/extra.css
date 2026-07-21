@@ -1,0 +1,18 @@
+/* Placeholder shown by tools/mkdocs_hooks.py for screenshots that have not
+   been captured yet (see docs/dev-notes/screenshot-checklist.md). */
+.screenshot-pending {
+  border: 2px dashed var(--md-default-fg-color--lighter);
+  border-radius: 0.2rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-code-bg-color);
+  margin: 1em 0;
+}
+
+/* Screenshots get a subtle border so light window chrome doesn't bleed into
+   the page background. */
+.md-typeset img[src*="assets/screenshots/"] {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+}
