@@ -29,6 +29,7 @@ from nparseplus.parsers.maps.mapclasses import (
     SpawnPoint,
     UserWaypoint,
     WayPoint,
+    map_font_pct,
 )
 from nparseplus.parsers.maps.mapdata import ICON_MAP, MAP_FILES_PATHLIB, MapData
 from nparseplus.parsers.maps.zfade import fade_opacity
@@ -36,6 +37,9 @@ from nparseplus.parsers.maps.zfade import fade_opacity
 
 class MapCanvas(QGraphicsView):
     """Map Widget for Everquest Map Files."""
+
+    # One repaint per interval no matter how fast location fixes arrive.
+    RENDER_COALESCE_MS = 33
 
     def __init__(self):
 
@@ -64,6 +68,15 @@ class MapCanvas(QGraphicsView):
         self._flash_timer = QTimer(self)
         self._flash_timer.setInterval(100)
         self._flash_timer.timeout.connect(self._flash_pulse)
+        # Coalesced rendering (deliberate divergence from EQTool, which
+        # repaints per location fix): bursts of location/remote updates are
+        # collapsed onto one ~30 fps repaint. State mutations stay synchronous;
+        # only the full-scene update_()/center() pass is deferred.
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.setInterval(self.RENDER_COALESCE_MS)
+        self._render_timer.timeout.connect(self._do_render)
+        self._center_pending = False
         self._tracking_circles = {}  # name -> QGraphicsEllipseItem (true radius)
         self.map_loaded_callback = None  # set by the Maps window
         # Persistent user markers (nparse #10 / eqtool #190): app.py injects a
@@ -89,6 +102,7 @@ class MapCanvas(QGraphicsView):
             self._tracking_circles = {}  # items died with the scene
             self._z_index = 0
             self._pen_state = None  # force pen-width refresh for the new map
+            self._geometry_state = None  # force POI/spawn geometry pass too
             self._draw()
             rect = self._scene.sceneRect()
             rect.adjust(
@@ -170,6 +184,14 @@ class MapCanvas(QGraphicsView):
         update_pens = getattr(self, "_pen_state", None) != pen_state
         self._pen_state = pen_state
 
+        # POI/spawn/waypoint geometry (boundingRect + setScale + setPos) only
+        # depends on the view scale and the label font setting — skip that
+        # whole pass on a plain player-location update. Adding items or
+        # loading a map resets _geometry_state to force a pass.
+        geometry_state = (self._scale, map_font_pct())
+        update_geometry = getattr(self, "_geometry_state", None) != geometry_state
+        self._geometry_state = geometry_state
+
         for band_key in self._data.keys():
             band = self._data[band_key]
             z_group = band["z_group"]
@@ -219,7 +241,8 @@ class MapCanvas(QGraphicsView):
 
             # points of interest (per-item opacity by their own z)
             for p in band["poi"]:
-                p.update_(min(5, self.to_scale()))
+                if update_geometry:
+                    p.update_(min(5, self.to_scale()))
                 if not config.data["maps"]["show_poi"]:
                     p.text.setOpacity(0)
                 elif use_z_layers:
@@ -270,7 +293,8 @@ class MapCanvas(QGraphicsView):
 
         # user waypoints
         for waypoint in self._data.waypoints.values():
-            waypoint.update_(self.to_scale())
+            if update_geometry:
+                waypoint.update_(self.to_scale())
             if use_z_layers:
                 if waypoint.z_level == current_z_level:
                     waypoint.setOpacity(current_alpha)
@@ -281,8 +305,9 @@ class MapCanvas(QGraphicsView):
 
         # spawns
         for spawn in self._data.spawns:
-            spawn.setScale(self.to_scale())
-            spawn.realign(self.to_scale())
+            if update_geometry:
+                spawn.setScale(self.to_scale())
+                spawn.realign(self.to_scale())
             if use_z_layers:
                 spawn.setOpacity(
                     current_alpha if (spawn.location.z == current_z_level) else other_alpha
@@ -308,6 +333,26 @@ class MapCanvas(QGraphicsView):
 
     def to_scale(self, float_value=1.0):
         return float_value / self._scale
+
+    def _schedule_render(self, center=False):
+        """Request a coalesced update_() (and optional auto-follow center)."""
+        if center:
+            self._center_pending = True
+        if not self._render_timer.isActive():
+            self._render_timer.start()
+
+    def _do_render(self):
+        center = self._center_pending
+        self._center_pending = False
+        self.update_()
+        if center:
+            self.center()
+
+    def flush_pending_render(self):
+        """Run any scheduled render now (tests and teardown)."""
+        if self._render_timer.isActive():
+            self._render_timer.stop()
+            self._do_render()
 
     def center(self):
         player = None
@@ -373,7 +418,7 @@ class MapCanvas(QGraphicsView):
         for name in stale:
             self.remove_player(name)
         if stale:
-            self.update_()
+            self._schedule_render()
 
     def add_player(self, name, timestamp, location, tracking_distance=None):
         if name not in self._data.players:
@@ -393,13 +438,16 @@ class MapCanvas(QGraphicsView):
                 self._data.get_closest_z_group(self._data.players["__you__"].location.z)
             )
 
-        self.update_()
+        # Move just this marker immediately (single cheap item) so a new dot
+        # never flashes at the origin; the full band/POI/opacity pass and the
+        # auto-follow centerOn (the expensive full-viewport repaint) coalesce
+        # onto the render timer.
+        self._data.players[name].update_(self.to_scale())
 
         if self._data.way_point and name == "__you__":
             self._data.way_point.update_(self.to_scale(), location=location)
 
-        if name == "__you__" and config.data["maps"]["auto_follow"]:
-            self.center()
+        self._schedule_render(center=(name == "__you__" and config.data["maps"]["auto_follow"]))
 
     def remove_waypoint(self, name):
         waypoint = self._data.waypoints.pop(name)
@@ -419,7 +467,8 @@ class MapCanvas(QGraphicsView):
             self._data.waypoints[name].location.z
         )
 
-        self.update_()
+        self._geometry_state = None  # new item needs a geometry pass
+        self._schedule_render()
 
     # Persistent user markers (nparse #10 / eqtool #190) --------------------
 
@@ -500,7 +549,7 @@ class MapCanvas(QGraphicsView):
                 icon=saved.icon,
                 persist=False,
             )
-        self.update_()
+        self._schedule_render()
 
     def _add_spawn_item(self, location, seconds):
         spawn = SpawnPoint(location=location, length=seconds)
@@ -508,6 +557,7 @@ class MapCanvas(QGraphicsView):
         spawn.on_state_change = self.persist_markers
         self._scene.addItem(spawn)
         self._data.spawns.append(spawn)
+        self._geometry_state = None  # new item needs a geometry pass
         return spawn
 
     def create_spawn_point(self, x, y, seconds):
@@ -571,6 +621,7 @@ class MapCanvas(QGraphicsView):
         waypoint.icon_key = icon
         self._data.waypoints[key] = waypoint
         self._scene.addItem(waypoint)
+        self._geometry_state = None  # new item needs a geometry pass
         waypoint.z_level = self._data.get_closest_z_group(location.z)
         persistent_keys = [
             k for k, w in self._data.waypoints.items() if getattr(w, "persistent", False)

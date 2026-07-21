@@ -1,4 +1,5 @@
 import datetime
+from functools import cache
 
 import colorhash
 from PySide6.QtCore import QPointF, Qt, QTimer
@@ -26,6 +27,13 @@ def map_font_pct() -> int:
 def scaled_font_size(base: int) -> int:
     """HTML <font size> (1-7) scaled by the map label setting, clamped."""
     return max(1, min(7, round(base * map_font_pct() / 100)))
+
+
+@cache
+def _load_pixmap(path: str) -> QPixmap:
+    """Shared, load-once marker pixmaps (QPixmap is implicitly shared) —
+    spawn/waypoint icons used to be re-read from disk per item creation."""
+    return QPixmap(path)
 
 
 # Marker geometry in group units (the group is counter-scaled to constant
@@ -169,13 +177,19 @@ class Player(QGraphicsItemGroup):
             self.directional.setVisible(True)
         self.setScale(scale)
         self.setPos(self.location.x, self.location.y)
-        self.nametag.setHtml(
-            "<font color='{}' size='{}'>{}</font>".format(
-                self.color.hex if self.name != "__you__" else YOU_COLOR.name(),
-                scaled_font_size(5),
-                self.name if self.name != "__you__" else "You",
+        # The nametag text only depends on the name (fixed) and the label
+        # font setting — rebuilding the rich-text document per location fix
+        # was measurable with many shared dots, so skip when unchanged.
+        nametag_key = map_font_pct()
+        if getattr(self, "_nametag_key", None) != nametag_key:
+            self._nametag_key = nametag_key
+            self.nametag.setHtml(
+                "<font color='{}' size='{}'>{}</font>".format(
+                    self.color.hex if self.name != "__you__" else YOU_COLOR.name(),
+                    scaled_font_size(5),
+                    self.name if self.name != "__you__" else "You",
+                )
             )
-        )
 
 
 class SpawnPoint(QGraphicsItemGroup):
@@ -187,7 +201,7 @@ class SpawnPoint(QGraphicsItemGroup):
         self.__dict__.update(**kwargs)
         self.setToolTip(self.name)
 
-        pixmap = QGraphicsPixmapItem(QPixmap("data/maps/spawn.png"))
+        pixmap = QGraphicsPixmapItem(_load_pixmap("data/maps/spawn.png"))
         text = QGraphicsTextItem("0")
 
         self.addToGroup(pixmap)
@@ -266,7 +280,7 @@ class UserWaypoint(QGraphicsItemGroup):
         self.z_level = 0
         self.color = colorhash.ColorHash(self.name)
 
-        self.pixmap = QGraphicsPixmapItem(QPixmap(icon))
+        self.pixmap = QGraphicsPixmapItem(_load_pixmap(icon))
         self.pixmap.setOffset(-10, -10)
         self.text = QGraphicsTextItem()
         self.text.setHtml(
@@ -291,7 +305,7 @@ class WayPoint:
         self.location = MapPoint()
         self.__dict__.update(kwargs)
 
-        self.pixmap = QGraphicsPixmapItem(QPixmap("data/maps/waypoint.png"))
+        self.pixmap = QGraphicsPixmapItem(_load_pixmap("data/maps/waypoint.png"))
         self.pixmap.setOffset(-10, -20)
 
         self.line = QGraphicsLineItem(0.0, 0.0, self.location.x, self.location.y)
