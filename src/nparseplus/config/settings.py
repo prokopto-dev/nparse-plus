@@ -316,6 +316,22 @@ class PlayerInfo(BaseModel):
     respawn_timers: list[SavedTimer] = Field(default_factory=list)
 
 
+class PluginEntry(BaseModel):
+    """Per-plugin consent + enablement, keyed by the plugin's meta.id.
+
+    ``approved`` records that the first-load consent dialog was answered
+    (either way) so the user is never re-asked; ``enabled`` gates activation.
+    """
+
+    enabled: bool = True
+    approved: bool = False
+    last_version: str = ""
+
+
+class PluginsSettings(BaseModel):
+    entries: dict[str, PluginEntry] = Field(default_factory=dict)
+
+
 class Settings(BaseModel):
     """Root settings document persisted to settings.json."""
 
@@ -326,6 +342,7 @@ class Settings(BaseModel):
     spellwindow: SpellWindowSettings = Field(default_factory=SpellWindowSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
+    plugins: PluginsSettings = Field(default_factory=PluginsSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
     window_layouts: dict[str, WindowLayoutPreset] = Field(default_factory=dict)
     # Persisted map markers per zone short key (nparse #10 / eqtool #190).

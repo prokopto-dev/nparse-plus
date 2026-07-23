@@ -33,6 +33,23 @@ def ensure_config_dir() -> Path:
     return path
 
 
+def plugins_dir() -> Path:
+    """Directory scanned for user-installed plugins (files or packages)."""
+    return config_dir() / "plugins"
+
+
+def ensure_plugins_dir() -> Path:
+    """Create the plugins directory (and parents) if needed; return it."""
+    path = plugins_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def plugin_data_dir(plugin_id: str) -> Path:
+    """Per-plugin private data directory (storage.json + free-form files)."""
+    return config_dir() / "plugin-data" / plugin_id
+
+
 def log_dir() -> Path:
     """Per-user log directory for nParse+ (crash log lives here)."""
     return Path(user_log_dir(APP_NAME))

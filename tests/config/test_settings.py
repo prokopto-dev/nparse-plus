@@ -9,6 +9,7 @@ from nparseplus.config.settings import (
     DebouncedSaver,
     OverlayRegion,
     PlayerInfo,
+    PluginEntry,
     Settings,
     WindowLayoutPreset,
     WindowState,
@@ -240,3 +241,16 @@ def test_debounced_saver_thread_safety() -> None:
     time.sleep(0.1)
     # 400 requests must coalesce into a handful of saves at most (usually 1).
     assert 1 <= len(calls) <= 5
+
+
+def test_plugins_entries_roundtrip(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    original = Settings()
+    original.plugins.entries["merchant-prices"] = PluginEntry(
+        enabled=True, approved=True, last_version="1.2.0"
+    )
+    original.plugins.entries["dkp"] = PluginEntry(enabled=False, approved=True)
+    save_settings(original, path)
+    loaded = load_settings(path)
+    assert loaded.plugins.entries == original.plugins.entries
+    assert loaded.plugins.entries["dkp"].enabled is False
