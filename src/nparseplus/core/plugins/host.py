@@ -22,7 +22,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from nparseplus.config.paths import plugin_data_dir, plugins_dir
 from nparseplus.config.settings import PluginEntry, Settings
@@ -112,7 +112,7 @@ class PluginHost:
     def _load_one(self, source: PluginSource, seen_ids: set[str]) -> LoadedPlugin:
         try:
             factory = source.load()
-            plugin = factory()
+            plugin = cast("NParsePlugin", factory())
         except Exception as exc:
             logger.exception("plugin %s failed to load", source.location)
             return LoadedPlugin(source=source, status="error", error=repr(exc))

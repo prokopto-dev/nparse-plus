@@ -26,7 +26,20 @@ a = Analysis(  # noqa: F821
     [str(ROOT / "src" / "nparseplus" / "__main__.py")],
     pathex=[str(ROOT / "src")],
     datas=datas,
-    hiddenimports=[],
+    # Plugins import these at runtime; app code paths PyInstaller traces
+    # don't necessarily touch them, so declare them explicitly.
+    hiddenimports=[
+        "nparseplus_sdk",
+        "nparseplus_sdk.compat",
+        "nparseplus_sdk.events",
+        "nparseplus_sdk.loading",
+        "nparseplus_sdk.plugin",
+        "nparseplus_sdk.testing",
+        "nparseplus_sdk.timers",
+        "nparseplus_sdk.ui",
+        "nparseplus_sdk.validate",
+        "nparseplus.ui.pluginwindow",
+    ],
     excludes=[
         "PySide6.Qt3DAnimation",
         "PySide6.Qt3DCore",

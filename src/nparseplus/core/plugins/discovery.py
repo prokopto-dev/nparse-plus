@@ -45,13 +45,17 @@ def discover_dir_plugins(plugins_dir: Path) -> list[PluginSource]:
         is_package = path.is_dir() and (path / "__init__.py").is_file()
         if not (is_module or is_package):
             continue
+
+        def _load(p: Path = path) -> Callable[[], object]:
+            # Default arg binds the loop variable; import only happens here.
+            return load_plugin_factory(p)
+
         sources.append(
             PluginSource(
                 origin="dir",
                 name=path.stem if is_module else path.name,
                 location=str(path),
-                # Bind the loop variable now; import happens only when called.
-                load=(lambda p=path: load_plugin_factory(p)),
+                load=_load,
             )
         )
     return sources
