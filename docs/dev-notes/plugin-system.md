@@ -59,6 +59,32 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     thread, uninstall-to-`trash/`. No hot-load in v1 — installs/toggles
     apply on restart (`PluginHost.reload_plugin` is future work).
 
+## Ecosystem increment (same branch, post-v1)
+
+11. **Registry = curated static index** (`core/plugins/registry.py`):
+    pydantic schema (schema_version gate, https-only URLs, validated
+    sha256), injectable fetch, `release_compat` reusing the SDK handshake,
+    `update_available` via packaging.version. Default URL points at the
+    planned `prokopto-dev/nparseplus-plugins` GitHub Pages; overridable via
+    `plugins.registry_url`; the Browse dialog degrades to "registry
+    unavailable" until the repo exists. Spec: docs/plugins/registry.md.
+12. **sha256 pinning is the trust boundary**: `expected_sha256` on all
+    install paths, refused before extraction/import; InstallResult and
+    PluginEntry carry sha256 + source_url provenance
+    (`PluginHost.record_install`, consent semantics untouched).
+13. **Browse UI** (`RegistryBrowserDialog` in ui/pluginmanager.py): worker
+    -thread fetch, compat-filtered rows, pinned-hash installs through the
+    page's existing worker; passive "update available (vX)" decoration on
+    the main table once an index was fetched this session (no startup
+    auto-fetch yet).
+14. **Repo template** (`templates/plugin-repo/`): complete content of the
+    future `nparseplus-plugin-template` repo (TEMPLATE_SETUP.md documents
+    the split); release workflow enforces tag == meta.version and emits
+    the registry entry JSON + sha256; guard tests keep the in-repo copy
+    green until the split.
+15. **Versioning policy documented** (docs/plugins/versioning.md): SDK 1.x
+    additive-only; three-coordinate model (app / SDK / plugin).
+
 ## Follow-ups (open as issues)
 
 - Extract `sdk/` to its own repo + PyPI trusted publishing for both

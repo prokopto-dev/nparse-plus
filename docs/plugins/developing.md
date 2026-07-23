@@ -174,6 +174,19 @@ my-plugin = "my_plugin:create_plugin"
 The frozen app cannot see pip-installed packages — the plugins directory is
 the mechanism that works for everyone, so ship the zip either way.
 
+## Starting from the repo template
+
+The fastest path to a publishable plugin is the repository template
+(currently at
+[`templates/plugin-repo/`](https://github.com/prokopto-dev/nparse-plus/tree/master/templates/plugin-repo)
+in the app repo; moving to its own "Use this template" repository). It
+ships a working starter plugin, unit tests on `FakePluginContext`, a CI
+workflow that runs `nparseplus-plugin validate` on every push, and a
+release workflow that — on a `vX.Y.Z` tag matching your `meta.version` —
+builds the installable zip, computes its sha256, and publishes a GitHub
+release whose body contains the ready-made [registry](registry.md) entry
+JSON. See also the [versioning rules](versioning.md).
+
 ## Learn from the examples
 
 [`examples/plugins/`](https://github.com/prokopto-dev/nparse-plus/tree/master/examples/plugins)
