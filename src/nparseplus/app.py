@@ -11,7 +11,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +31,11 @@ from nparseplus.config.settings import (
 from nparseplus.core.events import WindowCommandEvent
 from nparseplus.core.player import tracking_distance
 from nparseplus.ui import theme
+
+logger = logging.getLogger(__name__)
+
+# Kill switch: skip all plugin loading (crash-recovery safe mode).
+NO_PLUGINS_ENV_VAR = "NPARSEPLUS_NO_PLUGINS"
 
 
 class _OverlayPositioner:
@@ -48,6 +55,7 @@ class _OverlayPositioner:
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from nparseplus.core.plugins.host import LoadedPlugin, PluginHost
     from nparseplus.helpers.application import NomnsParse
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
@@ -126,6 +134,50 @@ def _ensure_data_cwd() -> None:
             return
 
 
+def _plugin_command_key(loaded: LoadedPlugin, spec_key: str, command_key: str | None) -> str:
+    """In-game toggle_<key> name: declared or <plugin_id>_<key>, \\w-sanitized."""
+    assert loaded.meta is not None
+    raw = command_key or f"{loaded.meta.id}_{spec_key}"
+    return re.sub(r"\W", "_", raw)
+
+
+def _materialize_plugin_windows(
+    plugin_host: PluginHost,
+    settings: Settings,
+    save: Callable[[], None],
+    bridge: QtEventBridge,
+) -> list[tuple[LoadedPlugin, object, object]]:
+    """Build each active plugin's declared windows; every factory is guarded."""
+    from nparseplus_sdk.plugin import PluginWindowContext
+
+    built: list[tuple[LoadedPlugin, object, object]] = []
+    for loaded, spec in plugin_host.window_specs():
+        assert loaded.meta is not None
+        window_key = f"plugin.{loaded.meta.id}.{spec.key}"
+        wctx = PluginWindowContext(
+            settings=settings,
+            window_key=window_key,
+            title=spec.title,
+            default_geometry=spec.default_geometry,
+            on_save=save,
+            bridge=bridge,
+        )
+        try:
+            widget = spec.factory(wctx)
+        except Exception:
+            logger.exception(
+                "plugin %s window %r factory failed; window skipped",
+                loaded.meta.id,
+                spec.key,
+            )
+            continue
+        if widget is None:
+            logger.warning("plugin %s window %r factory returned None", loaded.meta.id, spec.key)
+            continue
+        built.append((loaded, spec, widget))
+    return built
+
+
 def _apply_window_command(event: object, window_handles: dict[str, object]) -> None:
     """show_/hide_/toggle_<window> typed in game (core WindowChatCommands).
 
@@ -156,6 +208,7 @@ class AppContext:
     window_layouts: WindowLayoutManager
     settings: Settings
     save: Callable[[], None]
+    plugin_host: PluginHost | None = None
 
 
 def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext:
@@ -175,6 +228,22 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # this (thread-safe, coalesced); the GUI's save() below writes directly.
     saver = DebouncedSaver(_save_settings_now)
     backend = build_backend(settings, request_save=saver.request_save)
+
+    # Plugin discovery is Qt-free and happens before any plugin can touch a
+    # live thread; activation waits until Qt (and the consent dialogs) exist.
+    plugin_host = None
+    if os.environ.get(NO_PLUGINS_ENV_VAR) != "1":
+        from nparseplus import __version__
+        from nparseplus.core.plugins.host import PluginHost
+
+        plugin_host = PluginHost(settings, backend, __version__, request_save=saver.request_save)
+        try:
+            plugin_host.discover_and_load()
+        except Exception:
+            # Per-plugin failures are already isolated; this guards the sweep
+            # itself — plugins must never be able to stop the app starting.
+            logger.exception("plugin discovery failed; continuing without plugins")
+            plugin_host = None
 
     # Legacy imports come last: helpers.application loads nparse.config.json
     # from the CWD at import time and pulls in Qt.
@@ -244,6 +313,38 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         "console": console_window,
         "triggereditor": trigger_editor,
     }
+
+    # Plugins: consent for never-seen ones, then activate — the driver thread
+    # does not exist yet, so plugin subscriptions/parsers/ticks are race-free.
+    plugin_windows_by_key: dict[str, object] = {}  # "plugin.<id>.<key>" -> widget
+    plugin_command_handles: dict[str, object] = {}  # chat toggle_<name> -> widget
+    plugin_tray: dict[str, object] = {}  # tray label -> widget
+    extra_pages: list[object] = []
+    if plugin_host is not None:
+        from nparseplus.ui.pluginconsent import run_consent_prompts
+
+        run_consent_prompts(plugin_host)
+        plugin_host.activate_enabled()
+        for loaded, spec, widget in _materialize_plugin_windows(
+            plugin_host, settings, save, bridge
+        ):
+            assert loaded.meta is not None
+            plugin_windows_by_key[f"plugin.{loaded.meta.id}.{spec.key}"] = widget
+            command_key = _plugin_command_key(loaded, spec.key, spec.command_key)
+            if command_key in window_handles or command_key in plugin_command_handles:
+                logger.warning(
+                    "plugin %s window command %r collides; chat toggle skipped",
+                    loaded.meta.id,
+                    command_key,
+                )
+            else:
+                plugin_command_handles[command_key] = widget
+            label = spec.title
+            if label in plugin_tray:
+                label = f"{spec.title} ({loaded.meta.id})"
+            plugin_tray[label] = widget
+        extra_pages.extend(spec for _loaded, spec in plugin_host.page_specs())
+
     settings_window = UnifiedSettingsWindow(
         settings,
         on_save=save,
@@ -256,12 +357,17 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         window_handles=window_handles,
         backend_player=backend.player,
         zones=backend.zones,
+        extra_pages=extra_pages,
     )
     layout_windows = {
         **window_handles,
         "settings": settings_window,
         "overlay": event_overlay,
+        **plugin_windows_by_key,
     }
+    # Chat commands reach plugin windows too; merged after layout_windows so
+    # each plugin window joins layouts under its one canonical key.
+    window_handles.update(plugin_command_handles)
     window_layouts = WindowLayoutManager(
         settings,
         {key: window for key, window in layout_windows.items() if window is not None},
@@ -298,11 +404,16 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Mob Info": mob_info_window,
             "Console": console_window,
             "Trigger Editor": trigger_editor,
+            **plugin_tray,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
         window_layouts=window_layouts,
     )
     app.aboutToQuit.connect(backend.stop)
+    if plugin_host is not None:
+        # After backend.stop: the driver thread has joined, so deactivate
+        # runs with no concurrent ticks.
+        app.aboutToQuit.connect(plugin_host.shutdown)
     app.aboutToQuit.connect(saver.flush)
 
     # Persist the settled settings immediately: on a fresh install nothing
@@ -324,6 +435,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         window_layouts=window_layouts,
         settings=settings,
         save=save,
+        plugin_host=plugin_host,
     )
 
 

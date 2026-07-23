@@ -272,6 +272,7 @@ class NomnsParse(QApplication):
 
         menu.addSeparator()
         # (the unified "Settings" window arrives via _backend_windows)
+        open_plugins_action = menu.addAction("Open Plugins Folder")
         discord_conf_action = menu.addAction("Configure Discord")
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
@@ -282,6 +283,7 @@ class NomnsParse(QApplication):
             "get_eq_dir": get_eq_dir_action,
             "spell_timers": spell_timers_action,
             "backend_windows": backend_window_actions,
+            "open_plugins": open_plugins_action,
             "discord_conf": discord_conf_action,
             "quit": quit_action,
             "parser_toggles": parser_toggles,
@@ -322,6 +324,14 @@ class NomnsParse(QApplication):
 
         elif action in actions["backend_windows"]:
             actions["backend_windows"][action].toggle()
+
+        elif action == actions["open_plugins"]:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            from nparseplus.config.paths import ensure_plugins_dir
+
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(ensure_plugins_dir())))
 
         elif action == actions["discord_conf"]:
             self._parsers_dict["discord"].show_settings()
