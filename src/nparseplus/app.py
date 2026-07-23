@@ -321,8 +321,11 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     plugin_tray: dict[str, object] = {}  # tray label -> widget
     extra_pages: list[object] = []
     if plugin_host is not None:
+        from nparseplus import __version__
         from nparseplus.ui.pluginconsent import run_consent_prompts
+        from nparseplus.ui.pluginmanager import plugin_manager_page_spec
 
+        extra_pages.append(plugin_manager_page_spec(plugin_host, __version__))
         run_consent_prompts(plugin_host)
         plugin_host.activate_enabled()
         for loaded, spec, widget in _materialize_plugin_windows(

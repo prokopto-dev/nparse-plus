@@ -168,6 +168,10 @@ class PluginHost:
             self._save()
             return
 
+    def entry_for(self, plugin_id: str) -> PluginEntry | None:
+        """The persisted consent/enable entry for a plugin id, if any."""
+        return self._settings.plugins.entries.get(plugin_id)
+
     def set_enabled(self, plugin_id: str, enabled: bool) -> None:
         """Enable/disable a known plugin (takes effect next launch)."""
         entry = self._settings.plugins.entries.get(plugin_id)
