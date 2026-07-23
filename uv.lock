@@ -6,6 +6,12 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "nparseplus",
+    "nparseplus-sdk",
+]
+
 [[package]]
 name = "altgraph"
 version = "0.17.5"
@@ -810,12 +816,13 @@ wheels = [
 
 [[package]]
 name = "nparseplus"
-version = "1.13.0"
+version = "1.14.0"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
     { name = "colorhash" },
     { name = "httpx" },
+    { name = "nparseplus-sdk" },
     { name = "packaging" },
     { name = "pathvalidate" },
     { name = "platformdirs" },
@@ -852,6 +859,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2024.2.2" },
     { name = "colorhash", specifier = ">=2.0" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "nparseplus-sdk", editable = "sdk" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "pathvalidate", specifier = ">=3.2" },
     { name = "platformdirs", specifier = ">=4.2" },
@@ -880,6 +888,21 @@ docs = [
     { name = "mkdocs-material", specifier = ">=9.5" },
 ]
 probe = [{ name = "signalrcore", specifier = ">=0.9.5" }]
+
+[[package]]
+name = "nparseplus-sdk"
+version = "1.0.0"
+source = { editable = "sdk" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "packaging", specifier = ">=24.0" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
 
 [[package]]
 name = "packaging"

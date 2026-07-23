@@ -27,6 +27,9 @@ dependencies = [
   "pathvalidate>=3.2",
   "websocket-client>=1.8",
   "certifi>=2024.2.2",  # pinned CA store for websocket-client (frozen app)
+  # The plugin contract package; lives in sdk/ as a uv workspace member until
+  # it moves to its own repo + PyPI (see sdk/README.md).
+  "nparseplus-sdk>=1.0,<2",
 ]
 
 [project.urls]
@@ -64,6 +67,12 @@ probe = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/nparseplus"]
 
+[tool.uv.workspace]
+members = ["sdk"]
+
+[tool.uv.sources]
+nparseplus-sdk = { workspace = true }
+
 [tool.semantic_release]
 tag_format = "v{version}"
 commit_message = "chore(release): v{version}"
@@ -99,7 +108,7 @@ mask_initial_release = false
 # benchmarks are opt-in (local perf comparison only — CI timing is too noisy
 # to gate on): run them with `uv run pytest -m benchmark`.
 addopts = ["--import-mode=importlib", "-m", "not benchmark"]
-testpaths = ["tests"]
+testpaths = ["tests", "sdk/tests"]
 markers = [
   "qt: tests that require a Qt platform (run with QT_QPA_PLATFORM=offscreen)",
   "benchmark: local-only perf benchmarks (excluded from the default run)",
@@ -108,7 +117,7 @@ markers = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "sdk/src", "sdk/tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -124,7 +133,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["nparseplus.core", "nparseplus.config", "nparseplus.net"]
-mypy_path = "src"
+packages = ["nparseplus.core", "nparseplus.config", "nparseplus.net", "nparseplus_sdk"]
+mypy_path = "src:sdk/src"
 strict = false
 check_untyped_defs = true
