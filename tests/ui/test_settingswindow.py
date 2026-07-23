@@ -666,3 +666,56 @@ def test_ch_cadence_patterns_apply(qtbot) -> None:
     # Blank lines dropped, surrounding whitespace stripped.
     assert settings.general.ch_cadence_indicator is True
     assert settings.general.ch_cadence_patterns == ["cadence (\\d+)", "chain at (\\d+)"]
+
+
+def test_extra_pages_build_and_apply(qtbot) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    built: list[object] = []
+    applied: list[object] = []
+
+    def build(parent):
+        page = QLabel("plugin page", parent)
+        built.append(page)
+        return page
+
+    window = _window(
+        qtbot,
+        extra_pages=[SettingsPageSpec("My Plugin", build, lambda page: applied.append(page))],
+    )
+    assert built, "extra page builder was not called"
+    assert window._sidebar.item(window._sidebar.count() - 1).text() == "My Plugin"
+    window.apply()
+    assert applied == built  # per-page apply receives the built widget
+
+
+def test_extra_page_builder_failure_isolated(qtbot) -> None:
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    def explode(parent):
+        raise RuntimeError("builder boom")
+
+    window = _window(qtbot, extra_pages=[SettingsPageSpec("Broken", explode)])
+    # The page slot exists (with a placeholder) and the window still applies.
+    assert window._sidebar.item(window._sidebar.count() - 1).text() == "Broken"
+    window.apply()
+
+
+def test_extra_page_apply_failure_isolated(qtbot) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    def bad_apply(page):
+        raise RuntimeError("apply boom")
+
+    saves: list[None] = []
+    window = _window(
+        qtbot,
+        on_save=lambda: saves.append(None),
+        extra_pages=[SettingsPageSpec("Flaky", lambda parent: QLabel(parent), bad_apply)],
+    )
+    window.apply()  # must not raise
+    assert saves  # the built-in apply flow still completed

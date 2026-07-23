@@ -16,9 +16,10 @@ window handles, backend player, zone database) so tests drive it with fakes.
 from __future__ import annotations
 
 import contextlib
+import logging
 import subprocess
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,8 @@ from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
+logger = logging.getLogger(__name__)
+
 WINDOW_KEY = "settings"
 DEFAULT_GEOMETRY = (240, 160, 640, 560)
 
@@ -81,6 +84,26 @@ NEW_WINDOW_ROWS = [
 
 # Class combo entries: every playable class (no OTHER), EQTool SettingsGeneral.
 PLAYER_CLASSES = [cls for cls in PlayerClass if cls is not PlayerClass.OTHER]
+
+
+class SettingsPageSpec:
+    """An externally contributed settings page (plugin manager, plugin pages).
+
+    Duck-type-compatible with the SDK's ``PluginSettingsPageSpec``: ``title``,
+    ``builder(parent) -> QWidget``, optional ``apply(widget)``. Builder and
+    apply failures are isolated per page — a broken contribution never takes
+    down the settings window or the built-in Apply flow.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        builder: Callable[[QWidget], QWidget],
+        apply: Callable[[QWidget], None] | None = None,
+    ) -> None:
+        self.title = title
+        self.builder = builder
+        self.apply = apply
 
 
 class _DirPicker(QWidget):
@@ -160,6 +183,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         window_handles: dict[str, object] | None = None,
         backend_player: ActivePlayer | None = None,
         zones: ZoneDatabase | None = None,
+        extra_pages: Sequence[Any] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -204,6 +228,19 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         ):
             self._sidebar.addItem(name.replace("&&", "&"))
             self._stack.addWidget(builder())
+
+        # Externally contributed pages (the Plugins manager, plugin settings
+        # pages). Each page is built and applied under its own guard.
+        self._extra_pages: list[tuple[Any, QWidget]] = []
+        for spec in extra_pages or ():
+            try:
+                page = spec.builder(self)
+            except Exception:
+                logger.exception("settings page %r failed to build", spec.title)
+                page = QLabel("This page failed to build — see nparseplus.log.", self)
+            self._sidebar.addItem(spec.title)
+            self._stack.addWidget(page)
+            self._extra_pages.append((spec, page))
         self._sidebar.setCurrentRow(0)
 
         apply_button = QPushButton("Apply && Save", self)
@@ -1277,6 +1314,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._apply_character()
         self._apply_maps()
         self._apply_windows()
+        for spec, page in self._extra_pages:
+            if spec.apply is None:
+                continue
+            try:
+                spec.apply(page)
+            except Exception:
+                logger.exception("settings page %r failed to apply", spec.title)
 
         if self._on_save is not None:
             self._on_save()
