@@ -22,6 +22,7 @@ UI states this next to the install buttons.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import stat
 import zipfile
@@ -46,6 +47,26 @@ class InstallResult:
     warnings: list[str] = field(default_factory=list)
     meta: PluginMeta | None = None
     installed_path: Path | None = None
+    # Provenance: hash of the installed artifact bytes (zip or .py file) and,
+    # for URL installs, where it came from. Recorded into PluginEntry so the
+    # manager can distinguish registry installs and detect updates.
+    sha256: str | None = None
+    source_url: str | None = None
+
+
+def _digest(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _checksum_error(payload: bytes, expected_sha256: str | None) -> tuple[str, str | None]:
+    """Return (actual_digest, error_or_None) for an expected-hash check."""
+    actual = _digest(payload)
+    if expected_sha256 is not None and actual != expected_sha256.lower():
+        return actual, (
+            f"checksum mismatch: expected sha256 {expected_sha256.lower()}, "
+            f"got {actual} — refusing to install"
+        )
+    return actual, None
 
 
 def _member_errors(zf: zipfile.ZipFile) -> list[str]:
@@ -89,9 +110,16 @@ def install_from_zip(
     plugins_dir: Path,
     *,
     app_version: str | None = None,
+    expected_sha256: str | None = None,
 ) -> InstallResult:
     zip_path = Path(zip_path)
     plugins_dir = Path(plugins_dir)
+    try:
+        digest, checksum_error = _checksum_error(zip_path.read_bytes(), expected_sha256)
+    except OSError as exc:
+        return InstallResult(ok=False, errors=[f"unreadable archive: {exc}"])
+    if checksum_error is not None:
+        return InstallResult(ok=False, errors=[checksum_error])
     try:
         zf = zipfile.ZipFile(zip_path)
     except (OSError, zipfile.BadZipFile) as exc:
@@ -131,6 +159,7 @@ def install_from_zip(
                 warnings=report.warnings,
                 meta=report.meta,
                 installed_path=target,
+                sha256=digest,
             )
         finally:
             shutil.rmtree(staging, ignore_errors=True)
@@ -141,12 +170,18 @@ def install_from_file(
     plugins_dir: Path,
     *,
     app_version: str | None = None,
+    expected_sha256: str | None = None,
 ) -> InstallResult:
     """Install a plugin from a local .zip archive or a single .py file."""
     path = Path(path)
     if path.suffix == ".zip":
-        return install_from_zip(path, plugins_dir, app_version=app_version)
+        return install_from_zip(
+            path, plugins_dir, app_version=app_version, expected_sha256=expected_sha256
+        )
     if path.suffix == ".py" and path.is_file():
+        digest, checksum_error = _checksum_error(path.read_bytes(), expected_sha256)
+        if checksum_error is not None:
+            return InstallResult(ok=False, errors=[checksum_error])
         report = validate_plugin(path, app_version=app_version)
         if not report.ok:
             return InstallResult(ok=False, errors=report.errors, warnings=report.warnings)
@@ -158,7 +193,11 @@ def install_from_file(
         Path(plugins_dir).mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
         return InstallResult(
-            ok=True, warnings=report.warnings, meta=report.meta, installed_path=target
+            ok=True,
+            warnings=report.warnings,
+            meta=report.meta,
+            installed_path=target,
+            sha256=digest,
         )
     return InstallResult(ok=False, errors=[f"{path} is not a .zip archive or .py file"])
 
@@ -169,12 +208,15 @@ def install_from_url(
     *,
     fetch: Callable[[str], bytes] | None = None,
     app_version: str | None = None,
+    expected_sha256: str | None = None,
 ) -> InstallResult:
     """Download a plugin zip over https and install it.
 
     ``fetch`` is injectable so the UI can run the download on a worker
     thread (and tests can avoid the network). The default uses httpx with
-    a bounded timeout.
+    a bounded timeout. Registry installs pass ``expected_sha256`` — the
+    reviewed artifact hash from the index — so a swapped download is
+    refused before any of it is extracted or imported.
     """
     if not url.lower().startswith("https://"):
         return InstallResult(ok=False, errors=["only https:// URLs are allowed"])
@@ -199,7 +241,11 @@ def install_from_url(
     tmp_zip = plugins_dir / _STAGING_DIR_NAME.replace("staging", "download.zip")
     try:
         tmp_zip.write_bytes(payload)
-        return install_from_zip(tmp_zip, plugins_dir, app_version=app_version)
+        result = install_from_zip(
+            tmp_zip, plugins_dir, app_version=app_version, expected_sha256=expected_sha256
+        )
+        result.source_url = url
+        return result
     finally:
         tmp_zip.unlink(missing_ok=True)
 

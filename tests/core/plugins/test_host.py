@@ -209,3 +209,48 @@ def test_set_enabled_toggles_entry(make_host, plugins_dir: Path, settings: Setti
     assert settings.plugins.entries["flip"].enabled is False
     host.set_enabled("flip", True)
     assert settings.plugins.entries["flip"].enabled is True
+
+
+def test_record_install_upserts_provenance(
+    make_host, plugins_dir: Path, settings: Settings
+) -> None:
+    from nparseplus.core.plugins.install import InstallResult
+    from nparseplus_sdk import PluginMeta
+
+    host = make_host()
+    result = InstallResult(
+        ok=True,
+        meta=PluginMeta(id="fresh", name="Fresh", version="2.0.0"),
+        sha256="e" * 64,
+        source_url="https://example.com/fresh.zip",
+    )
+    host.record_install(result)
+    entry = settings.plugins.entries["fresh"]
+    assert entry.approved is False  # consent still due on next launch
+    assert entry.last_version == "2.0.0"
+    assert entry.sha256 == "e" * 64
+    assert entry.source_url == "https://example.com/fresh.zip"
+
+    # Re-install of a known plugin keeps the consent answers.
+    approve(settings, "fresh")
+    settings.plugins.entries["fresh"].enabled = False
+    host.record_install(result)
+    entry = settings.plugins.entries["fresh"]
+    assert entry.approved is True and entry.enabled is False
+
+
+def test_record_install_ignores_failures(make_host, settings: Settings) -> None:
+    from nparseplus.core.plugins.install import InstallResult
+
+    host = make_host()
+    host.record_install(InstallResult(ok=False, errors=["nope"]))
+    assert settings.plugins.entries == {}
+
+
+def test_registry_url_default_and_override(make_host, settings: Settings) -> None:
+    from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+    host = make_host()
+    assert host.registry_url == DEFAULT_REGISTRY_URL
+    settings.plugins.registry_url = "https://example.com/custom.json"
+    assert host.registry_url == "https://example.com/custom.json"

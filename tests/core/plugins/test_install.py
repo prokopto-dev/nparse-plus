@@ -168,3 +168,70 @@ def test_uninstall_outside_plugins_dir_refused(tmp_path: Path) -> None:
     error = uninstall(outside, tmp_path / "plugins")
     assert error is not None and "not inside" in error
     assert outside.exists()
+
+
+def test_sha256_match_installs_and_reported(tmp_path: Path) -> None:
+    import hashlib
+
+    archive = make_zip(tmp_path / "plug.zip", {"solo.py": GOOD_SOURCE})
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    result = install_from_zip(archive, tmp_path / "plugins", expected_sha256=digest.upper())
+    assert result.ok, result.errors
+    assert result.sha256 == digest
+
+
+def test_sha256_mismatch_rejected_without_extraction(tmp_path: Path) -> None:
+    archive = make_zip(tmp_path / "plug.zip", {"solo.py": GOOD_SOURCE})
+    plugins_dir = tmp_path / "plugins"
+    result = install_from_zip(archive, plugins_dir, expected_sha256="b" * 64)
+    assert not result.ok
+    assert any("checksum mismatch" in e for e in result.errors)
+    assert not plugins_dir.exists() or not any(plugins_dir.iterdir())
+
+
+def test_py_file_sha256_and_mismatch(tmp_path: Path) -> None:
+    import hashlib
+
+    source = tmp_path / "local.py"
+    source.write_text(GOOD_SOURCE, encoding="utf-8")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    ok = install_from_file(source, tmp_path / "plugins", expected_sha256=digest)
+    assert ok.ok and ok.sha256 == digest
+    bad = install_from_file(source, tmp_path / "plugins2", expected_sha256="c" * 64)
+    assert not bad.ok
+    assert any("checksum mismatch" in e for e in bad.errors)
+
+
+def test_url_install_records_source_and_hash(tmp_path: Path) -> None:
+    import hashlib
+    import io as _io
+
+    buffer = _io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("hashed.py", GOOD_SOURCE)
+    payload = buffer.getvalue()
+    digest = hashlib.sha256(payload).hexdigest()
+    result = install_from_url(
+        "https://example.com/hashed.zip",
+        tmp_path / "plugins",
+        fetch=lambda url: payload,
+        expected_sha256=digest,
+    )
+    assert result.ok, result.errors
+    assert result.source_url == "https://example.com/hashed.zip"
+    assert result.sha256 == digest
+
+
+def test_url_install_wrong_hash_refused(tmp_path: Path) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("swapped.py", GOOD_SOURCE)
+    result = install_from_url(
+        "https://example.com/swapped.zip",
+        tmp_path / "plugins",
+        fetch=lambda url: buffer.getvalue(),
+        expected_sha256="d" * 64,
+    )
+    assert not result.ok
+    assert any("checksum mismatch" in e for e in result.errors)
+    assert not (tmp_path / "plugins" / "swapped.py").exists()

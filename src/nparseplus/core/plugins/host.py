@@ -28,6 +28,7 @@ from nparseplus.config.paths import plugin_data_dir, plugins_dir
 from nparseplus.config.settings import PluginEntry, Settings
 from nparseplus.core.plugins.context import HostPluginContext, _OwnedNet
 from nparseplus.core.plugins.discovery import PluginSource, discover_all
+from nparseplus.core.plugins.install import InstallResult
 from nparseplus.core.plugins.storage import JsonPluginStorage
 from nparseplus_sdk import SDK_VERSION as _SDK_VERSION
 from nparseplus_sdk import NParsePlugin, PluginMeta, check_compat
@@ -171,6 +172,31 @@ class PluginHost:
     def entry_for(self, plugin_id: str) -> PluginEntry | None:
         """The persisted consent/enable entry for a plugin id, if any."""
         return self._settings.plugins.entries.get(plugin_id)
+
+    @property
+    def registry_url(self) -> str:
+        """The registry index URL (user override or the built-in default)."""
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        return self._settings.plugins.registry_url or DEFAULT_REGISTRY_URL
+
+    def record_install(self, result: InstallResult) -> None:
+        """Persist provenance for a successful install (URL/registry/file).
+
+        Consent semantics are unchanged: a brand-new plugin gets an
+        unapproved entry, so the first-load dialog still runs next launch;
+        an existing entry keeps its enabled/approved answers.
+        """
+        if not result.ok or result.meta is None:
+            return
+        entry = self._settings.plugins.entries.get(result.meta.id)
+        if entry is None:
+            entry = PluginEntry(approved=False)
+            self._settings.plugins.entries[result.meta.id] = entry
+        entry.last_version = result.meta.version
+        entry.source_url = result.source_url or ""
+        entry.sha256 = result.sha256 or ""
+        self._save()
 
     def set_enabled(self, plugin_id: str, enabled: bool) -> None:
         """Enable/disable a known plugin (takes effect next launch)."""

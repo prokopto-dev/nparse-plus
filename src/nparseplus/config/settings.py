@@ -326,10 +326,17 @@ class PluginEntry(BaseModel):
     enabled: bool = True
     approved: bool = False
     last_version: str = ""
+    # Install provenance (registry/URL installs): where the artifact came
+    # from and the sha256 of its bytes. Empty for sideloaded plugins.
+    source_url: str = ""
+    sha256: str = ""
 
 
 class PluginsSettings(BaseModel):
     entries: dict[str, PluginEntry] = Field(default_factory=dict)
+    # Override for the plugin registry index; "" = the built-in default
+    # (core.plugins.registry.DEFAULT_REGISTRY_URL).
+    registry_url: str = ""
 
 
 class Settings(BaseModel):

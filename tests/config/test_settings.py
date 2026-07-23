@@ -249,8 +249,16 @@ def test_plugins_entries_roundtrip(tmp_path: Path) -> None:
     original.plugins.entries["merchant-prices"] = PluginEntry(
         enabled=True, approved=True, last_version="1.2.0"
     )
-    original.plugins.entries["dkp"] = PluginEntry(enabled=False, approved=True)
+    original.plugins.entries["dkp"] = PluginEntry(
+        enabled=False,
+        approved=True,
+        source_url="https://example.com/dkp.zip",
+        sha256="f" * 64,
+    )
+    original.plugins.registry_url = "https://example.com/index.json"
     save_settings(original, path)
     loaded = load_settings(path)
     assert loaded.plugins.entries == original.plugins.entries
     assert loaded.plugins.entries["dkp"].enabled is False
+    assert loaded.plugins.entries["dkp"].sha256 == "f" * 64
+    assert loaded.plugins.registry_url == "https://example.com/index.json"
