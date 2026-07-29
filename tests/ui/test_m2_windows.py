@@ -1,5 +1,6 @@
 """pytest-qt tests for the M2 windows (DPS meter, event overlay, mob info, console)."""
 
+import sys
 from datetime import datetime, timedelta
 
 import pytest
@@ -159,6 +160,51 @@ def test_event_overlay_ch_chain_lanes(qtbot) -> None:
     assert lanes["Tanky"] == ["001", "002"]
     assert lanes["Backup"] == ["001"]
     assert overlay.is_active()
+
+
+def test_ch_lane_timer_does_not_outlive_the_overlay(qtbot) -> None:
+    """A pending lane-removal timer must be cancelled when the overlay dies.
+
+    ``_on_complete_heal`` schedules a re-check just past the retention window.
+    Unless that timer is bound to the widget's lifetime it still fires after
+    the overlay is destroyed, and ``_update_visibility`` then reads
+    already-deleted C++ children — raising ``RuntimeError: Internal C++ object
+    (QLabel) already deleted`` *into the Qt event loop*, where pytest-qt blames
+    whichever unrelated test is running at the time. That is exactly how this
+    surfaced: a Windows-only failure in the trigger editor tests.
+    """
+    import shiboken6
+    from PySide6.QtCore import QCoreApplication, QDeadlineTimer, QEventLoop
+
+    from nparseplus.core.events import CompleteHealEvent
+
+    # Tiny retention so the pending timer would fire almost immediately.
+    overlay = EventOverlayWindow(ch_lane_retention_s=0.01)
+    overlay.handle_event(
+        CompleteHealEvent(timestamp=T0, recipient="Tanky", tag="CA", position="001", caster="X")
+    )
+    assert overlay._chain_lanes  # a removal timer is now pending
+
+    fired: list[str] = []
+    original = overlay._maybe_remove_lane
+    overlay._maybe_remove_lane = lambda target: (fired.append(target), original(target))
+
+    raised: list[BaseException] = []
+    original_hook = sys.excepthook
+    sys.excepthook = lambda exc_type, exc, tb: raised.append(exc)
+    try:
+        # deleteLater() is not enough: processEvents() does not run deferred
+        # deletes, so the C++ object would survive and prove nothing. Destroy
+        # it outright, which is what widget teardown ends up doing.
+        shiboken6.delete(overlay)
+        deadline = QDeadlineTimer(600)  # well past the 0.01s + 250ms re-check
+        while not deadline.hasExpired():
+            QCoreApplication.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 50)
+    finally:
+        sys.excepthook = original_hook
+
+    assert fired == [], "the lane-removal timer ran after the overlay was destroyed"
+    assert raised == [], f"pending timer raised after teardown: {raised}"
 
 
 def test_ch_lane_has_ten_second_marker_cells(qtbot) -> None:
