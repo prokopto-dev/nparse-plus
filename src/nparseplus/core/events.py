@@ -321,6 +321,30 @@ class TimerBarEvent(RemoteEvent):
     bar_color: str | None = None
 
 
+class TriggerFiredEvent(LogEvent):
+    """nparseplus extension (#31, not in EventModels.cs): a trigger matched a
+    line, or one of its timer outputs ran. Feeds the Trigger Editor's Activity
+    tab, which is how you tell WHICH trigger of an imported pack went off.
+
+    ``line``/``line_number`` are always the log line that started this: the
+    matched line for ``"match"``, and the line that armed the timer for the
+    timer phases (they fire from the engine tick, which has no line of its
+    own). The output fields carry the token-expanded text that was actually
+    shown/spoken — empty when that output was not emitted.
+    """
+
+    trigger_id: str
+    trigger_name: str = ""
+    group: str = ""  # folder/category path (core.triggers.model.trigger_group_key)
+    phase: str = "match"  # match | timer_ending | timer_ended | timer_cancelled
+    display_text: str = ""
+    tts_text: str = ""
+    sound_file: str = ""
+    timer_name: str = ""  # expanded; empty when this fire involved no timer
+    timer_seconds: int = 0
+    counter: int = 0  # the trigger's {COUNTER} tally after this match
+
+
 class CorpseMarkerEvent(LogEvent):
     """nparseplus extension (original-nparse corpse waypoints): you died at a
     known location; the maps window marks it and the coordinator shares it."""

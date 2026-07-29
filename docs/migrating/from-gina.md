@@ -34,6 +34,17 @@ and Linux, where GINA can't follow you.
 | Early-end / cancel patterns | Restart behavior + reset events cover the common cases |
 | Character-specific trigger sets | Zone gating per trigger, plus per-character [profiles](../settings/character.md) for everything else |
 | Shared trigger packages | [Export/import](../features/triggers.md#sharing-triggers-export-import) as JSON files — and `.gtp` packages import directly |
+| Trigger log / console | The [**Activity** tab](../windows/trigger-editor.md#the-activity-tab) in the Trigger Editor — and double-clicking a row opens the trigger that fired |
+
+## After importing a big pack
+
+Large packs are noisy, and it's rarely obvious which of a few hundred
+imported triggers just shouted at you. Open the Trigger Editor's
+[**Activity** tab](../windows/trigger-editor.md#the-activity-tab): it lists
+every fire with the trigger's name and its folder path (the same nested
+path GINA used, e.g. `Raid Pack / Sebilis`), plus the log line that set it
+off. Double-click a row to jump straight to that trigger and turn it off,
+retune it, or move it.
 
 ## Recreating a trigger, quickly
 

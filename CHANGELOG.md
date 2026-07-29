@@ -6,6 +6,32 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.15.0 (2026-07-29)
+
+### Chores
+
+- Refresh uv.lock to the released version
+  ([`7970fc0`](https://github.com/prokopto-dev/nparse-plus/commit/7970fc055d31dd0e2aa4d14c2efc8126ded31fd9))
+
+### Documentation
+
+- Document the Trigger Editor's Activity tab
+  ([`75db3f3`](https://github.com/prokopto-dev/nparse-plus/commit/75db3f34cef7f1dbb8d34392f2f54ed332907bf2))
+
+### Features
+
+- **triggers**: Add an Activity tab to the Trigger Editor
+  ([`97f7204`](https://github.com/prokopto-dev/nparse-plus/commit/97f720473b2bfcdd09b9520c60c6e617e2b6cbc1))
+
+- **triggers**: Publish TriggerFiredEvent when a trigger fires
+  ([`64c9ffe`](https://github.com/prokopto-dev/nparse-plus/commit/64c9ffe49864239155262f6e467c53efeaf6319c))
+
+### Testing
+
+- **triggers**: Cover the activity log end to end
+  ([`fd1d9aa`](https://github.com/prokopto-dev/nparse-plus/commit/fd1d9aa16f5a790616516c61a82019b27c9d9372))
+
+
 ## v1.14.0 (2026-07-21)
 
 ### Documentation

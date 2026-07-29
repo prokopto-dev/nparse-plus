@@ -494,6 +494,61 @@ def cap_macro_editor(backend, settings) -> None:
         capture(w, "window--macro-editor", size=(960, 640))
     finally:
         settings.general.eq_install_dir = previous
+def cap_trigger_activity(backend, settings) -> None:
+    """The Activity tab (#31) with a few representative fires."""
+    from datetime import datetime
+
+    from PySide6.QtWidgets import QApplication
+
+    from nparseplus.core.events import TriggerFiredEvent
+    from nparseplus.ui.triggereditor import TriggerEditorWindow
+
+    w = _keep(TriggerEditorWindow(settings, backend.trigger_engine, on_save=lambda: None))
+    w.confirm_unsaved = False
+    base = datetime(2026, 7, 14, 21, 4, 6)
+    fires = [
+        dict(
+            trigger_name="Death Touch",
+            group="Encounters",
+            display_text="DEATH TOUCH on Gandalf",
+            tts_text="death touch",
+            line="Fright says, 'Ykesha'",
+        ),
+        dict(
+            trigger_name="Rampage warning",
+            group="Raid Pack / Sebilis",
+            display_text="a mycolonial guard RAMPAGE",
+            timer_name="a mycolonial guard rampage",
+            timer_seconds=30,
+            line="a mycolonial guard goes on a rampage!",
+        ),
+        dict(
+            trigger_name="Rampage warning",
+            group="Raid Pack / Sebilis",
+            phase="timer_ending",
+            display_text="Rampage in 5",
+            timer_name="a mycolonial guard rampage",
+            timer_seconds=30,
+            line="a mycolonial guard goes on a rampage!",
+        ),
+        dict(
+            trigger_name="Assist call",
+            group="Raid Pack / Velious",
+            tts_text="assist on Tunare",
+            line="Raidleader tells the raid,  'assist Tunare'",
+        ),
+    ]
+    for offset, fire in enumerate(fires):
+        w.activity.handle_event(
+            TriggerFiredEvent(
+                timestamp=base.replace(second=base.second + offset * 3),
+                trigger_id=f"demo-{offset}",
+                **fire,
+            )
+        )
+    w.tabs.setCurrentIndex(1)
+    QApplication.processEvents()
+    capture(w, "window--trigger-activity", size=(960, 480))
 
 
 def cap_settings(backend, settings) -> None:
@@ -776,6 +831,7 @@ PHASE_A = {
     "window--update-available": lambda b, s: cap_update_dialog(),
     "window--trigger-editor": lambda b, s: cap_trigger_editor(b, s),
     "window--macro-editor": lambda b, s: cap_macro_editor(b, s),
+    "window--trigger-activity": lambda b, s: cap_trigger_activity(b, s),
     "settings": lambda b, s: cap_settings(b, s),  # emits all settings--*.png
 }
 

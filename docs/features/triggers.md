@@ -113,6 +113,10 @@ bare list of trigger objects.
 
 - Grab exact log lines from the [Console](../windows/console.md) and use
   the Trigger Editor's **test box** to check matches before saving.
+- Not sure which trigger just went off? The Trigger Editor's
+  [**Activity** tab](../windows/trigger-editor.md#the-activity-tab) logs
+  every fire with its name, folder, and the line that caused it —
+  double-click a row to open that trigger.
 - Coming from GINA? See
   [Migrating from GINA](../migrating/from-gina.md) for a concept mapping
   (`{S}` → captures, Timer Behaviors → restart behavior, and so on).
