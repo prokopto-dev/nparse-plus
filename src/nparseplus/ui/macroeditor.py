@@ -32,6 +32,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -55,7 +56,7 @@ from PySide6.QtWidgets import (
 )
 
 from nparseplus.config.settings import Settings, WindowState
-from nparseplus.core import eqini, socialstore
+from nparseplus.core import eqcommands, eqini, socialstore
 from nparseplus.core import socials as socials_core
 from nparseplus.core.eqprocess import eq_is_running
 from nparseplus.core.socials import (
@@ -114,6 +115,88 @@ DuplicateResolver = Callable[[Social, Social], str]
 
 def _slot_label(page: int, button: int) -> str:
     return f"P{page}·B{button}"
+
+
+def completion_context(text: str, cursor: int) -> tuple[int, str] | None:
+    """``(replace-from index, prefix)`` for the completion under the cursor.
+
+    Two shapes are completable, and nothing else:
+
+    * a ``%`` token anywhere in the line — completed from the last ``%``;
+    * a client command, which only ever starts the line — completed from
+      index 0, so multi-word commands like ``/pet attack`` still match once
+      you have typed ``/pet at``.
+    """
+    before = text[:cursor]
+    marker = before.rfind("%")
+    if marker >= 0:
+        fragment = before[marker:]
+        if " " not in fragment:
+            return marker, fragment
+    if before.startswith("/"):
+        return 0, before
+    return None
+
+
+class _MacroLineEdit(QLineEdit):
+    """A macro command line with slash-command and %token completion.
+
+    Qt's stock ``QCompleter`` on a line edit completes the *whole* field,
+    which is wrong here: a macro line is a command plus arguments, and tokens
+    appear mid-line. So the popup is driven manually off the fragment under
+    the cursor (see :func:`completion_context`).
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._completer = QCompleter(eqcommands.COMPLETIONS, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.setWidget(self)
+        self._completer.activated[str].connect(self._insert_completion)
+        self.textEdited.connect(self._maybe_complete)
+
+    def completer(self) -> QCompleter:
+        return self._completer
+
+    def _maybe_complete(self, text: str) -> None:
+        context = completion_context(text, self.cursorPosition())
+        if context is None:
+            self._completer.popup().hide()
+            return
+        _start, prefix = context
+        if len(prefix) < 2:  # a bare "/" or "%" would list everything
+            self._completer.popup().hide()
+            return
+        self._completer.setCompletionPrefix(prefix)
+        if self._completer.completionCount() == 0:
+            self._completer.popup().hide()
+            return
+        popup = self._completer.popup()
+        popup.setCurrentIndex(self._completer.completionModel().index(0, 0))
+        self._completer.complete()
+
+    def _insert_completion(self, completion: str) -> None:
+        context = completion_context(self.text(), self.cursorPosition())
+        if context is None:
+            return
+        start, prefix = context
+        text = self.text()
+        self.setText(text[:start] + completion + text[start + len(prefix) :])
+        self.setCursorPosition(start + len(completion))
+
+    def keyPressEvent(self, event) -> None:
+        popup = self._completer.popup()
+        if popup.isVisible() and event.key() in (
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Tab,
+            Qt.Key.Key_Escape,
+        ):
+            # Let the popup consume the key rather than committing the form.
+            event.ignore()
+            return
+        super().keyPressEvent(event)
 
 
 class MacroEditorWindow(QWidget):
@@ -300,13 +383,21 @@ class MacroEditorWindow(QWidget):
         self.color_spin.valueChanged.connect(self._commit_form)
         form.addRow("Color (client index)", self.color_spin)
 
-        self.line_edits: list[QLineEdit] = []
+        self.line_edits: list[_MacroLineEdit] = []
         for index in range(socials_core.MAX_LINES):
-            edit = QLineEdit(box)
+            edit = _MacroLineEdit(box)
             edit.setPlaceholderText("/assist" if index == 0 else "")
             edit.textChanged.connect(self._commit_form)
             self.line_edits.append(edit)
             form.addRow(f"Line {index + 1}", edit)
+
+        completion_hint = QLabel(
+            "Type <b>/</b> for client commands or <b>%</b> for tokens like %T to autocomplete.",
+            box,
+        )
+        completion_hint.setWordWrap(True)
+        completion_hint.setStyleSheet(HINT_STYLE)
+        form.addRow(completion_hint)
 
         self.origin_label = QLabel("", box)
         self.origin_label.setStyleSheet(HINT_STYLE)

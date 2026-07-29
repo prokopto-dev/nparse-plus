@@ -436,6 +436,79 @@ def test_duplicate_slots_are_badged_in_the_grid(env: Env) -> None:
     assert macroeditor.DUPLICATE_BADGE in win._buttons[(3, 3)].text()
 
 
+# -- autocomplete ------------------------------------------------------------
+
+
+def test_completion_context_finds_a_command_at_the_start_of_a_line() -> None:
+    assert macroeditor.completion_context("/pet at", 7) == (0, "/pet at")
+    # Commands only complete at the start; mid-line words are not commands.
+    assert macroeditor.completion_context("say /pet", 8) is None
+
+
+def test_completion_context_finds_a_token_anywhere() -> None:
+    assert macroeditor.completion_context("/shout Pulling %T", 17) == (15, "%T")
+    assert macroeditor.completion_context("/say %", 6) == (5, "%")
+
+
+def test_completion_context_stops_at_a_space_after_a_token() -> None:
+    # "%T " is finished; fall back to the command at the start of the line.
+    assert macroeditor.completion_context("/shout %T now", 13) == (0, "/shout %T now")
+
+
+def test_completion_context_uses_the_cursor_not_the_end() -> None:
+    assert macroeditor.completion_context("/pet attack", 4) == (0, "/pet")
+
+
+def test_completion_context_ignores_plain_text() -> None:
+    assert macroeditor.completion_context("hello there", 11) is None
+    assert macroeditor.completion_context("", 0) is None
+
+
+def test_line_edit_offers_command_completions(env: Env) -> None:
+    win = _loaded(env)
+    win.select_slot(1, 1)
+    edit = win.line_edits[0]
+    edit.setText("/pet at")
+    edit.textEdited.emit("/pet at")
+
+    completer = edit.completer()
+    assert completer.completionPrefix() == "/pet at"
+    assert completer.currentCompletion() == "/pet attack"
+
+
+def test_line_edit_offers_token_completions(env: Env) -> None:
+    win = _loaded(env)
+    win.select_slot(1, 1)
+    edit = win.line_edits[0]
+    edit.setText("/shout Pulling %T")
+    edit.textEdited.emit("/shout Pulling %T")
+
+    assert edit.completer().completionPrefix() == "%T"
+
+
+def test_line_edit_inserts_a_token_without_eating_the_line(env: Env) -> None:
+    win = _loaded(env)
+    win.select_slot(1, 1)
+    edit = win.line_edits[0]
+    edit.setText("/shout Pulling %T")
+    edit.setCursorPosition(17)
+    edit._insert_completion("%T")
+
+    assert edit.text() == "/shout Pulling %T"
+
+
+def test_line_edit_inserts_a_command_over_the_typed_prefix(env: Env) -> None:
+    win = _loaded(env)
+    win.select_slot(1, 1)
+    edit = win.line_edits[0]
+    edit.setText("/pet at")
+    edit.setCursorPosition(7)
+    edit._insert_completion("/pet attack")
+
+    assert edit.text() == "/pet attack"
+    assert win.social_at(1, 1).lines[0] == "/pet attack"
+
+
 # -- window plumbing ---------------------------------------------------------
 
 
