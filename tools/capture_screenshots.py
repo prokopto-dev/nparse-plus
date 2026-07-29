@@ -451,6 +451,51 @@ def cap_trigger_editor(backend, settings) -> None:
     capture(w, "window--trigger-editor", size=(960, 640))
 
 
+def cap_macro_editor(backend, settings) -> None:
+    import tempfile
+
+    from nparseplus.ui.macroeditor import MacroEditorWindow
+
+    # A throwaway EQ install so the editor has real files to read. Writing
+    # temp files is fine here — this is a tool, not library code.
+    eq_dir = Path(tempfile.mkdtemp(prefix="nparseplus-shots-eq-"))
+    (eq_dir / "uifiles").mkdir()
+    (eq_dir / "eqgame.exe").write_text("")
+    macros = [
+        (1, 1, "Assist", 13, ["/assist", "/pet attack"]),
+        (1, 2, "Pull", 4, ["/shout Pulling %T"]),
+        (1, 4, "CH Chain", 7, ["/gu CH on %T"]),
+        (1, 5, "Rez", 10, ["/say Need rez please"]),
+        (1, 7, "Med", 3, ["/sit"]),
+        (2, 1, "Track", 9, ["/tracking"]),
+    ]
+    lines = ["[Defaults]", "Version=1", "", "[Socials]"]
+    for page, button, name, color, cmds in macros:
+        prefix = f"Page{page}Button{button}"
+        lines.append(f"{prefix}Name={name}")
+        lines.append(f"{prefix}Color={color}")
+        lines.extend(f"{prefix}Line{i}={cmd}" for i, cmd in enumerate(cmds, start=1))
+    lines += ["", "[Friends]", "Friend0=Alistra", "", "[KeyMaps]", "Forward=W"]
+    (eq_dir / "Xantik_P1999Green.ini").write_text("\n".join(lines) + "\n")
+    (eq_dir / "Beeta_P1999Green.ini").write_text("[Socials]\nPage1Button1Name=Old\n")
+
+    previous = settings.general.eq_install_dir
+    settings.general.eq_install_dir = eq_dir
+    try:
+        store_dir = Path(tempfile.mkdtemp(prefix="nparseplus-shots-store-"))
+        w = _keep(MacroEditorWindow(settings, on_save=lambda: None, store_dir=store_dir))
+        w.confirm_unsaved = False
+        w.warn_eq_running = False
+        index = w.character_combo.findText("Xantik")
+        if index >= 0:
+            w.character_combo.setCurrentIndex(index)
+        w.load()
+        w.select_slot(1, 1)
+        capture(w, "window--macro-editor", size=(960, 640))
+    finally:
+        settings.general.eq_install_dir = previous
+
+
 def cap_trigger_activity(backend, settings) -> None:
     """The Activity tab (#31) with a few representative fires."""
     from datetime import datetime
@@ -787,6 +832,7 @@ PHASE_A = {
     "feature--ch-chain": lambda b, s: cap_ch_chain(),
     "window--update-available": lambda b, s: cap_update_dialog(),
     "window--trigger-editor": lambda b, s: cap_trigger_editor(b, s),
+    "window--macro-editor": lambda b, s: cap_macro_editor(b, s),
     "window--trigger-activity": lambda b, s: cap_trigger_activity(b, s),
     "settings": lambda b, s: cap_settings(b, s),  # emits all settings--*.png
 }

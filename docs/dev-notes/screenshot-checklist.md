@@ -17,7 +17,7 @@ uv run python tools/capture_screenshots.py --only window--dps-meter,settings--ma
 
 The tool builds each window headless (`QT_QPA_PLATFORM=offscreen`), injects
 synthetic-but-realistic data (real spell/zone/item names), and writes the PNGs
-below. **27 of 29 are automated.** The remaining two need a human on a real
+below. **28 of 30 are automated.** The remaining two need a human on a real
 display (see the ⌨ rows): the hero shot and Discord overlay want the live game.
 The tray menu now captures automatically — it's built via
 `NomnsParse._build_tray_menu` + `popup` (never the blocking modal `exec`), so it
@@ -46,6 +46,7 @@ see real context. Retina/2x captures are fine. PNG only.
 | `window--console.png` | Console | The console with a dozen log lines, Pause checkbox visible. |
 | `window--trigger-editor.png` | Trigger Editor | Folder tree expanded (Built In folders + a custom folder), a trigger selected showing the form and test box. |
 | `window--trigger-activity.png` | Trigger Editor, Migrating from GINA | The Activity tab with a handful of fires: a match, a muted timer follow-up, nested GINA folder paths in the Group column. |
+| `window--macro-editor.png` | Macro Editor, Macros & socials | A character loaded with a populated Page 1 grid (origin badges visible), one macro selected showing the name/colour/line form. |
 | `window--spell-timers-raid.png` | Spell Timers | Raid mode (group buffs by spell): one spell header with a row per target. |
 | `window--update-available.png` | Self-updater, Updating | The update dialog: version heading, per-version release notes, View on GitHub / Later / Download buttons. |
 | ⌨ `window--discord.png` | Discord Overlay | The Discord voice overlay over the game with 2+ users, one speaking. |

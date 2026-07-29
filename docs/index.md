@@ -47,6 +47,7 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 | **[PigParse network](features/sharing.md)** | Live interop with EQTool users: shared player dots on the map, shared Kael pull timers and dragon roars, quake/boat/roll-timer feeds, a shared `/who` roster, pigparse.org Discord login with inventory upload — plus a self-hostable `nparse` websocket mode |
 | **[Night Vision fix](features/night-vision.md)** | One click applies the community shader/sky fix over your EQ install (with backups) — and one click reverts it |
 | **[Friends sync](features/friends-sync.md)** | Merge every character's in-game friends list on a server and push it back to all of them (originals backed up) |
+| **[Macro editor](windows/macro-editor.md)** | Edit your in-game macros, copy a set onto your alts, and export/import macro packs to share (originals backed up) |
 | **[Boats](features/boats.md)** | Boat schedule tracking synced from sightings, yours or shared over the network |
 
 ## Get going

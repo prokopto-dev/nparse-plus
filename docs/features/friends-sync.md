@@ -20,6 +20,9 @@ nParse+ reads and writes those client files directly:
 
 Log in on any character afterward and `/friends` shows the merged list.
 
+These same ini files also hold your macros — see
+[Macros & socials](macros.md).
+
 !!! note "Backups first"
     Before the first write, every ini file is copied into a
     `friends_backup/` folder beside it — an nParse+ safety addition over

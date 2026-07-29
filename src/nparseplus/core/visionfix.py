@@ -17,26 +17,26 @@ import zipfile
 from importlib import resources
 from pathlib import Path
 
+# preflight now lives in core.eqini (the macro editor needs the same "is this
+# really an EQ install" check, and reaching it through visionfix would be a
+# nonsense import path). Re-exported here so existing callers are unchanged.
+from nparseplus.core.eqini import preflight
+
 BACKUP_DIR_NAME = "visionfix_backup"
+
+__all__ = [
+    "BACKUP_DIR_NAME",
+    "apply_visionfix",
+    "backup_exists",
+    "default_zip_path",
+    "preflight",
+    "revert_visionfix",
+]
 
 
 def default_zip_path() -> Path:
     """The bundled data/visionfix.zip (package data; frozen-app safe)."""
     return Path(str(resources.files("nparseplus") / "data" / "visionfix.zip"))
-
-
-def preflight(eq_dir: Path | None) -> str | None:
-    """None when ``eq_dir`` looks like an EQ install; else the reason."""
-    if eq_dir is None:
-        return "Set the EQ install directory first."
-    eq_dir = Path(eq_dir)
-    if not eq_dir.is_dir():
-        return f"Not a directory: {eq_dir}"
-    if not (eq_dir / "eqgame.exe").is_file():
-        return "No eqgame.exe here — not an EQ install directory."
-    if not (eq_dir / "uifiles").is_dir():
-        return "No uifiles/ here — not an EQ install directory."
-    return None
 
 
 def backup_exists(eq_dir: Path) -> bool:

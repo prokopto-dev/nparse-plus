@@ -93,6 +93,34 @@ Where they live:
 - Ambiguous cast messages need **Guess ambiguous spells** on to show a
   best-guess row.
 
+## Macro changes vanished / "Save to character" didn't work
+
+Almost always the EQ client overwriting the file: it rewrites the whole
+`<Name>_<Server>.ini` when you camp or log out, discarding anything edited
+while it was running. Edit macros while that character is **logged out**.
+nParse+ warns when it detects the client running, but that check uses
+`pgrep` and so [does not fire on
+Windows](https://github.com/prokopto-dev/nparse-plus/issues/33) yet.
+
+If it already happened: open the [Macro Editor](windows/macro-editor.md),
+Load that character, and check the **Local library** tab — macros nParse+
+wrote that are no longer in the file are listed there, and **Restore from
+local copy** puts them back. Turning on **Sync macros when EQ exits**
+([Settings → Advanced](settings/advanced.md)) makes that copy stay current
+by itself.
+
+Failing that, `socials_backup/` beside the character ini holds the
+pristine original from before nParse+'s first write.
+
+## No characters listed in the Macro Editor
+
+The **EQ install directory** in [Settings → General](settings/general.md)
+must point at the folder containing `eqgame.exe` and `uifiles/` — the
+editor says which of those is missing. Also check the **Server** dropdown
+matches: P1999Red characters are stored with a `P1999PVP` filename suffix,
+which nParse+ maps for you, but picking the wrong server shows an empty
+list rather than an error.
+
 ## Settings seem lost / where is settings.json?
 
 See [First run → Where settings
