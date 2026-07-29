@@ -177,6 +177,20 @@ def test_edited_slot_comes_back_as_local_and_untouched_stays_game(env: Env) -> N
     assert win.store().origin_at(2, 3) is SocialOrigin.GAME
 
 
+def test_a_no_op_save_does_not_relabel_existing_macros(env: Env) -> None:
+    """Saving with nothing edited must not wipe provenance."""
+    win = _loaded(env)
+    win.select_slot(1, 1)
+    win.name_edit.setText("Assist Main")
+    win.save_to_character()
+    win.load()
+    assert win.store().origin_at(1, 1) is SocialOrigin.LOCAL
+
+    win.save_to_character()  # nothing edited this time
+    win.load()
+    assert win.store().origin_at(1, 1) is SocialOrigin.LOCAL
+
+
 def test_a_slot_changed_behind_our_back_flips_to_game(env: Env) -> None:
     win = _loaded(env)
     win.select_slot(1, 1)

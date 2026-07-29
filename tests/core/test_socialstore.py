@@ -165,6 +165,28 @@ def test_mark_written_can_override_origin_per_slot() -> None:
     assert store.origin_at(2, 1) is SocialOrigin.IMPORTED
 
 
+def test_mark_written_keeps_the_origin_of_slots_it_was_not_told_about() -> None:
+    """A save with nothing edited must not relabel the whole grid."""
+    store = new_store("Xantik", "P1999Green", now=NOW)
+    social = _assist()
+    mark_written(store, [social], origin=SocialOrigin.LOCAL, now=NOW, source_label="me")
+
+    # A later no-op save passes no overrides at all.
+    mark_written(store, [social], origin=SocialOrigin.GAME, now=LATER)
+    assert store.origin_at(1, 1) is SocialOrigin.LOCAL
+    assert store.at(1, 1).source_label == "me"
+
+
+def test_mark_written_defaults_only_apply_to_new_records() -> None:
+    store = new_store("Xantik", "P1999Green", now=NOW)
+    mark_written(store, [_assist()], origin=SocialOrigin.LOCAL, now=NOW)
+
+    fresh = Social(page=2, button=2, name="New", lines=["/new"])
+    mark_written(store, [_assist(), fresh], origin=SocialOrigin.GAME, now=LATER)
+    assert store.origin_at(1, 1) is SocialOrigin.LOCAL  # kept
+    assert store.origin_at(2, 2) is SocialOrigin.GAME  # new record takes the default
+
+
 def test_forget_slots_drops_cleared_records() -> None:
     store = new_store("Xantik", "P1999Green", now=NOW)
     mark_written(store, [_assist()], origin=SocialOrigin.LOCAL, now=NOW)

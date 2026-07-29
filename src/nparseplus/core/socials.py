@@ -365,6 +365,10 @@ def place_socials(
     ``conflicts`` for the caller to resolve. ``FREE`` reassigns them to empty
     slots in order. Neither ever emits a slot outside the grid — anything that
     doesn't fit is returned in ``unplaceable``.
+
+    ``FREE`` is a flat sequential fill, so a pack that occupied one coherent
+    page gets smeared across whatever holes exist — TODO(#34) prefer a wholly
+    empty page when the group is contiguous.
     """
     result = PlacementResult()
     if strategy is Placement.EXACT:

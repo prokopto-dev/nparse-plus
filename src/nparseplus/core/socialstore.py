@@ -226,31 +226,40 @@ def mark_written(
 ) -> None:
     """Record that we just wrote ``socials`` to the character's file.
 
-    ``origins`` and ``source_labels`` override the defaults per slot, so one
-    save can mark hand-edited slots ``LOCAL`` while slots that arrived in a
-    pack stay ``IMPORTED`` and keep the name of the pack they came from.
+    ``origins`` and ``source_labels`` override per slot, so one save can mark
+    hand-edited slots ``LOCAL`` while slots that arrived in a pack stay
+    ``IMPORTED`` and keep the name of the pack they came from.
+
+    A slot with no override **keeps the origin it already had**. This records
+    that we wrote the file, not that we authored every macro in it — a save
+    with nothing edited must not relabel the whole grid, or one no-op save
+    would erase the provenance of everything.
     """
     by_slot = {record.slot: record for record in store.records}
     for social in normalize_socials(socials):
-        slot_origin = (origins or {}).get(social.slot, origin)
-        slot_label = (source_labels or {}).get(social.slot, source_label)
         record = by_slot.get(social.slot)
+        overrides = origins or {}
+        label_overrides = source_labels or {}
         if record is None:
-            record = SocialRecord(
-                social=social,
-                origin=slot_origin,
-                source_label=slot_label,
-                first_seen=now,
-                updated_at=now,
-                written_digest=digest(social),
-                in_file=True,
+            store.records.append(
+                SocialRecord(
+                    social=social,
+                    origin=overrides.get(social.slot, origin),
+                    source_label=label_overrides.get(social.slot, source_label),
+                    first_seen=now,
+                    updated_at=now,
+                    written_digest=digest(social),
+                    in_file=True,
+                )
             )
-            store.records.append(record)
-            by_slot[social.slot] = record
             continue
+        if social.slot in overrides:
+            record.origin = overrides[social.slot]
+        if social.slot in label_overrides:
+            record.source_label = label_overrides[social.slot]
+        elif social.slot in overrides:
+            record.source_label = source_label
         record.social = social
-        record.origin = slot_origin
-        record.source_label = slot_label
         record.updated_at = now
         record.written_digest = digest(social)
         record.in_file = True

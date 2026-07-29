@@ -783,12 +783,16 @@ class MacroEditorWindow(QWidget):
         for path in targets:
             name = eqini.character_name(path, suffix)
             store = self._target_store(name, now)
+            # A copy really does re-author the target's grid, so every slot is
+            # relabelled explicitly rather than keeping whatever it had.
             socialstore.mark_written(
                 store,
                 self._working,
                 origin=SocialOrigin.IMPORTED,
                 now=now,
                 source_label=label,
+                origins={s.slot: SocialOrigin.IMPORTED for s in self._working},
+                source_labels={s.slot: label for s in self._working},
             )
             self._save_target_store(name, store)
 
