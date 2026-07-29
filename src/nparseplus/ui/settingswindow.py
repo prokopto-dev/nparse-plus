@@ -16,7 +16,6 @@ window handles, backend player, zone database) so tests drive it with fakes.
 from __future__ import annotations
 
 import contextlib
-import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -49,7 +48,7 @@ import nparseplus
 from nparseplus import updater
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
-from nparseplus.core import friends, visionfix
+from nparseplus.core import eqprocess, friends, visionfix
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import (
     AfterPlayerChangedEvent,
@@ -1184,13 +1183,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._visionfix_revert.setEnabled(has_backup)
 
     def _eq_running(self) -> bool:
-        try:
-            result = subprocess.run(
-                ["pgrep", "-if", "eqgame"], capture_output=True, timeout=5, check=False
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
+        # Shared with the Macro Editor, which needs the same warning before it
+        # writes into a character ini.
+        return eqprocess.eq_is_running()
 
     def _apply_visionfix(self) -> None:
         eq_dir = self._visionfix_dir()
