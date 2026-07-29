@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from platformdirs import user_config_dir, user_log_dir
+from platformdirs import user_config_dir, user_data_dir, user_log_dir
 
 APP_NAME = "nparseplus"
 
@@ -29,6 +29,23 @@ def settings_path() -> Path:
 def ensure_config_dir() -> Path:
     """Create the config directory (and parents) if needed; return it."""
     path = config_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def data_dir() -> Path:
+    """Per-user data directory for nParse+ (generated/mirrored files)."""
+    return Path(user_data_dir(APP_NAME))
+
+
+def socials_dir() -> Path:
+    """Where the Macro Editor mirrors each character's socials."""
+    return data_dir() / "socials"
+
+
+def ensure_socials_dir() -> Path:
+    """Create the socials mirror directory (and parents) if needed; return it."""
+    path = socials_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
