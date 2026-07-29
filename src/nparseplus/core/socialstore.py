@@ -222,22 +222,24 @@ def mark_written(
     now: datetime,
     source_label: str = "",
     origins: dict[tuple[int, int], SocialOrigin] | None = None,
+    source_labels: dict[tuple[int, int], str] | None = None,
 ) -> None:
     """Record that we just wrote ``socials`` to the character's file.
 
-    ``origins`` overrides ``origin`` per slot, so a save can mark
-    hand-edited slots ``LOCAL`` while slots that arrived in a pack stay
-    ``IMPORTED``.
+    ``origins`` and ``source_labels`` override the defaults per slot, so one
+    save can mark hand-edited slots ``LOCAL`` while slots that arrived in a
+    pack stay ``IMPORTED`` and keep the name of the pack they came from.
     """
     by_slot = {record.slot: record for record in store.records}
     for social in normalize_socials(socials):
         slot_origin = (origins or {}).get(social.slot, origin)
+        slot_label = (source_labels or {}).get(social.slot, source_label)
         record = by_slot.get(social.slot)
         if record is None:
             record = SocialRecord(
                 social=social,
                 origin=slot_origin,
-                source_label=source_label,
+                source_label=slot_label,
                 first_seen=now,
                 updated_at=now,
                 written_digest=digest(social),
@@ -248,7 +250,7 @@ def mark_written(
             continue
         record.social = social
         record.origin = slot_origin
-        record.source_label = source_label
+        record.source_label = slot_label
         record.updated_at = now
         record.written_digest = digest(social)
         record.in_file = True

@@ -181,12 +181,14 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtGui import QFontDatabase, QIcon
 
+    from nparseplus.config.paths import ensure_socials_dir
     from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
     from nparseplus.ui.eventoverlay import EventOverlayWindow
+    from nparseplus.ui.macroeditor import MacroEditorWindow
     from nparseplus.ui.mobinfo import MobInfoWindow
     from nparseplus.ui.qtbridge import QtEventBridge
     from nparseplus.ui.settingswindow import UnifiedSettingsWindow
@@ -230,6 +232,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         text_shadow=settings.general.overlay_text_shadow,
     )
     trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
+    macro_editor = MacroEditorWindow(settings, on_save=save, store_dir=ensure_socials_dir())
 
     def _repaint_maps() -> None:
         if app.maps_window is not None:
@@ -243,6 +246,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         "mobinfo": mob_info_window,
         "console": console_window,
         "triggereditor": trigger_editor,
+        "macroeditor": macro_editor,
     }
     settings_window = UnifiedSettingsWindow(
         settings,
@@ -298,6 +302,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Mob Info": mob_info_window,
             "Console": console_window,
             "Trigger Editor": trigger_editor,
+            "Macro Editor": macro_editor,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
         window_layouts=window_layouts,

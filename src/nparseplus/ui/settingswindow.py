@@ -76,6 +76,7 @@ NEW_WINDOW_ROWS = [
     ("Mob Info", "mobinfo"),
     ("Console", "console"),
     ("Trigger Editor", "triggereditor"),
+    ("Macro Editor", "macroeditor"),
 ]
 
 # Class combo entries: every playable class (no OTHER), EQTool SettingsGeneral.
