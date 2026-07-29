@@ -494,6 +494,8 @@ def cap_macro_editor(backend, settings) -> None:
         capture(w, "window--macro-editor", size=(960, 640))
     finally:
         settings.general.eq_install_dir = previous
+
+
 def cap_trigger_activity(backend, settings) -> None:
     """The Activity tab (#31) with a few representative fires."""
     from datetime import datetime
