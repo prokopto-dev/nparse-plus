@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.16.1 (2026-07-29)
+
+### Bug Fixes
+
+- **overlays**: Cancel pending CH lane timers when the overlay is destroyed
+  ([`349190b`](https://github.com/prokopto-dev/nparse-plus/commit/349190b1143b096a6b877fa853caa4cb499bfb3a))
+
+
 ## v1.16.0 (2026-07-29)
 
 ### Code Style
