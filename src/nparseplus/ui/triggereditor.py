@@ -3,7 +3,8 @@
 Port of EQTool's SettingsTrigger / TriggerOutputEditor UX: a folder tree of
 triggers (built-in folders + user categories) on the left, a form editor on
 the right, and a Test box that runs a log line through the trigger's own
-matching machinery.
+matching machinery. A second "Activity" tab (nparseplus, #31) logs what
+actually fired and jumps back into the tree.
 
 All edits happen on deep copies of ``settings.triggers``; nothing reaches the
 :class:`TriggerEngine` or the persisted settings until Apply. Built-ins can be
@@ -45,6 +46,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -66,8 +68,10 @@ from nparseplus.core.triggers.model import (
     TriggerTimer,
     TriggerTimerEnded,
     TriggerTimerEnding,
+    trigger_group_key,
 )
 from nparseplus.core.zones import load_zone_database
+from nparseplus.ui.triggeractivity import TriggerActivityView
 
 WINDOW_KEY = "triggereditor"
 DEFAULT_GEOMETRY = (200, 120, 900, 600)
@@ -123,9 +127,10 @@ class TriggerEditorWindow(QWidget):
     Public API (for integration/tests): ``toggle()``, ``apply()``,
     ``new_trigger()``, ``duplicate_current()``, ``delete_current()``,
     ``revert_current()``, ``run_test()``, ``select_trigger(id)``,
-    ``current_trigger()``, ``item_for(id)``, ``folder_names()``,
-    ``trigger_ids()``, plus the named form widgets (``name_edit``,
-    ``search_edit``, ...).
+    ``show_trigger(id)``, ``current_trigger()``, ``item_for(id)``,
+    ``folder_names()``, ``trigger_ids()``, ``handle_events(list)``, plus the
+    named form widgets (``name_edit``, ``search_edit``, ...) and ``activity``
+    (the Activity tab's :class:`TriggerActivityView`).
     """
 
     def __init__(
@@ -196,10 +201,18 @@ class TriggerEditorWindow(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        root.addWidget(splitter, 1)
+        self.tabs = QTabWidget(self)
+        root.addWidget(self.tabs, 1)
 
-        self.tree = QTreeWidget(self)
+        triggers_page = QWidget(self)
+        page_layout = QVBoxLayout(triggers_page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        self.tabs.addTab(triggers_page, "Triggers")
+
+        splitter = QSplitter(Qt.Orientation.Horizontal, triggers_page)
+        page_layout.addWidget(splitter, 1)
+
+        self.tree = QTreeWidget(triggers_page)
         self.tree.setHeaderHidden(True)
         self.tree.currentItemChanged.connect(self._on_current_item_changed)
         self.tree.itemChanged.connect(self._on_item_changed)
@@ -207,7 +220,7 @@ class TriggerEditorWindow(QWidget):
         self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         splitter.addWidget(self.tree)
 
-        right = QWidget(self)
+        right = QWidget(triggers_page)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         splitter.addWidget(right)
@@ -225,6 +238,16 @@ class TriggerEditorWindow(QWidget):
         right_layout.addWidget(scroll, 1)
 
         right_layout.addWidget(self._build_test_box(right))
+
+        # The activity log of what actually fired (#31). Lives in a tab rather
+        # than its own window so a logged row can jump straight into the tree.
+        self.activity = TriggerActivityView(self)
+        self.tabs.addTab(self.activity, "Activity")
+        self.activity.jump_requested.connect(self.show_trigger)
+
+        # The button row stays OUTSIDE the tabs: Apply/Save must be reachable
+        # from the Activity tab, and it is what sets the window's minimum
+        # width — moving it into a page would change the restored geometry.
         root.addLayout(self._build_buttons())
 
     def _build_form(self, layout: QVBoxLayout) -> None:
@@ -393,12 +416,8 @@ class TriggerEditorWindow(QWidget):
 
     @staticmethod
     def _group_key(trigger: Trigger) -> str:
-        if trigger.is_built_in:
-            return trigger.built_in_folder or "Built-in"
-        category = (trigger.category or "").strip()
-        if not category or category == "Default":
-            return "Custom"
-        return category
+        # Shared with the activity log so folder labels can never disagree.
+        return trigger_group_key(trigger)
 
     @staticmethod
     def _item_label(trigger: Trigger) -> str:
@@ -538,6 +557,29 @@ class TriggerEditorWindow(QWidget):
         item = self.item_for(trigger_id)
         if item is not None:
             self.tree.setCurrentItem(item)
+
+    # -- activity log (#31) ----------------------------------------------------
+
+    def show_trigger(self, trigger_id: str) -> bool:
+        """Reveal a trigger in the Triggers tab (the Activity tab's jump).
+
+        Returns False when the id no longer resolves — a trigger logged
+        earlier can have been deleted since — leaving the view untouched.
+        Selecting commits any half-typed form edits, exactly as clicking the
+        tree already does.
+        """
+        if self.item_for(trigger_id) is None:
+            return False
+        self.tabs.setCurrentIndex(0)
+        self.select_trigger(trigger_id)
+        return True
+
+    def handle_events(self, events: list) -> None:
+        """Bulk bridge slot (``events_batch``); feeds the Activity tab."""
+        self.activity.handle_events(events)
+
+    def handle_event(self, event: object) -> None:
+        self.activity.handle_event(event)
 
     def current_trigger(self) -> Trigger | None:
         return self._current
