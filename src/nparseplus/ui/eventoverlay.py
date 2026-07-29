@@ -697,8 +697,12 @@ class EventOverlayWindow(QWidget):
             lane = _ChainLane(target, self)
             lane.cadence_seconds = self._ch_cadence_seconds
             lane.setFixedWidth(520)
+            # ``self`` as the context object ties the timer to this widget's
+            # lifetime: Qt drops the pending call when the overlay is
+            # destroyed. Without it the functor still fires and touches
+            # already-deleted C++ children, raising into the event loop.
             lane.on_chip_done = lambda t=target: QTimer.singleShot(
-                100, lambda: self._maybe_remove_lane(t)
+                100, self, lambda: self._maybe_remove_lane(t)
             )
             self._chain_lanes[target] = lane
             self._lanes_layout.addWidget(self._build_lane_row(target, lane))
@@ -711,6 +715,7 @@ class EventOverlayWindow(QWidget):
         # timers fire harmlessly (retention not yet elapsed).
         QTimer.singleShot(
             int(self._ch_lane_retention_s * 1000) + 250,
+            self,  # context: cancelled if the overlay is destroyed first
             lambda: self._maybe_remove_lane(target),
         )
         self._update_visibility()
