@@ -260,6 +260,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         window_handles=window_handles,
         backend_player=backend.player,
         zones=backend.zones,
+        socials_sync=backend.socials_sync,
     )
     layout_windows = {
         **window_handles,

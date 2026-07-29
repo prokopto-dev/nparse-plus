@@ -84,6 +84,9 @@ class GeneralSettings(BaseModel):
     tts_voice: str | None = None
     log_archive_enabled: bool = False
     log_archive_size_mb: int = Field(default=100, ge=1)
+    # Fold macros made in game into the Macro Editor's local mirror when the
+    # EQ client exits. Read-only: it never writes into the EQ directory.
+    socials_autosync: bool = False
     # How long overlay alert text (ENRAGED, FTE, CH warnings...) stays on screen.
     overlay_text_seconds: float = Field(default=4.0, ge=1.0, le=30.0)
     # Soft drop-shadow behind overlay alert text. The blur effect re-renders

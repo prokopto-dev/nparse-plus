@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import threading
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,7 @@ from nparseplus.core.events import (
     YouZonedEvent,
 )
 from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
+from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
@@ -160,6 +162,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         window_handles: dict[str, object] | None = None,
         backend_player: ActivePlayer | None = None,
         zones: ZoneDatabase | None = None,
+        socials_sync: SocialSyncWatcher | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -181,6 +184,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._handles = window_handles or {}
         self._backend_player = backend_player
         self._zones = zones
+        self._socials_sync = socials_sync
         self._discord_login = discord_login_fn
         self._discord_auth_done.connect(self._finish_discord_login)
         self._update_status_ready.connect(self._on_update_status_ready)
@@ -1139,6 +1143,31 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._archive_mb.setValue(general.log_archive_size_mb)
         form.addRow("Archive threshold", self._archive_mb)
 
+        macros_form = QFormLayout()
+        self._socials_autosync = QCheckBox(self)
+        self._socials_autosync.setChecked(general.socials_autosync)
+        self._socials_autosync.setToolTip(
+            "Reads your character ini files and updates nParse+'s own copy. "
+            "It never writes into the EQ directory."
+        )
+        macros_form.addRow("Sync macros when EQ exits", self._socials_autosync)
+        self._socials_sync_status = QLabel(
+            "Captures macros you made in game into the Macro Editor's local copy "
+            "when the client closes, so they keep their history and can be restored. "
+            "Read-only — nothing is written back to EverQuest.",
+            self,
+        )
+        self._socials_sync_status.setWordWrap(True)
+        self._socials_sync_status.setStyleSheet("color: #888888; font-size: 11px;")
+        macros_form.addRow(self._socials_sync_status)
+        self._socials_sync_now = QPushButton("Sync now", self)
+        self._socials_sync_now.clicked.connect(self._sync_socials_now)
+        macros_form.addRow(self._socials_sync_now)
+        macros_box = QGroupBox("Macros", self)
+        macros_box.setLayout(macros_form)
+        form.addRow(macros_box)
+        self._refresh_socials_sync_status()
+
         visionfix_form = QFormLayout()
         self._visionfix_status = QLabel("", self)
         self._visionfix_status.setWordWrap(True)
@@ -1187,6 +1216,30 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         # Shared with the Macro Editor, which needs the same warning before it
         # writes into a character ini.
         return eqprocess.eq_is_running()
+
+    # -- Macro auto-sync ------------------------------------------------------------------
+
+    def _refresh_socials_sync_status(self) -> None:
+        if self._socials_sync is None:
+            return
+        self._socials_sync_status.setText(self._socials_sync.status_text())
+
+    def _sync_socials_now(self) -> None:
+        """Fold in-game macro changes into the local copy on demand."""
+        if self._socials_sync is None:
+            self._socials_sync_status.setText("Macro sync is unavailable.")
+            return
+        reason = visionfix.preflight(self._visionfix_dir())
+        if reason is not None:
+            self._socials_sync_status.setText(reason)
+            return
+        examined = self._socials_sync.sync(datetime.now())
+        if not examined:
+            self._socials_sync_status.setText(
+                "Nothing to sync — no character files have changed since the last check."
+            )
+            return
+        self._refresh_socials_sync_status()
 
     def _apply_visionfix(self) -> None:
         eq_dir = self._visionfix_dir()
@@ -1253,6 +1306,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.bard_count_enabled = self._bard_count.isChecked()
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()
+        general.socials_autosync = self._socials_autosync.isChecked()
         self._settings.sharing.mode = self._sharing_mode.currentText()  # type: ignore[assignment]
         self._settings.pigparse_account.inventory_upload = self._inventory_upload.isChecked()
         spellwindow = self._settings.spellwindow

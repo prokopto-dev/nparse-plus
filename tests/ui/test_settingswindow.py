@@ -666,3 +666,70 @@ def test_ch_cadence_patterns_apply(qtbot) -> None:
     # Blank lines dropped, surrounding whitespace stripped.
     assert settings.general.ch_cadence_indicator is True
     assert settings.general.ch_cadence_patterns == ["cadence (\\d+)", "chain at (\\d+)"]
+
+
+def test_socials_autosync_toggle_applies(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    assert settings.general.socials_autosync is False
+    window._socials_autosync.setChecked(True)
+    window.apply()
+    assert settings.general.socials_autosync is True
+
+
+def test_sync_now_reports_when_the_eq_dir_is_unset(qtbot) -> None:
+    class FakeSync:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def sync(self, now) -> int:
+            self.calls += 1
+            return 1
+
+        def status_text(self) -> str:
+            return "Last synced at 12:00 — 2 new."
+
+    sync = FakeSync()
+    window = _window(qtbot, socials_sync=sync)
+    window._sync_socials_now()
+    # Preflight fails without an EQ install directory, so no sync is attempted.
+    assert sync.calls == 0
+    assert "EQ install directory" in window._socials_sync_status.text()
+
+
+def test_sync_now_runs_and_shows_the_result(qtbot, tmp_path: Path) -> None:
+    class FakeSync:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def sync(self, now) -> int:
+            self.calls += 1
+            return 2
+
+        def status_text(self) -> str:
+            return "Last synced at 12:00 — 2 new."
+
+    (tmp_path / "uifiles").mkdir()
+    (tmp_path / "eqgame.exe").write_text("")
+    sync = FakeSync()
+    window = _window(qtbot, socials_sync=sync)
+    window._install_dir.edit.setText(str(tmp_path))
+    window._sync_socials_now()
+    assert sync.calls == 1
+    assert "2 new" in window._socials_sync_status.text()
+
+
+def test_sync_now_reports_when_nothing_changed(qtbot, tmp_path: Path) -> None:
+    class FakeSync:
+        def sync(self, now) -> int:
+            return 0
+
+        def status_text(self) -> str:
+            return "unused"
+
+    (tmp_path / "uifiles").mkdir()
+    (tmp_path / "eqgame.exe").write_text("")
+    window = _window(qtbot, socials_sync=FakeSync())
+    window._install_dir.edit.setText(str(tmp_path))
+    window._sync_socials_now()
+    assert "Nothing to sync" in window._socials_sync_status.text()

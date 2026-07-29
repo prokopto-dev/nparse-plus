@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from nparseplus.config.paths import ensure_socials_dir
 from nparseplus.config.settings import Settings, find_player
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
@@ -48,6 +49,7 @@ from nparseplus.core.pets import PlayerPet, load_pets
 from nparseplus.core.pipeline import LogPipeline
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.sharing import SharingClient, SharingCoordinator
+from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.spells.spells_us import SpellBook, load_master_npc_list, load_spell_book
 from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow, TimersService
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
@@ -154,6 +156,7 @@ class Backend:
     net_worker: NetWorker | None = None
     player_tracker: PlayerTrackerHandler | None = None
     timer_persistence: TimerPersistenceHandler | None = None
+    socials_sync: SocialSyncWatcher | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -362,6 +365,14 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         submit=submit,
     )
 
+    socials_sync = SocialSyncWatcher(
+        get_eq_dir=lambda: (
+            Path(settings.general.eq_install_dir) if settings.general.eq_install_dir else None
+        ),
+        get_store_dir=ensure_socials_dir,
+        is_enabled=lambda: settings.general.socials_autosync,
+    )
+
     archiver = LogArchiveService(
         get_log_dir=lambda: settings.general.eq_log_dir,
         is_enabled=lambda: settings.general.log_archive_enabled,
@@ -378,6 +389,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     driver.on_tick.append(api_timers.tick)
     driver.on_tick.append(player_tracker.tick)
     driver.on_tick.append(inventory_watcher.tick)
+    driver.on_tick.append(socials_sync.tick)
 
     return Backend(
         settings=settings,
@@ -399,5 +411,6 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         net_worker=net_worker,
         player_tracker=player_tracker,
         timer_persistence=timer_persistence,
+        socials_sync=socials_sync,
         _retained=[chat_commands, window_commands, sink, *handlers],
     )
