@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.16.0 (2026-07-29)
+
+### Code Style
+
+- Restore blank-line separation in the screenshot tool
+  ([`f769858`](https://github.com/prokopto-dev/nparse-plus/commit/f7698587f204e85612721f9931ca0ce703cb0e2f))
+
+### Documentation
+
+- List the macro editor in the screenshot checklist
+  ([`beeeac3`](https://github.com/prokopto-dev/nparse-plus/commit/beeeac350975abf68ad579dab18d63ca2b1bf2ae))
+
+
 ## v1.15.0 (2026-07-29)
 
 ### Chores
