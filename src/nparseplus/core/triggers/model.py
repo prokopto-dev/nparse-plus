@@ -330,3 +330,19 @@ class Trigger(BaseModel):
                 value = self._value_hash[group_name]
                 rv = _PLACEHOLDER_RE.sub(lambda _m, _v=value: _v, rv, count=1)
         return rv
+
+
+def trigger_group_key(trigger: Trigger) -> str:
+    """The folder name a trigger is filed under.
+
+    Built-ins live in their shipped folder; user triggers use their category,
+    which for a GINA import is the full nested path ("Raid Pack / Sebilis").
+    Shared by the editor's folder tree and the trigger activity log so the two
+    can never disagree about where a trigger lives.
+    """
+    if trigger.is_built_in:
+        return trigger.built_in_folder or "Built-in"
+    category = (trigger.category or "").strip()
+    if not category or category == "Default":
+        return "Custom"
+    return category
