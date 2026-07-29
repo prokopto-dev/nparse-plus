@@ -75,6 +75,14 @@ you'd run two instances with separate settings.
 The game only ever appends. Turn on **Archive oversized logs** in
 [Settings → Advanced](settings/advanced.md).
 
+## Can I share my macros, or copy them to my alts?
+
+Yes — see [Macros & socials](features/macros.md). The
+[Macro Editor](windows/macro-editor.md) edits a character's in-game
+macros, copies a set onto your other characters, and exports a pack you
+can hand to someone else. Edit while the character is logged out: the
+client rewrites those files when you camp.
+
 ## Something's broken — where do I look?
 
 [Troubleshooting](troubleshooting.md), and the two log files listed

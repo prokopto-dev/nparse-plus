@@ -24,7 +24,9 @@ directory** set in [Settings → General](../settings/general.md).
   *not in file*, with **Restore from local copy** beside the count.
 - **Right: the macro form** — **Name**, **Color**, and up to five command
   lines, plus a line naming who last wrote this slot and **Clear this
-  macro**.
+  macro**. The command lines
+  [autocomplete](../features/macros.md#autocomplete): type `/` for client
+  commands, `%` for tokens like `%T`.
 
 The page grid mirrors the in-game socials window, which also makes free
 slots obvious — useful when an import offers to move a macro out of a
@@ -63,6 +65,10 @@ taken slot.
   [warning in Macros & socials](../features/macros.md).
 - Only the `[Socials]` section is rewritten. Other sections of the file,
   unrecognised keys, comments, and blank lines are preserved exactly.
+- **Sync macros when EQ exits**
+  ([Settings → Advanced](../settings/advanced.md)) keeps the local copy
+  current without opening this window. It only reads your EQ directory —
+  it never writes macros back into the game.
 
 !!! note "Colour is a number"
     **Color** is the client's own palette index, shown as a raw number.

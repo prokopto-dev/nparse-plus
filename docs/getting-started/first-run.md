@@ -65,8 +65,9 @@ everything downstream (timers, triggers, maps) is live.
 - **EQ install directory** (optional, [Settings →
   General](../settings/general.md)): lets nParse+ read your real
   `spells_us.txt` (instead of the bundled copy) and enables the
-  [Night Vision fix](../features/night-vision.md) and
-  [Friends sync](../features/friends-sync.md).
+  [Night Vision fix](../features/night-vision.md),
+  [Friends sync](../features/friends-sync.md), and the
+  [Macro Editor](../windows/macro-editor.md).
 - **Windows**: toggle overlays from the tray; drag them into place (they're
   frameless — hover to reveal the title bar). See
   [Windows & Overlays](../windows/index.md) for tips, including the

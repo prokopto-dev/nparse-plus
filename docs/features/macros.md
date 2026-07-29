@@ -93,6 +93,43 @@ the editor says so in the status line and saves your macros anyway, and
 deleting the directory is a supported reset — everything simply reads as
 *from game* again.
 
+### Keeping it current automatically
+
+By default the mirror only updates when you open the Macro Editor and hit
+**Load**, so macros you make in game go unnoticed until then. Turn on
+**Sync macros when EQ exits** in
+[Settings → Advanced](../settings/advanced.md) and nParse+ folds those
+changes in on its own each time the client closes — new macros get
+recorded, and anything the client dropped becomes restorable without you
+having to have noticed.
+
+It waits for the client to exit rather than polling, so it never reads the
+files while the game holds them, and a character whose file hasn't changed
+costs nothing. **Sync now** on the same page runs it on demand.
+
+This is **read-only**: it reads your EQ directory and writes only nParse+'s
+own copy. It will not write macros back into the game on its own — that
+stays a deliberate click, because an overlay quietly rewriting your
+character files is not a thing you should have to think about.
+
+## Autocomplete
+
+The command lines in the editor autocomplete as you type:
+
+- **`/`** at the start of a line suggests client commands — `/assist`,
+  `/pet attack`, `/shout`, `/outputfile inventory`, and so on. Multi-word
+  commands keep matching as you go, so `/pet at` still finds
+  `/pet attack`.
+- **`%`** anywhere in a line suggests the substitution tokens the client
+  expands when the macro runs: `%T` (your target), `%N` (your own name),
+  `%S`, `%G`, `%R`, `%C`, `%Z`.
+
+The suggestion list is curated and deliberately conservative — commands
+that only exist on Live are left out, since offering something P99 rejects
+is worse than offering nothing. It is only ever a *suggestion*: nothing
+validates your macro against it, so commands from custom UIs or a future
+patch work exactly as they always did.
+
 ## Sharing a pack
 
 Exports are plain JSON with a `format` of `nparseplus-socials`, the same
