@@ -45,6 +45,7 @@ see real context. Retina/2x captures are fine. PNG only.
 | `window--event-overlay.png` | Event Overlay | An alert text + a countdown bar over the game (fire a builtin trigger or a `StartTimer-30`). |
 | `window--console.png` | Console | The console with a dozen log lines, Pause checkbox visible. |
 | `window--trigger-editor.png` | Trigger Editor | Folder tree expanded (Built In folders + a custom folder), a trigger selected showing the form and test box. |
+| `window--trigger-activity.png` | Trigger Editor, Migrating from GINA | The Activity tab with a handful of fires: a match, a muted timer follow-up, nested GINA folder paths in the Group column. |
 | `window--spell-timers-raid.png` | Spell Timers | Raid mode (group buffs by spell): one spell header with a row per target. |
 | `window--update-available.png` | Self-updater, Updating | The update dialog: version heading, per-version release notes, View on GitHub / Later / Download buttons. |
 | ⌨ `window--discord.png` | Discord Overlay | The Discord voice overlay over the game with 2+ users, one speaking. |
@@ -81,7 +82,7 @@ window with that page selected:
 
 ## Status
 
-29 wanted, **27 captured** by `tools/capture_screenshots.py`. The 2 remaining
+30 wanted, **28 captured** by `tools/capture_screenshots.py`. The 2 remaining
 are the ⌨ (manual) rows above — `home--overview` and `window--discord` — which
 need a real display/game. Rerun the tool after a UI change to refresh the
 automated set; the site tracks reality automatically.
