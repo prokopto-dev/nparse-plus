@@ -87,6 +87,7 @@ nav:
       - Event Overlay: windows/event-overlay.md
       - Console: windows/console.md
       - Trigger Editor: windows/trigger-editor.md
+      - Macro Editor: windows/macro-editor.md
       - Discord Overlay: windows/discord-overlay.md
   - Features:
       - features/index.md
@@ -99,6 +100,7 @@ nav:
       - Boats: features/boats.md
       - Sharing & PigParse: features/sharing.md
       - Friends sync: features/friends-sync.md
+      - Macros & socials: features/macros.md
       - Night Vision fix: features/night-vision.md
       - Text-to-speech: features/tts.md
       - Self-updater: features/updater.md

@@ -484,10 +484,15 @@ class MacroEditorWindow(QWidget):
                 self._grid.button_origin,
                 self._grid.button_origin + self._grid.buttons_per_page,
             )
+            rows = 0
             for offset, button in enumerate(buttons):
                 widget = self._make_slot_button(page, button, duplicates, wanted)
-                layout.addWidget(widget, offset // GRID_COLUMNS, offset % GRID_COLUMNS)
+                rows = offset // GRID_COLUMNS
+                layout.addWidget(widget, rows, offset % GRID_COLUMNS)
                 self._buttons[(page, button)] = widget
+            # Let the slots keep their natural height and hug the top rather
+            # than stretching apart to fill the tab.
+            layout.setRowStretch(rows + 1, 1)
             self.page_tabs.addTab(tab, f"Page {page}")
 
         if selected is not None and selected in self._buttons:

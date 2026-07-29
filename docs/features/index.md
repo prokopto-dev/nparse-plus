@@ -34,6 +34,8 @@ out of your log and what it does with it.
   interoperating with EQTool users; plus the self-hostable nparse mode
 - [Friends sync](friends-sync.md) — one merged friends list across your
   characters
+- [Macros & socials](macros.md) — edit your in-game macros, copy them to
+  your alts, and share them as a pack
 
 **App**
 
