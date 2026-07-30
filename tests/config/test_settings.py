@@ -360,7 +360,9 @@ class TestRegistrySettings:
         loaded = load_settings(path)
         assert [r.url for r in loaded.plugins.registries] == ["https://good.example/index.json"]
         assert loaded.plugins.registries[0].name == ""  # first wins, not the dupe
-        assert str(loaded.general.eq_log_dir) == "/keep/me"  # document survived
+        # The document survived. Compare as Path — the separator is
+        # platform-dependent and this assertion is about the value, not spelling.
+        assert loaded.general.eq_log_dir == Path("/keep/me")
 
     def test_plugin_entry_registry_url_roundtrips(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
