@@ -6,6 +6,41 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.19.0 (2026-07-30)
+
+### Documentation
+
+- The SDK is on PyPI and the registry is live
+  ([`aefc544`](https://github.com/prokopto-dev/nparse-plus/commit/aefc544e9a3be5a4b549cb21f66296c373878383))
+
+- **plugins**: Document multiple registries and what adding one means
+  ([`92f93f6`](https://github.com/prokopto-dev/nparse-plus/commit/92f93f621663e4de8ed4eafbf1fd631fc987df55))
+
+### Features
+
+- **plugins**: Add a registries editor widget
+  ([`e3ab025`](https://github.com/prokopto-dev/nparse-plus/commit/e3ab025deb19510cb77675bec7800b5a417d1da2))
+
+- **plugins**: Browse every enabled registry and record which one vouched
+  ([`22e9fae`](https://github.com/prokopto-dev/nparse-plus/commit/22e9fae852ed7be04fad64f753dd94a7cdd9653c))
+
+- **plugins**: Fetch every configured registry and report each result
+  ([`7e5e32f`](https://github.com/prokopto-dev/nparse-plus/commit/7e5e32f0998c1fa54dc2f58905703854b85dcbe8))
+
+- **plugins**: Let settings hold more than one plugin registry
+  ([`25876b1`](https://github.com/prokopto-dev/nparse-plus/commit/25876b1b86eb4fc9446ebbbc1ead3c792bcb37b9))
+
+### Refactoring
+
+- **plugins**: Give the host a registry list instead of one URL
+  ([`d598693`](https://github.com/prokopto-dev/nparse-plus/commit/d598693d99204114bcd0d6a62a97a0ea6e7b875a))
+
+### Testing
+
+- Compare the settings-survival path as a Path, not a string
+  ([`08eb8da`](https://github.com/prokopto-dev/nparse-plus/commit/08eb8da7f8360d27aead446d0f7d400bc83e51a0))
+
+
 ## v1.18.0 (2026-07-30)
 
 ### Bug Fixes
