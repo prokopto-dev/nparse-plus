@@ -6,11 +6,16 @@ import io
 import zipfile
 from pathlib import Path
 
+import httpx
+import pytest
+
 from nparseplus.core.plugins import install as install_module
 from nparseplus.core.plugins.install import (
+    fetch_https_bytes,
     install_from_file,
     install_from_url,
     install_from_zip,
+    trash_plugin_data,
     uninstall,
 )
 
@@ -31,6 +36,30 @@ def make_zip(path: Path, members: dict[str, str]) -> Path:
         for name, content in members.items():
             zf.writestr(name, content)
     return path
+
+
+def make_lying_zip(path: Path, name: str, content: bytes, declared: int) -> Path:
+    """A stored-member zip whose headers understate the member's real size."""
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr(name, content)
+    raw = bytearray(path.read_bytes())
+    lie = declared.to_bytes(4, "little")
+    local = raw.index(b"PK\x03\x04")  # uncompressed size sits at +22
+    raw[local + 22 : local + 26] = lie
+    central = raw.index(b"PK\x01\x02")  # ...and at +24 in the directory entry
+    raw[central + 24 : central + 28] = lie
+    path.write_bytes(bytes(raw))
+    return path
+
+
+def patch_default_transport(monkeypatch, transport: httpx.MockTransport) -> None:
+    """Route the module's own default https fetch through a mock transport."""
+    real = install_module.fetch_https_bytes
+    monkeypatch.setattr(
+        install_module,
+        "fetch_https_bytes",
+        lambda url, **kwargs: real(url, **{**kwargs, "transport": transport}),
+    )
 
 
 def test_install_package_zip(tmp_path: Path) -> None:
@@ -220,6 +249,142 @@ def test_url_install_records_source_and_hash(tmp_path: Path) -> None:
     assert result.ok, result.errors
     assert result.source_url == "https://example.com/hashed.zip"
     assert result.sha256 == digest
+
+
+def test_reserved_root_refused_in_either_casing(tmp_path: Path) -> None:
+    """Discovery skips ``trash``/``Trash`` case-insensitively; so must this."""
+    for root in ("trash", "Trash"):
+        archive = make_zip(
+            tmp_path / f"{root}.zip",
+            {f"{root}/__init__.py": GOOD_SOURCE},
+        )
+        result = install_from_zip(archive, tmp_path / "plugins")
+        assert not result.ok
+        assert any("reserved" in e for e in result.errors), root
+
+
+class TestFetchHttpsBytes:
+    def test_redirect_to_http_refused(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "example.com":
+                return httpx.Response(302, headers={"location": "http://evil.example/p.zip"})
+            return httpx.Response(200, content=b"plaintext payload")
+
+        with pytest.raises(ValueError, match="non-https"):
+            fetch_https_bytes(
+                "https://example.com/p.zip",
+                timeout=1.0,
+                max_bytes=4096,
+                transport=httpx.MockTransport(handler),
+            )
+
+    def test_https_redirect_followed(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/start":
+                return httpx.Response(302, headers={"location": "https://cdn.example.com/final"})
+            return httpx.Response(200, content=b"artifact")
+
+        payload = fetch_https_bytes(
+            "https://example.com/start",
+            timeout=1.0,
+            max_bytes=4096,
+            transport=httpx.MockTransport(handler),
+        )
+        assert payload == b"artifact"
+
+    def test_redirect_loop_bounded(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(302, headers={"location": "https://example.com/again"})
+
+        with pytest.raises(ValueError, match="too many redirects"):
+            fetch_https_bytes(
+                "https://example.com/start",
+                timeout=1.0,
+                max_bytes=4096,
+                transport=httpx.MockTransport(handler),
+            )
+
+    def test_oversize_body_aborted_mid_stream(self) -> None:
+        emitted: list[int] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            def chunks():
+                for _ in range(1000):
+                    emitted.append(1)
+                    yield b"x" * 1024
+
+            return httpx.Response(200, content=chunks())
+
+        with pytest.raises(ValueError, match="byte limit"):
+            fetch_https_bytes(
+                "https://example.com/huge.zip",
+                timeout=1.0,
+                max_bytes=4096,
+                transport=httpx.MockTransport(handler),
+            )
+        assert len(emitted) < 50, "whole body was buffered instead of aborted"
+
+
+def test_install_from_url_default_fetch_refuses_downgrade(tmp_path: Path, monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "http://evil.example/p.zip"})
+
+    patch_default_transport(monkeypatch, httpx.MockTransport(handler))
+    result = install_from_url("https://example.com/p.zip", tmp_path / "plugins")
+    assert not result.ok
+    assert any("non-https" in e for e in result.errors)
+
+
+def test_install_from_url_default_fetch_caps_size(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(install_module, "MAX_TOTAL_UNCOMPRESSED_BYTES", 1024)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * 8192)
+
+    patch_default_transport(monkeypatch, httpx.MockTransport(handler))
+    result = install_from_url("https://example.com/p.zip", tmp_path / "plugins")
+    assert not result.ok
+    assert any("byte limit" in e for e in result.errors)
+
+
+def test_extraction_stops_at_the_byte_budget(tmp_path: Path) -> None:
+    archive = make_zip(tmp_path / "wide.zip", {"pkg/__init__.py": "#" * 4096})
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    with zipfile.ZipFile(archive) as zf:
+        error = install_module._extract_limited(zf, staging, 512)
+    assert error is not None and "during extraction" in error
+
+
+def test_member_larger_than_it_declares_is_refused(tmp_path: Path) -> None:
+    """The declared size passes the pre-check; the real bytes must not."""
+    archive = make_lying_zip(
+        tmp_path / "liar.zip",
+        "liar.py",
+        (GOOD_SOURCE + "#" * 4096).encode(),
+        declared=8,
+    )
+    plugins_dir = tmp_path / "plugins"
+    result = install_from_zip(archive, plugins_dir)
+    assert not result.ok
+    assert any("could not be extracted" in e for e in result.errors), result.errors
+    assert not (plugins_dir / "liar.py").exists()
+    assert not (plugins_dir / ".install-staging").exists()
+
+
+def test_trash_plugin_data_moves_dir_aside(tmp_path: Path) -> None:
+    plugins_dir = tmp_path / "plugins"
+    data_dir = tmp_path / "plugin-data" / "ghost"
+    data_dir.mkdir(parents=True)
+    (data_dir / "storage.json").write_text('{"secret": 1}', encoding="utf-8")
+    assert trash_plugin_data(data_dir, plugins_dir) is None
+    assert not data_dir.exists()
+    assert (plugins_dir / "trash" / "plugin-data" / "ghost" / "storage.json").is_file()
+    # Missing data dir is not an error, and a repeat gets a numbered slot.
+    assert trash_plugin_data(data_dir, plugins_dir) is None
+    data_dir.mkdir(parents=True)
+    assert trash_plugin_data(data_dir, plugins_dir) is None
+    assert (plugins_dir / "trash" / "plugin-data" / "ghost.1").is_dir()
 
 
 def test_url_install_wrong_hash_refused(tmp_path: Path) -> None:

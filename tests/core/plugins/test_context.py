@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import functools
+import threading
+import time
 from datetime import datetime
 from typing import Any
 
@@ -159,6 +161,60 @@ def test_pigparse_lazy_creation_and_close(backend, tmp_path, monkeypatch) -> Non
     assert created == [api_first]
     owned.close()
     assert api_first.closed
+
+
+def run_concurrently(fn, threads: int = 8) -> None:
+    """Fire ``fn`` from several threads released at the same moment."""
+    start = threading.Event()
+
+    def runner() -> None:
+        start.wait()
+        fn()
+
+    workers = [threading.Thread(target=runner) for _ in range(threads)]
+    for worker in workers:
+        worker.start()
+    start.set()
+    for worker in workers:
+        worker.join(timeout=5)
+
+
+def test_pigparse_client_built_once_under_concurrent_access(backend, tmp_path, monkeypatch) -> None:
+    """A plugin may touch ctx.pigparse from a tick and a Qt timer at once."""
+    created: list[Any] = []
+
+    class SlowApi:
+        def __init__(self, base_url: str) -> None:
+            time.sleep(0.02)  # widen the window an unlocked check-then-set loses
+            created.append(self)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(context_module, "PigParseApiClient", SlowApi)
+    ctx = make_ctx(backend, tmp_path)
+    clients: list[Any] = []
+    run_concurrently(lambda: clients.append(ctx.pigparse))
+    assert len(created) == 1
+    assert {id(client) for client in clients} == {id(created[0])}
+
+
+def test_net_worker_started_once_under_concurrent_submit(backend, tmp_path, monkeypatch) -> None:
+    started: list[Any] = []
+
+    class SlowWorker(SyncWorker):
+        def __init__(self, deliver) -> None:
+            super().__init__(deliver)
+            time.sleep(0.02)
+
+        def start(self) -> None:
+            super().start()
+            started.append(self)
+
+    monkeypatch.setattr(context_module, "NetWorker", SlowWorker)
+    ctx = make_ctx(backend, tmp_path)
+    run_concurrently(lambda: ctx.submit(lambda: 1))
+    assert len(started) == 1  # a leaked second worker means a leaked thread
 
 
 def test_pigparse_prefers_backend_client(backend, tmp_path) -> None:

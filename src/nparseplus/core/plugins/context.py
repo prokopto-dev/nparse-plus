@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -40,10 +41,18 @@ logger = logging.getLogger(__name__)
 
 
 class _OwnedNet:
-    """At most one NetWorker + PigParse client for all plugins combined."""
+    """At most one NetWorker + PigParse client for all plugins combined.
+
+    The lazy construction is locked because plugins legitimately reach these
+    from more than one thread — a driver tick and a window's Qt timer, say.
+    Two racing threads would otherwise each build a client (or start a
+    daemon worker) and ``close`` would only ever release the last one,
+    leaking an httpx pool and a thread for the life of the process.
+    """
 
     def __init__(self, backend: Backend) -> None:
         self._backend = backend
+        self._lock = threading.Lock()
         self._worker: NetWorker | None = None
         self._api: PigParseApiClient | None = None
 
@@ -55,26 +64,30 @@ class _OwnedNet:
         if self._backend.net_worker is not None:
             self._backend.net_worker.submit(fetch, apply)
             return
-        if self._worker is None:
-            self._worker = NetWorker(deliver=self._backend.sharing.enqueue_inbound)
-            self._worker.start()
-        self._worker.submit(fetch, apply)
+        with self._lock:
+            if self._worker is None:
+                self._worker = NetWorker(deliver=self._backend.sharing.enqueue_inbound)
+                self._worker.start()
+            worker = self._worker
+        worker.submit(fetch, apply)
 
     @property
     def api(self) -> Any:
         if self._backend.pigparse_api is not None:
             return self._backend.pigparse_api
-        if self._api is None:
-            self._api = PigParseApiClient(self._backend.settings.sharing.pigparse_api_url)
-        return self._api
+        with self._lock:
+            if self._api is None:
+                self._api = PigParseApiClient(self._backend.settings.sharing.pigparse_api_url)
+            return self._api
 
     def close(self) -> None:
-        if self._worker is not None:
-            self._worker.stop()
-            self._worker = None
-        if self._api is not None:
-            self._api.close()
-            self._api = None
+        with self._lock:
+            worker, self._worker = self._worker, None
+            api, self._api = self._api, None
+        if worker is not None:
+            worker.stop()
+        if api is not None:
+            api.close()
 
 
 class HostPluginContext:

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 
+import httpx
 import pytest
 
+from nparseplus.core.plugins import install as install_module
 from nparseplus.core.plugins.registry import (
+    MAX_INDEX_BYTES,
     REGISTRY_SCHEMA_VERSION,
     RegistryRelease,
     fetch_index,
@@ -107,6 +110,53 @@ class TestFetchIndex:
 
         with pytest.raises(ValueError, match="could not reach"):
             fetch_index("https://example.com/index.json", fetch=boom)
+
+
+class TestDefaultIndexTransport:
+    """The built-in fetch: https on every hop, streamed under a byte budget.
+
+    The index is the security boundary (it supplies both the artifact URL
+    and the hash it is checked against), so a downgrade here is worse than
+    anywhere else in the installer.
+    """
+
+    @staticmethod
+    def _patch(monkeypatch, handler) -> None:
+        real = install_module.fetch_https_bytes
+        monkeypatch.setattr(
+            install_module,
+            "fetch_https_bytes",
+            lambda url, **kwargs: real(
+                url, **{**kwargs, "transport": httpx.MockTransport(handler)}
+            ),
+        )
+
+    def test_redirect_to_http_refused(self, monkeypatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.scheme == "https":
+                return httpx.Response(302, headers={"location": "http://evil.example/index.json"})
+            return httpx.Response(200, content=json.dumps(GOOD_INDEX).encode())
+
+        self._patch(monkeypatch, handler)
+        with pytest.raises(ValueError, match="non-https"):
+            fetch_index("https://example.com/index.json")
+
+    def test_https_redirect_followed(self, monkeypatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/index.json":
+                return httpx.Response(302, headers={"location": "https://cdn.example.com/i.json"})
+            return httpx.Response(200, content=json.dumps(GOOD_INDEX).encode())
+
+        self._patch(monkeypatch, handler)
+        assert fetch_index("https://example.com/index.json").plugins[0].id == "merchant-prices"
+
+    def test_oversize_index_refused(self, monkeypatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"{" + b" " * (MAX_INDEX_BYTES + 1))
+
+        self._patch(monkeypatch, handler)
+        with pytest.raises(ValueError, match="byte limit"):
+            fetch_index("https://example.com/index.json")
 
 
 class TestReleaseCompat:

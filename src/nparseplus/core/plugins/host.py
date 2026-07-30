@@ -28,7 +28,7 @@ from nparseplus.config.paths import plugin_data_dir, plugins_dir
 from nparseplus.config.settings import PluginEntry, Settings
 from nparseplus.core.plugins.context import HostPluginContext, _OwnedNet
 from nparseplus.core.plugins.discovery import PluginSource, discover_all
-from nparseplus.core.plugins.install import InstallResult
+from nparseplus.core.plugins.install import InstallResult, trash_plugin_data
 from nparseplus.core.plugins.storage import JsonPluginStorage
 from nparseplus_sdk import SDK_VERSION as _SDK_VERSION
 from nparseplus_sdk import NParsePlugin, PluginMeta, check_compat
@@ -78,12 +78,14 @@ class PluginHost:
         app_version: str,
         request_save: Callable[[], None] | None = None,
         plugins_dir_override: Path | None = None,
+        plugin_data_dir_override: Callable[[str], Path] | None = None,
     ) -> None:
         self._settings = settings
         self._backend = backend
         self._app_version = app_version
         self._request_save = request_save
         self._plugins_dir = plugins_dir_override or plugins_dir()
+        self._plugin_data_dir = plugin_data_dir_override or plugin_data_dir
         self._owned_net = _OwnedNet(backend)
         self._loaded: list[LoadedPlugin] = []
 
@@ -198,11 +200,28 @@ class PluginHost:
         entry.sha256 = result.sha256 or ""
         self._save()
 
+    def forget(self, plugin_id: str) -> None:
+        """Erase the persistent traces of an uninstalled plugin.
+
+        Uninstalling only moves the code to the trash; the consent record and
+        the plugin's private data would outlive it. That is a consent bypass:
+        the next thing to claim id ``plugin_id`` — from any source — would
+        load pre-approved and inherit the old plugin's storage. Both go with
+        the code, so a re-install is treated as the stranger it is.
+        """
+        if self._settings.plugins.entries.pop(plugin_id, None) is not None:
+            self._save()
+        error = trash_plugin_data(self._plugin_data_dir(plugin_id), self._plugins_dir)
+        if error is not None:
+            logger.warning("plugin %s data not moved aside: %s", plugin_id, error)
+
     def set_enabled(self, plugin_id: str, enabled: bool) -> None:
         """Enable/disable a known plugin (takes effect next launch)."""
         entry = self._settings.plugins.entries.get(plugin_id)
         if entry is None:
-            entry = PluginEntry(approved=True)
+            # No entry means consent was never given (or was forgotten by an
+            # uninstall) — ticking a checkbox must not stand in for it.
+            entry = PluginEntry(approved=False)
             self._settings.plugins.entries[plugin_id] = entry
         entry.enabled = enabled
         self._save()
@@ -212,7 +231,7 @@ class PluginHost:
         for loaded in self._loaded:
             if loaded.status != "ready" or loaded.plugin is None or loaded.meta is None:
                 continue
-            storage = JsonPluginStorage(plugin_data_dir(loaded.meta.id))
+            storage = JsonPluginStorage(self._plugin_data_dir(loaded.meta.id))
             ctx = HostPluginContext(
                 loaded.meta, self._backend, self._app_version, storage, self._owned_net
             )
@@ -260,6 +279,14 @@ class PluginHost:
                 loaded.plugin.deactivate()
             except Exception:
                 logger.exception("plugin %s deactivate() raised", loaded.plugin_id)
+            # Unwind after deactivate, so the plugin still has its
+            # registrations while it shuts down. Harmless at process exit,
+            # but leaving the bus/tick/parser hooks behind is exactly what
+            # would break hot enable/disable.
+            if loaded.context is not None:
+                loaded.context.unwind()
+            loaded.window_specs.clear()
+            loaded.page_specs.clear()
         self._owned_net.close()
 
     def _save(self) -> None:

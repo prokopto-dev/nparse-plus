@@ -11,9 +11,12 @@ Installs are deliberately conservative:
   SDK's ``validate_plugin`` (the same load-correctness check as the
   ``nparseplus-plugin`` CLI) before it is moved into the plugins directory;
   advisory static-scan warnings are surfaced for the UI to show.
-- URL installs are https-only; the byte fetch is injectable so the UI can
-  route it through a worker thread.
+- URL installs are https-only *on every hop* and streamed against a byte
+  budget; the byte fetch is injectable so the UI can route it through a
+  worker thread.
 - Uninstall moves the plugin into ``plugins/trash/`` rather than deleting.
+  The host pairs it with ``PluginHost.forget`` so the consent record and the
+  plugin's private data go with it.
 
 Note: validation imports the plugin, so its module-level code runs at
 install time — the same trust boundary as running the plugin. The manager
@@ -29,15 +32,20 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from nparseplus.core.plugins.discovery import RESERVED_DIR_NAMES
+from nparseplus.core.plugins.discovery import is_reserved_name
 from nparseplus_sdk import PluginMeta
 from nparseplus_sdk.validate import validate_plugin
 
 MAX_ARCHIVE_MEMBERS = 2000
 MAX_TOTAL_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # 50 MiB
+MAX_REDIRECTS = 5
 TRASH_DIR_NAME = "trash"
+# Uninstalled plugin data is parked beside the uninstalled code, not deleted.
+PLUGIN_DATA_TRASH_NAME = "plugin-data"
 _STAGING_DIR_NAME = ".install-staging"
+_COPY_CHUNK_BYTES = 64 * 1024
 
 
 @dataclass
@@ -69,6 +77,51 @@ def _checksum_error(payload: bytes, expected_sha256: str | None) -> tuple[str, s
     return actual, None
 
 
+def fetch_https_bytes(
+    url: str,
+    *,
+    timeout: float,
+    max_bytes: int,
+    transport: Any = None,
+) -> bytes:
+    """GET an https URL into memory, bounded in both scheme and size.
+
+    Redirects are followed by hand instead of by httpx: we keep legitimate
+    hops (release artifacts routinely bounce to a CDN) but re-assert https
+    on every one of them, so an https URL that 302s to http is refused
+    rather than silently downloaded in plaintext — which is what
+    ``follow_redirects=True`` did. The body is streamed and aborted the
+    moment it passes ``max_bytes``, so an endless response can't be
+    buffered whole before anyone checks its length.
+
+    ``transport`` is an httpx transport seam for tests; production passes
+    None. Raises on any refusal — callers turn that into a user message.
+    """
+    import httpx
+
+    with httpx.Client(timeout=timeout, follow_redirects=False, transport=transport) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            if not url.lower().startswith("https://"):
+                raise ValueError(f"refusing non-https URL {url!r}")
+            with client.stream("GET", url) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location", "")
+                    if not location:
+                        raise ValueError("redirect without a Location header")
+                    url = str(response.url.join(location))
+                    continue
+                response.raise_for_status()
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError(f"response exceeds the {max_bytes} byte limit")
+                    chunks.append(chunk)
+                return b"".join(chunks)
+    raise ValueError(f"too many redirects (limit {MAX_REDIRECTS})")
+
+
 def _member_errors(zf: zipfile.ZipFile) -> list[str]:
     infos = zf.infolist()
     if len(infos) > MAX_ARCHIVE_MEMBERS:
@@ -83,9 +136,47 @@ def _member_errors(zf: zipfile.ZipFile) -> list[str]:
         if stat.S_ISLNK(info.external_attr >> 16):
             errors.append(f"symlink member rejected: {name!r}")
         total += info.file_size
+    # Declared sizes are attacker-controlled, so this is only a cheap early
+    # reject; _extract_limited re-enforces the cap on bytes actually written.
     if total > MAX_TOTAL_UNCOMPRESSED_BYTES:
         errors.append(f"archive expands to {total} bytes (limit {MAX_TOTAL_UNCOMPRESSED_BYTES})")
     return errors
+
+
+def _extract_limited(zf: zipfile.ZipFile, staging: Path, budget: int) -> str | None:
+    """Extract every member under a hard output budget; return an error or None.
+
+    Replaces ``extractall`` because that trusts the archive twice over: it
+    writes a member to disk before its CRC/size mismatch is discovered, and
+    the only size the pre-check can see is the one the archive declares. Here
+    the budget counts bytes as they are written, so a member that expands
+    past what it declared is cut off mid-write rather than after.
+
+    Member paths were validated by ``_member_errors``; the containment check
+    below is belt-and-braces against a path that survives that screen.
+    """
+    staging_root = staging.resolve()
+    written = 0
+    try:
+        for info in zf.infolist():
+            target = (staging / info.filename).resolve()
+            if not target.is_relative_to(staging_root):
+                return f"unsafe member path: {info.filename!r}"
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as source, target.open("wb") as sink:
+                while chunk := source.read(_COPY_CHUNK_BYTES):
+                    written += len(chunk)
+                    if written > budget:
+                        return f"archive expands past {budget} bytes during extraction"
+                    sink.write(chunk)
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        # BadZipFile covers a member whose real content disagrees with its
+        # declared size or CRC; RuntimeError covers encrypted archives.
+        return f"archive member could not be extracted: {exc}"
+    return None
 
 
 def _plugin_root(names: list[str]) -> tuple[str | None, str | None]:
@@ -134,7 +225,7 @@ def install_from_zip(
         if root is None:
             return InstallResult(ok=False, errors=[root_error or "empty archive"])
 
-        if root.lower() in RESERVED_DIR_NAMES or root.startswith(("_", ".")):
+        if is_reserved_name(root) or root.startswith(("_", ".")):
             return InstallResult(ok=False, errors=[f"plugin name {root!r} is reserved"])
         target = plugins_dir / root
         if target.exists():
@@ -147,7 +238,9 @@ def install_from_zip(
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True, exist_ok=True)
         try:
-            zf.extractall(staging)  # members validated above
+            extract_error = _extract_limited(zf, staging, MAX_TOTAL_UNCOMPRESSED_BYTES)
+            if extract_error is not None:
+                return InstallResult(ok=False, errors=[extract_error])
             candidate = staging / root
             report = validate_plugin(candidate, app_version=app_version)
             if not report.ok:
@@ -213,21 +306,20 @@ def install_from_url(
     """Download a plugin zip over https and install it.
 
     ``fetch`` is injectable so the UI can run the download on a worker
-    thread (and tests can avoid the network). The default uses httpx with
-    a bounded timeout. Registry installs pass ``expected_sha256`` — the
-    reviewed artifact hash from the index — so a swapped download is
-    refused before any of it is extracted or imported.
+    thread (and tests can avoid the network). The default streams through
+    ``fetch_https_bytes``: https on every redirect hop, size-capped as it
+    arrives. Registry installs pass ``expected_sha256`` — the reviewed
+    artifact hash from the index — so a swapped download is refused before
+    any of it is extracted or imported.
     """
     if not url.lower().startswith("https://"):
         return InstallResult(ok=False, errors=["only https:// URLs are allowed"])
     if fetch is None:
 
         def fetch(target_url: str) -> bytes:
-            import httpx
-
-            response = httpx.get(target_url, timeout=30.0, follow_redirects=True)
-            response.raise_for_status()
-            return response.content
+            return fetch_https_bytes(
+                target_url, timeout=30.0, max_bytes=MAX_TOTAL_UNCOMPRESSED_BYTES
+            )
 
     try:
         payload = fetch(url)
@@ -250,8 +342,24 @@ def install_from_url(
         tmp_zip.unlink(missing_ok=True)
 
 
+def _trash_slot(trash: Path, name: str) -> Path:
+    """A free path under ``trash`` for ``name`` (numbered if it's taken)."""
+    trash.mkdir(parents=True, exist_ok=True)
+    target = trash / name
+    counter = 1
+    while target.exists():
+        target = trash / f"{name}.{counter}"
+        counter += 1
+    return target
+
+
 def uninstall(source_path: Path, plugins_dir: Path) -> str | None:
-    """Move an installed plugin into plugins/trash/; return an error or None."""
+    """Move an installed plugin into plugins/trash/; return an error or None.
+
+    This only handles the code. Forgetting the plugin — its consent record
+    and its private data — is ``PluginHost.forget``, which the manager UI
+    calls with the id of whatever it just uninstalled.
+    """
     source_path = Path(source_path)
     plugins_dir = Path(plugins_dir)
     try:
@@ -260,12 +368,24 @@ def uninstall(source_path: Path, plugins_dir: Path) -> str | None:
         return f"{source_path} is not inside the plugins directory"
     if not source_path.exists():
         return f"{source_path} does not exist"
-    trash = plugins_dir / TRASH_DIR_NAME
-    trash.mkdir(parents=True, exist_ok=True)
-    target = trash / source_path.name
-    counter = 1
-    while target.exists():
-        target = trash / f"{source_path.name}.{counter}"
-        counter += 1
-    shutil.move(str(source_path), str(target))
+    shutil.move(str(source_path), str(_trash_slot(plugins_dir / TRASH_DIR_NAME, source_path.name)))
+    return None
+
+
+def trash_plugin_data(data_dir: Path, plugins_dir: Path) -> str | None:
+    """Move a plugin's private data dir into plugins/trash/plugin-data/.
+
+    Same recoverable-not-deleted contract as ``uninstall``: the bytes stay
+    around for a user who uninstalled by mistake, but they are out of the
+    live data directory, so a later plugin claiming the same id starts with
+    empty storage instead of inheriting its predecessor's.
+    """
+    data_dir = Path(data_dir)
+    if not data_dir.exists():
+        return None
+    trash = Path(plugins_dir) / TRASH_DIR_NAME / PLUGIN_DATA_TRASH_NAME
+    try:
+        shutil.move(str(data_dir), str(_trash_slot(trash, data_dir.name)))
+    except OSError as exc:
+        return f"could not move plugin data aside: {exc}"
     return None

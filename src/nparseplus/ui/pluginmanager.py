@@ -2,7 +2,8 @@
 
 Lists every discovered plugin with status, toggles enablement (persisted
 immediately; activation changes take effect next launch), opens the plugins
-folder, uninstalls (to ``plugins/trash/``), and installs from a local
+folder, uninstalls (to ``plugins/trash/``, forgetting the plugin's consent
+record and stored data along with it), and installs from a local
 zip/.py or an https zip URL. URL downloads and archive validation run on a
 worker thread (validation imports the plugin's module code — the page says
 so next to the buttons); results land back on the GUI thread via a signal.
@@ -282,10 +283,15 @@ class PluginManagerPage(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
+        plugin_id = self._plugin_id_for_location(location)
         error = uninstall(Path(location), self._host.plugins_dir)
         if error is not None:
             QMessageBox.warning(self, "Uninstall failed", error)
         else:
+            # The consent record and stored data go with the code: a plugin
+            # re-installed under this id must ask for consent again.
+            if plugin_id is not None:
+                self._host.forget(plugin_id)
             self._session_installs = [
                 r for r in self._session_installs if str(r.installed_path) != location
             ]
@@ -295,6 +301,16 @@ class PluginManagerPage(QWidget):
                 f"{name} was moved to the trash folder. Restart nParse+ to unload it.",
             )
         self.refresh()
+
+    def _plugin_id_for_location(self, location: str) -> str | None:
+        """The plugin id behind a table row, from the host or this session."""
+        for loaded in self._host.statuses():
+            if loaded.source.location == location and loaded.plugin_id is not None:
+                return loaded.plugin_id
+        for result in self._session_installs:
+            if str(result.installed_path) == location and result.meta is not None:
+                return result.meta.id
+        return None
 
 
 _BROWSER_COLUMNS = ("Name", "Version", "Author", "Compatibility", "")

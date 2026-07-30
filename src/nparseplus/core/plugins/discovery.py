@@ -23,6 +23,16 @@ ENTRY_POINT_GROUP = "nparseplus.plugins"
 RESERVED_DIR_NAMES = {"trash"}
 
 
+def is_reserved_name(name: str) -> bool:
+    """True if ``name`` collides with an installer work area.
+
+    Case-insensitive, and the installer and this sweep must both go through
+    here: macOS and Windows fold case, so a ``Trash/`` the installer refused
+    would otherwise still be swept up and loaded as a plugin.
+    """
+    return name.lower() in RESERVED_DIR_NAMES
+
+
 @dataclass(frozen=True)
 class PluginSource:
     """One place a plugin can be loaded from (identity known pre-import)."""
@@ -39,7 +49,7 @@ def discover_dir_plugins(plugins_dir: Path) -> list[PluginSource]:
         return []
     sources: list[PluginSource] = []
     for path in sorted(plugins_dir.iterdir(), key=lambda p: p.name):
-        if path.name.startswith(("_", ".")) or path.name in RESERVED_DIR_NAMES:
+        if path.name.startswith(("_", ".")) or is_reserved_name(path.name):
             continue
         is_module = path.is_file() and path.suffix == ".py"
         is_package = path.is_dir() and (path / "__init__.py").is_file()

@@ -31,6 +31,10 @@ DEFAULT_REGISTRY_URL = "https://prokopto-dev.github.io/nparseplus-plugins/index.
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# A curated index of a few hundred plugins is tens of KB; anything past this
+# is not an index we want to hold in memory while parsing.
+MAX_INDEX_BYTES = 5 * 1024 * 1024
+
 
 class RegistryRelease(BaseModel):
     """One reviewed, downloadable release of a plugin."""
@@ -109,6 +113,12 @@ def parse_index(raw: bytes | str) -> RegistryIndex:
 def fetch_index(url: str, fetch: Callable[[str], bytes] | None = None) -> RegistryIndex:
     """Download and parse the index. https-only; ``fetch`` injectable.
 
+    The default fetch goes through the installer's ``fetch_https_bytes``:
+    https is re-asserted on every redirect hop and the body is streamed
+    under a byte budget. This matters more here than anywhere else — a
+    forged index supplies both the download URL and the hash it will be
+    checked against, so the index itself has to arrive over TLS end to end.
+
     Raises ValueError on any failure (transport or content) with a message
     fit for the "registry unavailable" UI state.
     """
@@ -117,11 +127,11 @@ def fetch_index(url: str, fetch: Callable[[str], bytes] | None = None) -> Regist
     if fetch is None:
 
         def fetch(target_url: str) -> bytes:
-            import httpx
+            # Imported lazily: the index schema shouldn't depend on the
+            # installer at module scope, only on its transport at call time.
+            from nparseplus.core.plugins.install import fetch_https_bytes
 
-            response = httpx.get(target_url, timeout=15.0, follow_redirects=True)
-            response.raise_for_status()
-            return response.content
+            return fetch_https_bytes(target_url, timeout=15.0, max_bytes=MAX_INDEX_BYTES)
 
     try:
         raw = fetch(url)

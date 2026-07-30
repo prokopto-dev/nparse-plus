@@ -9,6 +9,7 @@ from nparseplus.core.plugins import discovery
 from nparseplus.core.plugins.discovery import (
     discover_dir_plugins,
     discover_entry_point_plugins,
+    is_reserved_name,
 )
 
 from .conftest import write_plugin
@@ -36,6 +37,24 @@ def test_ignored_entries(tmp_path: Path) -> None:
     trash.mkdir()
     write_plugin(trash, "old.py", plugin_id="old")
     assert discover_dir_plugins(tmp_path) == []
+
+
+def test_reserved_dir_skipped_in_either_casing(tmp_path: Path) -> None:
+    """A case-folding filesystem makes ``Trash`` the same dir the installer
+    refuses; discovery must not load it as a plugin either."""
+    for index, name in enumerate(("trash", "Trash")):
+        root = tmp_path / f"plugins{index}"  # separate roots: the FS folds case
+        directory = root / name
+        directory.mkdir(parents=True)
+        write_plugin(directory, "__init__.py", plugin_id="old")
+        assert discover_dir_plugins(root) == [], name
+
+
+def test_is_reserved_name_is_case_insensitive() -> None:
+    assert is_reserved_name("trash")
+    assert is_reserved_name("Trash")
+    assert is_reserved_name("TRASH")
+    assert not is_reserved_name("trashcan")
 
 
 def test_load_is_deferred_and_namespaced(tmp_path: Path) -> None:

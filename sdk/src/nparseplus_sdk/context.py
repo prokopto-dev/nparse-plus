@@ -122,8 +122,11 @@ class PluginContext(Protocol):
 
     @property
     def pigparse(self) -> Any:
-        """PigParse REST client (host ``PigParseApi`` protocol). Call it only
-        inside a ``submit`` fetch — it blocks on HTTP."""
+        """PigParse REST client (host ``PigParseApi`` protocol).
+
+        Reading this property is safe from any thread; its *methods* block on
+        HTTP, so invoke them only inside a ``submit`` fetch — grab the client
+        on your own thread, then call it in the fetch closure."""
         ...
 
     # --- registration (call during activate) ------------------------------

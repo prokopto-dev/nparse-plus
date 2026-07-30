@@ -200,6 +200,99 @@ def test_shutdown_deactivates_active_only_and_swallows_raise(
     assert marker.read_text() == "bye"
 
 
+def test_shutdown_unwinds_registrations(
+    make_host, plugins_dir: Path, settings: Settings, backend
+) -> None:
+    from nparseplus.core.events import LineEvent
+
+    ticks_before = list(backend.driver.on_tick)
+    parsers_before = list(backend.pipeline._parsers)
+    subscribers_before = len(backend.bus._subscribers[LineEvent])
+    write_plugin(
+        plugins_dir,
+        "wired.py",
+        plugin_id="wired",
+        activate_body=(
+            "        from nparseplus.core.events import LineEvent\n"
+            "        ctx.subscribe(LineEvent, lambda e: None)\n"
+            "        ctx.add_tick(lambda now: None)\n"
+            "        class P:\n"
+            "            def handle(self, line, pctx):\n"
+            "                return False\n"
+            "        ctx.add_parser(P())"
+        ),
+    )
+    approve(settings, "wired")
+    host = make_host()
+    host.discover_and_load()
+    host.activate_enabled()
+    assert len(backend.bus._subscribers[LineEvent]) == subscribers_before + 1
+    assert len(backend.driver.on_tick) == len(ticks_before) + 1
+    assert len(backend.pipeline._parsers) == len(parsers_before) + 1
+
+    host.shutdown()
+    assert len(backend.bus._subscribers[LineEvent]) == subscribers_before
+    assert backend.driver.on_tick == ticks_before
+    assert backend.pipeline._parsers == parsers_before
+
+
+def test_forget_drops_consent_and_trashes_plugin_data(
+    make_host, plugins_dir: Path, settings: Settings, tmp_path: Path
+) -> None:
+    data_root = tmp_path / "plugin-data"
+    (data_root / "haunt").mkdir(parents=True)
+    (data_root / "haunt" / "storage.json").write_text('{"secret": 1}', encoding="utf-8")
+    approve(settings, "haunt")
+    saves: list[None] = []
+    host = make_host(
+        request_save=lambda: saves.append(None),
+        plugin_data_dir_override=lambda pid: data_root / pid,
+    )
+    host.forget("haunt")
+    assert "haunt" not in settings.plugins.entries
+    assert saves
+    assert not (data_root / "haunt").exists()
+    assert (plugins_dir / "trash" / "plugin-data" / "haunt" / "storage.json").is_file()
+
+
+def test_reinstall_under_a_forgotten_id_asks_for_consent_again(
+    make_host, plugins_dir: Path, settings: Settings, tmp_path: Path
+) -> None:
+    """The uninstall/reinstall consent bypass: same id, different plugin."""
+    from nparseplus.core.plugins.install import uninstall
+    from nparseplus.core.plugins.storage import JsonPluginStorage
+
+    data_root = tmp_path / "plugin-data"
+    data_dir = lambda pid: data_root / pid  # noqa: E731 - one-line test stub
+    write_plugin(plugins_dir, "impostor.py", plugin_id="impostor")
+    host = make_host(plugin_data_dir_override=data_dir)
+    host.discover_and_load()
+    host.record_consent("impostor", True)
+    host.activate_enabled()
+    JsonPluginStorage(data_dir("impostor")).save({"api_key": "hunter2"})
+
+    assert uninstall(plugins_dir / "impostor.py", plugins_dir) is None
+    host.forget("impostor")
+
+    # Something else now claims the id — it must not inherit the approval...
+    write_plugin(plugins_dir, "impostor.py", plugin_id="impostor", version="9.9.9")
+    host2 = make_host(plugin_data_dir_override=data_dir)
+    host2.discover_and_load()
+    assert statuses_by_id(host2) == {"impostor": "pending_consent"}
+    host2.activate_enabled()
+    assert statuses_by_id(host2) == {"impostor": "pending_consent"}
+    # ...nor the previous plugin's private data.
+    assert JsonPluginStorage(data_dir("impostor")).load() == {}
+
+
+def test_set_enabled_without_an_entry_leaves_consent_pending(make_host, settings: Settings) -> None:
+    host = make_host()
+    host.set_enabled("stranger", True)
+    entry = settings.plugins.entries["stranger"]
+    assert entry.enabled is True
+    assert entry.approved is False  # a checkbox is not consent
+
+
 def test_set_enabled_toggles_entry(make_host, plugins_dir: Path, settings: Settings) -> None:
     write_plugin(plugins_dir, "flip.py", plugin_id="flip")
     approve(settings, "flip")

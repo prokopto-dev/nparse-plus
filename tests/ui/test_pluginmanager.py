@@ -42,7 +42,14 @@ def host(tmp_path: Path):
     (plugins_dir / "demo.py").write_text(PLUGIN_SOURCE, encoding="utf-8")
     settings.plugins.entries["demo"] = PluginEntry(enabled=True, approved=True)
     backend = build_backend(settings, speaker=NullSpeaker())
-    host = PluginHost(settings, backend, "1.15.0", plugins_dir_override=plugins_dir)
+    host = PluginHost(
+        settings,
+        backend,
+        "1.15.0",
+        plugins_dir_override=plugins_dir,
+        # Keep uninstall's forget() away from the real per-user plugin data.
+        plugin_data_dir_override=lambda pid: tmp_path / "plugin-data" / pid,
+    )
     host.discover_and_load()
     host.activate_enabled()
     return host
@@ -113,6 +120,46 @@ def test_uninstall_selected_moves_to_trash(qtbot, host, monkeypatch) -> None:
     page._uninstall_selected()
     assert not (host.plugins_dir / "demo.py").exists()
     assert (host.plugins_dir / "trash" / "demo.py").is_file()
+
+
+def test_uninstall_forgets_consent_and_data(qtbot, host, tmp_path: Path, monkeypatch) -> None:
+    """Uninstalling must not leave an approval a future 'demo' could inherit."""
+    from nparseplus.core.plugins.storage import JsonPluginStorage
+
+    data_dir = tmp_path / "plugin-data" / "demo"
+    JsonPluginStorage(data_dir).save({"api_key": "hunter2"})
+    monkeypatch.setattr(
+        QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+    )
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    page = make_page(qtbot, host)
+    page._table.setCurrentCell(0, 1)
+    page._uninstall_selected()
+    assert host.entry_for("demo") is None
+    assert not data_dir.exists()
+    assert (host.plugins_dir / "trash" / "plugin-data" / "demo" / "storage.json").is_file()
+
+
+def test_uninstall_of_a_session_install_forgets_it(
+    qtbot, host, tmp_path: Path, monkeypatch
+) -> None:
+    archive = tmp_path / "extra.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("extra.py", PLUGIN_SOURCE.replace('"demo"', '"extra"'))
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(archive), "zip"))
+    )
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(
+        QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+    )
+    page = make_page(qtbot, host)
+    page._install_from_file()
+    assert host.entry_for("extra") is not None  # provenance recorded at install
+    page._table.setCurrentCell(1, 1)  # the session-install row
+    page._uninstall_selected()
+    assert host.entry_for("extra") is None
+    assert not (host.plugins_dir / "extra.py").exists()
 
 
 def test_page_spec_builds_page(qtbot, host) -> None:
