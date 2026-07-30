@@ -13,16 +13,17 @@ decision, and [Using another registry](#using-another-registry) below is
 the canonical explanation of what you are agreeing to.
 
 !!! note "Status"
-    The registry **repository is not live yet**, so the Browse dialog
-    reports that it could not reach it and everything else (file/URL
-    installs, the plugins folder) works normally.
+    The registry is **live**: the app fetches
+    [`index.json`](https://prokopto-dev.github.io/nparseplus-plugins/index.json)
+    and *Browse registry…* works. The catalogue itself is still empty —
+    nothing has been submitted yet — so the dialog lists no plugins until
+    the first entry is merged. Yours can be it; see
+    [Submitting a plugin](#submitting-a-plugin).
 
-    The repository's full contents — seed `index.json`, the generated JSON
-    Schema, `owners.json`, the submission CI workflow, and maintainer setup
-    notes — already exist in the app repo at
+    This page is the specification the index and the app both implement.
+    The repository's contents are mirrored in the app repo at
     [`templates/registry-repo/`](https://github.com/prokopto-dev/nparse-plus/tree/master/templates/registry-repo),
-    ready to be pushed as a new repository. This page is the specification
-    both it and the app implement.
+    which is where the JSON Schema is generated (see below).
 
 ## How the app consumes it
 
@@ -269,8 +270,6 @@ means changing the index, which means another review.
 
 ## Roadmap
 
-- Stand up the `nparseplus-plugins` repository from
-  `templates/registry-repo/` (index + owners + CI + Pages).
 - Optional index signing (minisign/ed25519, public key shipped in the app)
   if the trust model ever needs to survive a GitHub Pages compromise.
 - Automated submission: a workflow in plugin repos that opens the index PR

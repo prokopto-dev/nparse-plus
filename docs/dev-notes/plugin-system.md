@@ -5,8 +5,8 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
 
 ## Decisions & trade-offs
 
-1. **SDK as a separate package (`sdk/` uv workspace member,
-   `nparseplus-sdk` on PyPI eventually).** The user wanted the API package
+1. **SDK as a separate package (`sdk/` uv workspace member, published to
+   PyPI as `nparseplus-sdk`).** The user wanted the API package
    alongside, not within, the core codebase, with independent versioning.
    The SDK has NO install-time dependency on `nparseplus`; its `events` /
    `timers` / `ui` modules re-export host classes lazily via module
@@ -66,12 +66,13 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
 11. **Registry = curated static index** (`core/plugins/registry.py`):
     pydantic schema (schema_version gate, https-only URLs, validated
     sha256), injectable fetch, `release_compat` reusing the SDK handshake,
-    `update_available` via packaging.version. Default URL points at the
-    planned `prokopto-dev/nparseplus-plugins` GitHub Pages; the Browse
-    dialog degrades to a "could not reach" status until the repo exists.
-    Spec: docs/plugins/registry.md. (The single-URL override this shipped
-    with, `plugins.registry_url`, was superseded by the registry list —
-    items 24–28.)
+    `update_available` via packaging.version. Default URL points at
+    `prokopto-dev/nparseplus-plugins` GitHub Pages, live since 1.18 and
+    serving a (so far empty) schema-1 index; a failing registry degrades to
+    a "could not reach" line without hiding the ones that answered. Spec:
+    docs/plugins/registry.md. (The single-URL override this shipped with,
+    `plugins.registry_url`, was superseded by the registry list — items
+    24–28.)
 12. **sha256 pinning is the trust boundary**: `expected_sha256` on all
     install paths, refused before extraction/import; InstallResult and
     PluginEntry carry sha256 + source_url provenance
@@ -156,11 +157,10 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     tags, tag-vs-`__version__` check, `uv build --package nparseplus-sdk`,
     clean-venv smoke test (imports it, checks the version, runs the CLI,
     asserts the wheel does not pull in `nparseplus`), then PyPI trusted
-    publishing behind the `pypi` environment's required reviewer. NOT yet
-    published — the one-time human setup (PyPI pending publisher + GitHub
-    environment) is documented in sdk/README.md. Until then
-    `pip install nparseplus-sdk` fails, and the template + docs use the
-    git-subdirectory install.
+    publishing behind the `pypi` environment's required reviewer. The
+    one-time human setup (PyPI pending publisher + GitHub environment) is
+    documented in sdk/README.md; `sdk-v1.0.0` is published, so the template
+    and the docs depend on `nparseplus-sdk>=1.0,<2` from PyPI.
 23. **Registry repo scaffolding** (`templates/registry-repo/`): seed
     `index.json`, `owners.json` (plugin-id ownership record — makes
     "first come" machine-checkable instead of review-only), the generated
@@ -243,11 +243,11 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
 
 ## Follow-ups (open as issues)
 
-- Extract `sdk/` to its own repo; complete PyPI trusted-publishing setup
-  (pending publisher + `pypi` environment) and cut `sdk-v1.0.0`; then
-  switch the template and docs off the git-subdirectory install and the
-  app dependency from workspace to the PyPI range.
-- Stand up `prokopto-dev/nparseplus-plugins` from `templates/registry-repo/`.
+- Extract `sdk/` to its own repo (`git subtree split -P sdk`).
+- Switch the app's own `nparseplus-sdk` dependency off
+  `[tool.uv.sources] workspace = true` to resolve the PyPI range instead —
+  only worth doing after the repo split, since the workspace source is what
+  makes an SDK edit immediately visible to the app's tests.
 - Declarative plugin manifest to close the import-before-consent caveat
   (and to let the installer skip the `activate()` call in `validate_plugin`).
 - Hot enable/disable/reload without restart (#45).

@@ -22,10 +22,8 @@ with the app's permissions.
 
 ## Develop
 
-`nparseplus-sdk` is not on PyPI yet, so install it from the app repo:
-
 ```bash
-pip install "git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk"
+pip install nparseplus-sdk
 nparseplus-plugin validate merchant_prices
 ```
 

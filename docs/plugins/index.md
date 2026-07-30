@@ -42,7 +42,7 @@ After the restart, **Settings > Plugins** appears. Three ways in:
 - *Install from file…* — choose a plugin `.zip` (or a single `.py` file).
 - *Install from URL…* — paste an `https://` link to a plugin `.zip`
   (for example a GitHub release asset).
-- *Browse registry…* — the curated [registry](registry.md), once it is live.
+- *Browse registry…* — the curated [registry](registry.md).
 
 The installer checks the archive is safe to extract, validates that the
 plugin loads, and shows any advisory findings before finishing.

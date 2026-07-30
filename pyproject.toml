@@ -34,8 +34,9 @@ dependencies = [
   "pathvalidate>=3.2",
   "websocket-client>=1.8",
   "certifi>=2024.2.2",  # pinned CA store for websocket-client (frozen app)
-  # The plugin contract package; lives in sdk/ as a uv workspace member until
-  # it moves to its own repo + PyPI (see sdk/README.md).
+  # The plugin contract package. Published on PyPI, but resolved from sdk/ as
+  # a uv workspace member ([tool.uv.sources]) until it moves to its own repo,
+  # so an SDK edit is immediately visible to the app's tests (see sdk/README.md).
   "nparseplus-sdk>=1.0,<2",
 ]
 

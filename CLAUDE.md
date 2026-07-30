@@ -109,12 +109,14 @@ sdk/                    # uv WORKSPACE MEMBER: nparseplus-sdk, the stable third-
                         # plugin contract. Versioned + released independently of the
                         # app (sdk-v* tags -> PyPI); __init__.py's exports are public
                         # API under an additive-only 1.x promise. sdk/tests runs in
-                        # the root pytest. See sdk/README.md.
+                        # the root pytest. See CONTRIBUTING.md.
 examples/plugins/       # reference add-ons (hello_timer.py, merchant_prices/);
                         # tests/core/plugins/test_examples.py keeps them loading
-templates/              # ready-to-push content of two repos that don't exist yet:
-                        #   plugin-repo/ (the future plugin template repo) and
-                        #   registry-repo/ (the curated index; see its SETUP.md)
+templates/              # plugin-repo/ = ready-to-push content of the plugin
+                        #   template repo (not created yet; see TEMPLATE_SETUP.md).
+                        #   registry-repo/ = the mirror of the LIVE curated index
+                        #   repo, kept here because tools/gen_registry_schema.py
+                        #   --check guards its schema against drift (see SETUP.md)
 tools/                  # one-shot converters (Zones.cs -> zones.json etc.); outputs committed
 tests/                  # pytest; tests/fixtures = EQtoolsTests golden corpus
 ```
@@ -192,8 +194,8 @@ because a metadata lookup fails exactly here.
 only; `nparseplus-sdk` publishes to PyPI from a hand-pushed `sdk-v<X.Y.Z>`
 tag via `.github/workflows/release-sdk.yml` (PyPI Trusted Publishing/OIDC,
 no token; the job refuses a tag that disagrees with
-`sdk/src/nparseplus_sdk/__init__.py`). One-time pypi.org setup in
-sdk/README.md.
+`sdk/src/nparseplus_sdk/__init__.py`). Release procedure and pypi.org setup
+in CONTRIBUTING.md ("Working on the SDK").
 
 Generated-artifact convention beyond `tools/convert_*.py`:
 `tools/gen_registry_schema.py` derives
@@ -345,9 +347,10 @@ stranger it is, `context.py` (the SDK context impl + `unwind()` of partial
 registrations), `install.py` (zip-slip-safe member screen, staging +
 `validate_plugin` gate before the move, https re-asserted on every redirect
 hop, sha256 pinning, uninstall-to-`trash/`), `registry.py` (curated static
-index; `DEFAULT_REGISTRY_URL` points at the not-yet-created
-`nparseplus-plugins` Pages repo, so Browse degrades to a "could not reach"
-status). `core/driver.py` grew `add_supervised_tick`: plugin ticks are
+index; `DEFAULT_REGISTRY_URL` points at the `nparseplus-plugins` Pages repo,
+live since 1.18 and serving an empty schema-1 index; Browse degrades to a
+"could not reach" status). `core/driver.py` grew `add_supervised_tick`: plugin
+ticks are
 timed against `TICK_BUDGET_S` (0.25 s) and evicted after
 `TICK_BREACH_LIMIT` (2) consecutive breaches — the plugin stays active and
 the manager annotates its row "tick disabled (too slow)"; app-owned ticks
