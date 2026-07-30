@@ -59,3 +59,43 @@ def test_template_unit_tests_pass_standalone() -> None:
         env=env,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# The body below runs the template's own suite the way the template repo's
+# CI does: SDK installed, app absent. Kept as source (not a helper import)
+# because it executes in a subprocess where nparseplus cannot be imported.
+_SDK_ONLY_PYTEST = """
+import os
+import sys
+
+TEMPLATE = {template!r}
+sys.path.insert(0, TEMPLATE)
+os.chdir(TEMPLATE)
+
+# Sanity-check the poison before spending time in pytest.
+try:
+    import nparseplus  # noqa: F401
+except ImportError:
+    pass
+else:
+    raise SystemExit("nparseplus was importable — the poison did not take")
+
+import pytest
+
+raise SystemExit(pytest.main(["-q", "-p", "no:cacheprovider", "tests"]))
+"""
+
+
+def test_template_unit_tests_pass_with_only_the_sdk_installed(poisoned_import) -> None:
+    """The template must work in its OWN CI, where nparseplus is NOT installed.
+
+    ``templates/plugin-repo/.github/workflows/ci.yml`` installs only
+    ``nparseplus-sdk``, so the lazy host re-exports
+    (``nparseplus_sdk.events``/``.timers``) raise ImportError. The plugin has
+    to degrade gracefully — register its window, skip the host subscription —
+    or a template user's very first push goes red. Running the suite in-repo
+    (the test above) can never catch that, because here nparseplus *is*
+    importable.
+    """
+    result = poisoned_import(["nparseplus"], _SDK_ONLY_PYTEST.format(template=str(TEMPLATE)))
+    assert result.returncode == 0, result.stdout + result.stderr

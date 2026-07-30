@@ -24,8 +24,10 @@ jobs:
           python-version: "3.12"
       - name: Install SDK
         run: |
-          # Until nparseplus-sdk is on PyPI, install it from the app repo.
-          python -m pip install "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus#subdirectory=sdk"
+          # NOTE: `nparseplus-sdk` is not on PyPI yet, so it comes from the
+          # app repo's `sdk/` subdirectory. Once it IS published, replace the
+          # line below with: python -m pip install "nparseplus-sdk>=1.0,<2"
+          python -m pip install "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk"
 
       - name: Validate plugin
         run: nparseplus-plugin validate "$PLUGIN_DIR"

@@ -47,6 +47,10 @@ nparseplus = "nparseplus.__main__:main"
 
 [dependency-groups]
 dev = [
+  # The registry index's committed JSON Schema is what the registry repo's CI
+  # validates submissions against; this checks the schema really accepts the
+  # seed index, without the app installed.
+  "jsonschema>=4.22",
   "pytest>=8.2",
   "pytest-benchmark>=4.0",
   "pytest-cov",

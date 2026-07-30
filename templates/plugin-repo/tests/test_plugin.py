@@ -13,14 +13,35 @@ def test_metadata() -> None:
     assert meta.requires_sdk == ">=1.0,<2"
 
 
-def test_activation_registers_window_and_subscription() -> None:
+def _host_events_available() -> bool:
+    """True when nParse+ itself is installed (not just the SDK).
+
+    ``nparseplus_sdk.events`` re-exports the host app's event classes lazily,
+    so it only resolves when ``nparseplus`` is importable. CI installs the SDK
+    alone, a live nParse+ run has both — the plugin must work either way.
+    """
+    try:
+        from nparseplus_sdk.events import CommsEvent  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def test_activation_registers_window() -> None:
+    # The window needs nothing from the host, so it is always registered.
     ctx = FakePluginContext()
     plugin = create_plugin()
     plugin.activate(ctx)
     assert len(ctx.windows) == 1
     assert ctx.windows[0].key == "main"
-    # One CommsEvent subscription (when the host events are importable).
-    assert len(ctx.subscriptions) <= 1
+
+
+def test_activation_subscribes_when_host_events_are_available() -> None:
+    ctx = FakePluginContext()
+    plugin = create_plugin()
+    plugin.activate(ctx)
+    expected = 1 if _host_events_available() else 0
+    assert len(ctx.subscriptions) == expected
 
 
 def test_storage_roundtrip() -> None:

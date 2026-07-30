@@ -24,10 +24,22 @@ and a small overlay window shows how many times it fired. Replace all of it.
 ## Develop
 
 ```bash
-pip install -e ".[dev]"          # nparseplus-sdk + pytest (+ app from git for full checks)
+pip install -e .                 # nparseplus-sdk (installed from git — see below)
+pip install -e ".[dev]"          # ...plus pytest and nParse+ itself, for full checks
 pytest                           # unit tests against FakePluginContext
 nparseplus-plugin validate my_nparse_plugin
 ```
+
+`nparseplus-sdk` is not on PyPI yet, so `pyproject.toml` installs it from the
+app repo's `sdk/` subdirectory; the `NOTE:` comments there and in the two
+workflow files say what to switch to once it is published.
+
+Your plugin must work with the **SDK alone** — that is what `ci.yml`
+installs, and what a `nparseplus-plugin validate` run in a bare environment
+sees. The lazy host re-exports (`nparseplus_sdk.events`,
+`nparseplus_sdk.timers`) only resolve when nParse+ itself is importable, so
+guard them with `try/except ImportError` and register your windows *before*
+the guard, the way `activate()` in the template does.
 
 To try it live: copy (or symlink) `my_nparse_plugin/` into your nParse+
 plugins folder (tray > *Open Plugins Folder*) and restart the app.

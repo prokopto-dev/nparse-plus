@@ -13,14 +13,21 @@ version = "0.0.0"  # informational; the version that matters is PluginMeta.versi
 description = "A plugin for nParse+."
 requires-python = ">=3.12"
 dependencies = [
-  "nparseplus-sdk>=1.0,<2",
+  # NOTE: `nparseplus-sdk` is not on PyPI yet, so this installs it from the
+  # app repo's `sdk/` subdirectory. ONCE `nparseplus-sdk` IS PUBLISHED,
+  # replace this line with the plain requirement:
+  #     "nparseplus-sdk>=1.0,<2",
+  # and do the same in .github/workflows/ci.yml and release.yml.
+  "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.2",
-  # Full validation (events re-exports, live runs) needs the app itself:
-  "nparseplus @ git+https://github.com/prokopto-dev/nparse-plus",
+  # Optional: full validation (the lazy host re-exports in
+  # nparseplus_sdk.events / .timers, live runs) needs the app itself. Your
+  # plugin must still pass its tests WITHOUT this — CI installs the SDK only.
+  "nparseplus @ git+https://github.com/prokopto-dev/nparse-plus@master",
 ]
 
 # Optional: lets source-install nParse+ users discover this plugin via pip.

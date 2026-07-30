@@ -46,6 +46,21 @@ class MyPlugin(NParsePlugin):
         with self._lock:
             self._greetings = int(ctx.storage.load().get("greetings", 0))
 
+        # Register everything that needs nothing from the host FIRST, so the
+        # plugin degrades gracefully: full behaviour inside nParse+, and
+        # window-only in a bare SDK-only environment (your CI, `pip install
+        # nparseplus-sdk` alone, `nparseplus-plugin validate`). Anything you
+        # put after the optional import below is skipped when the app is not
+        # installed — keep that section small.
+        ctx.add_window(
+            PluginWindowSpec(
+                key="main",
+                title="My nParse+ Plugin",
+                factory=self._make_window,
+                default_geometry=(240, 240, 260, 140),
+            )
+        )
+
         # Chat lines are consumed by the app's comms parser and re-published
         # as typed CommsEvents — subscribe, don't add_parser, for chat.
         # Host classes import lazily so `nparseplus-plugin validate` works
@@ -53,7 +68,9 @@ class MyPlugin(NParsePlugin):
         try:
             from nparseplus_sdk.events import CommsChannel, CommsEvent
         except ImportError:
-            ctx.logger.warning("host events unavailable (standalone run); inert")
+            ctx.logger.warning(
+                "host events unavailable (standalone run); the greeting trigger is inert"
+            )
             return
 
         def on_comms(event: Any) -> None:
@@ -64,14 +81,6 @@ class MyPlugin(NParsePlugin):
             self._on_greeting(event)
 
         ctx.subscribe(CommsEvent, on_comms)
-        ctx.add_window(
-            PluginWindowSpec(
-                key="main",
-                title="My nParse+ Plugin",
-                factory=self._make_window,
-                default_geometry=(240, 240, 260, 140),
-            )
-        )
 
     def deactivate(self) -> None:
         self._persist()
