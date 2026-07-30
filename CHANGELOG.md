@@ -6,6 +6,78 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.18.0 (2026-07-30)
+
+### Bug Fixes
+
+- **plugins**: Close six security and lifecycle holes in the plugin host
+  ([`c8492a1`](https://github.com/prokopto-dev/nparse-plus/commit/c8492a122a54f9637e5556b707736bd83e227599))
+
+- **plugins**: Keep a misbehaving add-on from stalling or freezing the app
+  ([`d3dba7d`](https://github.com/prokopto-dev/nparse-plus/commit/d3dba7da0c34bb3ef46a0107de4d53e4e6ea88c1))
+
+- **sdk**: Single-source the SDK version and publish it from CI
+  ([`e331e34`](https://github.com/prokopto-dev/nparse-plus/commit/e331e3477d8044965e2ccc2664305f2288f69f51))
+
+### Build System
+
+- **packaging**: Bundle nparseplus-sdk in frozen builds, ship py.typed markers
+  ([`6b5806b`](https://github.com/prokopto-dev/nparse-plus/commit/6b5806b24941c5deb020527a0be9d61a9be78220))
+
+### Documentation
+
+- Document add-ons across the site and correct the plugin reference
+  ([`6ffe18b`](https://github.com/prokopto-dev/nparse-plus/commit/6ffe18b0cbfeee9556ad976b270c4e674d9cb041))
+
+- **plugins**: User guide, security & trust, developer guide, API reference
+  ([`2f37f94`](https://github.com/prokopto-dev/nparse-plus/commit/2f37f94bc6cd859b2fabcd885c8053bf087109f2))
+
+- **plugins**: Versioning policy and registry specification
+  ([`0e79538`](https://github.com/prokopto-dev/nparse-plus/commit/0e79538db261f644d3186424f576a0f072738f87))
+
+### Features
+
+- **plugins**: Add plugin repository template with validate/release workflows
+  ([`f16cd10`](https://github.com/prokopto-dev/nparse-plus/commit/f16cd105815b22a352cc6d060feabbf1d31fe477))
+
+- **plugins**: Add Qt-free plugin host (discovery, context, storage, installer engine)
+  ([`0ca5503`](https://github.com/prokopto-dev/nparse-plus/commit/0ca550394f5010ec95e6a7504e5f45121849e230))
+
+- **plugins**: Browse-registry dialog and update-available status in the manager
+  ([`df3b0a7`](https://github.com/prokopto-dev/nparse-plus/commit/df3b0a7f492c05d015b5d6781607b494322d16ad))
+
+- **plugins**: Load plugins at startup — consent, plugin windows, tray folder action
+  ([`32ccda7`](https://github.com/prokopto-dev/nparse-plus/commit/32ccda79aee229f963ec69e6e3cfa88db20108d0))
+
+- **plugins**: Make add-ons opt-in behind a master toggle, default off
+  ([`7b25a0c`](https://github.com/prokopto-dev/nparse-plus/commit/7b25a0c8d053005d7e1cba56718f37c48250276c))
+
+- **plugins**: Plugins manager settings page with install/uninstall
+  ([`4814725`](https://github.com/prokopto-dev/nparse-plus/commit/48147250449535b631a6b3dcdd163f697a6229dd))
+
+- **plugins**: Registry index schema, sha256-verified installs, install provenance
+  ([`5ceab50`](https://github.com/prokopto-dev/nparse-plus/commit/5ceab5029787c55c26e6db6eed47d0e04dc98fc3))
+
+- **plugins**: Ship hello-timer and merchant-prices example plugins
+  ([`5580ebb`](https://github.com/prokopto-dev/nparse-plus/commit/5580ebb5304a41495603468bf6ac71d03ba67a6a))
+
+- **sdk**: Add nparseplus-sdk workspace package (plugin contract, compat, validate CLI)
+  ([`597cefa`](https://github.com/prokopto-dev/nparse-plus/commit/597cefa9562116ea5f48003113bbc9cc92326ee6))
+
+- **templates**: Fix the plugin template's CI and scaffold the registry repo
+  ([`3790365`](https://github.com/prokopto-dev/nparse-plus/commit/3790365f74c0b209dcb1230a1496e2ab169719b4))
+
+### Refactoring
+
+- **settings**: Extensible page registry (extra_pages) in the unified settings window
+  ([`a797149`](https://github.com/prokopto-dev/nparse-plus/commit/a7971496bcfb563d8708718c48b95d59cc4e3be4))
+
+### Testing
+
+- **architecture**: Port the Qt poison finder to find_spec
+  ([`d5b13e0`](https://github.com/prokopto-dev/nparse-plus/commit/d5b13e0ee969c22baea539cf3afa0d6624ef41a2))
+
+
 ## v1.17.0 (2026-07-30)
 
 ### Features
