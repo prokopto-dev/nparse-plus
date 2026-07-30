@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.17.0 (2026-07-30)
+
+### Features
+
+- **timers**: Fade spell-timer bars toward red as they expire
+  ([`6b36bd7`](https://github.com/prokopto-dev/nparse-plus/commit/6b36bd7e0c6bcdc29a406cda7db43605f4617478))
+
+
 ## v1.16.3 (2026-07-30)
 
 ### Bug Fixes
