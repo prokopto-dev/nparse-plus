@@ -16,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import copy_metadata
+
 ROOT = Path(SPECPATH).parent  # noqa: F821 - SPECPATH is a PyInstaller global
 
 # Read the version straight out of the source of truth rather than letting CI
@@ -33,6 +35,16 @@ datas = [
     (str(ROOT / "data"), "data"),
     (str(ROOT / "src" / "nparseplus" / "data"), "nparseplus/data"),
 ]
+
+# Ship the dist-info of both distributions. A frozen app has no site-packages,
+# so importlib.metadata finds nothing unless the metadata is bundled — and
+# third-party plugin code legitimately calls
+# importlib.metadata.version("nparseplus-sdk") (or "nparseplus") to branch on
+# what it is running inside. Note the app's own SDK_VERSION/__version__ do NOT
+# depend on this: both are plain literals read from their __init__.py, on
+# purpose, because a metadata lookup silently fails exactly here.
+datas += copy_metadata("nparseplus")
+datas += copy_metadata("nparseplus-sdk")
 
 a = Analysis(  # noqa: F821
     [str(ROOT / "src" / "nparseplus" / "__main__.py")],

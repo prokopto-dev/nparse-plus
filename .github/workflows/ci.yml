@@ -39,9 +39,13 @@ jobs:
         run: uv run pytest
       - name: Tests with coverage
         if: runner.os == 'Linux'
+        # Both workspace packages: sdk/tests runs under the root pytest
+        # (testpaths) but nparseplus_sdk was not measured, so the package
+        # third-party plugin authors depend on reported zero coverage.
         run: >-
           uv run pytest
           --cov=nparseplus
+          --cov=nparseplus_sdk
           --cov-branch
           --cov-report=term-missing
           --cov-report=xml:coverage.xml

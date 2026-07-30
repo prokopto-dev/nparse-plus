@@ -22,17 +22,63 @@ that load into the app at runtime.
 ## Repository note
 
 This package currently lives in the `sdk/` directory of the main
-`prokopto-dev/nparse-plus` repository as an independent uv workspace member.
-It is slated to move to its own repository (`prokopto-dev/nparseplus-sdk`)
-and to be published to PyPI; until then, install it from a checkout:
+`prokopto-dev/nparse-plus` repository as an independent uv workspace member,
+versioned and released independently of the app. It may eventually move to
+its own repository (`prokopto-dev/nparseplus-sdk`). Until it is on PyPI,
+install it from a checkout:
 
 ```bash
 pip install ./sdk        # from a nparse-plus checkout
 ```
 
-## Publishing checklist (for maintainers, once the repo split happens)
+## Releasing (maintainers)
 
-1. `git subtree split -P sdk` into `prokopto-dev/nparseplus-sdk`.
-2. Set up trusted publishing (PyPI) + a release workflow.
-3. Switch the app's dependency from the workspace source to the PyPI range
-   in the root `pyproject.toml`.
+The version has exactly one source: `__version__` in
+`src/nparseplus_sdk/__init__.py`. `pyproject.toml` declares
+`dynamic = ["version"]` and hatchling reads that literal, and `uv.lock`
+records no version for a dynamic-version package — so the wheel, the lock and
+the runtime constant cannot disagree. Do **not** reintroduce a literal
+`version =` in `pyproject.toml`, and do not derive `SDK_VERSION` from
+`importlib.metadata`: a PyInstaller-frozen app has no dist metadata, so any
+fallback next to that lookup is what every shipped build would report to
+`check_compat`.
+
+The SDK is **not** covered by the app's semantic-release automation (that
+owns `v*` tags only). To cut a release:
+
+1. Bump `__version__` in `src/nparseplus_sdk/__init__.py`.
+2. Commit, then tag `sdk-v<X.Y.Z>` (matching the literal exactly) and push
+   the tag: `git tag sdk-v1.1.0 && git push origin sdk-v1.1.0`.
+3. `.github/workflows/release-sdk.yml` verifies the tag against
+   `__version__`, runs `uv build --package nparseplus-sdk`, smoke-tests the
+   built wheel in a clean venv (imports it, checks the reported version, runs
+   `nparseplus-plugin --help`, and asserts the wheel does not pull in
+   `nparseplus`), then publishes to PyPI. It also accepts a
+   `workflow_dispatch` with an existing tag.
+
+Bump the app's `nparseplus-sdk` range in the root `pyproject.toml` only after
+the matching version is live on PyPI.
+
+### One-time setup (human, not automatable)
+
+Publishing uses **PyPI Trusted Publishing** (OIDC) — there is no API token and
+no repository secret. Both of these must exist before the first `sdk-v*` tag,
+or the publish step fails with an OIDC error:
+
+1. **PyPI pending publisher.** The project does not exist on PyPI yet, so
+   create a *pending* publisher at
+   <https://pypi.org/manage/account/publishing/> with exactly:
+   - PyPI Project Name: `nparseplus-sdk`
+   - Owner: `prokopto-dev`
+   - Repository name: `nparse-plus`
+   - Workflow name: `release-sdk.yml`
+   - Environment name: `pypi`
+
+   (After the first successful upload this becomes a normal publisher on the
+   project's Settings → Publishing page; nothing needs changing.)
+
+2. **GitHub `pypi` environment.** In the repository's
+   Settings → Environments, create an environment named `pypi` and add a
+   required reviewer. The workflow declares `environment: pypi`, so every
+   publish then pauses for a human approval — the last gate between a pushed
+   tag and an immutable PyPI upload.

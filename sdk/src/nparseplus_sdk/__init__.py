@@ -20,9 +20,6 @@ lazy re-export modules above.
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _dist_version
-
 from nparseplus_sdk.compat import check_compat
 from nparseplus_sdk.context import (
     LineInfoLike,
@@ -41,12 +38,20 @@ from nparseplus_sdk.plugin import (
     PluginWindowSpec,
 )
 
-try:
-    SDK_VERSION = _dist_version("nparseplus-sdk")
-except PackageNotFoundError:  # pragma: no cover - frozen app / odd installs
-    SDK_VERSION = "1.0.0"
+# THE single source of the SDK version: pyproject declares dynamic = ["version"]
+# and hatchling reads this literal (see [tool.hatch.version] in sdk/pyproject.toml),
+# so the wheel, uv.lock and this module cannot disagree.
+#
+# Deliberately NOT importlib.metadata.version("nparseplus-sdk"): a frozen
+# PyInstaller build has no dist metadata, so that call raises and whatever
+# fallback sits next to it always wins in shipped DMG/zip/flatpak builds. That
+# made every release report the fallback version to check_compat(), silently
+# refusing plugins that declared a newer requires_sdk range — a bug invisible
+# in CI and only reproducible from a release artifact. A plain literal has no
+# such second code path. Bump this, tag `sdk-v<X.Y.Z>` (see sdk/README.md).
+__version__ = "1.0.0"
 
-__version__ = SDK_VERSION
+SDK_VERSION = __version__
 
 __all__ = [
     "PLUGIN_ID_RE",
