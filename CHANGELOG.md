@@ -6,6 +6,22 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.16.2 (2026-07-30)
+
+### Bug Fixes
+
+- **build**: Read the version from __init__.py so uv.lock cannot drift
+  ([`f7725f2`](https://github.com/prokopto-dev/nparse-plus/commit/f7725f2638020c69dea47bec9a9012b73787a7a2))
+
+- **packaging**: Stamp the real version into the macOS and Windows builds
+  ([`c9770a2`](https://github.com/prokopto-dev/nparse-plus/commit/c9770a2027f7a51a373f6124cce942f8a839d611))
+
+### Chores
+
+- **deps**: Sync uv.lock to the released version
+  ([`9b4d3c3`](https://github.com/prokopto-dev/nparse-plus/commit/9b4d3c3a3fb0661451a82554011d73ead6604ef2))
+
+
 ## v1.16.1 (2026-07-29)
 
 ### Bug Fixes
