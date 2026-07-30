@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.20.0 (2026-07-30)
+
+### Documentation
+
+- **plugins**: Say precisely what a duplicate window key drops
+  ([`0a6eb84`](https://github.com/prokopto-dev/nparse-plus/commit/0a6eb84ce5f2f4efdfa63875978e5301ecc0da9f))
+
+### Features
+
+- **plugins**: Give plugin windows opacity and on-top rows in Settings
+  ([`c879afa`](https://github.com/prokopto-dev/nparse-plus/commit/c879afad113ddada744b05ac6a0660c1afa34b6d))
+
+
 ## v1.19.0 (2026-07-30)
 
 ### Documentation
