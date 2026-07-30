@@ -63,8 +63,8 @@ it can load here; the button per row reads **Install**, **Installed**, or
 **Incompatible**. Registry installs are the only ones that are
 **sha256-pinned**: the index records the hash of the reviewed artifact and
 the installer refuses a download whose bytes don't match. If the fetch
-fails (offline, or the registry isn't published yet) the dialog says
-*Registry unavailable* and you can still install from a file or a URL.
+fails — you're offline, or the index is briefly unreachable — the dialog
+says *Registry unavailable* and you can still install from a file or a URL.
 
 **Install from file…** takes a `.zip` archive or a single `.py` file.
 Archives are validated member-by-member before anything is extracted —

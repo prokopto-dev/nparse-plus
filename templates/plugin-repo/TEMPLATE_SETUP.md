@@ -21,17 +21,13 @@ Afterwards:
 
 - Link it from docs/plugins/developing.md ("Starting from the repo
   template") in place of the in-repo path.
-- **When `nparseplus-sdk` publishes to PyPI**, replace the git-subdirectory
-  install with the plain requirement `nparseplus-sdk>=1.0,<2` in all three
-  places that carry it today — each is marked with a `NOTE:` comment:
-  `pyproject.toml` (`[project] dependencies`),
-  `.github/workflows/ci.yml` (*Install SDK + test deps*), and
-  `.github/workflows/release.yml` (*Install SDK*). The optional
-  `[project.optional-dependencies] dev` extra also pulls the app itself from
-  git; that one stays a git install (nParse+ is not a PyPI package).
-- The git installs pin `@master`. Once the app cuts a release containing
-  `sdk/`, prefer pinning a tag (`@vX.Y.Z`) so template CI cannot break on an
-  unrelated master push.
+- `nparseplus-sdk` comes from PyPI (`>=1.0,<2`) in `pyproject.toml` and both
+  workflows. The optional `[project.optional-dependencies] dev` extra pulls
+  the app itself from git, and stays a git install — nParse+ is not a PyPI
+  package.
+- That git install pins a release tag (`@v1.18.0`), not `@master`, so
+  template CI cannot break on an unrelated master push. Bump it when the
+  template should be checked against a newer app release.
 - The template must keep working with the SDK alone — `ci.yml` deliberately
   does not install nParse+, and
   `tests/core/plugins/test_template.py::test_template_unit_tests_pass_with_only_the_sdk_installed`

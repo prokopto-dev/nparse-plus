@@ -97,28 +97,34 @@ change in any release.
 4. Tag `v<version>` — the template's release workflow refuses a tag that
    doesn't match `meta.version`, then builds the zip, computes its sha256,
    and emits the registry entry JSON.
-5. Publish the release and tell your users. **The registry index does not
-   exist yet** (see [Registry](registry.md)), so until it is stood up there
-   is nothing to open a PR against. In the interim:
+5. Publish the release, then open a PR against the
+   [registry](registry.md#submitting-a-plugin) index — it is a copy-paste of
+   the `registry-entry.json` your release workflow produced. Listing gets
+   your users one-click installs, a verified sha256, and "update available"
+   notices on every later release.
+
+    If you'd rather not list it, distribution still works without the
+    registry:
+
     - Point users at *Settings > Plugins > Install from URL…* with your
       release asset's https URL, and publish the sha256 next to it so
       careful users can check the download themselves — the app does not
       verify a hash on URL installs.
     - Or tell them to download the zip and use *Install from file…*.
-    - Keep the `registry-entry.json` your release workflow produced. When
-      the index opens, submitting is a copy-paste of that file, and users
-      who installed from a URL get "update available" notices from then on.
+    - Keep the `registry-entry.json` anyway: listing later is the same
+      copy-paste, and update notices start from then on.
 
 ## Where the SDK lives
 
 The SDK is versioned and packaged independently of the app (currently in the
 app repo's `sdk/` directory as a workspace member; planned to move to its
-own repository). It is **not on PyPI yet** — see
-[Installing the SDK](developing.md#installing-the-sdk) for the
-git-subdirectory install that works today. Releases go out on `sdk-v<X.Y.Z>`
-tags through `.github/workflows/release-sdk.yml`, which verifies the tag
-against `__version__`, smoke-tests the built wheel in a clean venv, and
-publishes via PyPI trusted publishing behind a required human approval.
+own repository). It is published on PyPI as
+[`nparseplus-sdk`](https://pypi.org/project/nparseplus-sdk/) — see
+[Installing the SDK](developing.md#installing-the-sdk). Releases go out on
+`sdk-v<X.Y.Z>` tags through `.github/workflows/release-sdk.yml`, which
+verifies the tag against `__version__`, smoke-tests the built wheel in a
+clean venv, and publishes via PyPI trusted publishing behind a required
+human approval.
 
-Nothing about the handshake changes when the package moves or publishes —
+Nothing about the handshake changes when the package moves repositories —
 plugins already target the package, not the repo.

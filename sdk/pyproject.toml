@@ -10,7 +10,7 @@ name = "nparseplus-sdk"
 # uv.lock), and the version that decides plugin compatibility is the Python
 # one: check_compat() is handed nparseplus_sdk.__version__.
 dynamic = ["version"]
-description = "Plugin SDK for nParse+ — the stable contract for building third-party addon windows, parsers, and pollers."
+description = "Plugin SDK for nParse+, the EverQuest Project 1999 log-parsing overlay — the stable contract for third-party addon windows, parsers, and pollers."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -18,9 +18,16 @@ authors = [
   { name = "ccaldwell" },
 ]
 classifiers = [
-  "Programming Language :: Python :: 3.12",
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
   "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Games/Entertainment",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
 ]
+keywords = ["everquest", "project1999", "p99", "nparse", "plugin", "sdk", "overlay"]
 # NO dependency on nparseplus: plugins run inside the host app, which provides
 # the runtime. Modules that need the host (events, ui) import it lazily.
 dependencies = [
@@ -29,7 +36,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/prokopto-dev/nparse-plus"
+Homepage = "https://prokopto-dev.github.io/nparse-plus/"
+Documentation = "https://prokopto-dev.github.io/nparse-plus/latest/plugins/"
+Source = "https://github.com/prokopto-dev/nparse-plus/tree/master/sdk"
+Issues = "https://github.com/prokopto-dev/nparse-plus/issues"
+Changelog = "https://github.com/prokopto-dev/nparse-plus/blob/master/CHANGELOG.md"
 
 [project.scripts]
 nparseplus-plugin = "nparseplus_sdk.cli:main"
