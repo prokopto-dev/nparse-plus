@@ -172,17 +172,22 @@ class NomnsParse(QApplication):
         save_new_settings=None,
         windows=None,
         window_layouts=None,
+        plugins_enabled=False,
     ):
         """Backend mode wiring (called by nparseplus.app.create_app):
         feed LineEvents from the Qt bridge into the legacy parse path and
         hook up the new overlay windows for the tray menu. ``windows`` is an
         ordered {label: window} dict of extra toggleable windows (each needs
-        .toggle() and .isVisible())."""
+        .toggle() and .isVisible()).
+
+        ``plugins_enabled`` gates the add-on tray entry: a user who has not
+        opted in must not see plugins mentioned anywhere."""
         self._bridge = bridge
         self._spell_window = spell_window
         self._save_new_settings = save_new_settings
         self._backend_windows = dict(windows or {})
         self._window_layouts = window_layouts
+        self._plugins_enabled = plugins_enabled
         bridge.events_batch.connect(self._on_backend_events)
 
     def _on_backend_events(self, events):
@@ -272,7 +277,9 @@ class NomnsParse(QApplication):
 
         menu.addSeparator()
         # (the unified "Settings" window arrives via _backend_windows)
-        open_plugins_action = menu.addAction("Open Plugins Folder")
+        open_plugins_action = None
+        if getattr(self, "_plugins_enabled", False):
+            open_plugins_action = menu.addAction("Open Plugins Folder")
         discord_conf_action = menu.addAction("Configure Discord")
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
@@ -325,7 +332,7 @@ class NomnsParse(QApplication):
         elif action in actions["backend_windows"]:
             actions["backend_windows"][action].toggle()
 
-        elif action == actions["open_plugins"]:
+        elif actions["open_plugins"] is not None and action == actions["open_plugins"]:
             from PySide6.QtCore import QUrl
             from PySide6.QtGui import QDesktopServices
 

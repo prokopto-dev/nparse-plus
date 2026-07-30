@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from nparseplus.config.settings import (
+    SCHEMA_VERSION,
     DebouncedSaver,
     OverlayRegion,
     PlayerInfo,
@@ -262,3 +263,31 @@ def test_plugins_entries_roundtrip(tmp_path: Path) -> None:
     assert loaded.plugins.entries["dkp"].enabled is False
     assert loaded.plugins.entries["dkp"].sha256 == "f" * 64
     assert loaded.plugins.registry_url == "https://example.com/index.json"
+
+
+def test_plugins_enabled_roundtrips_and_defaults_off(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    assert Settings().plugins.enabled is False
+
+    original = Settings()
+    original.plugins.enabled = True
+    save_settings(original, path)
+    assert load_settings(path).plugins.enabled is True
+
+
+def test_settings_written_by_a_newer_build_still_load(tmp_path: Path) -> None:
+    # Downgrading drops the unknown block rather than refusing to start; the
+    # consequence is that plugin consent is re-asked, which is the safe way to
+    # lose it.
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "plugins": {"enabled": True, "entries": {}, "some_future_key": 1},
+                "a_whole_future_section": {"nested": True},
+            }
+        )
+    )
+    loaded = load_settings(path)
+    assert loaded.plugins.enabled is True

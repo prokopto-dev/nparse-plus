@@ -788,3 +788,32 @@ def test_extra_page_apply_failure_isolated(qtbot) -> None:
     )
     window.apply()  # must not raise
     assert saves  # the built-in apply flow still completed
+
+
+def test_plugins_toggle_is_off_and_no_plugins_page_by_default(qtbot) -> None:
+    # The base-user view: the switch exists on Advanced, but nothing else in
+    # the window mentions add-ons.
+    window = _window(qtbot)
+    assert window._plugins_enabled_box.isChecked() is False
+    titles = [window._sidebar.item(i).text() for i in range(window._sidebar.count())]
+    assert "Plugins" not in titles
+
+
+def test_plugins_toggle_persists_and_warns_about_the_restart(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    notices: list[bool] = []
+    window._notify_plugins_restart = lambda *, enabled: notices.append(enabled)
+
+    window._plugins_enabled_box.setChecked(True)
+    window.apply()
+    assert settings.plugins.enabled is True
+    assert notices == [True]  # takes effect next launch, so say so
+
+    window.apply()
+    assert notices == [True]  # unchanged: no second nag
+
+    window._plugins_enabled_box.setChecked(False)
+    window.apply()
+    assert settings.plugins.enabled is False
+    assert notices == [True, False]
