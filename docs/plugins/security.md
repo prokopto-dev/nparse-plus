@@ -59,7 +59,7 @@ There are three install channels and they do not offer the same protection:
 
 | Channel | What is verified |
 | --- | --- |
-| *Browse registry…* | https + size cap + **sha256 pinned by the reviewed index**, checked before extraction and before any of the plugin's code runs |
+| *Browse registry…* | https + size cap + **sha256 pinned by the index that listed it**, checked before extraction and before any of the plugin's code runs |
 | *Install from URL…* | https on every hop + size cap. **No hash** — there is nothing to compare against |
 | *Install from file…* | The bytes you chose. Their hash is recorded as provenance, not checked against anything |
 
@@ -67,6 +67,26 @@ For a URL install the URL *is* the trust decision. If the host is
 compromised, or the author replaces the release asset, you get the new bytes
 with no warning. That is the gap the [registry](registry.md) exists to
 close.
+
+### …and who supplied the checksum
+
+A pinned hash answers "are these the bytes that registry meant?" — never
+"is this code safe?", and never "was whoever listed it entitled to?" The
+same document supplies the download URL *and* the hash it is checked
+against, so the guarantee is only ever as good as the registry it came
+from.
+
+That matters because the registry list is yours to extend: nParse+ ships
+with one built-in catalogue and merges in any you add under **Settings >
+Plugins > Plugin registries**. Adding one is a trust decision a level above
+installing a plugin — it decides which add-ons you are ever offered, and
+everything from it arrives pre-verified. The app confirms it with a warning
+that defaults to Cancel, marks third-party sources in the Browse table,
+records which registry vouched for each installed plugin, and refuses to
+treat another registry's build of the same plugin id as an update to yours.
+The full argument, the merged-browse behaviour, and why the built-in row
+can be unticked but never deleted are in
+[Using another registry](registry.md#using-another-registry).
 
 ## Consent runs late — two honest caveats
 
@@ -120,6 +140,10 @@ data. It no longer can.
 - Prefer plugins with public source you (or someone you trust) can read.
 - Prefer registry installs over raw URLs when a plugin is listed — the hash
   pins the bytes a human reviewed.
+- Keep the registry list short. Every extra registry is another party that
+  can offer you code; untick or remove any you no longer have a reason to
+  trust (plugins already installed from it stay installed, and the Source
+  column keeps naming it).
 - Be suspicious of plugins that ask for your account credentials — nothing
   in the plugin API needs them.
 - If a plugin misbehaves, disable it, grab `nparseplus.log`, and report it

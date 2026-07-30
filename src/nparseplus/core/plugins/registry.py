@@ -34,8 +34,9 @@ REGISTRY_SCHEMA_VERSION = 1
 # How many failing registries the status summary names before collapsing.
 _MAX_REPORTED_FAILURES = 5
 
-# GitHub Pages of the curated registry repo. Not live yet — the UI treats
-# fetch failures as "registry unavailable", nothing else depends on it.
+# GitHub Pages of the curated registry repo. Always offered, never stored:
+# resolve_registries synthesizes it so changing this constant moves every
+# user instead of stranding them on whatever a past release wrote to disk.
 DEFAULT_REGISTRY_URL = "https://prokopto-dev.github.io/nparseplus-plugins/index.json"
 DEFAULT_REGISTRY_NAME = "nParse+ registry (built-in)"
 
@@ -130,7 +131,8 @@ def fetch_index(url: str, fetch: Callable[[str], bytes] | None = None) -> Regist
     checked against, so the index itself has to arrive over TLS end to end.
 
     Raises ValueError on any failure (transport or content) with a message
-    fit for the "registry unavailable" UI state.
+    fit to show the user; ``fetch_indexes`` turns it into a per-registry
+    failure so one dead registry cannot blank the rest.
     """
     if not url.lower().startswith("https://"):
         raise ValueError("registry url must be https://")

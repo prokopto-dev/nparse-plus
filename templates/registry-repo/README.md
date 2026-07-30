@@ -14,12 +14,20 @@ as a static file by GitHub Pages, and the app fetches it.
 
 nParse+ points here out of the box — you do not have to configure anything.
 Open Settings → Plugins → *Browse registry…*, and the app fetches the index,
-hides entries that are not compatible with your nParse+ / SDK version, and
+marks entries that are not compatible with your nParse+ / SDK version, and
 offers one-click installs.
 
-To use a different (or a private) catalogue, set `plugins.registry_url` in
-your `settings.json` to any https URL serving a document in this format. If
-the registry is unreachable, Browse simply says "Registry unavailable" —
+To use a different (or a private) catalogue, add it in the app: **Settings →
+Plugins → Plugin registries → *Add registry…***, with the https URL of any
+document in this format. Browse then merges every ticked registry into one
+table and labels each row with the registry it came from. This one is
+built in: it can be unticked, but not removed.
+
+Adding a registry is a trust decision above installing a plugin — a listing
+supplies both the download URL *and* the sha256 it is checked against, so the
+hash only proves the bytes match what **that** registry chose. The app
+confirms with that warning before it saves anything. If a registry is
+unreachable, Browse names it and still shows the ones that answered;
 installing from a file or a URL, and the plugins folder, keep working.
 
 ## Trust model — read this

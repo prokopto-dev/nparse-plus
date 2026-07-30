@@ -6,9 +6,10 @@
     [Settings → Advanced](advanced.md#add-ons-plugins) and restart. Until
     then nothing plugin-related is loaded, shown, or even imported.
 
-The Plugins page is the manager: one row per add-on nParse+ found, plus the
-buttons that install, remove, and reveal them. Background on what plugins
-are and how far to trust them lives in [Plugins](../plugins/index.md) and
+The Plugins page is the manager: one row per add-on nParse+ found, the
+buttons that install, remove, and reveal them, and — underneath — the list
+of registries add-ons may be offered from. Background on what plugins are
+and how far to trust them lives in [Plugins](../plugins/index.md) and
 [Plugin security & trust](../plugins/security.md).
 
 ## The table
@@ -20,7 +21,7 @@ are and how far to trust them lives in [Plugins](../plugins/index.md) and
 | **Version** | The version the add-on declares. |
 | **Status** | Where it is in the load sequence — see below. |
 | **Location** | The file, folder, or `dist:entry-point` it was loaded from. |
-| **Source** | Provenance: where those bytes came from. |
+| **Source** | Provenance: which registry vouched for those bytes, or where else they came from. |
 
 ### Status values
 
@@ -38,7 +39,14 @@ are and how far to trust them lives in [Plugins](../plugins/index.md) and
 Two annotations can be appended to any of the above:
 
 - **`— update available (v1.2.3)`** — the last **Browse registry…** fetch in
-  this session listed a newer release than the one you have installed.
+  this session listed a newer release than the one you have installed, *and*
+  that release can load on this build (an update your nParse+ or SDK version
+  would refuse is not offered at all). If the only newer release comes from a
+  different registry than the one the add-on was installed from, the
+  annotation names it — **`— update available (v1.2.3 from Some Registry)`**
+  — because that is a different publisher of the same plugin id, not the
+  same add-on. See
+  [Updates prefer the registry you installed from](../plugins/registry.md#updates-prefer-the-registry-you-installed-from).
 - **`— tick disabled (too slow)`** — the add-on registered a periodic tick
   and the log driver evicted it for repeatedly overrunning its budget. The
   plugin is still active (its parsers, event handlers, and windows all keep
@@ -50,21 +58,46 @@ Two annotations can be appended to any of the above:
 
 | Source | Meaning |
 |---|---|
-| `https://… (a1b2c3d4e5f6…)` | Downloaded from that URL; the digest is the sha256 of the bytes that were installed. Hover for the full hash. |
+| `nParse+ registry (built-in) · a1b2c3d4e5f6…` | Listed by that registry, which is also where the pinned sha256 came from. Hover for the registry URL, the artifact URL, and the full hash. |
+| `https://… (a1b2c3d4e5f6…)` | Downloaded from that URL with **Install from URL…**; no registry vouched for it. The digest is the sha256 of the bytes that were installed. |
 | `Local file (a1b2c3d4e5f6…)` | Installed from a file on this machine, with the sha256 of what was installed. |
 | **Sideloaded** | Copied into the plugins folder by hand. nParse+ has no record of where it came from and no checksum for it. |
 
+A registry install leads with the registry rather than the download host,
+because the registry is who you chose to trust. The name shown is resolved
+against your *current* registry list: if you have since removed that
+registry the cell falls back to its host name and the tooltip adds *"this
+registry is no longer configured"* — the record of what vouched for the
+install is never rewritten.
+
 ## The buttons
 
-**Browse registry…** opens the curated
-[plugin registry](../plugins/registry.md) — a reviewed index published as a
-static `index.json`. Each listing shows name, version, author, and whether
-it can load here; the button per row reads **Install**, **Installed**, or
-**Incompatible**. Registry installs are the only ones that are
-**sha256-pinned**: the index records the hash of the reviewed artifact and
-the installer refuses a download whose bytes don't match. If the fetch
-fails (offline, or the registry isn't published yet) the dialog says
-*Registry unavailable* and you can still install from a file or a URL.
+**Browse registry…** fetches every ticked [registry](../plugins/registry.md)
+at once and merges the listings into one table: name, version, author,
+**Source**, and whether it can load here. Registry installs are the only
+ones that are **sha256-pinned** — the index records the hash of the artifact
+it listed and the installer refuses a download whose bytes don't match.
+**Refresh** re-fetches without closing the dialog.
+
+The button on each row reads:
+
+| Button | Meaning |
+|---|---|
+| **Install** | Compatible, not installed. One click downloads it, verifies the pinned hash, and installs it. |
+| **Installed** | You already have this plugin id, from this registry (or from a file/URL with no registry recorded). Disabled. |
+| **Installed (other source)** | You have this plugin id, but a *different* registry vouched for the copy you have. Disabled — the tooltip names both registries. Same id from another registry may be entirely different code, so swapping is not a one-click action; uninstall the current copy first. |
+| **Incompatible** | The listed release wants an SDK or nParse+ version this build doesn't provide. Disabled. |
+
+The **Source** cell names the registry that served the row, with
+`(third-party)` spelled out for anything but the built-in one. If two
+registries list the same plugin id, both rows appear, each marked *— also
+listed elsewhere* with a tooltip naming the others.
+
+If a registry can't be reached the dialog says so above the table
+("Could not reach 1 of 3 registries: …") and still shows everything the
+others returned; only when *nothing* was returned does the table disappear,
+with a reminder that you can still install from a file or a URL. If you have
+unticked every registry it says so and points you back at the list below.
 
 **Install from file…** takes a `.zip` archive or a single `.py` file.
 Archives are validated member-by-member before anything is extracted —
@@ -100,6 +133,41 @@ old approval and the old stored data. Restart to unload it.
 manager. The same entry is on the tray menu while add-ons are enabled. See
 [First run](../getting-started/first-run.md#where-settings-live) for the
 path on each platform.
+
+## Plugin registries
+
+Under the buttons is a second, short table — the registries **Browse
+registry…** reads. One row per registry:
+
+| Column | What it shows |
+|---|---|
+| **Enabled** | Ticked registries are fetched by Browse; unticked ones are ignored entirely. Saved immediately, and it takes effect the next time you press Browse — no restart. |
+| **Name** | The display name you gave it, or its host if you gave none. The built-in row is *nParse+ registry (built-in)*. |
+| **URL** | The `index.json` it fetches. |
+
+**Add registry…** asks for an `https://` index URL, then an optional display
+name, then confirms — and the confirmation is the point:
+
+!!! danger "A registry decides which add-ons you are offered"
+    A listing carries both the download URL *and* the sha256 the download is
+    checked against, so adding a registry lets whoever runs it offer you any
+    code at all, pre-verified. The hash proves a download matches what that
+    registry says it should be; it is not a review. The dialog says so, and
+    **defaults to Cancel** — nothing is saved unless you accept. Read
+    [Using another registry](../plugins/registry.md#using-another-registry)
+    before you add one.
+
+    A URL that isn't https, or one already in the list, is refused with the
+    reason. Scheme and host are lower-cased when stored, so the same
+    registry can't sneak in twice under two spellings.
+
+**Remove** takes the selected registry out of the list. Plugins already
+installed from it stay installed (the Source column keeps naming it). The
+built-in registry **cannot be removed** — the button greys out on that row,
+and the app refuses again if you reach it another way — because there would
+be no way back to it from this page. Untick it instead: that stops it being
+offered while keeping the way back, and it also means a future release can
+move the built-in catalogue without stranding you on an old URL.
 
 ## Restart semantics
 

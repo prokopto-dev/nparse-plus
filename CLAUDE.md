@@ -78,7 +78,10 @@ src/nparseplus/
                         #   status machine + consent), context.py (the SDK
                         #   PluginContext impl + unwind), install.py (zip-slip-
                         #   safe installer, https-only, sha256), registry.py
-                        #   (curated index client), storage.py (per-plugin JSON)
+                        #   (index schema + client: resolve_registries
+                        #   synthesizes the built-in row, fetch_indexes fans
+                        #   out over every enabled one, MergedListing carries
+                        #   provenance), storage.py (per-plugin JSON)
   pluginbootstrap.py    # THE two gated plugin import sites create_app may use
                         # (start_plugins pre-Qt, build_plugin_ui post-windows);
                         # nothing plugin-related imports while plugins are off
@@ -343,8 +346,8 @@ registrations), `install.py` (zip-slip-safe member screen, staging +
 `validate_plugin` gate before the move, https re-asserted on every redirect
 hop, sha256 pinning, uninstall-to-`trash/`), `registry.py` (curated static
 index; `DEFAULT_REGISTRY_URL` points at the not-yet-created
-`nparseplus-plugins` Pages repo, so Browse degrades to "Registry
-unavailable"). `core/driver.py` grew `add_supervised_tick`: plugin ticks are
+`nparseplus-plugins` Pages repo, so Browse degrades to a "could not reach"
+status). `core/driver.py` grew `add_supervised_tick`: plugin ticks are
 timed against `TICK_BUDGET_S` (0.25 s) and evicted after
 `TICK_BREACH_LIMIT` (2) consecutive breaches — the plugin stays active and
 the manager annotates its row "tick disabled (too slow)"; app-owned ticks
@@ -356,6 +359,41 @@ a Source provenance column that says "Sideloaded" out loud),
 `extra_pages` seam. Known v1 limits, both documented: consent gates
 activation but not import (a declarative manifest is the fix), and nothing
 hot-loads — install/uninstall/toggle all apply next launch (TODO(#45)).
+
+**Multiple plugin registries** (post-1.18, ~1537 tests): the single
+`plugins.registry_url` override is gone — settings now carry
+`plugins.registries: list[RegistrySource]` (**user-added only**) plus
+`plugins.default_registry_enabled`, and a `PluginsSettings` model_validator
+folds any legacy value into the list, normalizes (lower-case scheme+host,
+path untouched), dedupes, and *drops* unusable rows instead of raising
+(`load_settings` reads a ValueError as a corrupt document and would discard
+every other setting). The built-in registry is **never persisted**:
+`registry.resolve_registries` synthesizes it from `DEFAULT_REGISTRY_URL` on
+every read, so it can be unticked but never removed or edited (guarded twice
+— disabled button + `PluginHost.remove_registry` refusal) and changing that
+constant later moves every user instead of stranding them. `fetch_indexes`
+fans out over the enabled registries on a ThreadPoolExecutor and returns a
+`MultiFetchResult` of per-registry `RegistryFetchResult`s placed by index
+(deterministic order; a dead registry costs its timeout in parallel, not in
+front of a live one), with a pure `summary_lines()` so the dialog stays a
+renderer and one failure annotates rather than blanks the table. Provenance
+is the `MergedListing(registry, plugin)` wrapper, NOT a field on
+`RegistryPlugin` — an index cannot truthfully say who served it (a mirror
+would copy the claim) and the wire models generate the registry repo's
+committed JSON Schema. `PluginEntry.registry_url` records which registry
+vouched for an install; `best_update` now compat-filters candidates (it
+didn't — it could offer a release `check_compat` then refused) and prefers
+the registry a plugin was installed from, the manager saying "from <name>
+registry" when the offer comes from elsewhere and Browse showing a disabled
+"Installed (other source)" instead of an Install button. UI: `ui/
+pluginregistries.py` (Enabled/Name/URL table, Add…/Remove, `REGISTRY_WARNING`
++ `CONSENT_WARNING` in a defaults-to-Cancel confirmation — a registry
+supplies both the artifact URL and the sha256 it is checked against, so
+adding one is a wider trust decision than installing a plugin), and a merged
+Browse with a Source column marking third-party rows, duplicate-id
+annotations, and a Refresh button. Docs: docs/plugins/registry.md "Using
+another registry" is the canonical trust argument; security.md and
+docs/settings/plugins.md point at it.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
