@@ -810,7 +810,6 @@ wheels = [
 
 [[package]]
 name = "nparseplus"
-version = "1.14.0"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
