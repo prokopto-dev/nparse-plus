@@ -92,12 +92,18 @@ when the user uninstalls the plugin.
 
 **`PluginWindowSpec(key, title, factory, default_geometry=(200,200,320,240),
 command_key=None)`** — `key` must match the plugin-id pattern and be unique
-within your plugin. `factory(wctx)` runs on the GUI thread and returns any
-widget with `.toggle()`/`.isVisible()`; subclassing
-`nparseplus_sdk.ui.PluginWindow` is the recommended way (overlay recipe +
-persistence for free — call `self.restore_visibility()` last). The in-game
+within your plugin; declare it twice and only the first window is kept — the
+second would share the first's `window_key`, so the app logs a warning and
+drops it (tray entry, chat toggle and all).
+`factory(wctx)` runs on the GUI thread and returns any widget with
+`.toggle()`/`.isVisible()`; subclassing `nparseplus_sdk.ui.PluginWindow` is
+the recommended way (overlay recipe + persistence for free — call
+`self.restore_visibility()` last, and only such a window gets a
+[Settings → Windows](../settings/windows.md#plugin-windows) row). The in-game
 chat toggle is `toggle_<command_key>` (default `<id>_<key>`, with any
-non-word character mapped to `_`).
+non-word character mapped to `_`). `title` is user-facing in three places:
+the tray entry, the Settings → Windows row (prefixed with your `meta.name`),
+and the window's own title bar.
 
 `PluginWindow.__init__(wctx, *, translucent=True, default_state=None,
 parent=None)` — the keyword arguments are passed through to
@@ -109,7 +115,7 @@ with six fields plus one extension point:
 | Field | Meaning |
 | --- | --- |
 | `settings` | the host's pydantic `Settings` root |
-| `window_key` | this window's canonical key, `plugin.<id>.<spec key>` |
+| `window_key` | this window's canonical key, `plugin.<id>.<spec key>` — `Settings.windows[window_key]` is the state the user edits in Settings → Windows |
 | `title` | the spec's title |
 | `default_geometry` | the spec's `(x, y, w, h)` |
 | `on_save` | call to request a settings save |

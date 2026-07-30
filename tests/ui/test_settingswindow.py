@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel
 
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server
@@ -16,7 +18,11 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
-from nparseplus.ui.settingswindow import UnifiedSettingsWindow
+from nparseplus.ui.settingswindow import (
+    PLUGIN_WINDOWS_SECTION,
+    UnifiedSettingsWindow,
+    elide,
+)
 
 pytestmark = pytest.mark.qt
 
@@ -170,6 +176,139 @@ def test_windows_grid_writes_both_families_and_applies(qtbot) -> None:
     # Legacy handles get the same direct call — the map must not depend on
     # the config_updated signal that fires later in apply().
     assert maps_handle.applied == 1
+
+
+def _grid_label(window: UnifiedSettingsWindow, text: str) -> tuple[QLabel, int]:
+    """The Windows-grid label whose text is `text`, and its grid row index."""
+    grid = window._windows_grid
+    for i in range(grid.count()):
+        widget = grid.itemAt(i).widget()
+        if isinstance(widget, QLabel) and widget.text() == text:
+            return widget, grid.getItemPosition(i)[0]
+    raise AssertionError(f"no {text!r} label in the Windows grid")
+
+
+def _grid_row_of(window: UnifiedSettingsWindow, text: str) -> int:
+    return _grid_label(window, text)[1]
+
+
+def test_plugin_window_row_writes_state_and_applies(qtbot) -> None:
+    settings = Settings()
+    handle = FakeHandle()
+    key = "plugin.demo.timer"
+    window = _window(
+        qtbot,
+        settings,
+        plugin_windows=[("Demo Plugin — Timer", key, handle)],
+    )
+
+    row = window._plugin_rows[key]
+    row.opacity.setValue(45)
+    row.on_top.setChecked(False)
+    # The handle was never in window_handles — the row carries it directly.
+    assert handle.opacities[-1] == pytest.approx(0.45)
+
+    window.apply()
+    assert settings.windows[key].opacity == pytest.approx(0.45)
+    assert settings.windows[key].always_on_top is False
+    assert handle.applied == 1
+
+
+def test_plugin_row_reads_persisted_state(qtbot) -> None:
+    # The point of the feature: opacity a plugin window already saved must be
+    # what the row shows, not the WindowState default.
+    settings = Settings()
+    key = "plugin.demo.timer"
+    settings.windows[key] = WindowState(opacity=0.6, always_on_top=False)
+    window = _window(qtbot, settings, plugin_windows=[("Demo — Timer", key, FakeHandle())])
+
+    row = window._plugin_rows[key]
+    assert row.opacity.value() == 60
+    assert row.on_top.isChecked() is False
+
+
+def test_no_plugin_section_without_plugin_windows(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+
+    assert window._plugin_rows == {}
+    assert not [key for key in settings.windows if key.startswith("plugin.")]
+    with pytest.raises(AssertionError):
+        _grid_row_of(window, f"<b>{PLUGIN_WINDOWS_SECTION}</b>")
+
+
+def test_apply_leaves_absent_plugin_window_state_alone(qtbot) -> None:
+    # A disabled or uninstalled add-on gets no row; its saved state must
+    # survive an unrelated Apply so re-enabling restores what the user set.
+    settings = Settings()
+    settings.windows["plugin.gone.main"] = WindowState(opacity=0.42, always_on_top=False)
+    window = _window(qtbot, settings)
+
+    window.apply()
+    state = settings.windows["plugin.gone.main"]
+    assert state.opacity == pytest.approx(0.42)
+    assert state.always_on_top is False
+
+
+def test_plugin_section_renders_below_discord_extras(qtbot) -> None:
+    # The Discord extras reuse the running row index; appending the plugin
+    # block without advancing it put the header above them.
+    window = _window(
+        qtbot,
+        Settings(),
+        plugin_windows=[("Demo — Timer", "plugin.demo.timer", FakeHandle())],
+    )
+
+    header = _grid_row_of(window, f"<b>{PLUGIN_WINDOWS_SECTION}</b>")
+    assert header > _grid_row_of(window, "Discord background")
+    assert _grid_row_of(window, "Demo — Timer") > header
+
+
+def test_plugin_rows_offer_no_clickthrough(qtbot) -> None:
+    # Click-through is a trap on a plugin window: you cannot click it to undo.
+    window = _window(
+        qtbot,
+        Settings(),
+        plugin_windows=[("Demo — Timer", "plugin.demo.timer", FakeHandle())],
+    )
+    assert window._plugin_rows["plugin.demo.timer"].clickthrough is None
+
+
+def test_plugin_label_is_not_interpreted_as_markup(qtbot) -> None:
+    # Labels are plugin-supplied; QLabel would otherwise render the tags.
+    label = "<b>Bold</b> & Co — Timer"
+    window = _window(
+        qtbot,
+        Settings(),
+        plugin_windows=[(label, "plugin.demo.timer", FakeHandle())],
+    )
+    widget, _row = _grid_label(window, label)
+    assert widget.textFormat() == Qt.TextFormat.PlainText
+
+
+def test_long_plugin_label_is_elided_with_a_tooltip(qtbot) -> None:
+    long = "P" * 40 + " — " + "W" * 40
+    window = _window(qtbot, Settings(), plugin_windows=[(long, "plugin.demo.timer", FakeHandle())])
+
+    row = window._plugin_rows["plugin.demo.timer"]
+    assert row.label.endswith("…") and len(row.label) == 60
+    assert row.tooltip == long  # the full name stays reachable
+
+
+def test_short_plugin_label_gets_no_tooltip(qtbot) -> None:
+    # A tooltip repeating the visible label is noise.
+    window = _window(
+        qtbot, Settings(), plugin_windows=[("Demo — Timer", "plugin.demo.timer", FakeHandle())]
+    )
+    assert window._plugin_rows["plugin.demo.timer"].tooltip is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [("short", "short"), ("x" * 60, "x" * 60), ("y" * 61, "y" * 59 + "…")],
+)
+def test_elide(text: str, expected: str) -> None:
+    assert elide(text) == expected
 
 
 def test_character_pane_mutates_in_place_and_pushes_active(qtbot) -> None:

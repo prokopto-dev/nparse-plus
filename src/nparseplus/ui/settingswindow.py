@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -39,6 +40,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QStackedWidget,
@@ -83,6 +85,21 @@ NEW_WINDOW_ROWS = [
     ("Trigger Editor", "triggereditor"),
     ("Macro Editor", "macroeditor"),
 ]
+# Plugin rows are not listed here: they are passed in per session (see the
+# `plugin_windows` kwarg), because only windows a plugin actually opened this
+# launch get a row.
+PLUGIN_WINDOWS_SECTION = "Plugin windows"
+# Row labels are plugin-supplied, so cap them — a long title would squeeze the
+# opacity slider out of the grid. The full text lives in the row's tooltip.
+LABEL_LIMIT = 60
+
+
+def elide(text: str, limit: int = LABEL_LIMIT) -> str:
+    """Truncate `text` to `limit` characters, ellipsis included."""
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
 
 # Class combo entries: every playable class (no OTHER), EQTool SettingsGeneral.
 PLAYER_CLASSES = [cls for cls in PlayerClass if cls is not PlayerClass.OTHER]
@@ -142,8 +159,10 @@ class _WindowRow:
         opacity_pct: int,
         clickthrough: bool | None = None,
         handle: object | None = None,
+        tooltip: str | None = None,
     ) -> None:
         self.label = label
+        self.tooltip = tooltip
         self.handle = handle
         self.on_top = QCheckBox()
         self.on_top.setChecked(on_top)
@@ -183,6 +202,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         notify_legacy: Callable[[], None] | None = None,
         repaint_maps: Callable[[], None] | None = None,
         window_handles: dict[str, object] | None = None,
+        plugin_windows: Sequence[tuple[str, str, object]] | None = None,
         backend_player: ActivePlayer | None = None,
         zones: ZoneDatabase | None = None,
         socials_sync: SocialSyncWatcher | None = None,
@@ -206,6 +226,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._notify_legacy = notify_legacy
         self._repaint_maps = repaint_maps
         self._handles = window_handles or {}
+        # (label, window key, widget) per plugin window built this session.
+        # Deliberately plain tuples: create_app builds this window on every
+        # launch, plugins on or off, so nothing plugin-shaped may be imported
+        # here (tests/core/plugins/test_master_toggle.py pins that).
+        self._plugin_windows = tuple(plugin_windows or ())
         self._backend_player = backend_player
         self._zones = zones
         self._socials_sync = socials_sync
@@ -924,13 +949,14 @@ class UnifiedSettingsWindow(OverlayWindowBase):
     # -- Windows grid ------------------------------------------------------------------------
 
     def _build_windows_grid(self) -> QWidget:
-        grid = QGridLayout()
+        grid = self._windows_grid = QGridLayout()
         grid.addWidget(QLabel("<b>Window</b>"), 0, 0)
         grid.addWidget(QLabel("<b>On top</b>"), 0, 1)
         grid.addWidget(QLabel("<b>Opacity</b>"), 0, 2)
         grid.addWidget(QLabel("<b>Click-through</b>"), 0, 3)
         self._legacy_rows: dict[str, _WindowRow] = {}
         self._new_rows: dict[str, _WindowRow] = {}
+        self._plugin_rows: dict[str, _WindowRow] = {}
         row_index = 1
         for label, section in LEGACY_WINDOW_ROWS:
             row = _WindowRow(
@@ -962,7 +988,29 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._discord_bg.setValue(int(self._lc("discord", "bg_opacity", 25)))
         grid.addWidget(QLabel("Discord background"), row_index, 0)
         grid.addWidget(self._discord_bg, row_index, 2)
+        row_index += 1  # the Discord extras occupy this row too
         grid.setColumnStretch(2, 1)
+
+        # Plugin windows last, and only the ones that actually opened this
+        # session — a disabled or errored add-on gets no row, and its saved
+        # WindowState is left on disk untouched for when it comes back.
+        if self._plugin_windows:
+            row_index = self._add_grid_section(grid, row_index, PLUGIN_WINDOWS_SECTION)
+            for label, key, widget in self._plugin_windows:
+                state = self._settings.windows.setdefault(key, WindowState())
+                shown = elide(label)
+                row = _WindowRow(
+                    shown,
+                    on_top=state.always_on_top,
+                    opacity_pct=round(state.opacity * 100),
+                    handle=widget,
+                    # Only worth a tooltip when it says something the row does
+                    # not already show.
+                    tooltip=label if shown != label else None,
+                )
+                self._plugin_rows[key] = row
+                self._add_grid_row(grid, row_index, row)
+                row_index += 1
 
         outer = QVBoxLayout()
         outer.addLayout(grid)
@@ -970,13 +1018,37 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         note.setStyleSheet("color: #888888; font-size: 11px;")
         outer.addWidget(note)
         outer.addStretch(1)
-        page = QWidget(self)
-        page.setLayout(outer)
+        body = QWidget(self)
+        body.setLayout(outer)
+        # Add-ons can push the row count past the window height, and the grid
+        # has no other way to reach the bottom rows.
+        page = QScrollArea(self)
+        page.setWidgetResizable(True)
+        page.setFrameShape(QFrame.Shape.NoFrame)
+        page.setWidget(body)
         return page
 
     @staticmethod
+    def _add_grid_section(grid: QGridLayout, index: int, title: str) -> int:
+        """A full-width rule + subheader; returns the next free row index."""
+        rule = QFrame()
+        rule.setFrameShape(QFrame.Shape.HLine)
+        rule.setFrameShadow(QFrame.Shadow.Sunken)
+        grid.addWidget(rule, index, 0, 1, 4)
+        header = QLabel(f"<b>{title}</b>")
+        grid.addWidget(header, index + 1, 0, 1, 4)
+        return index + 2
+
+    @staticmethod
     def _add_grid_row(grid: QGridLayout, index: int, row: _WindowRow) -> None:
-        grid.addWidget(QLabel(row.label), index, 0)
+        name = QLabel(row.label)
+        # Plugin-supplied labels reach this grid, and QLabel auto-detects rich
+        # text — an add-on named "Foo & Bar" would render as "Foo  Bar", and
+        # one named "<b>x</b>" would style the host's own chrome.
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        if row.tooltip:
+            name.setToolTip(row.tooltip)
+        grid.addWidget(name, index, 0)
         grid.addWidget(row.on_top, index, 1)
         grid.addWidget(row.opacity, index, 2)
         if row.clickthrough is not None:
@@ -1001,6 +1073,18 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             state.always_on_top = row.on_top.isChecked()
             state.opacity = row.opacity.value() / 100
             handle = self._handles.get(key)
+            if handle is not None and hasattr(handle, "apply_window_state"):
+                handle.apply_window_state()
+        # Plugin rows carry their own handle rather than going through
+        # self._handles: that dict is keyed by legacy section name AND window
+        # key AND (after app.py wires chat toggles, which happens *after* this
+        # window is built) sanitized command name. The row pins its widget at
+        # build time so nothing depends on that ordering.
+        for key, row in self._plugin_rows.items():
+            state = self._settings.windows.setdefault(key, WindowState())
+            state.always_on_top = row.on_top.isChecked()
+            state.opacity = row.opacity.value() / 100
+            handle = row.handle
             if handle is not None and hasattr(handle, "apply_window_state"):
                 handle.apply_window_state()
 

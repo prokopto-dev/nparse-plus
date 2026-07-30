@@ -45,6 +45,9 @@ class PluginUi:
     command_handles: dict[str, Any] = field(default_factory=dict)  # chat toggle_<name>
     tray: dict[str, Any] = field(default_factory=dict)  # tray label -> widget
     extra_pages: list[Any] = field(default_factory=list)
+    # Settings > Windows grid rows: (label, window key, widget). Only windows
+    # built on the overlay recipe appear here — see build_plugin_ui.
+    window_rows: list[tuple[str, str, Any]] = field(default_factory=list)
 
 
 def start_plugins(
@@ -94,7 +97,20 @@ def build_plugin_ui(
 
     for loaded, spec, widget in _materialize_plugin_windows(plugin_host, settings, save, bridge):
         assert loaded.meta is not None
-        ui.windows_by_key[f"plugin.{loaded.meta.id}.{spec.key}"] = widget
+        window_key = f"plugin.{loaded.meta.id}.{spec.key}"
+        if window_key in ui.windows_by_key:
+            # add_window() does not enforce unique spec.key, so a plugin can
+            # declare the same one twice. Two widgets sharing one window key
+            # would share one WindowState (and one Settings > Windows row) —
+            # keep the first and say so, rather than let the second win the
+            # dict while both draw.
+            logger.warning(
+                "plugin %s declared window key %r twice; the later window is ignored",
+                loaded.meta.id,
+                spec.key,
+            )
+            continue
+        ui.windows_by_key[window_key] = widget
         command_key = _plugin_command_key(loaded, spec.key, spec.command_key)
         if command_key in window_handles or command_key in ui.command_handles:
             logger.warning(
@@ -108,9 +124,36 @@ def build_plugin_ui(
         if label in ui.tray:
             label = f"{spec.title} ({loaded.meta.id})"
         ui.tray[label] = widget
+        _add_window_row(ui, loaded, spec, widget, window_key)
 
     ui.extra_pages.extend(spec for _loaded, spec in plugin_host.page_specs())
     return ui
+
+
+def _add_window_row(
+    ui: PluginUi, loaded: LoadedPlugin, spec: Any, widget: Any, window_key: str
+) -> None:
+    """Record the window's Settings > Windows row, if it can have one.
+
+    Only widgets built on the overlay recipe qualify: ``PluginWindowSpec``
+    promises no more than ``.toggle()``/``.isVisible()``, and every QWidget
+    has ``setWindowOpacity``, so a bare widget would get a slider that
+    previews live and is then silently dropped on Apply (and would fabricate
+    a ``settings.windows`` entry nobody reads).
+    """
+    if not hasattr(widget, "apply_window_state"):
+        return
+    assert loaded.meta is not None
+    # meta.name has no min-length validator, so "" is a legal plugin name;
+    # LoadedPlugin.display_name only covers meta being absent entirely.
+    plugin_name = (loaded.meta.name or "").strip() or loaded.meta.id
+    window_title = (spec.title or "").strip() or spec.key
+    label = f"{plugin_name} — {window_title}"
+    if any(existing == label for existing, _key, _widget in ui.window_rows):
+        # One plugin, two windows with the same title: the plugin name prefix
+        # cannot separate them, so fall back to the key (unique per plugin).
+        label = f"{label} ({spec.key})"
+    ui.window_rows.append((label, window_key, widget))
 
 
 def _plugin_command_key(loaded: LoadedPlugin, spec_key: str, command_key: str | None) -> str:
