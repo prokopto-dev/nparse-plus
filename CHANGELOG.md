@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.16.3 (2026-07-30)
+
+### Bug Fixes
+
+- **timers**: Sync every countdown to one whole-second grid
+  ([`df28480`](https://github.com/prokopto-dev/nparse-plus/commit/df28480d8d969801576ab251a066c430ca023e5a))
+
+
 ## v1.16.2 (2026-07-30)
 
 ### Bug Fixes
