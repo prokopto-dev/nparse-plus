@@ -21,6 +21,11 @@ overlay heritage.
 It reads the log file only — no memory reading, no injection, no game files
 modified (the optional Night Vision fix is applied only when you ask).
 
+There is also an optional add-on system for people who want to extend it:
+a published SDK (`nparseplus-sdk`) for third-party windows, parsers, and
+alerts. It is **off by default** and nothing above depends on it — you turn
+add-ons on in Settings → Advanced or you never see them.
+
 ## 📖 Documentation
 
 **Full documentation lives at
@@ -32,6 +37,7 @@ versioned per release, including:
 - [Migrating from nParse / GINA / EQTool](https://prokopto-dev.github.io/nparse-plus/latest/migrating/)
 - [Windows & Overlays](https://prokopto-dev.github.io/nparse-plus/latest/windows/) and [Features](https://prokopto-dev.github.io/nparse-plus/latest/features/)
 - [Settings Reference](https://prokopto-dev.github.io/nparse-plus/latest/settings/) · [FAQ](https://prokopto-dev.github.io/nparse-plus/latest/faq/) · [Troubleshooting](https://prokopto-dev.github.io/nparse-plus/latest/troubleshooting/)
+- [Plugins](https://prokopto-dev.github.io/nparse-plus/latest/plugins/) — the optional add-on system and the SDK for writing one
 
 ## Quick start
 
@@ -56,11 +62,17 @@ from the tray, and you're parsing —
 ## Development
 
 ```bash
-uv sync                                   # deps (incl. dev group)
-uv run pytest                             # ~970 tests, a few seconds
+uv sync                                   # deps (incl. dev group); resolves
+                                          # the workspace, so sdk/ comes too
+uv run pytest                             # ~1460 tests (incl. sdk/tests)
 uv run ruff check . && uv run ruff format .
 QT_QPA_PLATFORM=offscreen uv run pytest   # headless (CI does this)
 ```
+
+The repo is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
+the app in `src/nparseplus/`, and the plugin contract package
+`nparseplus-sdk` in `sdk/`, versioned and released separately — see
+[CONTRIBUTING.md](CONTRIBUTING.md#working-on-the-sdk).
 
 See [CLAUDE.md](CLAUDE.md) for the architecture guide — the one rule that
 matters most: **`nparseplus.core` (and `config`/`net`) never import Qt**; a

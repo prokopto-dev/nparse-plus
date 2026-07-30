@@ -34,4 +34,4 @@ See [Updating](updating.md).
 ## Uninstall
 
 Delete the extracted folder. Settings live separately under
-`%LOCALAPPDATA%\nparseplus\` — delete that too for a clean slate.
+`%LOCALAPPDATA%\nparseplus\nparseplus\` — delete that too for a clean slate.

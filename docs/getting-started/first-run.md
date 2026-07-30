@@ -82,8 +82,17 @@ Everything persists to `settings.json` in your platform config directory:
 | Platform | Path |
 |---|---|
 | macOS | `~/Library/Application Support/nparseplus/` |
-| Windows | `%LOCALAPPDATA%\nparseplus\` |
+| Windows | `%LOCALAPPDATA%\nparseplus\nparseplus\` |
 | Linux | `~/.config/nparseplus/` (Flatpak: `~/.var/app/io.github.prokopto_dev.nparse_plus/config/nparseplus/`) |
+
+Inside that folder:
+
+| Path | Contents |
+|---|---|
+| `settings.json` | Every setting in the app |
+| `plugins/` | Installed [add-ons](../plugins/index.md) — only used if you enabled them; **Open Plugins Folder** on the tray menu and in [Settings → Plugins](../settings/plugins.md) opens exactly this |
+| `plugins/trash/` | Uninstalled add-ons and their data, moved aside rather than deleted |
+| `plugin-data/<plugin-id>/` | Each add-on's private storage, one folder per plugin |
 
 An old nParse `nparse.config.json` is
 [migrated automatically](../migrating/from-nparse.md) on first run.

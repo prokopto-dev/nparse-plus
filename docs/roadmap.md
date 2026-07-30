@@ -10,6 +10,32 @@ Each item below is tracked as a
 area / type / size) — the issues are the live status; this page is the prose
 overview.
 
+## Plugins & SDK
+
+The [add-on system](plugins/index.md) shipped in 1.18 — opt-in, off by
+default. What it's still missing:
+
+- **A live plugin registry** — the app already knows how to browse and
+  install from a curated index (sha256-pinned), but the
+  `prokopto-dev/nparseplus-plugins` repo that publishes it doesn't exist
+  yet, so **Browse registry…** reports *Registry unavailable*. The repo
+  content is written and waiting in `templates/registry-repo/`.
+- **`nparseplus-sdk` on PyPI** — plugin authors currently install the SDK
+  from a checkout. The publish workflow is in place; the package hasn't
+  been pushed.
+- **A plugin template repository** — a `Use this template` GitHub repo
+  (CI, release workflow, a working example plugin) so a new add-on starts
+  from something that already builds. Content is written in
+  `templates/plugin-repo/`.
+- **[Enable/disable without restarting](https://github.com/prokopto-dev/nparse-plus/issues/45)**
+  — today every add-on change (install, uninstall, tick a box) applies at
+  the next launch.
+- **A declarative manifest** so nParse+ can read an add-on's name, version,
+  and compatibility *without importing it*. Reading that metadata means
+  importing the module today, which is why installing (and dropping a file
+  into the plugins folder) runs plugin code before you approve it — see
+  [Plugin security & trust](plugins/security.md).
+
 ## Distribution & platform
 
 Longer-horizon packaging work, waiting on time (and in some cases, money):

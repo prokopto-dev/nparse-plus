@@ -4,10 +4,12 @@ The stable contract for building [nParse+](https://github.com/prokopto-dev/npars
 plugins: addon windows, log parsers, event subscribers, and network pollers
 that load into the app at runtime.
 
-- **Plugin authors:** `pip install nparseplus-sdk`, subclass
-  `nparseplus_sdk.NParsePlugin`, expose a module-level `create_plugin()`
-  factory, and check your work with `nparseplus-plugin validate <path>`.
-  Full guide: the *Plugins* section of the
+- **Plugin authors:** install the SDK (see below — **not on PyPI yet**),
+  subclass `nparseplus_sdk.NParsePlugin`, expose a module-level
+  `create_plugin()` factory, and check your work with
+  `nparseplus-plugin validate <path>`. Note that add-ons are opt-in in the
+  app: users must tick *Settings > Advanced > Enable plugins (add-ons)* and
+  restart before anything loads. Full guide: the *Plugins* section of the
   [nParse+ documentation](https://prokopto-dev.github.io/nparse-plus/).
 - **Versioning:** this package is versioned independently of the app.
   Declare the SDK range you built against in
@@ -19,17 +21,35 @@ that load into the app at runtime.
   the app from source
   (`pip install git+https://github.com/prokopto-dev/nparse-plus`).
 
+## Installing (not on PyPI yet)
+
+The release workflow below exists but has not published a version, so
+**`pip install nparseplus-sdk` fails today**. Install from the app repo's
+`sdk/` subdirectory instead:
+
+```bash
+pip install "git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk"
+pip install ./sdk        # ...or from a nparse-plus checkout
+```
+
+In a plugin's `pyproject.toml`:
+
+```toml
+dependencies = [
+  "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk",
+]
+```
+
+Swap either form for a plain `nparseplus-sdk>=1.0,<2` once the package is
+live. Nothing else changes — the import path, the CLI and the contract are
+identical.
+
 ## Repository note
 
 This package currently lives in the `sdk/` directory of the main
 `prokopto-dev/nparse-plus` repository as an independent uv workspace member,
 versioned and released independently of the app. It may eventually move to
-its own repository (`prokopto-dev/nparseplus-sdk`). Until it is on PyPI,
-install it from a checkout:
-
-```bash
-pip install ./sdk        # from a nparse-plus checkout
-```
+its own repository (`prokopto-dev/nparseplus-sdk`).
 
 ## Releasing (maintainers)
 

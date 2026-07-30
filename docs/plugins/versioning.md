@@ -5,9 +5,18 @@ exactly one job.
 
 | Coordinate | Owner | Job |
 | --- | --- | --- |
-| **App version** (`nparseplus`, e.g. `1.15.0`) | semantic-release on the app repo | The product. Each release bundles exactly **one** SDK version. |
-| **SDK version** (`nparseplus-sdk`, e.g. `1.0.0`) | the SDK package (own semver; moving to its own repo) | **The contract.** The only number plugins and the app negotiate over. |
+| **App version** (`nparseplus`, e.g. `1.18.0`) | semantic-release on the app repo | The product. Each release bundles exactly **one** SDK version. |
+| **SDK version** (`nparseplus-sdk`, currently `1.0.0`) | the SDK package (own semver, own `sdk-v*` tags) | **The contract.** The only number plugins and the app negotiate over. |
 | **Plugin version** (`PluginMeta.version`) | the plugin author | The plugin's own releases; drives registry update detection. |
+
+The SDK version has exactly one source: the `__version__` literal in
+`sdk/src/nparseplus_sdk/__init__.py`. `sdk/pyproject.toml` is
+`dynamic = ["version"]` and hatchling reads that literal, so the wheel, the
+lock file and the runtime `SDK_VERSION` constant cannot disagree. It is
+deliberately *not* derived from `importlib.metadata`: a frozen PyInstaller
+build has no dist metadata, so a metadata lookup would fail in exactly the
+builds every user runs, and whatever fallback sat beside it would become the
+version reported to `check_compat`.
 
 ## The compatibility handshake
 
@@ -19,7 +28,7 @@ meta = PluginMeta(
     name="My Plugin",
     version="1.4.0",
     requires_sdk=">=1.0,<2",     # PEP 440 range vs the bundled SDK version
-    min_app_version="1.15.0",    # optional app floor (feature-based, e.g. an
+    min_app_version="1.18.0",    # optional app floor (feature-based, e.g. an
 )                                #   event class added in a given app release)
 ```
 
@@ -28,6 +37,10 @@ If `requires_sdk` doesn't admit the bundled SDK, or the app is older than
 Settings > Plugins) — never a crash, never a half-load. The registry Browse
 list runs the *same* check on index metadata, so incompatible plugins are
 filtered before anything is downloaded.
+
+`min_app_version` is only checked when an app version is available, which is
+always true inside the app and optional for `nparseplus-plugin validate`
+(pass `--app-version`).
 
 ## The SDK stability promise
 
@@ -41,21 +54,71 @@ filtered before anything is downloaded.
   for almost every plugin. Raise the floor (e.g. `">=1.3,<2"`) only when
   you use a capability added in that minor.
 
+What the promise does *not* cover: host objects reached through the context
+(`ctx.timers`, `ctx.player`, `ctx.pigparse`, the classes behind
+`nparseplus_sdk.events` / `.timers`) belong to the app, not the SDK. They
+are stable in practice — the app's own code depends on them — but they move
+on the app's schedule, and `min_app_version` is the lever for that, not
+`requires_sdk`.
+
+### Deprecation policy
+
+Additive-only makes removal the interesting case. Within SDK 1.x nothing
+public is ever removed or changed in meaning. When something needs to go:
+
+1. **Announce.** The name is documented as deprecated in this
+   documentation and in its own docstring, with the replacement named, in a
+   normal SDK minor release. It keeps working, unchanged.
+2. **Warn.** From the *next* SDK minor, using it emits a
+   `DeprecationWarning` naming the replacement. It still works. Plugin
+   authors see it in `nparseplus-plugin validate` output and in
+   `nparseplus.log`.
+3. **Remove.** Only in the next SDK **major**, never before, and never
+   sooner than **six months** after step 1.
+
+So the shortest possible life of a deprecated 1.x name is one minor cycle
+plus a major bump, and the app will keep bundling a 1.x shim for a window
+after 2.0 lands. If you see a deprecation, you have at least two SDK
+releases and half a year to move.
+
+Anything not in `nparseplus_sdk.__all__` — private names, module internals,
+anything reached through a host object — is outside this policy and can
+change in any release.
+
 ## Author release checklist
 
 1. Bump `PluginMeta.version` (semver: breaking behavior for your users =
    major, features = minor, fixes = patch).
 2. Keep `requires_sdk` honest — if you adopted a newer SDK capability,
-   raise the floor.
-3. Tag `v<version>` — the template's release workflow refuses a tag that
+   raise the floor. Set `min_app_version` if you depend on something the
+   app added in a specific release.
+3. Run `nparseplus-plugin validate` one more time against the version of the
+   app you expect users to run (`--app-version`).
+4. Tag `v<version>` — the template's release workflow refuses a tag that
    doesn't match `meta.version`, then builds the zip, computes its sha256,
    and emits the registry entry JSON.
-4. Update your registry listing (PR to the index) so users get the
-   "update available" notice.
+5. Publish the release and tell your users. **The registry index does not
+   exist yet** (see [Registry](registry.md)), so until it is stood up there
+   is nothing to open a PR against. In the interim:
+    - Point users at *Settings > Plugins > Install from URL…* with your
+      release asset's https URL, and publish the sha256 next to it so
+      careful users can check the download themselves — the app does not
+      verify a hash on URL installs.
+    - Or tell them to download the zip and use *Install from file…*.
+    - Keep the `registry-entry.json` your release workflow produced. When
+      the index opens, submitting is a copy-paste of that file, and users
+      who installed from a URL get "update available" notices from then on.
 
 ## Where the SDK lives
 
-The SDK is versioned and packaged independently of the app (currently in
-the app repo's `sdk/` directory as a workspace member; planned to move to
-its own repository with PyPI publishing). Nothing about the handshake
-changes when it moves — plugins already target the package, not the repo.
+The SDK is versioned and packaged independently of the app (currently in the
+app repo's `sdk/` directory as a workspace member; planned to move to its
+own repository). It is **not on PyPI yet** — see
+[Installing the SDK](developing.md#installing-the-sdk) for the
+git-subdirectory install that works today. Releases go out on `sdk-v<X.Y.Z>`
+tags through `.github/workflows/release-sdk.yml`, which verifies the tag
+against `__version__`, smoke-tests the built wheel in a clean venv, and
+publishes via PyPI trusted publishing behind a required human approval.
+
+Nothing about the handshake changes when the package moves or publishes —
+plugins already target the package, not the repo.

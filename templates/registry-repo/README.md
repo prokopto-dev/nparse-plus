@@ -95,7 +95,7 @@ for the specification. In short:
         "url": "https://github.com/someone/nparse-merchant-prices/releases/download/v1.2.0/merchant_prices.zip",
         "sha256": "<64 lowercase hex characters>",
         "requires_sdk": ">=1.0,<2",
-        "min_app_version": "1.15.0"
+        "min_app_version": "1.18.0"
       }
     }
   ]

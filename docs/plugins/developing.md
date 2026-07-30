@@ -5,15 +5,59 @@ separately versioned Python package that defines the stable contract. The
 app bundles one SDK version; your plugin declares the range it supports and
 incompatible combinations are refused cleanly.
 
+## Installing the SDK
+
+!!! warning "`nparseplus-sdk` is not on PyPI yet"
+    The release workflow exists (`.github/workflows/release-sdk.yml`,
+    trusted publishing on `sdk-v*` tags) but has not published a version, so
+    **`pip install nparseplus-sdk` fails today**. Install it from the app
+    repo's `sdk/` subdirectory until it lands:
+
 ```bash
-pip install nparseplus-sdk           # types, base classes, validate CLI
-# for full validation + running the real app from source:
+# the SDK alone: types, base classes, the validate CLI
+pip install "git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk"
+
+# ...or from a checkout of the app repo
+pip install ./sdk
+
+# for full type checking and for running the real app from source, also:
 pip install git+https://github.com/prokopto-dev/nparse-plus
 ```
 
-!!! note
-    Until the SDK's PyPI release lands you can install it from a repo
-    checkout: `pip install ./sdk`.
+In a `pyproject.toml`, that first form is:
+
+```toml
+dependencies = [
+  "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk",
+]
+```
+
+Once the package is live on PyPI, swap either form for a plain
+`nparseplus-sdk>=1.0,<2`. Nothing else about your plugin changes — the
+import path, the CLI and the contract are identical.
+
+## Zero to running
+
+1. **Turn plugins on in the app.** *nParse+ Settings > Advanced > Add-ons
+   (plugins) >* tick **Enable plugins (add-ons)**, *Apply && Save*, then
+   restart nParse+. Add-ons are off by default; before this step there is no
+   Plugins page and no *Open Plugins Folder* tray item.
+2. **Install the SDK** into a virtualenv (above) so you get the types and
+   the `nparseplus-plugin` CLI.
+3. **Write the plugin.** Start by copying
+   [`examples/plugins/hello_timer.py`](https://github.com/prokopto-dev/nparse-plus/blob/master/examples/plugins/hello_timer.py)
+   — one file, one subscription, a timer row and TTS.
+4. **Validate it:** `nparseplus-plugin validate hello_timer.py`. This
+   imports your module and calls `activate()` against a fake context, so it
+   catches most mistakes without launching the app.
+5. **Drop it into the plugins folder.** Tray > *Open Plugins Folder* (or the
+   [paths table](index.md#step-2-install-a-plugin)), and copy the `.py` file
+   or the package directory in.
+6. **Restart nParse+.** A consent dialog appears naming your plugin; choose
+   *Enable plugin*.
+7. **Check it loaded:** Settings > Plugins should show it as **Active**. If
+   not, the status and its tooltip say why, and `nparseplus.log` has the
+   traceback.
 
 ## Plugin anatomy
 
@@ -29,7 +73,7 @@ class MyPlugin(NParsePlugin):
         name="My Plugin",
         version="1.0.0",
         requires_sdk=">=1.0,<2",     # PEP 440 range vs the app's bundled SDK
-        min_app_version="1.15.0",    # optional
+        min_app_version="1.18.0",    # optional
         author="You",
     )
 
@@ -50,7 +94,7 @@ Everything a plugin may touch arrives through the
 | --- | --- | --- |
 | React to events | `ctx.subscribe(EventClass, fn)` | classes from `nparseplus_sdk.events` |
 | Parse novel log lines | `ctx.add_parser(parser)` | runs **after** every built-in |
-| Periodic work | `ctx.add_tick(fn)` | ~100 ms, driver thread |
+| Periodic work | `ctx.add_tick(fn)` | ~100 ms, driver thread, **250 ms budget** |
 | Network fetches | `ctx.submit(fetch, apply)` | never block a tick/handler |
 | PigParse REST | `ctx.pigparse` | e.g. `item_prices(server, names)` |
 | Timer rows | `ctx.timers` + `nparseplus_sdk.timers` | spell-timer window sections |
@@ -74,6 +118,30 @@ Everything a plugin may touch arrives through the
 - Windows and settings pages run on the **GUI thread**. Read plugin state
   from a QTimer poll of a snapshot (see the merchant example) or connect to
   `wctx.bridge.event_received` for pushed events.
+
+### The tick budget
+
+One thread does log tailing, the parser chain, every timer countdown, the
+DPS fight tracker and the sharing inbox. A tick that takes 250 ms therefore
+costs the *whole app* 250 ms — two and a half missed poll intervals and a
+visible stutter in every countdown. So the driver supervises plugin ticks
+(`core/driver.py`):
+
+- Each `ctx.add_tick` callback is timed on every run.
+- A run over **`TICK_BUDGET_S` = 250 ms** counts as a breach. A run under it
+  resets the counter — only *consecutive* breaches matter, so one GC pause
+  or cold import costs you nothing.
+- **Two consecutive breaches and the tick is removed for the rest of the
+  session.** The plugin stays active — its subscriptions, parsers and
+  windows keep working — but that callback never runs again, the eviction is
+  logged at ERROR, and Settings > Plugins annotates your row *tick disabled
+  (too slow)*.
+
+Write ticks accordingly: they should be a cheap "is anything due?" check
+that hands real work to `ctx.submit`. If you need to do something expensive
+on a schedule, do it in the `fetch` closure, not in the tick. The merchant
+example's `_tick` is the shape to copy — it compares timestamps, then
+returns or submits.
 
 ## Events vs parsers
 
@@ -100,27 +168,114 @@ ctx.add_window(PluginWindowSpec(key="main", title="My Window",
                                 factory=make_window))
 ```
 
-The factory runs on the GUI thread with a `PluginWindowContext`. Subclass
-`nparseplus_sdk.ui.PluginWindow` (import it **inside** the factory, not at
-module top level, so Qt-free environments can still import your plugin) to
-get the full overlay recipe — frameless, drag to move, resize from any
-edge, quit safety:
+The factory runs on the GUI thread with a
+[`PluginWindowContext`](api.md#window-settings-page-specs). Subclass
+`nparseplus_sdk.ui.PluginWindow` to get the full overlay recipe — frameless,
+drag to move, resize from any edge, quit safety.
+
+**Keep Qt out of your plugin's top-level module.** nParse+ imports that
+module to read your metadata, and so do `nparseplus-plugin validate` and
+your unit tests, which may run without PySide6 (and `nparseplus_sdk.ui`
+resolves `PluginWindow` from the *host*, so it only works inside the app).
+Both shipped examples do this by putting the Qt code in a separate module
+and importing it lazily from the factory:
 
 ```python
-def make_window(wctx):
-    from nparseplus_sdk.ui import PluginWindow
-    from PySide6.QtWidgets import QLabel, QVBoxLayout
-
-    class MyWindow(PluginWindow):
-        def __init__(self, wctx):
-            super().__init__(wctx)
-            layout = QVBoxLayout()
-            layout.addWidget(QLabel("hello", self))
-            self.setLayout(layout)
-            self.restore_visibility()   # honor the saved shown state
-
-    return MyWindow(wctx)
+# my_plugin/__init__.py — no Qt imports at this level
+def _make_window(self, wctx):
+    from .window import MyWindow      # imported only when the app builds it
+    return MyWindow(wctx, self)
 ```
+
+```python
+# my_plugin/window.py — Qt at module top level is fine here
+from PySide6.QtWidgets import QLabel, QVBoxLayout
+from nparseplus_sdk.ui import PluginWindow
+
+class MyWindow(PluginWindow):
+    def __init__(self, wctx, plugin):
+        super().__init__(wctx)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("hello", self))
+        self.setLayout(layout)
+        self.restore_visibility()   # honor the saved shown state — call last
+```
+
+For a single-file plugin, do the same imports inside the factory function
+itself. Either way, the rule is the same: nothing Qt at import time.
+
+## Consent, from your side
+
+- **Your plugin is inert until the user answers.** On the first launch after
+  installation, nParse+ shows a dialog with your `name`, `version`, `author`
+  and install location. `activate()` is not called until the user accepts.
+  Fill in `description` and `author` — that dialog is the only pitch you get.
+- **A decline is remembered.** Declining records an approved-but-disabled
+  entry, so the user is never re-asked. Your plugin shows as *Disabled* and
+  they have to enable it in Settings > Plugins by hand.
+- **A version bump does not re-prompt.** Consent keys on `meta.id`, so an
+  update installs and runs without another dialog. Treat that as a
+  responsibility, not a convenience — see
+  [Security & trust](security.md#a-version-bump-does-not-re-ask).
+- **Changing your `meta.id` costs you every user's consent and their stored
+  data.** Pick it once.
+
+## Testing your plugin locally
+
+There is **no hot reload.** Installing, enabling, disabling and uninstalling
+all take effect on the next launch, and so does every edit to your source —
+the module is imported once at discovery. Removing that restart is
+[issue #45](https://github.com/prokopto-dev/nparse-plus/issues/45).
+
+The practical loop, fastest first:
+
+1. **Unit tests against `FakePluginContext`** — no app, no Qt, no restart.
+   This is where the bulk of your iteration should happen.
+2. **`nparseplus-plugin validate <path>`** — imports and activates your
+   plugin the way the app does.
+3. **In the real app.** Either copy the plugin into the plugins folder, or
+   **symlink it** so you edit in place:
+
+    ```bash
+    # macOS / Linux
+    ln -s ~/code/my-plugin/my_plugin \
+      ~/Library/Application\ Support/nparseplus/plugins/my_plugin
+    ```
+
+    ```powershell
+    # Windows (developer mode or an elevated shell)
+    New-Item -ItemType SymbolicLink `
+      -Path "$env:LOCALAPPDATA\nparseplus\nparseplus\plugins\my_plugin" `
+      -Target "C:\code\my-plugin\my_plugin"
+    ```
+
+    Then **restart nParse+ after every change.** (Symlinks are rejected
+    *inside* an installed zip archive; a symlink you create yourself in the
+    plugins folder is just a directory entry and loads normally.)
+
+To exercise a plugin without the game running, point nParse+ at a scratch
+log directory and append timestamped lines to an
+`eqlog_<Name>_<server>.txt` file there — see the repo's `CLAUDE.md` for the
+line format.
+
+## Debugging
+
+- **`ctx.logger` is a child of the app's logger tree**, named
+  `nparseplus.plugins.<your-id>`. Everything it emits lands in
+  `nparseplus.log` in the app's log directory —
+  `~/Library/Logs/nparseplus/` (macOS),
+  `%LOCALAPPDATA%\nparseplus\nparseplus\Logs\` (Windows),
+  `~/.local/state/nparseplus/log/` (Linux). Read that file, not stderr:
+  a frozen build has no visible console, so `print()` goes nowhere.
+- **Exceptions are caught, not swallowed.** Every callback the host wires up
+  is guarded per plugin and the traceback is logged with your plugin id.
+  A raise in `activate()` flips your plugin to **Error** in Settings >
+  Plugins and unwinds whatever it had already registered.
+- **`NPARSEPLUS_NO_PLUGINS=1` skips all plugin loading.** Use it to confirm
+  a startup problem is yours, and to bisect by moving plugins in and out of
+  the folder between runs.
+- **Slow-tick evictions** are logged at ERROR with the measured duration and
+  shown on your row in Settings > Plugins.
 
 ## Validate, test, package
 
@@ -130,8 +285,11 @@ against a fake context, and runs the advisory static scan:
 
 ```bash
 nparseplus-plugin validate my_plugin.py
-nparseplus-plugin validate my_plugin_pkg/ --app-version 1.15.0 --json
+nparseplus-plugin validate my_plugin_pkg/ --app-version 1.18.0 --json
 ```
+
+Exit status is 0 only when there are no errors; advisory warnings never fail
+it.
 
 **Test** — `nparseplus_sdk.testing.FakePluginContext` records everything
 your plugin registers and lets tests drive it without the app:
@@ -146,21 +304,76 @@ def test_activation():
     ctx.run_submitted()          # execute queued (fetch, apply) pairs
 ```
 
+`ctx.publish(event)` drives your subscriptions (exact-type match, like the
+real bus), and `ctx.speaker.spoken` / `ctx.pigparse.calls` record what you
+asked for.
+
 **Package** — zip your plugin so the archive contains exactly one top-level
 entry: the package folder (with `__init__.py`) or the single `.py` file.
 That zip is what users feed to Settings > Plugins > *Install from file/URL*.
 Multi-file plugins must be packages using **relative imports**
-(`from .helper import x`) — plugins are imported under a private namespace,
-never via `sys.path`.
+(`from .helper import x`) — plugins are imported under the private
+`nparseplus_user_plugins.*` namespace via `spec_from_file_location`, never
+via `sys.path`.
 
-Constraints to design for:
+## Third-party dependencies: there aren't any
 
-- **Dependencies:** inside the shipped (frozen) app only the libraries
-  nParse+ bundles are importable — `httpx`, `pydantic`, `PySide6`,
-  `platformdirs`, `packaging`, the standard library. No `pip install` at
-  runtime; vendoring pure-Python code inside your package is fine.
-- **Versioning:** bump `meta.version` on every release; set `requires_sdk`
-  honestly. The app refuses (never crashes on) incompatible plugins.
+**Your plugin may not depend on anything from PyPI.** Every end-user build
+is a frozen PyInstaller bundle: there is no `pip`, no site-packages on
+`sys.path`, and no way for the app to install anything at runtime. If your
+plugin imports a package the app does not already bundle, it will work in
+your development checkout and fail for every real user.
+
+Your options:
+
+- **Vendor it.** Copy pure-Python source into your package and import it
+  relatively (`from .vendored.thing import x`). Mind the licence.
+- **Use what the app already ships.** As of 1.18 the app's own runtime
+  dependencies are `PySide6`, `pydantic`, `httpx`, `platformdirs`,
+  `packaging`, `colorhash`, `pathvalidate`, `websocket-client`, `certifi`
+  and `nparseplus-sdk` (`[project.dependencies]` in the app's
+  `pyproject.toml`). They are importable inside the frozen app today —
+  but they are the *app's* dependencies, not part of the SDK contract, and
+  can be dropped or replaced in any release without a major bump. Depending
+  on `httpx` and `pydantic` is fairly safe (the plugin machinery itself uses
+  both); depending on `colorhash` is a bet.
+- **Standard library**: fine, with one caveat — PyInstaller bundles the
+  stdlib modules it can trace, plus a handful the spec names explicitly, and
+  the spec excludes `tkinter` outright. Common modules are present; if you
+  reach for something exotic, verify it against an actual frozen build
+  rather than your dev environment.
+- **C extensions are impossible.** A compiled wheel cannot be added to a
+  frozen bundle from the plugins folder. Pure Python only.
+
+## What the SDK deliberately does not let you do
+
+Knowing the walls up front saves you designing into one:
+
+- **No hot reload.** Install, enable, disable, uninstall and code edits all
+  require an app restart ([#45](https://github.com/prokopto-dev/nparse-plus/issues/45)).
+- **No inter-plugin dependencies.** Plugins can't import, discover, or call
+  each other; load order is not a contract. If two of your plugins need to
+  cooperate, make them one plugin.
+- **No publishing to the bus.** `ctx.subscribe` is read-only access to the
+  event stream — there is no `publish`. You cannot synthesize app events for
+  built-in handlers to consume.
+- **No replacing or reordering built-in parsers.** `ctx.add_parser` appends
+  to the end of a first-match-wins chain, so your parser only ever sees
+  lines no built-in claimed. You cannot intercept, pre-empt, or unregister
+  a built-in.
+- **No tray items of your own.** You get one tray toggle per window you
+  declare, automatically. There is no API to add arbitrary tray entries or
+  menu items.
+- **No threads you own.** Use `ctx.submit(fetch, apply)`. A thread you start
+  yourself has no safe way to touch `ctx.timers` or the bus, won't be joined
+  at shutdown, and won't be unwound if your `activate` fails.
+- **No async.** Every callback in the contract is a plain synchronous
+  function. There is no event loop to await on.
+- **No settings of your own in `settings.json`.** The app's `Settings` model
+  drops unknown keys; persist through `ctx.storage`.
+- **No access to the host beyond `PluginContext`.** There is no supported
+  route to `Backend`, and reaching for one through private attributes will
+  break without notice.
 
 **Distributing via pip (optional):** for users who run nParse+ from source,
 you can also publish your plugin as a normal package exposing the
@@ -185,7 +398,8 @@ workflow that runs `nparseplus-plugin validate` on every push, and a
 release workflow that — on a `vX.Y.Z` tag matching your `meta.version` —
 builds the installable zip, computes its sha256, and publishes a GitHub
 release whose body contains the ready-made [registry](registry.md) entry
-JSON. See also the [versioning rules](versioning.md).
+JSON. Its `pyproject.toml` already uses the git-subdirectory SDK install
+described above. See also the [versioning rules](versioning.md).
 
 ## Learn from the examples
 

@@ -8,6 +8,9 @@ page.
 
 ## Install
 
+Add-ons are off by default: first tick *Settings > Advanced > Enable plugins
+(add-ons)* and restart nParse+. Then either:
+
 - **In-app:** zip the `merchant_prices` folder itself (so the archive
   contains `merchant_prices/__init__.py`, …) and use
   Settings > Plugins > *Install from file…*, or
@@ -19,8 +22,10 @@ with the app's permissions.
 
 ## Develop
 
+`nparseplus-sdk` is not on PyPI yet, so install it from the app repo:
+
 ```bash
-pip install nparseplus-sdk
+pip install "git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk"
 nparseplus-plugin validate merchant_prices
 ```
 

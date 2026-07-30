@@ -10,17 +10,37 @@ in-process sandbox, and nParse+ does not pretend to provide one.
 That means the security model is **trust in the author**, supported by
 guardrails:
 
+- **The whole subsystem is opt-in.** `settings.plugins.enabled` defaults to
+  `False`. Until you tick *Settings > Advanced > Enable plugins (add-ons)*
+  and restart, no plugin is discovered, imported, or run — the plugin
+  machinery is not even imported by the app. If you never wanted add-ons,
+  you carry none of their risk.
 - **Nothing loads silently.** A plugin never seen before triggers a consent
   dialog (name, version, author, where it came from) before it is activated,
   and your answer is remembered. Declining keeps it installed but inert.
 - **Per-plugin disable + kill switch.** Any plugin can be disabled in
   Settings > Plugins; `NPARSEPLUS_NO_PLUGINS=1` skips all plugin loading.
+  The environment variable is a veto only — it can force plugins off, never
+  on.
 - **Failure isolation.** A plugin that crashes — at import, activation, in
-  an event handler, or in its window — is contained and logged; it cannot
-  take the app down or block other plugins.
-- **Careful installs.** The in-app installer refuses unsafe archives
-  (path traversal, symlinks, oversize bombs) and validates that the plugin
-  loads before enabling it.
+  an event handler, in a parser, or in its window — is contained and logged;
+  it cannot take the app down or block other plugins.
+- **A plugin cannot freeze the app indefinitely.** Periodic callbacks
+  registered with `ctx.add_tick` are timed by the log driver and evicted
+  after two consecutive runs over 250 ms (`core/driver.py`). The rest of the
+  plugin keeps running and Settings > Plugins annotates the row *tick
+  disabled (too slow)*. This is a robustness guardrail, not a security
+  boundary — a plugin can still block inside an event handler.
+- **Careful installs.** The in-app installer refuses unsafe archives (path
+  traversal, absolute paths, symlink members, member floods) and enforces a
+  size cap on the bytes *actually written* during extraction, not just the
+  sizes the archive declares. It validates that the plugin loads before
+  moving it into place.
+- **Hardened downloads.** URL and registry installs are https-only and
+  re-assert https on **every redirect hop** — an https link that bounces to
+  http is refused rather than quietly downloaded in the clear. The response
+  body is streamed and aborted the moment it passes the size budget, so an
+  endless response can't be buffered whole before anyone checks its length.
 - **Advisory static scan.** Installing (and `nparseplus-plugin validate`)
   runs a source scan that flags patterns worth a second look: `exec`/`eval`,
   spawning processes, raw sockets or HTTP outside the provided clients,
@@ -33,19 +53,73 @@ guardrails:
     plugin is safe; a warning does not mean it is malicious. The decision
     that matters is whether you trust the author.
 
-## One honest caveat
+## Where the checksum applies (and where it doesn't)
 
-To read a plugin's name and version, nParse+ has to import its module —
-which executes the module's top-level code. So for a plugin you copied into
-the plugins folder yourself, a small amount of its code runs *before* the
-consent dialog. Treat *installing* a plugin as the trust decision, not the
-consent click; the dialog exists so nothing you didn't knowingly install
-can quietly start doing work. (A declarative metadata file that removes
-this caveat is on the roadmap.)
+There are three install channels and they do not offer the same protection:
+
+| Channel | What is verified |
+| --- | --- |
+| *Browse registry…* | https + size cap + **sha256 pinned by the reviewed index**, checked before extraction and before any of the plugin's code runs |
+| *Install from URL…* | https on every hop + size cap. **No hash** — there is nothing to compare against |
+| *Install from file…* | The bytes you chose. Their hash is recorded as provenance, not checked against anything |
+
+For a URL install the URL *is* the trust decision. If the host is
+compromised, or the author replaces the release asset, you get the new bytes
+with no warning. That is the gap the [registry](registry.md) exists to
+close.
+
+## Consent runs late — two honest caveats
+
+**Reading a plugin's metadata means importing it.** `PluginMeta` lives
+inside the plugin's own module, so nParse+ has to execute that module's
+top-level code before it can tell you what the plugin claims to be. For a
+plugin you copied into the plugins folder yourself, that import happens
+during discovery, *before* the consent dialog. Consent gates `activate()` —
+it does not gate the import.
+
+**Installing runs more than the import.** The installer validates a
+candidate with the SDK's `validate_plugin`, which imports the plugin **and
+calls `activate()`** against a fake context
+(`sdk/src/nparseplus_sdk/validate.py`). So by the time an install succeeds,
+the plugin has already had its module body and its activation path executed
+once — on a worker thread, against a context wired to nothing, but executed.
+
+Treat **installing** a plugin as the trust decision, not the consent click.
+The dialog's job is narrower than it looks: it stops something you didn't
+knowingly install from quietly registering handlers and doing work every
+session. (A declarative metadata file read before any import would close the
+first caveat; it is on the roadmap.)
+
+## A version bump does not re-ask
+
+Consent is recorded against the plugin's **id**, not its version. When a
+plugin's `meta.version` changes, `PluginHost._load_one` updates the recorded
+`last_version` and loads it — no new dialog. An author you approved once can
+ship arbitrary new code under the same id and it runs on the next launch.
+
+That is a deliberate trade (a prompt on every patch release trains people to
+click through), but it means your trust decision is in the *author*, not in
+the particular build you looked at. If you want to re-evaluate, uninstall
+and reinstall: uninstalling forgets the consent record, so the reinstall
+asks again.
+
+## What uninstalling actually removes
+
+*Uninstall* moves the plugin's code into `plugins/trash/`, then
+`PluginHost.forget` deletes its entry from `settings.json` and moves
+`plugin-data/<id>/` into `plugins/trash/plugin-data/`. Nothing is deleted
+outright — you can recover a mistake — but nothing live survives either.
+
+The reason is a consent bypass that would otherwise exist: if the approval
+record outlived the code, the next thing to claim that plugin id, from any
+source, would load pre-approved and inherit the previous plugin's stored
+data. It no longer can.
 
 ## Practical advice
 
 - Prefer plugins with public source you (or someone you trust) can read.
+- Prefer registry installs over raw URLs when a plugin is listed — the hash
+  pins the bytes a human reviewed.
 - Be suspicious of plugins that ask for your account credentials — nothing
   in the plugin API needs them.
 - If a plugin misbehaves, disable it, grab `nparseplus.log`, and report it

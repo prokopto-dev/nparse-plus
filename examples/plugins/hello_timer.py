@@ -12,8 +12,10 @@ parsers only see lines no built-in claimed — right for novel log lines,
 wrong for chat. Subscribe to the typed events (or the ``LineEvent``
 firehose, which always fires) for anything the app already understands.
 
-Install: copy this file into your nParse+ plugins folder (tray >
-Open Plugins Folder), or Settings > Plugins > Install from file.
+Install: add-ons are off by default — tick Settings > Advanced > Enable
+plugins (add-ons) and restart nParse+ first. Then copy this file into your
+plugins folder (tray > Open Plugins Folder), or use Settings > Plugins >
+Install from file, and restart again to be asked for consent.
 Check it from a dev environment with: ``nparseplus-plugin validate hello_timer.py``
 """
 

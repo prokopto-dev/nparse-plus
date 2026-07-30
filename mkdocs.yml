@@ -115,6 +115,7 @@ nav:
       - Audio & Overlays: settings/audio-overlays.md
       - Sharing: settings/sharing.md
       - Advanced: settings/advanced.md
+      - Plugins: settings/plugins.md
   - Plugins:
       - plugins/index.md
       - Security & trust: plugins/security.md

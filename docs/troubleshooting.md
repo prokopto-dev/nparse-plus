@@ -15,7 +15,7 @@ Where they live:
 | Platform | Location |
 |---|---|
 | macOS | `~/Library/Logs/nparseplus/` |
-| Windows | `%LOCALAPPDATA%\nparseplus\Logs\` |
+| Windows | `%LOCALAPPDATA%\nparseplus\nparseplus\Logs\` |
 | Linux (tarball/source) | `~/.local/state/nparseplus/log/` |
 | Linux (Flatpak) | `~/.var/app/io.github.prokopto_dev.nparse_plus/.local/state/nparseplus/log/` |
 
@@ -120,6 +120,70 @@ editor says which of those is missing. Also check the **Server** dropdown
 matches: P1999Red characters are stored with a `P1999PVP` filename suffix,
 which nParse+ maps for you, but picking the wrong server shows an empty
 list rather than an error.
+
+## Plugins (add-ons)
+
+Only relevant if you turned add-ons on in
+[Settings → Advanced](settings/advanced.md#add-ons-plugins) — they're off by
+default. Anything a plugin logs is tagged `nparseplus.plugins.<plugin-id>`
+in `nparseplus.log`, so grepping that prefix separates an add-on's noise
+from nParse+'s own.
+
+### An add-on breaks startup
+
+Launch once with add-ons forced off:
+
+=== "macOS / Linux"
+
+    ```bash
+    NPARSEPLUS_NO_PLUGINS=1 /Applications/nParse+.app/Contents/MacOS/nparseplus
+    ```
+
+=== "Windows"
+
+    ```powershell
+    $env:NPARSEPLUS_NO_PLUGINS=1; .\nparseplus.exe
+    ```
+
+The variable is a one-way switch — it can force plugins off, never on — so
+it's safe to leave set. nParse+ starts clean, and you can uninstall the
+culprit from [Settings → Plugins](settings/plugins.md) (it will be listed;
+plugin failures are isolated, so a crashing add-on shows as **Error**
+rather than taking the app down). Its traceback is in `nparseplus.log`.
+
+### Installed, but not loading
+
+Check the **Status** column on [Settings → Plugins](settings/plugins.md):
+
+- **Installed — restart to load** or **Ready** — restart nParse+. Installs
+  and enable/disable changes only take effect at the next launch.
+- **Awaiting consent** — the approval dialog runs at the next launch,
+  before the plugin does anything. Answer **Enable plugin**.
+- **Disabled** — tick its **Enabled** box, then restart.
+- Not listed at all — it isn't in the plugins folder (**Open Plugins
+  Folder** shows you where that is), or add-ons are off, or you're running
+  with `NPARSEPLUS_NO_PLUGINS=1`.
+- **Duplicate id** — two add-ons claim the same plugin id and only the
+  first loaded. Uninstall one.
+
+### Incompatible
+
+The version handshake refused it: the add-on declares an SDK range or a
+minimum nParse+ version this build doesn't satisfy. Nothing you can
+configure — update nParse+ if it's asking for a newer one, otherwise ask
+the author to rebuild against the current SDK. See
+[Versioning](plugins/versioning.md).
+
+### A plugin tick was disabled
+
+Status reads **— tick disabled (too slow)**. Add-ons may register a
+callback that runs on every log-driver poll, and that callback is timed:
+the driver runs on the same thread as log parsing, so a slow tick stalls
+everything. Two consecutive runs over the 250 ms budget and the tick is
+dropped for the rest of the session (the timing is in `nparseplus.log`).
+The plugin stays active — its parsers, event handlers, and windows are
+unaffected. Nothing to fix on your side; it's a bug report for the add-on's
+author.
 
 ## Settings seem lost / where is settings.json?
 

@@ -49,6 +49,7 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 | **[Friends sync](features/friends-sync.md)** | Merge every character's in-game friends list on a server and push it back to all of them (originals backed up) |
 | **[Macro editor](windows/macro-editor.md)** | Edit your in-game macros, copy a set onto your alts, and export/import macro packs to share (originals backed up) |
 | **[Boats](features/boats.md)** | Boat schedule tracking synced from sightings, yours or shared over the network |
+| **[Plugins](plugins/index.md)** | Optional, off by default: a documented SDK so others can add their own windows, parsers, and alerts. Nothing above needs one — turn add-ons on in Settings → Advanced only if you want them |
 
 ## Get going
 
@@ -60,6 +61,8 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 - [Migrating from nParse, GINA, or EQTool](migrating/index.md)
 - [Settings Reference](settings/index.md) · [FAQ](faq.md) ·
   [Troubleshooting](troubleshooting.md)
+- [Plugins](plugins/index.md) — optional add-ons, off unless you turn them
+  on; also where to start if you want to write one
 - [Roadmap](roadmap.md) — what's coming · [Changelog](changelog.md) —
   what's shipped
 
