@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  # Rename this when you rename the plugin package directory.
+  PLUGIN_DIR: my_nparse_plugin
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install SDK + test deps
+        run: |
+          # Until nparseplus-sdk is on PyPI, install it from the app repo.
+          python -m pip install "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus#subdirectory=sdk"
+          python -m pip install pytest
+      - name: Unit tests (FakePluginContext)
+        run: python -m pytest -q
+      - name: Validate plugin (load-correctness + advisory scan)
+        run: nparseplus-plugin validate "$PLUGIN_DIR"

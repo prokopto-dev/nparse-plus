@@ -1,0 +1,32 @@
+# Packaging metadata for developing and testing the plugin. Note: end users
+# do NOT pip-install plugins — they install the release zip through nParse+.
+# This file exists for your dev environment, CI, and (optionally) pip-based
+# discovery for people who run nParse+ from source.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "my-nparse-plugin"
+version = "0.0.0"  # informational; the version that matters is PluginMeta.version
+description = "A plugin for nParse+."
+requires-python = ">=3.12"
+dependencies = [
+  "nparseplus-sdk>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  # Full validation (events re-exports, live runs) needs the app itself:
+  "nparseplus @ git+https://github.com/prokopto-dev/nparse-plus",
+]
+
+# Optional: lets source-install nParse+ users discover this plugin via pip.
+# The release zip remains the way everyone else installs it.
+[project.entry-points."nparseplus.plugins"]
+my-nparse-plugin = "my_nparse_plugin:create_plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["my_nparse_plugin"]

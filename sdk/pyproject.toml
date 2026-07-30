@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nparseplus-sdk"
+version = "1.0.0"
+description = "Plugin SDK for nParse+ — the stable contract for building third-party addon windows, parsers, and pollers."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+  { name = "ccaldwell" },
+]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
+# NO dependency on nparseplus: plugins run inside the host app, which provides
+# the runtime. Modules that need the host (events, ui) import it lazily.
+dependencies = [
+  "pydantic>=2.7",
+  "packaging>=24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/prokopto-dev/nparse-plus"
+
+[project.scripts]
+nparseplus-plugin = "nparseplus_sdk.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nparseplus_sdk"]
