@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from nparseplus.config.paths import ensure_config_dir, settings_path
 from nparseplus.core.ch_chain import DEFAULT_CH_CADENCE_PATTERNS
@@ -344,6 +344,48 @@ class PluginEntry(BaseModel):
     # from and the sha256 of its bytes. Empty for sideloaded plugins.
     source_url: str = ""
     sha256: str = ""
+    # Which registry vouched for this artifact, by index URL. "" for file/URL
+    # installs and sideloads. Recorded rather than resolved to a name so that
+    # removing a registry later doesn't falsify the record.
+    registry_url: str = ""
+
+
+def normalize_registry_url(url: str) -> str:
+    """Canonical form of a registry index URL; raises ValueError if unusable.
+
+    Lives here rather than in ``core.plugins.registry`` because settings is
+    where these URLs are stored and compared, and because ``PluginsSettings``
+    must be able to sanitize them without importing the plugin subsystem —
+    every user constructs a ``Settings``, including the ones who never turn
+    add-ons on.
+
+    Scheme and host are lower-cased so two spellings of the same registry
+    can't both be added; the path is left alone (it is case-sensitive).
+    """
+    cleaned = url.strip()
+    if not cleaned:
+        raise ValueError("registry url must not be empty")
+    scheme, separator, rest = cleaned.partition("://")
+    if not separator or scheme.lower() != "https":
+        raise ValueError("registry url must be https://")
+    host, slash, path = rest.partition("/")
+    if not host:
+        raise ValueError("registry url has no host")
+    return f"https://{host.lower()}{slash}{path}"
+
+
+class RegistrySource(BaseModel):
+    """A user-added plugin registry.
+
+    The built-in default is deliberately NOT stored here — see
+    ``core.plugins.registry.resolve_registries``. Identity is the URL: `name`
+    is cosmetic, and re-pointing an entry at a different origin is a new
+    trust decision that should go through the add flow, not a rename.
+    """
+
+    url: str
+    name: str = ""  # "" -> the UI shows the host
+    enabled: bool = True
 
 
 class PluginsSettings(BaseModel):
@@ -353,9 +395,49 @@ class PluginsSettings(BaseModel):
     # nothing plugin-related is discovered, imported, or shown anywhere.
     enabled: bool = False
     entries: dict[str, PluginEntry] = Field(default_factory=dict)
-    # Override for the plugin registry index; "" = the built-in default
-    # (core.plugins.registry.DEFAULT_REGISTRY_URL).
+    # DEPRECATED: the single-registry override, folded into `registries` by
+    # the validator below and cleared. Kept for one release so a downgrade
+    # then upgrade doesn't lose a hand-set override.
     registry_url: str = ""
+    # User-added registries only. The built-in default is synthesized at read
+    # time from DEFAULT_REGISTRY_URL and only its enabled bit persists, so
+    # changing that constant moves every user instead of stranding them on a
+    # URL a past release happened to write into their settings.json.
+    registries: list[RegistrySource] = Field(default_factory=list)
+    default_registry_enabled: bool = True
+
+    @model_validator(mode="after")
+    def _fold_in_legacy_and_sanitize(self) -> PluginsSettings:
+        """Migrate `registry_url` and drop unusable registry entries.
+
+        Deliberately never raises: ``load_settings`` treats a ValueError as a
+        corrupt document and falls back to defaults, so raising here would
+        throw away everything the user has ever configured over one bad
+        registry line. Drop the line instead.
+        """
+        seen: set[str] = set()
+        cleaned: list[RegistrySource] = []
+        for source in self.registries:
+            try:
+                url = normalize_registry_url(source.url)
+            except ValueError:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            cleaned.append(source.model_copy(update={"url": url}))
+
+        if self.registry_url:
+            try:
+                legacy = normalize_registry_url(self.registry_url)
+            except ValueError:
+                legacy = ""
+            if legacy and legacy not in seen:
+                cleaned.append(RegistrySource(url=legacy))
+            self.registry_url = ""
+
+        self.registries = cleaned
+        return self
 
 
 class Settings(BaseModel):
