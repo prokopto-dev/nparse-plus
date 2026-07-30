@@ -36,6 +36,7 @@ from nparseplus_sdk.plugin import PluginSettingsPageSpec, PluginWindowSpec
 
 if TYPE_CHECKING:
     from nparseplus.composition import Backend
+    from nparseplus.core.plugins.registry import ResolvedRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -186,19 +187,87 @@ class PluginHost:
         """The persisted consent/enable entry for a plugin id, if any."""
         return self._settings.plugins.entries.get(plugin_id)
 
+    # --- registries ---------------------------------------------------------
     @property
     def registry_url(self) -> str:
-        """The registry index URL (user override or the built-in default)."""
+        """DEPRECATED: the first enabled registry, else the built-in default.
+
+        A single-registry shim for the browse dialog until it learns to merge
+        several. Removed in the same change that teaches it.
+        """
         from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
 
-        return self._settings.plugins.registry_url or DEFAULT_REGISTRY_URL
+        enabled = self.enabled_registries()
+        return enabled[0].url if enabled else DEFAULT_REGISTRY_URL
 
-    def record_install(self, result: InstallResult) -> None:
+    def registries(self) -> list[ResolvedRegistry]:
+        """Built-in default first, then the user's, enabled or not."""
+        from nparseplus.core.plugins.registry import resolve_registries
+
+        return resolve_registries(self._settings.plugins)
+
+    def enabled_registries(self) -> list[ResolvedRegistry]:
+        return [registry for registry in self.registries() if registry.enabled]
+
+    def add_registry(self, url: str, name: str = "") -> str | None:
+        """Add a user registry; returns an error message, or None on success."""
+        from nparseplus.config.settings import RegistrySource, normalize_registry_url
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        try:
+            normalized = normalize_registry_url(url)
+        except ValueError as exc:
+            return str(exc)
+        if normalized.lower() == DEFAULT_REGISTRY_URL.lower():
+            return "that is the built-in registry — it is already in the list"
+        if any(
+            source.url.lower() == normalized.lower() for source in self._settings.plugins.registries
+        ):
+            return "that registry is already in the list"
+        self._settings.plugins.registries.append(RegistrySource(url=normalized, name=name.strip()))
+        self._save()
+        return None
+
+    def remove_registry(self, url: str) -> bool:
+        """Remove a user registry. The built-in default is never removable."""
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        if url.lower() == DEFAULT_REGISTRY_URL.lower():
+            return False
+        remaining = [
+            source
+            for source in self._settings.plugins.registries
+            if source.url.lower() != url.lower()
+        ]
+        if len(remaining) == len(self._settings.plugins.registries):
+            return False
+        self._settings.plugins.registries = remaining
+        self._save()
+        return True
+
+    def set_registry_enabled(self, url: str, enabled: bool) -> None:
+        """Tick/untick a registry. The default can be unticked, not deleted."""
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        if url.lower() == DEFAULT_REGISTRY_URL.lower():
+            self._settings.plugins.default_registry_enabled = enabled
+            self._save()
+            return
+        for source in self._settings.plugins.registries:
+            if source.url.lower() == url.lower():
+                source.enabled = enabled
+                self._save()
+                return
+
+    def record_install(self, result: InstallResult, *, registry_url: str = "") -> None:
         """Persist provenance for a successful install (URL/registry/file).
 
         Consent semantics are unchanged: a brand-new plugin gets an
         unapproved entry, so the first-load dialog still runs next launch;
         an existing entry keeps its enabled/approved answers.
+
+        ``registry_url`` is the registry that vouched for the artifact, empty
+        for a plain URL or file install.
         """
         if not result.ok or result.meta is None:
             return
@@ -209,6 +278,7 @@ class PluginHost:
         entry.last_version = result.meta.version
         entry.source_url = result.source_url or ""
         entry.sha256 = result.sha256 or ""
+        entry.registry_url = registry_url
         self._save()
 
     def forget(self, plugin_id: str) -> None:

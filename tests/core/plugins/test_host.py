@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from nparseplus.config.settings import Settings
 
 from .conftest import APP_VERSION, approve, write_plugin
@@ -377,10 +379,101 @@ def test_record_install_ignores_failures(make_host, settings: Settings) -> None:
     assert settings.plugins.entries == {}
 
 
-def test_registry_url_default_and_override(make_host, settings: Settings) -> None:
-    from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+class TestRegistries:
+    def test_the_default_is_present_and_first(self, make_host) -> None:
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
 
-    host = make_host()
-    assert host.registry_url == DEFAULT_REGISTRY_URL
-    settings.plugins.registry_url = "https://example.com/custom.json"
-    assert host.registry_url == "https://example.com/custom.json"
+        registries = make_host().registries()
+        assert registries[0].url == DEFAULT_REGISTRY_URL
+        assert registries[0].is_default is True
+
+    def test_add_persists_and_normalizes(self, make_host, settings: Settings) -> None:
+        host = make_host()
+        assert host.add_registry("  HTTPS://Guild.Example/index.json ", "Guild") is None
+        assert [(s.url, s.name) for s in settings.plugins.registries] == [
+            ("https://guild.example/index.json", "Guild")
+        ]
+
+    @pytest.mark.parametrize(
+        ("url", "fragment"),
+        [
+            ("http://guild.example/i.json", "https"),
+            ("   ", "empty"),
+        ],
+    )
+    def test_add_rejects_unusable_urls(self, make_host, url: str, fragment: str) -> None:
+        error = make_host().add_registry(url)
+        assert error is not None and fragment in error
+
+    def test_add_rejects_duplicates_and_the_default(self, make_host) -> None:
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        host = make_host()
+        host.add_registry("https://guild.example/i.json")
+        assert "already in the list" in (host.add_registry("https://Guild.example/i.json") or "")
+        assert "built-in" in (host.add_registry(DEFAULT_REGISTRY_URL) or "")
+
+    def test_remove_a_user_registry(self, make_host, settings: Settings) -> None:
+        host = make_host()
+        host.add_registry("https://guild.example/i.json")
+        assert host.remove_registry("https://guild.example/i.json") is True
+        assert settings.plugins.registries == []
+        assert host.remove_registry("https://guild.example/i.json") is False  # already gone
+
+    def test_the_default_can_never_be_removed(self, make_host) -> None:
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        host = make_host()
+        assert host.remove_registry(DEFAULT_REGISTRY_URL) is False
+        assert any(registry.is_default for registry in host.registries())
+
+    def test_the_default_can_be_unticked_and_it_persists(
+        self, make_host, settings: Settings, tmp_path
+    ) -> None:
+        from nparseplus.config.settings import load_settings, save_settings
+        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+        host = make_host()
+        host.set_registry_enabled(DEFAULT_REGISTRY_URL, False)
+        assert settings.plugins.default_registry_enabled is False
+        assert host.enabled_registries() == []
+
+        path = tmp_path / "settings.json"
+        save_settings(settings, path)
+        assert load_settings(path).plugins.default_registry_enabled is False
+
+    def test_unticking_a_user_registry(self, make_host, settings: Settings) -> None:
+        host = make_host()
+        host.add_registry("https://guild.example/i.json")
+        host.set_registry_enabled("https://guild.example/i.json", False)
+        assert settings.plugins.registries[0].enabled is False
+        assert [r.url for r in host.enabled_registries()] == [host.registries()[0].url]
+
+    @staticmethod
+    def _install_result():
+        from nparseplus.core.plugins.install import InstallResult
+        from nparseplus_sdk import PluginMeta
+
+        return InstallResult(
+            ok=True,
+            meta=PluginMeta(id="demo", name="Demo", version="1.0.0"),
+            source_url="https://x.example/demo.zip",
+        )
+
+    def test_record_install_stores_the_vouching_registry(
+        self, make_host, settings: Settings
+    ) -> None:
+        make_host().record_install(
+            self._install_result(), registry_url="https://guild.example/i.json"
+        )
+        assert settings.plugins.entries["demo"].registry_url == "https://guild.example/i.json"
+
+    def test_a_plain_url_install_records_no_registry(self, make_host, settings: Settings) -> None:
+        make_host().record_install(self._install_result())
+        assert settings.plugins.entries["demo"].registry_url == ""
+
+    def test_forget_drops_the_vouching_record_too(self, make_host, settings: Settings) -> None:
+        host = make_host()
+        host.record_install(self._install_result(), registry_url="https://guild.example/i.json")
+        host.forget("demo")
+        assert "demo" not in settings.plugins.entries
