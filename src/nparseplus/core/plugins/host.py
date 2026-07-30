@@ -188,18 +188,6 @@ class PluginHost:
         return self._settings.plugins.entries.get(plugin_id)
 
     # --- registries ---------------------------------------------------------
-    @property
-    def registry_url(self) -> str:
-        """DEPRECATED: the first enabled registry, else the built-in default.
-
-        A single-registry shim for the browse dialog until it learns to merge
-        several. Removed in the same change that teaches it.
-        """
-        from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
-
-        enabled = self.enabled_registries()
-        return enabled[0].url if enabled else DEFAULT_REGISTRY_URL
-
     def registries(self) -> list[ResolvedRegistry]:
         """Built-in default first, then the user's, enabled or not."""
         from nparseplus.core.plugins.registry import resolve_registries
