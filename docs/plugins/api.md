@@ -92,8 +92,9 @@ when the user uninstalls the plugin.
 
 **`PluginWindowSpec(key, title, factory, default_geometry=(200,200,320,240),
 command_key=None)`** — `key` must match the plugin-id pattern and be unique
-within your plugin; declare it twice and only the first window is built (the
-second would share the first's `window_key`, and the app logs and skips it).
+within your plugin; declare it twice and only the first window is kept — the
+second would share the first's `window_key`, so the app logs a warning and
+drops it (tray entry, chat toggle and all).
 `factory(wctx)` runs on the GUI thread and returns any widget with
 `.toggle()`/`.isVisible()`; subclassing `nparseplus_sdk.ui.PluginWindow` is
 the recommended way (overlay recipe + persistence for free — call
