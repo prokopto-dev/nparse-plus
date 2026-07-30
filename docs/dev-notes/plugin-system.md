@@ -68,9 +68,11 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     sha256), injectable fetch, `release_compat` reusing the SDK handshake,
     `update_available` via packaging.version. Default URL points at
     `prokopto-dev/nparseplus-plugins` GitHub Pages, live since 1.18 and
-    serving a (so far empty) schema-1 index; overridable via
-    `plugins.registry_url`; the Browse dialog degrades to "registry
-    unavailable" on any fetch failure. Spec: docs/plugins/registry.md.
+    serving a (so far empty) schema-1 index; a failing registry degrades to
+    a "could not reach" line without hiding the ones that answered. Spec:
+    docs/plugins/registry.md. (The single-URL override this shipped with,
+    `plugins.registry_url`, was superseded by the registry list — items
+    24–28.)
 12. **sha256 pinning is the trust boundary**: `expected_sha256` on all
     install paths, refused before extraction/import; InstallResult and
     PluginEntry carry sha256 + source_url provenance
@@ -172,6 +174,72 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     never extracts, never executes — and runs on `pull_request`, so fork
     PRs get a read-only token and no secrets. docs/plugins/registry.md says
     so explicitly.
+
+## Multiple registries increment (post-1.18)
+
+24. **The built-in registry is synthesized, never persisted.**
+    `plugins.registries` holds *user* entries only; `resolve_registries`
+    prepends a `ResolvedRegistry` built from the `DEFAULT_REGISTRY_URL`
+    constant and only its checkbox persists
+    (`plugins.default_registry_enabled`). The anti-stranding argument is
+    the whole reason: had the default been written into settings.json the
+    first time anyone opened the page, changing where the catalogue lives
+    would strand every existing user on the old URL while new installs got
+    the new one — a support problem with no in-app fix. Corollaries: the
+    default row can be unticked but not removed (two independent guards —
+    the disabled button in `RegistryListWidget._sync_buttons` and a refusal
+    in `PluginHost.remove_registry` — because a keyboard path must not
+    delete the only way back), and a user entry whose URL equals the
+    default collapses into that row instead of duplicating it, so promoting
+    a community registry to default is a no-op for the people who already
+    added it. Legacy `plugins.registry_url` is folded into the list by a
+    `model_validator` on `PluginsSettings` and cleared; that validator also
+    normalizes (lower-case scheme+host, path untouched), dedupes, and
+    **drops** unusable rows rather than raising — `load_settings` treats a
+    ValueError as a corrupt document and falls back to defaults, so raising
+    would trade every setting the user has for one bad registry line.
+    `normalize_registry_url` lives in `config/settings.py`, not the registry
+    client, so constructing a `Settings` never imports the plugin subsystem
+    (master toggle, item 16).
+25. **Provenance is a wrapper, not a wire field.** `MergedListing(registry,
+    plugin)` carries which registry served a listing, instead of stamping a
+    `registry_url` onto `RegistryPlugin`. Two reasons. A registry document
+    *cannot truthfully* self-identify — a mirror copies the claim verbatim
+    and the app would render a lie; the URL we actually fetched from is
+    knowledge only the client has. And the wire models generate the registry
+    repo's committed JSON Schema (`tools/gen_registry_schema.py`, item 23),
+    so a field added for display would become part of the published format
+    and something submitters could set.
+26. **Concurrent fetch with per-registry results.** `fetch_indexes` returns
+    a `MultiFetchResult` of one `RegistryFetchResult` per registry (index
+    XOR error), placed by index rather than completion order so the merged
+    table is deterministic. Concurrency is a correctness concern more than a
+    speed one: serially, a dead registry ahead of a live one costs its full
+    timeout before the working one is tried. It deliberately does **not**
+    filter on `enabled` — the caller passes the enabled ones — so
+    `summary_lines()` never has to explain a row it silently skipped. That
+    method is pure, keeping `RegistryBrowserDialog` a thin renderer; partial
+    failure annotates and still shows the rest.
+27. **`best_update`'s trust rule.** Candidates are compat-filtered first —
+    it previously offered any higher version, including ones `check_compat`
+    would then refuse to load, which is a behaviour fix, not just a
+    refactor. Among the compatible ones the registry a plugin was
+    *installed from* (`PluginEntry.registry_url`) wins if it offers
+    anything, even against a higher version elsewhere: silently promoting a
+    different publisher's build of the same id is a trust hop the user never
+    agreed to. When the offer does come from elsewhere the manager says so
+    by name ("update available (vX from <registry>)"), and the Browse row
+    for an id installed from another registry is a disabled "Installed
+    (other source)" rather than an Install button — uninstall-then-install
+    is the only path across publishers, on purpose.
+28. **Warning placement.** `REGISTRY_WARNING` lives in
+    `ui/pluginregistries.py` (kept out of `pluginmanager` so the add flow
+    and its text are importable/monkeypatchable without the manager page)
+    and appears in three places: the list's footnote label (plus the
+    non-default rows' name tooltips), the tail of every Browse Source-cell
+    tooltip, and the add confirmation — where it is stacked with
+    `CONSENT_WARNING` and defaults to Cancel. `add_registry` persists, so
+    it is the last call in the flow, never the first.
 
 ## Follow-ups (open as issues)
 

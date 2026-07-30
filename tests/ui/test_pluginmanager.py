@@ -285,17 +285,41 @@ def _index(version: str = "9.9.9", plugin_id: str = "demo", requires_sdk: str = 
     )
 
 
+def _registry(url: str, name: str, *, is_default: bool = False):
+    from nparseplus.core.plugins.registry import ResolvedRegistry
+
+    return ResolvedRegistry(url=url, name=name, enabled=True, is_default=is_default)
+
+
+DEFAULT = _registry("https://built-in.example/index.json", "Built-in", is_default=True)
+GUILD = _registry("https://guild.example/index.json", "Guild registry")
+
+
+def _result(*pairs):
+    """MultiFetchResult from (registry, index-or-error) pairs, in order."""
+    from nparseplus.core.plugins.registry import MultiFetchResult, RegistryFetchResult
+
+    results = []
+    for registry, payload in pairs:
+        if isinstance(payload, str):
+            results.append(RegistryFetchResult(registry=registry, error=payload))
+        else:
+            results.append(RegistryFetchResult(registry=registry, index=payload))
+    return MultiFetchResult(results=results)
+
+
 def make_dialog(qtbot, host, page=None, **kwargs):
     from nparseplus.ui.pluginmanager import RegistryBrowserDialog
 
-    installs: list[tuple[str, str]] = []
+    installs: list[tuple[str, str, str]] = []
     dialog = RegistryBrowserDialog(
         host,
         "1.15.0",
-        on_install=lambda url, sha: installs.append((url, sha)),
-        on_index=(page._set_index if page is not None else None),
-        installed_ids=(page.installed_ids if page is not None else None),
+        on_install=lambda url, sha, registry: installs.append((url, sha, registry)),
+        on_index=(page._set_listings if page is not None else None),
+        installed_provenance=(page.installed_provenance if page is not None else None),
         auto_fetch=False,
+        **kwargs,
     )
     qtbot.addWidget(dialog)
     return dialog, installs
@@ -303,21 +327,21 @@ def make_dialog(qtbot, host, page=None, **kwargs):
 
 def test_browser_lists_and_installs_with_pinned_hash(qtbot, host) -> None:
     dialog, installs = make_dialog(qtbot, host)
-    dialog._on_index_ready(_index(plugin_id="shiny"))
+    dialog._on_index_ready(_result((DEFAULT, _index(plugin_id="shiny"))))
     assert dialog._table.rowCount() == 1
-    assert dialog._table.item(0, 0).text() == "Shiny"
-    assert dialog._table.item(0, 3).text() == "OK"
-    button = dialog._table.cellWidget(0, 4)
+    assert dialog._table.item(0, pluginmanager._BROWSER_NAME_COLUMN).text() == "Shiny"
+    assert dialog._table.item(0, pluginmanager._BROWSER_COMPAT_COLUMN).text() == "OK"
+    button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
     assert button.text() == "Install" and button.isEnabled()
     button.click()
-    assert installs == [("https://example.com/shiny.zip", "a" * 64)]
+    assert installs == [("https://example.com/shiny.zip", "a" * 64, DEFAULT.url)]
 
 
 def test_browser_incompatible_row_disabled_with_reason(qtbot, host) -> None:
     dialog, installs = make_dialog(qtbot, host)
-    dialog._on_index_ready(_index(plugin_id="future", requires_sdk=">=99.0"))
-    assert ">=99.0" in dialog._table.item(0, 3).text()
-    button = dialog._table.cellWidget(0, 4)
+    dialog._on_index_ready(_result((DEFAULT, _index(plugin_id="future", requires_sdk=">=99.0"))))
+    assert ">=99.0" in dialog._table.item(0, pluginmanager._BROWSER_COMPAT_COLUMN).text()
+    button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
     assert button.text() == "Incompatible" and not button.isEnabled()
     assert installs == []
 
@@ -325,25 +349,19 @@ def test_browser_incompatible_row_disabled_with_reason(qtbot, host) -> None:
 def test_browser_installed_row_disabled(qtbot, host) -> None:
     page = make_page(qtbot, host)
     dialog, _installs = make_dialog(qtbot, host, page)
-    dialog._on_index_ready(_index(plugin_id="demo"))  # demo is already installed
-    button = dialog._table.cellWidget(0, 4)
+    # demo is already installed, with no recorded registry (sideloaded).
+    dialog._on_index_ready(_result((DEFAULT, _index(plugin_id="demo"))))
+    button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
     assert button.text() == "Installed" and not button.isEnabled()
-
-
-def test_browser_unavailable_state(qtbot, host) -> None:
-    dialog, _installs = make_dialog(qtbot, host)
-    dialog._on_index_ready("could not reach the registry: offline")
-    assert "unavailable" in dialog._status.text().lower()
-    assert not dialog._table.isVisible()
 
 
 def test_update_available_status_after_index(qtbot, host) -> None:
     page = make_page(qtbot, host)
     assert "update available" not in page._table.item(0, 3).text().lower()
-    page._set_index(_index(version="9.9.9", plugin_id="demo"))
+    page._set_listings(_result((DEFAULT, _index(version="9.9.9", plugin_id="demo"))))
     assert "update available (v9.9.9)" in page._table.item(0, 3).text()
     # An index no newer than the installed version adds nothing.
-    page._set_index(_index(version="1.2.0", plugin_id="demo"))
+    page._set_listings(_result((DEFAULT, _index(version="1.2.0", plugin_id="demo"))))
     assert "update available" not in page._table.item(0, 3).text().lower()
 
 
@@ -415,3 +433,215 @@ def test_provenance_display_forms() -> None:
     text, tip = pluginmanager.provenance_display("", "d" * 64)
     assert text == f"Local file ({'d' * 12}…)"
     assert pluginmanager.provenance_display("", "")[0] == "Sideloaded"
+
+
+def test_provenance_display_leads_with_the_vouching_registry() -> None:
+    text, tip = pluginmanager.provenance_display(
+        "https://cdn.example/p.zip",
+        "e" * 64,
+        registry_name="Guild registry",
+        registry_url="https://guild.example/index.json",
+    )
+    assert text == f"Guild registry · {'e' * 12}…"
+    assert "Listed by Guild registry (https://guild.example/index.json)" in tip
+    assert "Downloaded from https://cdn.example/p.zip" in tip
+    assert f"sha256: {'e' * 64}" in tip
+
+
+def test_provenance_display_of_a_registry_since_removed() -> None:
+    """The record outlives the registry; the display says so, not a lie."""
+    text, tip = pluginmanager.provenance_display(
+        "https://cdn.example/p.zip", "e" * 64, registry_url="https://gone.example/index.json"
+    )
+    assert text.startswith("gone.example")  # falls back to the URL's host
+    assert "no longer configured" in tip
+
+
+# --- merged browse ----------------------------------------------------------
+
+
+def test_browser_merges_registries_in_order_and_marks_third_party(qtbot, host) -> None:
+    dialog, _installs = make_dialog(qtbot, host)
+    dialog._on_index_ready(
+        _result((DEFAULT, _index(plugin_id="alpha")), (GUILD, _index(plugin_id="beta")))
+    )
+    assert dialog._table.rowCount() == 2
+    names = [dialog._table.item(row, pluginmanager._BROWSER_NAME_COLUMN).text() for row in (0, 1)]
+    assert names == ["Alpha", "Beta"]
+    sources = [
+        dialog._table.item(row, pluginmanager._BROWSER_SOURCE_COLUMN).text() for row in (0, 1)
+    ]
+    assert sources == ["Built-in", "Guild registry (third-party)"]
+    tip = dialog._table.item(1, pluginmanager._BROWSER_SOURCE_COLUMN).toolTip()
+    assert GUILD.url in tip and "sha256" in tip
+
+
+def test_browser_renders_both_sides_of_an_id_collision(qtbot, host) -> None:
+    """Two registries claiming one id: show both, name neither the winner."""
+    dialog, _installs = make_dialog(qtbot, host)
+    dialog._on_index_ready(
+        _result((DEFAULT, _index(plugin_id="dup")), (GUILD, _index(plugin_id="dup")))
+    )
+    assert dialog._table.rowCount() == 2
+    for row in (0, 1):
+        assert "also listed" in dialog._table.item(row, pluginmanager._BROWSER_SOURCE_COLUMN).text()
+    assert "Guild registry" in dialog._table.item(0, pluginmanager._BROWSER_SOURCE_COLUMN).toolTip()
+    assert "Built-in" in dialog._table.item(1, pluginmanager._BROWSER_SOURCE_COLUMN).toolTip()
+
+
+def test_browser_partial_failure_still_shows_the_table(qtbot, host) -> None:
+    dialog, _installs = make_dialog(qtbot, host)
+    dialog._on_index_ready(
+        _result((DEFAULT, _index(plugin_id="shiny")), (GUILD, "could not reach it: timed out"))
+    )
+    assert not dialog._table.isHidden()
+    assert dialog._table.rowCount() == 1
+    assert "Guild registry" in dialog._status.text()
+    assert "timed out" in dialog._status.text()
+
+
+def test_browser_all_registries_failed_hides_the_table(qtbot, host) -> None:
+    dialog, _installs = make_dialog(qtbot, host)
+    dialog._on_index_ready(_result((DEFAULT, "offline"), (GUILD, "404")))
+    assert dialog._table.isHidden()
+    status = dialog._status.text()
+    assert "offline" in status and "404" in status
+    assert "file or URL" in status
+
+
+def test_browser_with_no_enabled_registries_explains_itself(qtbot, host) -> None:
+    dialog, _installs = make_dialog(qtbot, host)
+    dialog._on_index_ready(_result())
+    assert dialog._table.isHidden()
+    assert "no plugin registries are enabled" in dialog._status.text().lower()
+
+
+def test_browse_button_stays_usable_with_no_registries(qtbot, host) -> None:
+    """Opening the dialog is how a user finds out why it is empty."""
+    from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+    host.set_registry_enabled(DEFAULT_REGISTRY_URL, False)
+    page = make_page(qtbot, host)
+    assert page._browse_button.isEnabled()
+
+
+def test_browser_marks_an_id_installed_from_another_registry(qtbot, host) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    page = make_page(qtbot, host)
+    dialog, _installs = make_dialog(qtbot, host, page)
+    dialog._on_index_ready(_result((DEFAULT, _index(plugin_id="demo"))))
+    button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
+    assert button.text() == "Installed (other source)"
+    assert not button.isEnabled()
+    assert GUILD.url in button.toolTip() and DEFAULT.url in button.toolTip()
+
+
+def test_browser_refresh_refetches_and_is_single_flight(qtbot, host, monkeypatch) -> None:
+    calls: list[object] = []
+
+    def fake_fetch(registries, *args, **kwargs):
+        calls.append(list(registries))
+        return _result()
+
+    monkeypatch.setattr(pluginmanager, "fetch_indexes", fake_fetch)
+    dialog, _installs = make_dialog(qtbot, host)
+    with qtbot.waitSignal(dialog._index_ready, timeout=5000):
+        dialog._refresh_button.click()
+    assert len(calls) == 1
+    assert dialog._refresh_button.isEnabled()  # re-armed for the next try
+    # A second start while one is in flight is a no-op.
+    dialog._fetching = True
+    dialog._start_fetch()
+    assert len(calls) == 1
+
+
+# --- provenance through the install path ------------------------------------
+
+
+def _fake_url_install(monkeypatch, host, plugin_id: str):
+    """install_from_url that just drops a real plugin file in the folder."""
+    import io
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr(f"{plugin_id}.py", PLUGIN_SOURCE.replace('"demo"', f'"{plugin_id}"'))
+
+    def fake(url, plugins_dir, app_version=None, expected_sha256=None):
+        import dataclasses
+
+        archive = _write_zip(plugins_dir.parent, buffer.getvalue())
+        result = pluginmanager.install_from_file(archive, plugins_dir, app_version=app_version)
+        return dataclasses.replace(result, source_url=url, sha256=expected_sha256 or "")
+
+    monkeypatch.setattr(pluginmanager, "install_from_url", fake)
+
+
+def test_registry_install_records_the_vouching_registry(qtbot, host, monkeypatch) -> None:
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    _fake_url_install(monkeypatch, host, "vouched")
+    page = make_page(qtbot, host)
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._start_url_install("https://cdn.example/vouched.zip", "a" * 64, GUILD.url)
+    entry = host.entry_for("vouched")
+    assert entry is not None
+    assert entry.registry_url == GUILD.url
+    assert page._pending_registry_url == ""  # cleared for the next install
+
+
+def test_plain_url_install_records_no_registry(qtbot, host, monkeypatch) -> None:
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    _fake_url_install(monkeypatch, host, "plain")
+    page = make_page(qtbot, host)
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._start_url_install("https://cdn.example/plain.zip")
+    assert host.entry_for("plain").registry_url == ""
+
+
+def test_update_from_another_registry_says_so(qtbot, host) -> None:
+    """A hop to a different publisher of the same id has to be visible."""
+    host.entry_for("demo").registry_url = GUILD.url
+    page = make_page(qtbot, host)
+    page._set_listings(_result((DEFAULT, _index(version="9.9.9", plugin_id="demo"))))
+    status = page._table.item(0, 3).text()
+    assert "update available (v9.9.9 from Built-in)" in status
+
+
+def test_update_from_the_installing_registry_names_no_registry(qtbot, host) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    page = make_page(qtbot, host)
+    page._set_listings(_result((GUILD, _index(version="9.9.9", plugin_id="demo"))))
+    status = page._table.item(0, 3).text()
+    assert "update available (v9.9.9)" in status
+    assert "from" not in status
+
+
+def test_update_prefers_the_installing_registry_over_a_higher_version(qtbot, host) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    page = make_page(qtbot, host)
+    page._set_listings(
+        _result(
+            (DEFAULT, _index(version="9.9.9", plugin_id="demo")),
+            (GUILD, _index(version="2.0.0", plugin_id="demo")),
+        )
+    )
+    assert "update available (v2.0.0)" in page._table.item(0, 3).text()
+
+
+def test_installed_provenance_reports_the_recorded_registry(qtbot, host) -> None:
+    page = make_page(qtbot, host)
+    assert page.installed_provenance() == {"demo": ""}
+    host.entry_for("demo").registry_url = GUILD.url
+    assert page.installed_provenance() == {"demo": GUILD.url}
+    assert page.installed_ids() == {"demo"}  # the thin wrapper still works
+
+
+def test_registry_row_shows_the_registry_name_in_source(qtbot, host, monkeypatch) -> None:
+    entry = host.entry_for("demo")
+    entry.source_url = "https://cdn.example/demo.zip"
+    entry.sha256 = "f" * 64
+    entry.registry_url = "https://guild.example/index.json"
+    host.add_registry("https://guild.example/index.json", "Guild registry")
+    page = make_page(qtbot, host)
+    item = page._table.item(0, 5)
+    assert item.text().startswith("Guild registry · ")
+    assert "Listed by Guild registry" in item.toolTip()

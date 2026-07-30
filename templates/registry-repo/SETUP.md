@@ -28,7 +28,7 @@ match it exactly:
 ⚠️ **The registry repo name has no hyphen in "nparseplus".** The app repo is
 `nparse-plus`; the registry repo is `nparseplus-plugins`. Creating
 `nparse-plus-plugins` produces a URL the app will never fetch, with no error
-beyond a permanent "Registry unavailable".
+beyond Browse permanently reporting it could not reach the built-in registry.
 
 Everything above is satisfiable with a stock "deploy from a branch" Pages
 configuration — no layout gymnastics and no build step required.

@@ -5,17 +5,22 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from nparseplus.config.settings import (
     SCHEMA_VERSION,
     DebouncedSaver,
     OverlayRegion,
     PlayerInfo,
     PluginEntry,
+    PluginsSettings,
+    RegistrySource,
     Settings,
     WindowLayoutPreset,
     WindowState,
     get_player,
     load_settings,
+    normalize_registry_url,
     save_settings,
 )
 from nparseplus.core.triggers.model import Trigger, TriggerTimer
@@ -256,13 +261,11 @@ def test_plugins_entries_roundtrip(tmp_path: Path) -> None:
         source_url="https://example.com/dkp.zip",
         sha256="f" * 64,
     )
-    original.plugins.registry_url = "https://example.com/index.json"
     save_settings(original, path)
     loaded = load_settings(path)
     assert loaded.plugins.entries == original.plugins.entries
     assert loaded.plugins.entries["dkp"].enabled is False
     assert loaded.plugins.entries["dkp"].sha256 == "f" * 64
-    assert loaded.plugins.registry_url == "https://example.com/index.json"
 
 
 def test_plugins_enabled_roundtrips_and_defaults_off(tmp_path: Path) -> None:
@@ -291,3 +294,98 @@ def test_settings_written_by_a_newer_build_still_load(tmp_path: Path) -> None:
     )
     loaded = load_settings(path)
     assert loaded.plugins.enabled is True
+
+
+class TestRegistrySettings:
+    def test_registries_default_empty_and_the_default_is_enabled(self) -> None:
+        plugins = Settings().plugins
+        assert plugins.registries == []
+        assert plugins.default_registry_enabled is True
+
+    def test_registries_roundtrip_in_order(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        original = Settings()
+        original.plugins.registries = [
+            RegistrySource(url="https://a.example/index.json", name="A"),
+            RegistrySource(url="https://b.example/index.json", name="B", enabled=False),
+        ]
+        original.plugins.default_registry_enabled = False
+        save_settings(original, path)
+
+        loaded = load_settings(path)
+        assert [r.url for r in loaded.plugins.registries] == [
+            "https://a.example/index.json",
+            "https://b.example/index.json",
+        ]
+        assert loaded.plugins.registries[1].enabled is False
+        assert loaded.plugins.default_registry_enabled is False
+
+    def test_legacy_registry_url_folds_in_and_clears(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"plugins": {"registry_url": "https://old.example/index.json"}}))
+        loaded = load_settings(path)
+        assert [r.url for r in loaded.plugins.registries] == ["https://old.example/index.json"]
+        assert loaded.plugins.registry_url == ""
+
+        # Idempotent: saving and reloading must not add a second copy.
+        save_settings(loaded, path)
+        assert len(load_settings(path).plugins.registries) == 1
+
+    def test_legacy_registry_url_already_present_is_not_duplicated(self) -> None:
+        plugins = PluginsSettings(
+            registry_url="https://a.example/index.json",
+            registries=[RegistrySource(url="https://A.example/index.json")],
+        )
+        assert [r.url for r in plugins.registries] == ["https://a.example/index.json"]
+
+    def test_unusable_entries_are_dropped_not_fatal(self, tmp_path: Path) -> None:
+        # A raise here would make load_settings discard the whole document.
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "general": {"eq_log_dir": "/keep/me"},
+                    "plugins": {
+                        "registry_url": "http://insecure.example/index.json",
+                        "registries": [
+                            {"url": "https://good.example/index.json"},
+                            {"url": "ftp://nope.example/index.json"},
+                            {"url": "   "},
+                            {"url": "https://good.example/index.json", "name": "dupe"},
+                        ],
+                    },
+                }
+            )
+        )
+        loaded = load_settings(path)
+        assert [r.url for r in loaded.plugins.registries] == ["https://good.example/index.json"]
+        assert loaded.plugins.registries[0].name == ""  # first wins, not the dupe
+        # The document survived. Compare as Path — the separator is
+        # platform-dependent and this assertion is about the value, not spelling.
+        assert loaded.general.eq_log_dir == Path("/keep/me")
+
+    def test_plugin_entry_registry_url_roundtrips(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        original = Settings()
+        original.plugins.entries["demo"] = PluginEntry(
+            registry_url="https://a.example/index.json", sha256="a" * 64
+        )
+        save_settings(original, path)
+        entry = load_settings(path).plugins.entries["demo"]
+        assert entry.registry_url == "https://a.example/index.json"
+
+
+class TestNormalizeRegistryUrl:
+    def test_lowercases_scheme_and_host_but_not_the_path(self) -> None:
+        assert (
+            normalize_registry_url("  HTTPS://Example.COM/Path/Index.json  ")
+            == "https://example.com/Path/Index.json"
+        )
+
+    @pytest.mark.parametrize(
+        "url",
+        ["", "   ", "http://x.example/i.json", "ftp://x/i.json", "x.example/i.json", "https://"],
+    )
+    def test_rejects_unusable(self, url: str) -> None:
+        with pytest.raises(ValueError):
+            normalize_registry_url(url)
