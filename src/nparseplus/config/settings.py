@@ -8,8 +8,9 @@ No Qt imports allowed in this layer.
 from __future__ import annotations
 
 import json
+import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -23,6 +24,9 @@ from nparseplus.core.ch_chain import DEFAULT_CH_CADENCE_PATTERNS
 from nparseplus.core.triggers.model import Trigger
 
 SCHEMA_VERSION = 1
+
+# Safe-mode kill switch: skip all plugin loading regardless of the setting.
+NO_PLUGINS_ENV_VAR = "NPARSEPLUS_NO_PLUGINS"
 
 
 def _default_eq_log_dir() -> Path:
@@ -326,6 +330,34 @@ class PlayerInfo(BaseModel):
     respawn_timers: list[SavedTimer] = Field(default_factory=list)
 
 
+class PluginEntry(BaseModel):
+    """Per-plugin consent + enablement, keyed by the plugin's meta.id.
+
+    ``approved`` records that the first-load consent dialog was answered
+    (either way) so the user is never re-asked; ``enabled`` gates activation.
+    """
+
+    enabled: bool = True
+    approved: bool = False
+    last_version: str = ""
+    # Install provenance (registry/URL installs): where the artifact came
+    # from and the sha256 of its bytes. Empty for sideloaded plugins.
+    source_url: str = ""
+    sha256: str = ""
+
+
+class PluginsSettings(BaseModel):
+    # Master switch for the whole add-on subsystem, off until asked for.
+    # Plugins are third-party code running with the app's full permissions,
+    # and most users only want maps and spell timers: while this is False
+    # nothing plugin-related is discovered, imported, or shown anywhere.
+    enabled: bool = False
+    entries: dict[str, PluginEntry] = Field(default_factory=dict)
+    # Override for the plugin registry index; "" = the built-in default
+    # (core.plugins.registry.DEFAULT_REGISTRY_URL).
+    registry_url: str = ""
+
+
 class Settings(BaseModel):
     """Root settings document persisted to settings.json."""
 
@@ -336,6 +368,7 @@ class Settings(BaseModel):
     spellwindow: SpellWindowSettings = Field(default_factory=SpellWindowSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
+    plugins: PluginsSettings = Field(default_factory=PluginsSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
     window_layouts: dict[str, WindowLayoutPreset] = Field(default_factory=dict)
     # Persisted map markers per zone short key (nparse #10 / eqtool #190).
@@ -347,6 +380,23 @@ class Settings(BaseModel):
     # Raw legacy custom timers ([name, matchtext, "hh:mm:ss"]) kept verbatim so a
     # legacy import is lossless even after conversion to Trigger entries.
     custom_timers: list[list[str]] = Field(default_factory=list)
+
+
+def plugins_enabled(settings: Settings, environ: Mapping[str, str] | None = None) -> bool:
+    """Whether the add-on subsystem should run at all.
+
+    The env var is a veto, never an enabler: ``NPARSEPLUS_NO_PLUGINS=1`` is
+    the safe-mode switch for recovering from a plugin that breaks startup, so
+    it must be able to turn plugins off but must never turn them on for a user
+    who never opted in.
+
+    This is the single place the setting and the env var combine — every gate
+    in the app calls it rather than re-deriving the answer.
+    """
+    env = os.environ if environ is None else environ
+    if env.get(NO_PLUGINS_ENV_VAR) == "1":
+        return False
+    return settings.plugins.enabled
 
 
 def load_settings(path: Path | None = None) -> Settings:

@@ -1,0 +1,102 @@
+name: Release SDK
+
+# Publishes the nparseplus-sdk distribution to PyPI.
+#
+# Deliberately a SEPARATE workflow from release.yml rather than a job in it:
+# release.yml fires on every app `v*` tag, and the SDK is versioned
+# independently, so a publish job there would attempt a duplicate upload of an
+# unchanged SDK version on every app release. That either fails the release or
+# needs `skip-existing`, which also swallows genuine upload failures. An
+# independent `sdk-v*` trigger publishes exactly when the SDK actually changes.
+#
+# Auth is PyPI Trusted Publishing (OIDC) — no API token, no repo secret. See
+# sdk/README.md for the one-time pypi.org + GitHub environment setup.
+
+on:
+  push:
+    tags: ["sdk-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing SDK tag to publish (for example sdk-v1.0.0)
+        required: true
+        type: string
+
+env:
+  SDK_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # Declaring any permissions block sets every unlisted scope to none, so
+      # contents:read has to be spelled out for actions/checkout. id-token
+      # mints the OIDC token PyPI trades for a short-lived upload credential;
+      # nothing here needs write access to the repository.
+      contents: read
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/nparseplus-sdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SDK_TAG }}
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Tag must match nparseplus_sdk.__version__
+        # Same idiom as release.yml's check-version: __init__.py is the single
+        # source of truth (sdk/pyproject.toml's version is dynamic and uv.lock
+        # records no version for dynamic packages), so this is the only check
+        # there is — and it must fail loudly, because a mismatched tag would
+        # otherwise publish a version nobody can correlate to a commit.
+        run: |
+          VERSION="${SDK_TAG#sdk-v}"
+          grep -q "^__version__ = \"$VERSION\"$" sdk/src/nparseplus_sdk/__init__.py \
+            || { echo "::error::tag $VERSION != sdk/src/nparseplus_sdk/__init__.py __version__"; exit 1; }
+          echo "SDK_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build sdist + wheel
+        # Workspace-member build: `uv build --package <name>` selects the
+        # member (verified against uv 0.11.28). Output goes to a dedicated dir
+        # so the publish step cannot pick up an app artifact.
+        # --no-create-gitignore: uv otherwise drops a .gitignore into the
+        # output dir, and the publish action feeds every file in packages-dir
+        # to twine, which rejects anything that is not a distribution.
+        run: uv build --package nparseplus-sdk --out-dir dist-sdk --no-create-gitignore
+
+      - name: Smoke-test the built wheel
+        # The only check that runs against the REAL artifact rather than the
+        # source tree. A clean venv with nothing but the wheel proves two
+        # things nothing else does: that nparseplus-sdk has no install-time
+        # dependency on the nparseplus app (the whole point of the package),
+        # and that the console-script entry point resolves from the wheel's
+        # metadata.
+        run: |
+          set -euxo pipefail
+          WHEEL=$(ls dist-sdk/nparseplus_sdk-"$SDK_VERSION"-*.whl)
+          python3 -m venv /tmp/sdk-smoke
+          /tmp/sdk-smoke/bin/python -m pip install --quiet --upgrade pip
+          /tmp/sdk-smoke/bin/python -m pip install --quiet "$WHEEL"
+          GOT=$(/tmp/sdk-smoke/bin/python -c "import nparseplus_sdk; print(nparseplus_sdk.__version__)")
+          echo "wheel reports __version__=$GOT"
+          [ "$GOT" = "$SDK_VERSION" ] \
+            || { echo "::error::wheel __version__ $GOT != $SDK_VERSION"; exit 1; }
+          META=$(/tmp/sdk-smoke/bin/python -c "from importlib.metadata import version; print(version('nparseplus-sdk'))")
+          echo "wheel dist metadata reports $META"
+          [ "$META" = "$SDK_VERSION" ] \
+            || { echo "::error::wheel metadata $META != $SDK_VERSION"; exit 1; }
+          # Entry point must resolve without the host app present.
+          /tmp/sdk-smoke/bin/nparseplus-plugin --help
+          # ...and the app must NOT have been dragged in as a dependency.
+          if /tmp/sdk-smoke/bin/python -c "import nparseplus" 2>/dev/null; then
+            echo "::error::the SDK wheel pulled in nparseplus; it must stay standalone"
+            exit 1
+          fi
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-sdk

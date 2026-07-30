@@ -44,6 +44,7 @@ Legend: ✅ full support · 🟡 partial / different approach · ❌ not availab
 | Self-updater | ✅ | ✅ | ❌ | ✅ |
 | Trigger export/import (shareable files) | ✅ JSON packs | ❌ | ❌ | ✅ (`.gtp` packages) |
 | Trigger import from GINA | ✅ reads `.gtp`/XML ([details](migrating/from-gina.md)) | 🟡 | ❌ | — |
+| Third-party add-ons (documented plugin SDK) | ✅ opt-in, off by default ([details](plugins/index.md)) | ❌ | ❌ | ❌ |
 
 ## What only nParse+ offers
 
@@ -60,6 +61,11 @@ Legend: ✅ full support · 🟡 partial / different approach · ❌ not availab
   presets.
 - **nParse's map + Discord overlay heritage** combined with EQTool's
   spell/trigger/combat engine — previously you had to pick one.
+- **An add-on system with a published SDK** — none of the other three lets
+  a third party add a window, a log parser, or a timer without forking it.
+  GINA's shared `.gtp` packages come closest, but those are trigger data,
+  not code. nParse+'s is opt-in and off by default: the core tool carries
+  no dependency on it.
 
 ## What the others still do better
 

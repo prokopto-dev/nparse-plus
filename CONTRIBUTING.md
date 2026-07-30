@@ -36,6 +36,34 @@ Check your commits locally before opening a PR:
 python tools/check_conventional_commits.py origin/master HEAD
 ```
 
+## Working on the SDK
+
+The repo is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/).
+`sdk/` holds a second distribution, `nparseplus-sdk` — the plugin contract
+third parties build against. `uv sync` resolves both; `uv run pytest` runs
+`sdk/tests` alongside `tests/` (they're both in `testpaths`), so an SDK
+change is covered by the ordinary test command.
+
+Two things make it different from the rest of the tree:
+
+- **It is versioned separately.** `sdk/src/nparseplus_sdk/__init__.py`'s
+  `__version__` is its single source of truth and semantic-release does not
+  touch it — semantic-release owns the app's `v*` tags only. Publishing the
+  SDK is a deliberate, manual `sdk-v<X.Y.Z>` tag, which triggers
+  `.github/workflows/release-sdk.yml`; the workflow refuses to publish if
+  the tag and that literal disagree.
+- **Everything exported from `nparseplus_sdk/__init__.py` is public API.**
+  Under the 1.x promise it is additive-only: new names and new optional
+  arguments are fine, renaming, removing, or changing the meaning of an
+  existing one is not — plugins pin `requires_sdk` ranges against it, and
+  the host refuses a plugin whose range doesn't admit the bundled SDK.
+  Anything genuinely internal stays out of `__all__`. The policy users read
+  is
+  [docs/plugins/versioning.md](https://prokopto-dev.github.io/nparse-plus/latest/plugins/versioning/).
+
+Host-side plugin code (`src/nparseplus/core/plugins/`, `ui/plugin*.py`)
+carries no such promise and moves with the app's version.
+
 ## Development
 
 See [the docs](https://prokopto-dev.github.io/nparse-plus/latest/development/) for

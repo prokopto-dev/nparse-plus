@@ -11,12 +11,15 @@ generated data assets were converted from an earlier commit, `fdd3f25a` — the
 ## Commands
 
 ```bash
-uv sync                                       # install (creates .venv)
+uv sync                                       # install (creates .venv); this is
+                                              # a WORKSPACE — sdk/ syncs with it
 uv run python -m nparseplus                   # run the app (tray + overlays)
-uv run pytest                                 # full suite (~970 tests, fast)
+uv run pytest                                 # full suite (~1460 tests, fast);
+                                              # testpaths = tests + sdk/tests
 QT_QPA_PLATFORM=offscreen uv run pytest       # headless; CI matrix does this
 uv run ruff check . && uv run ruff format .   # lint/format (line length 100)
 uv run pytest tests/core/parsers -q           # scope runs to one area
+NPARSEPLUS_NO_PLUGINS=1 uv run python -m nparseplus   # safe mode: veto add-ons
 ```
 
 To exercise the app without the game: point settings at a scratch dir with an
@@ -70,6 +73,15 @@ src/nparseplus/
     sharing.py          #   SharingCoordinator: THE sharing gate + inbound thread crossing
     visionfix.py        #   Night Vision fix apply/revert (backup-first)
     pigparse.py         #   Qt-free Protocol for the REST client + SubmitFn
+    plugins/            #   add-on host (OPT-IN, off by default): discovery.py
+                        #   (plugins dir + entry points), host.py (LoadedPlugin
+                        #   status machine + consent), context.py (the SDK
+                        #   PluginContext impl + unwind), install.py (zip-slip-
+                        #   safe installer, https-only, sha256), registry.py
+                        #   (curated index client), storage.py (per-plugin JSON)
+  pluginbootstrap.py    # THE two gated plugin import sites create_app may use
+                        # (start_plugins pre-Qt, build_plugin_ui post-windows);
+                        # nothing plugin-related imports while plugins are off
   config/               # Pydantic Settings -> platformdirs settings.json (+ legacy migration)
   net/                  # Qt-free network clients (UI marshals results itself):
                         #   p99wiki.py, pigparse_models.py (wire DTOs, camelCase-in/
@@ -84,9 +96,22 @@ src/nparseplus/
                         # platformdirs user_log_dir — frozen stderr is invisible,
                         # so check these first on any crash/connection report)
   ui/                   # PySide6 windows; overlaybase.py is the shared overlay recipe
+                        #   pluginmanager.py (Settings > Plugins + registry browser),
+                        #   pluginconsent.py (the one-time approval dialog),
+                        #   pluginwindow.py (the PluginWindow base plugins subclass)
   audio/tts.py          # Speaker protocol: macOS `say`, PowerShell, espeak, Null
   data/                 # generated/ported data — regenerate via tools/, never hand-edit JSON
   helpers/, parsers/    # LEGACY nparse code (maps + discord windows) — see below
+sdk/                    # uv WORKSPACE MEMBER: nparseplus-sdk, the stable third-party
+                        # plugin contract. Versioned + released independently of the
+                        # app (sdk-v* tags -> PyPI); __init__.py's exports are public
+                        # API under an additive-only 1.x promise. sdk/tests runs in
+                        # the root pytest. See sdk/README.md.
+examples/plugins/       # reference add-ons (hello_timer.py, merchant_prices/);
+                        # tests/core/plugins/test_examples.py keeps them loading
+templates/              # ready-to-push content of two repos that don't exist yet:
+                        #   plugin-repo/ (the future plugin template repo) and
+                        #   registry-repo/ (the curated index; see its SETUP.md)
 tools/                  # one-shot converters (Zones.cs -> zones.json etc.); outputs committed
 tests/                  # pytest; tests/fixtures = EQtoolsTests golden corpus
 ```
@@ -151,6 +176,29 @@ build into a `.flatpak` bundle (`packaging/flatpak/` manifest; Linux-only to
 build — CI does it, don't try locally on macOS), built with `--repo-url` and
 publishes the OSTree repo to the single-commit `gh-pages` branch (GitHub
 Pages) so `flatpak update` works for bundle installs.
+
+Since 1.18 the spec also `copy_metadata`s BOTH distributions (`nparseplus`
+and `nparseplus-sdk`) — a frozen app has no site-packages, so a plugin's
+`importlib.metadata.version(...)` would raise without it — and declares the
+`nparseplus_sdk.*` submodules plus `nparseplus.ui.pluginwindow` as
+hiddenimports (only plugins import them, so PyInstaller can't trace them).
+The app's own `__version__`/`SDK_VERSION` stay plain literals precisely
+because a metadata lookup fails exactly here.
+
+**The SDK releases on its own axis**: semantic-release owns `v*` (app) tags
+only; `nparseplus-sdk` publishes to PyPI from a hand-pushed `sdk-v<X.Y.Z>`
+tag via `.github/workflows/release-sdk.yml` (PyPI Trusted Publishing/OIDC,
+no token; the job refuses a tag that disagrees with
+`sdk/src/nparseplus_sdk/__init__.py`). One-time pypi.org setup in
+sdk/README.md.
+
+Generated-artifact convention beyond `tools/convert_*.py`:
+`tools/gen_registry_schema.py` derives
+`templates/registry-repo/schema/index-v1.schema.json` from the live pydantic
+models in `core/plugins/registry.py` (re-applying the constraints that live
+in `field_validator`s and JSON Schema can't express). Output is committed;
+`--check` fails on staleness and `tests/core/plugins/test_registry_schema.py`
+runs it.
 
 ## Sharing wire cheatsheet (see tools/pigparse_probe_transcript.md)
 
@@ -264,6 +312,50 @@ dedicated event-overlay Utility header section (`OverlayEvent.section` /
 Out of Mana; converter bumped 65→67). Settings > General now surfaces the app
 version + an up-to-date/update-available badge + Check now (previously
 tray-only).
+
+**1.18 batch** (post-1.17.0, ~1460 tests): the add-on system — **opt-in and
+OFF by default**, and that framing is the feature. `settings.plugins.enabled`
+is False; a user ticks Settings > Advanced "Enable plugins (add-ons)" and
+restarts, and only then does a Plugins page and an "Open Plugins Folder" tray
+entry exist. The gate is structural, not cosmetic: `pluginbootstrap.py` holds
+the ONLY two plugin import sites `create_app` may use (`start_plugins`
+pre-Qt/pre-driver so subscriptions+parsers+ticks register race-free,
+`build_plugin_ui` post-windows), so with plugins off the host, the SDK, the
+installer and httpx/zipfile are never imported —
+`tests/core/plugins/test_master_toggle.py` checks that structurally.
+`config.settings.plugins_enabled()` also honours `NPARSEPLUS_NO_PLUGINS=1`,
+a veto that can force plugins off and never on (safe mode for an add-on that
+breaks startup). `sdk/` is a uv workspace member, `nparseplus-sdk` 1.0.0 —
+the third-party contract (`NParsePlugin`/`PluginMeta`/`PluginContext`, lazy
+`events`/`ui` re-exports of the host, `FakePluginContext`, `validate_plugin`
++ the `nparseplus-plugin` CLI), versioned and PyPI-released independently
+(`sdk-v*` → `release-sdk.yml`); everything in its `__all__` is public API
+under an additive-only 1.x promise, enforced at load by `check_compat`
+(`requires_sdk` + `min_app_version`). `core/plugins/` is the Qt-free host:
+`discovery.py` (plugins dir first, then `nparseplus.plugins` entry points —
+the dir is what works in frozen builds), `host.py`'s status machine
+(ready/active/disabled/pending_consent/incompatible/error/duplicate, every
+failure isolated per plugin), consent persisted per id in
+`Settings.plugins.entries` and **forgotten on uninstall together with
+`plugin-data/<id>`** so a later plugin claiming that id is treated as the
+stranger it is, `context.py` (the SDK context impl + `unwind()` of partial
+registrations), `install.py` (zip-slip-safe member screen, staging +
+`validate_plugin` gate before the move, https re-asserted on every redirect
+hop, sha256 pinning, uninstall-to-`trash/`), `registry.py` (curated static
+index; `DEFAULT_REGISTRY_URL` points at the not-yet-created
+`nparseplus-plugins` Pages repo, so Browse degrades to "Registry
+unavailable"). `core/driver.py` grew `add_supervised_tick`: plugin ticks are
+timed against `TICK_BUDGET_S` (0.25 s) and evicted after
+`TICK_BREACH_LIMIT` (2) consecutive breaches — the plugin stays active and
+the manager annotates its row "tick disabled (too slow)"; app-owned ticks
+are appended to `on_tick` directly and never timed. Qt side:
+`ui/pluginmanager.py` (the page + `RegistryBrowserDialog`, installs on a
+worker thread because validation *imports and activates* the candidate, and
+a Source provenance column that says "Sideloaded" out loud),
+`ui/pluginconsent.py`, `ui/pluginwindow.py`, plus the settings window's
+`extra_pages` seam. Known v1 limits, both documented: consent gates
+activation but not import (a declarative manifest is the fix), and nothing
+hot-loads — install/uninstall/toggle all apply next launch (TODO(#45)).
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

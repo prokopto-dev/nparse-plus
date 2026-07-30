@@ -1,0 +1,308 @@
+name: Validate index
+
+# Gate for plugin submissions. Implements the checks specified in
+# https://prokopto-dev.github.io/nparse-plus/plugins/registry/ :
+#   1. index.json validates against schema/index-v1.schema.json
+#   2. plugin ids match the app's PLUGIN_ID_RE and are unique
+#   3. release urls are https (including after redirects)
+#   4. sha256 values are 64 lowercase hex characters
+#   5. the PR author owns every id they add or change (owners.json)
+#   6. best-effort: each new/changed artifact is downloaded and its sha256
+#      compared to the entry
+#
+# Deliberately self-contained: `jsonschema` is the only dependency, so the
+# registry never has to install nParse+ (and stays green even when the app's
+# dependency tree changes).
+#
+# SECURITY NOTES
+# - Trigger is `pull_request`, NOT `pull_request_target`: fork PRs run with a
+#   read-only token and no secrets. Downloaded artifacts are hashed and thrown
+#   away — never extracted, never executed.
+# - A PR can modify this workflow (that is how `pull_request` works), so a
+#   green check is a convenience filter, not the trust boundary. The human
+#   merge is. Reviewers: read the diff — a submission should touch only
+#   index.json and owners.json, and the job flags it when it touches more.
+
+on:
+  pull_request:
+    paths:
+      - "index.json"
+      - "owners.json"
+      - "schema/**"
+      - ".github/workflows/validate-index.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the job can read the base revision of index.json
+          # and owners.json to work out what this PR actually changed.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install checker dependencies
+        run: python -m pip install --disable-pip-version-check "jsonschema>=4.21"
+
+      - name: Validate index.json
+        env:
+          # Passed as env, never interpolated into the script body.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import urllib.request
+
+          from jsonschema import Draft202012Validator
+
+          SCHEMA_PATH = "schema/index-v1.schema.json"
+          # Mirrors the app installer's cap (core/plugins/install.py).
+          MAX_ARTIFACT_BYTES = 50 * 1024 * 1024
+          # Mirrors nparseplus_sdk.plugin.PLUGIN_ID_RE.
+          PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
+          # Mirrors nparseplus.core.plugins.registry._SHA256_RE.
+          SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+          errors: list[str] = []
+          notes: list[str] = []
+
+
+          def load(path):
+              with open(path, encoding="utf-8") as handle:
+                  return json.load(handle)
+
+
+          def at_base(path):
+              """The base revision of `path`, or None when unavailable."""
+              base_sha = os.environ.get("BASE_SHA", "")
+              if not base_sha:
+                  return None
+              try:
+                  raw = subprocess.run(
+                      ["git", "show", f"{base_sha}:{path}"],
+                      capture_output=True,
+                      text=True,
+                      check=True,
+                  ).stdout
+                  return json.loads(raw)
+              except Exception as exc:  # noqa: BLE001 - any failure means "unknown"
+                  notes.append(f"could not read {path} at the base revision ({exc})")
+                  return None
+
+
+          def finish():
+              for note in notes:
+                  print(f"::notice::{note}")
+              for error in errors:
+                  print(f"::error::{error}")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as handle:
+                      handle.write("## Registry index validation\n\n")
+                      for note in notes:
+                          handle.write(f"- {note}\n")
+                      for error in errors:
+                          handle.write(f"- **FAIL** {error}\n")
+                      if not errors:
+                          handle.write("\nAll automated checks passed.\n")
+              sys.exit(1 if errors else 0)
+
+
+          # --- 1. JSON Schema ---------------------------------------------------
+          try:
+              index = load("index.json")
+              owners_doc = load("owners.json")
+              schema = load(SCHEMA_PATH)
+          except (OSError, ValueError) as exc:
+              errors.append(f"could not read the registry files: {exc}")
+              finish()
+
+          validator = Draft202012Validator(schema)
+          for err in sorted(validator.iter_errors(index), key=lambda e: list(e.path)):
+              where = "/".join(str(part) for part in err.path) or "(root)"
+              errors.append(f"index.json: {where}: {err.message}")
+          if errors:
+              # Everything below assumes the documented shape.
+              finish()
+
+          plugins = index.get("plugins", [])
+
+          # --- 2-4. ids, urls, hashes ------------------------------------------
+          positions: dict[str, int] = {}
+          for position, plugin in enumerate(plugins):
+              plugin_id = plugin["id"]
+              where = f"index.json: plugins[{position}] ({plugin_id})"
+              if not PLUGIN_ID_RE.match(plugin_id):
+                  errors.append(f"{where}: id must match {PLUGIN_ID_RE.pattern}")
+              if plugin_id in positions:
+                  errors.append(f"{where}: duplicate id, already at plugins[{positions[plugin_id]}]")
+              positions.setdefault(plugin_id, position)
+
+              release = plugin["latest"]
+              if not release["url"].lower().startswith("https://"):
+                  errors.append(f"{where}: release url must be https://")
+              if not SHA256_RE.match(release["sha256"]):
+                  errors.append(f"{where}: sha256 must be 64 lowercase hex characters")
+
+          # --- 5. ownership -----------------------------------------------------
+          def read_owners(document, label):
+              if document is None:
+                  return {}  # revision unavailable; at_base() already noted it
+              raw = document.get("owners")
+              if not isinstance(raw, dict):
+                  errors.append(f"{label}: 'owners' must be an object mapping id -> [handles]")
+                  return {}
+              parsed: dict[str, frozenset] = {}
+              for plugin_id, handles in raw.items():
+                  ok = (
+                      isinstance(handles, list)
+                      and handles
+                      and all(isinstance(handle, str) and handle.strip() for handle in handles)
+                  )
+                  if not ok:
+                      errors.append(
+                          f"{label}: {plugin_id} must map to a non-empty list of GitHub handles"
+                      )
+                      continue
+                  if not PLUGIN_ID_RE.match(plugin_id):
+                      errors.append(f"{label}: {plugin_id} is not a valid plugin id")
+                  parsed[plugin_id] = frozenset(
+                      handle.strip().lstrip("@").lower() for handle in handles
+                  )
+              return parsed
+
+
+          owners = read_owners(owners_doc, "owners.json")
+          base_owners = read_owners(at_base("owners.json"), "owners.json (base)")
+          author = os.environ.get("PR_AUTHOR", "").strip().lower()
+
+          for plugin_id in positions:
+              if plugin_id not in owners:
+                  errors.append(
+                      f"owners.json: no entry for {plugin_id} — every listed plugin needs an "
+                      "owner; a maintainer adds the line for a brand-new plugin in this PR"
+                  )
+
+          if author:
+              for plugin_id in sorted(set(base_owners) | set(owners)):
+                  before, after = base_owners.get(plugin_id), owners.get(plugin_id)
+                  if before == after:
+                      continue
+                  if before is None:
+                      if after and author not in after:
+                          errors.append(
+                              f"owners.json: the new claim on {plugin_id} does not list the PR "
+                              f"author @{author}"
+                          )
+                  elif author not in before:
+                      errors.append(
+                          f"owners.json: @{author} is not a current owner of {plugin_id} and "
+                          "cannot change its ownership"
+                      )
+          else:
+              notes.append("no pull-request author in context — ownership checks skipped")
+
+          # --- which entries does this PR touch? --------------------------------
+          base_index = at_base("index.json")
+          if base_index is None:
+              notes.append("base index unavailable — verifying every entry")
+              base_plugins: dict = {}
+              changed = list(plugins)
+          else:
+              base_plugins = {entry["id"]: entry for entry in base_index.get("plugins", [])}
+              changed = [entry for entry in plugins if base_plugins.get(entry["id"]) != entry]
+
+          if author:
+              for plugin in changed:
+                  plugin_id = plugin["id"]
+                  # Judge against ownership AT THE BASE, so that an owner handing
+                  # a plugin over can transfer it and update the entry in one PR;
+                  # fall back to the new claim for a brand-new id.
+                  allowed = base_owners.get(plugin_id) or owners.get(plugin_id)
+                  if allowed and author not in allowed:
+                      errors.append(
+                          f"index.json: @{author} changed {plugin_id} but is not an owner "
+                          f"(owners: {', '.join(sorted(allowed))})"
+                      )
+
+          base_sha = os.environ.get("BASE_SHA", "")
+          if base_sha:
+              try:
+                  touched = subprocess.run(
+                      ["git", "diff", "--name-only", base_sha, "HEAD"],
+                      capture_output=True,
+                      text=True,
+                      check=True,
+                  ).stdout.split()
+              except Exception as exc:  # noqa: BLE001
+                  touched = []
+                  notes.append(f"could not diff against the base revision ({exc})")
+              stray = sorted(set(touched) - {"index.json", "owners.json"})
+              if stray:
+                  notes.append(
+                      "REVIEWER: this PR also changes " + ", ".join(stray) + " — a plugin "
+                      "submission should touch index.json and owners.json only"
+                  )
+
+          # --- 6. artifact hashes (best effort) ---------------------------------
+          # The bytes are hashed and discarded: never extracted, never executed.
+          def download(url):
+              request = urllib.request.Request(  # noqa: S310 - scheme checked above
+                  url, headers={"User-Agent": "nparseplus-registry-ci"}
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+                  final_url = response.geturl()
+                  if not final_url.lower().startswith("https://"):
+                      raise ValueError(f"redirected off https to {final_url}")
+                  payload = response.read(MAX_ARTIFACT_BYTES + 1)
+              if len(payload) > MAX_ARTIFACT_BYTES:
+                  raise ValueError(f"artifact exceeds {MAX_ARTIFACT_BYTES} bytes")
+              return payload
+
+
+          for plugin in changed:
+              release = plugin["latest"]
+              url, expected = release["url"], release["sha256"].lower()
+              if not url.lower().startswith("https://"):
+                  continue  # already reported above
+              try:
+                  payload = download(url)
+              except Exception as exc:  # noqa: BLE001 - transport problems are advisory
+                  notes.append(
+                      f"{plugin['id']}: could not download {url} ({exc}) — sha256 NOT verified, "
+                      "the reviewer must check by hand"
+                  )
+                  continue
+              digest = hashlib.sha256(payload).hexdigest()
+              if digest != expected:
+                  errors.append(
+                      f"{plugin['id']}: sha256 mismatch — index.json says {expected}, but "
+                      f"{url} hashes to {digest}"
+                  )
+              else:
+                  notes.append(
+                      f"{plugin['id']} v{release['version']}: sha256 verified "
+                      f"({len(payload)} bytes from {url})"
+                  )
+
+          if not changed:
+              notes.append("no plugin entries added or changed")
+
+          finish()
+          PY

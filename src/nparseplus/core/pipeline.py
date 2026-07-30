@@ -6,6 +6,7 @@ Port of EQTool's LogParser.MainRun (Services/LogParser.cs). The app drives
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime
 
@@ -32,6 +33,20 @@ class LogPipeline:
         # sharing idle-suppression and death-loop logic.
         self.last_you_activity: datetime | None = None
         self.last_entry_time: datetime | None = None
+
+    def append_parser(self, parser: LineParser) -> None:
+        """Append a parser after the built-in chain (the plugin seam).
+
+        First-match-wins is preserved: appended parsers only see lines no
+        built-in consumed. Call before the driver thread starts — the chain
+        is not mutated safely while ``process`` runs.
+        """
+        self._parsers.append(parser)
+
+    def remove_parser(self, parser: LineParser) -> None:
+        """Remove a previously appended parser (plugin unwind); no-op if absent."""
+        with contextlib.suppress(ValueError):
+            self._parsers.remove(parser)
 
     def process(self, raw: str) -> None:
         self._line_counter += 1

@@ -735,3 +735,85 @@ def test_sync_now_reports_when_nothing_changed(qtbot, tmp_path: Path) -> None:
     window._install_dir.edit.setText(str(tmp_path))
     window._sync_socials_now()
     assert "Nothing to sync" in window._socials_sync_status.text()
+
+
+def test_extra_pages_build_and_apply(qtbot) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    built: list[object] = []
+    applied: list[object] = []
+
+    def build(parent):
+        page = QLabel("plugin page", parent)
+        built.append(page)
+        return page
+
+    window = _window(
+        qtbot,
+        extra_pages=[SettingsPageSpec("My Plugin", build, lambda page: applied.append(page))],
+    )
+    assert built, "extra page builder was not called"
+    assert window._sidebar.item(window._sidebar.count() - 1).text() == "My Plugin"
+    window.apply()
+    assert applied == built  # per-page apply receives the built widget
+
+
+def test_extra_page_builder_failure_isolated(qtbot) -> None:
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    def explode(parent):
+        raise RuntimeError("builder boom")
+
+    window = _window(qtbot, extra_pages=[SettingsPageSpec("Broken", explode)])
+    # The page slot exists (with a placeholder) and the window still applies.
+    assert window._sidebar.item(window._sidebar.count() - 1).text() == "Broken"
+    window.apply()
+
+
+def test_extra_page_apply_failure_isolated(qtbot) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    def bad_apply(page):
+        raise RuntimeError("apply boom")
+
+    saves: list[None] = []
+    window = _window(
+        qtbot,
+        on_save=lambda: saves.append(None),
+        extra_pages=[SettingsPageSpec("Flaky", lambda parent: QLabel(parent), bad_apply)],
+    )
+    window.apply()  # must not raise
+    assert saves  # the built-in apply flow still completed
+
+
+def test_plugins_toggle_is_off_and_no_plugins_page_by_default(qtbot) -> None:
+    # The base-user view: the switch exists on Advanced, but nothing else in
+    # the window mentions add-ons.
+    window = _window(qtbot)
+    assert window._plugins_enabled_box.isChecked() is False
+    titles = [window._sidebar.item(i).text() for i in range(window._sidebar.count())]
+    assert "Plugins" not in titles
+
+
+def test_plugins_toggle_persists_and_warns_about_the_restart(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    notices: list[bool] = []
+    window._notify_plugins_restart = lambda *, enabled: notices.append(enabled)
+
+    window._plugins_enabled_box.setChecked(True)
+    window.apply()
+    assert settings.plugins.enabled is True
+    assert notices == [True]  # takes effect next launch, so say so
+
+    window.apply()
+    assert notices == [True]  # unchanged: no second nag
+
+    window._plugins_enabled_box.setChecked(False)
+    window.apply()
+    assert settings.plugins.enabled is False
+    assert notices == [True, False]

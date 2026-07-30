@@ -1,0 +1,150 @@
+# Plugins
+
+Since 1.18, nParse+ can load **plugins**: optional add-ons written in Python
+that add their own overlay windows, react to log events, poll web services,
+and contribute settings pages. Example ideas — a merchant window that tracks
+what you're selling with live PigParse prices, a DKP tracker fed by your
+guild's server, an auction bid watcher.
+
+!!! danger "Plugins are third-party code"
+    A plugin runs with the full permissions of nParse+ on your computer.
+    nParse+ cannot verify what a plugin does — only install plugins from
+    authors you trust. See [Security & trust](security.md).
+
+## Step 1: turn plugins on
+
+The whole add-on subsystem is **off by default** and stays off until you ask
+for it. Open *nParse+ Settings* from the tray, go to **Advanced > Add-ons
+(plugins)**, tick **Enable plugins (add-ons)**, click *Apply && Save*, and
+**restart nParse+**.
+
+Until you do that there is no Plugins settings page and no *Open Plugins
+Folder* tray item — nothing plugin-related is even imported. The switch is
+`settings.plugins.enabled`, read through `plugins_enabled()` in
+`config/settings.py`; `pluginbootstrap.py` is the only place the machinery
+loads from, and `create_app` calls it only when that returns true.
+
+Why it ships off: add-ons are third-party code running with the same access
+to your computer as nParse+ itself, and nParse+ needs none of them — maps,
+spell timers, triggers, DPS and sharing are all built in. A default-on
+plugin loader would be an attack surface every user carries for a feature
+most users never use.
+
+The restart is required because plugin activation registers bus
+subscriptions, pipeline parsers and driver ticks, all of which have to be in
+place before the log-driver thread starts. Hot enable/disable is tracked in
+[issue #45](https://github.com/prokopto-dev/nparse-plus/issues/45).
+
+## Step 2: install a plugin
+
+After the restart, **Settings > Plugins** appears. Three ways in:
+
+- *Install from file…* — choose a plugin `.zip` (or a single `.py` file).
+- *Install from URL…* — paste an `https://` link to a plugin `.zip`
+  (for example a GitHub release asset).
+- *Browse registry…* — the curated [registry](registry.md), once it is live.
+
+The installer checks the archive is safe to extract, validates that the
+plugin loads, and shows any advisory findings before finishing.
+
+!!! warning "Only registry installs verify a checksum"
+    A *Browse registry…* install downloads the artifact and refuses it
+    unless its bytes hash to the sha256 the reviewed index recorded.
+    *Install from URL…* has no expected hash to check against — it enforces
+    https (on every redirect hop) and a size cap, and nothing more. Whoever
+    controls that URL controls what you install.
+
+Newly installed plugins load **the next time nParse+ starts**, and you'll be
+asked to confirm enabling each new one then.
+
+**Manually** — drop the plugin (a `.py` file or a folder) into the plugins
+directory: tray menu > *Open Plugins Folder*, or find it here:
+
+| OS | Plugins directory |
+| --- | --- |
+| macOS | `~/Library/Application Support/nparseplus/plugins/` |
+| Windows | `%LOCALAPPDATA%\nparseplus\nparseplus\plugins\` |
+| Linux | `~/.config/nparseplus/plugins/` |
+| Linux (Flatpak) | `~/.var/app/io.github.prokopto_dev.nparse_plus/config/nparseplus/plugins/` |
+
+The doubled `nparseplus\nparseplus` on Windows is real, not a typo:
+`config/paths.py` asks platformdirs for `user_config_dir("nparseplus")`
+without an app author, and platformdirs then uses the app name for both path
+segments.
+
+## Managing plugins
+
+Settings > Plugins lists every discovered plugin with its status:
+
+- **Active** — running.
+- **Ready** — approved and enabled, and due to activate. You normally see
+  this only if the plugin was installed but activation hasn't run for it.
+- **Awaiting consent** — new; you'll be asked on next launch (or was asked
+  and not answered).
+- **Disabled** — you turned it off (uncheck *Enabled*), or you declined
+  consent; it stays installed but inert.
+- **Incompatible** — built for a different SDK or app version; the status
+  tooltip says exactly why. Ask the author for an updated build.
+- **Error** — the plugin crashed while loading; the tooltip has the reason
+  and details are in `nparseplus.log`.
+- **Duplicate id** — a plugin loaded earlier already claimed this
+  `meta.id`, so this one is ignored. Remove one of them.
+
+Two annotations can be appended to any of those:
+
+- *— update available (vX)* — the registry index fetched this session lists
+  a newer version than the one installed.
+- *— tick disabled (too slow)* — the log driver evicted this plugin's
+  periodic callback for repeatedly overrunning its time budget. The plugin
+  is still running; only its tick stopped. See
+  [the tick budget](developing.md#the-tick-budget).
+
+The *Source* column shows where each plugin came from: a URL plus the first
+characters of its sha256, `Local file (…)`, or **Sideloaded** for anything
+copied into the folder by hand — no recorded source, no checksum.
+
+Enable/disable changes and uninstalls take effect the next time nParse+
+starts.
+
+**Uninstalling forgets the plugin.** *Uninstall* moves the plugin's code
+into a `trash/` folder inside the plugins directory rather than deleting it,
+then removes its consent record from `settings.json` and moves its
+`plugin-data/<id>/` directory into `trash/plugin-data/` too
+(`PluginHost.forget`). Nothing is destroyed — but anything that later claims
+the same plugin id, from any source, is treated as the stranger it is: it
+asks for consent again and starts with empty storage.
+
+Plugin windows behave like every other nParse+ overlay: drag to move,
+resize from any edge, toggle from the tray menu, positions remembered, and
+they participate in Window Layouts. Plugins may also add their own pages to
+the Settings window.
+
+## Troubleshooting
+
+- **A plugin broke my startup?** It shouldn't be able to — plugin failures
+  are isolated and logged. But if something is badly wrong, launch with the
+  environment variable `NPARSEPLUS_NO_PLUGINS=1` to skip all plugin loading,
+  then disable or remove the culprit from the plugins folder. The variable
+  is a veto only: it can force plugins off, but it can never turn them on
+  for someone who never opted in.
+- **Where are plugin errors logged?** `nparseplus.log` in the app's log
+  directory (same place as `crash.log`); plugin lines are tagged
+  `nparseplus.plugins.<id>`. That directory is
+  `~/Library/Logs/nparseplus/` on macOS,
+  `%LOCALAPPDATA%\nparseplus\nparseplus\Logs\` on Windows, and
+  `~/.local/state/nparseplus/log/` on Linux (relocated under
+  `~/.var/app/io.github.prokopto_dev.nparse_plus/` in the Flatpak sandbox).
+- **Where does a plugin keep its data?** In `plugin-data/<id>/` next to the
+  plugins directory — separate from `settings.json`, so a plugin's own state
+  can never corrupt your app settings. It goes to the trash folder when you
+  uninstall the plugin.
+- **I updated a plugin and wasn't asked to approve it again.** That's
+  expected: consent is recorded per plugin id, not per version. See
+  [Security & trust](security.md#a-version-bump-does-not-re-ask).
+
+## Building your own
+
+See the [developer guide](developing.md) and the [API reference](api.md).
+The examples shipped in the repository
+([`examples/plugins/`](https://github.com/prokopto-dev/nparse-plus/tree/master/examples/plugins))
+are the fastest starting point.

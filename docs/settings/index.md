@@ -15,7 +15,8 @@ sidebar pages, documented one-per-page here, mirroring the app:
 | [Windows](windows.md) | Per-window on-top / opacity / click-through |
 | [Audio & Overlays](audio-overlays.md) | TTS voice/volume, alert durations |
 | [Sharing](sharing.md) | Network mode, pigparse.org account, inventory upload |
-| [Advanced](advanced.md) | Log archiving, Night Vision fix |
+| [Advanced](advanced.md) | Log archiving, macro sync, add-ons switch, Night Vision fix |
+| [Plugins](plugins.md) | Optional, off by default — only appears once add-ons are enabled in Advanced |
 
 **Apply & Save** writes everything to disk; **Close** discards pending
 edits. A few settings note that they apply after restart (theme, font

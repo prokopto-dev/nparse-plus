@@ -1,0 +1,157 @@
+"""Plugin startup, kept out of ``app.py`` on purpose.
+
+Add-ons are opt-in (``settings.plugins.enabled``, default off). Honouring
+that means more than hiding a page: when plugins are off, none of the plugin
+machinery may be *imported* — the host pulls in the SDK, the installer, the
+registry client, httpx and zipfile, and the manager page builds a table
+nobody asked for. Concentrating every plugin import behind the two functions
+here leaves ``create_app`` with exactly two gated import sites, which
+``tests/core/plugins/test_master_toggle.py`` checks structurally.
+
+Both functions are called from ``create_app`` and nowhere else:
+``start_plugins`` before Qt exists (discovery is Qt-free and must finish
+before the driver thread starts, so plugin subscriptions, parsers and ticks
+are registered race-free), ``build_plugin_ui`` after the windows exist.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from nparseplus.composition import Backend
+    from nparseplus.config.settings import Settings
+    from nparseplus.core.plugins.host import LoadedPlugin, PluginHost
+    from nparseplus.ui.qtbridge import QtEventBridge
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PluginUi:
+    """What the plugin subsystem contributes to the assembled UI.
+
+    Empty in every field when plugins are off, so ``create_app`` can splat
+    these unconditionally instead of branching at each use.
+    """
+
+    windows_by_key: dict[str, Any] = field(default_factory=dict)  # "plugin.<id>.<key>"
+    command_handles: dict[str, Any] = field(default_factory=dict)  # chat toggle_<name>
+    tray: dict[str, Any] = field(default_factory=dict)  # tray label -> widget
+    extra_pages: list[Any] = field(default_factory=list)
+
+
+def start_plugins(
+    settings: Settings,
+    backend: Backend,
+    app_version: str,
+    request_save: Callable[[], None],
+    plugins_dir_override: Path | None = None,
+) -> PluginHost | None:
+    """Discover and classify installed plugins; None if the sweep failed."""
+    from nparseplus.core.plugins.host import PluginHost
+
+    host = PluginHost(
+        settings,
+        backend,
+        app_version,
+        request_save=request_save,
+        plugins_dir_override=plugins_dir_override,
+    )
+    try:
+        host.discover_and_load()
+    except Exception:
+        # Per-plugin failures are already isolated inside discover_and_load;
+        # this guards the sweep itself. A third-party add-on must never be
+        # able to stop the app from starting.
+        logger.exception("plugin discovery failed; continuing without plugins")
+        return None
+    return host
+
+
+def build_plugin_ui(
+    plugin_host: PluginHost,
+    settings: Settings,
+    app_version: str,
+    save: Callable[[], None],
+    bridge: QtEventBridge,
+    window_handles: dict[str, Any],
+) -> PluginUi:
+    """Run consent, activate, and materialize each plugin's Qt contributions."""
+    from nparseplus.ui.pluginconsent import run_consent_prompts
+    from nparseplus.ui.pluginmanager import plugin_manager_page_spec
+
+    ui = PluginUi()
+    ui.extra_pages.append(plugin_manager_page_spec(plugin_host, app_version))
+    run_consent_prompts(plugin_host)
+    plugin_host.activate_enabled()
+
+    for loaded, spec, widget in _materialize_plugin_windows(plugin_host, settings, save, bridge):
+        assert loaded.meta is not None
+        ui.windows_by_key[f"plugin.{loaded.meta.id}.{spec.key}"] = widget
+        command_key = _plugin_command_key(loaded, spec.key, spec.command_key)
+        if command_key in window_handles or command_key in ui.command_handles:
+            logger.warning(
+                "plugin %s window command %r collides; chat toggle skipped",
+                loaded.meta.id,
+                command_key,
+            )
+        else:
+            ui.command_handles[command_key] = widget
+        label = spec.title
+        if label in ui.tray:
+            label = f"{spec.title} ({loaded.meta.id})"
+        ui.tray[label] = widget
+
+    ui.extra_pages.extend(spec for _loaded, spec in plugin_host.page_specs())
+    return ui
+
+
+def _plugin_command_key(loaded: LoadedPlugin, spec_key: str, command_key: str | None) -> str:
+    """In-game toggle_<key> name: declared or <plugin_id>_<key>, \\w-sanitized."""
+    assert loaded.meta is not None
+    raw = command_key or f"{loaded.meta.id}_{spec_key}"
+    return re.sub(r"\W", "_", raw)
+
+
+def _materialize_plugin_windows(
+    plugin_host: PluginHost,
+    settings: Settings,
+    save: Callable[[], None],
+    bridge: QtEventBridge,
+) -> list[tuple[LoadedPlugin, Any, Any]]:
+    """Build each active plugin's declared windows; every factory is guarded."""
+    from nparseplus_sdk.plugin import PluginWindowContext
+
+    built: list[tuple[LoadedPlugin, Any, Any]] = []
+    for loaded, spec in plugin_host.window_specs():
+        assert loaded.meta is not None
+        window_key = f"plugin.{loaded.meta.id}.{spec.key}"
+        wctx = PluginWindowContext(
+            settings=settings,
+            window_key=window_key,
+            title=spec.title,
+            default_geometry=spec.default_geometry,
+            on_save=save,
+            bridge=bridge,
+        )
+        try:
+            widget = spec.factory(wctx)
+        except Exception:
+            logger.exception(
+                "plugin %s window %r factory failed; window skipped",
+                loaded.meta.id,
+                spec.key,
+            )
+            continue
+        if widget is None:
+            logger.warning("plugin %s window %r factory returned None", loaded.meta.id, spec.key)
+            continue
+        built.append((loaded, spec, widget))
+    return built

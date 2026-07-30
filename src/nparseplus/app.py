@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -24,11 +25,14 @@ from nparseplus.config.settings import (
     Settings,
     WindowState,
     load_settings,
+    plugins_enabled,
     save_settings,
 )
 from nparseplus.core.events import WindowCommandEvent
 from nparseplus.core.player import tracking_distance
 from nparseplus.ui import theme
+
+logger = logging.getLogger(__name__)
 
 
 class _OverlayPositioner:
@@ -48,6 +52,7 @@ class _OverlayPositioner:
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from nparseplus.core.plugins.host import PluginHost
     from nparseplus.helpers.application import NomnsParse
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
@@ -156,6 +161,7 @@ class AppContext:
     window_layouts: WindowLayoutManager
     settings: Settings
     save: Callable[[], None]
+    plugin_host: PluginHost | None = None
 
 
 def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext:
@@ -175,6 +181,17 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # this (thread-safe, coalesced); the GUI's save() below writes directly.
     saver = DebouncedSaver(_save_settings_now)
     backend = build_backend(settings, request_save=saver.request_save)
+
+    # Add-ons are opt-in. While they are off nothing plugin-related is even
+    # imported — see pluginbootstrap's docstring for why that matters.
+    # Discovery is Qt-free and happens before any plugin can touch a live
+    # thread; activation waits until Qt (and the consent dialogs) exist.
+    plugin_host = None
+    if plugins_enabled(settings):
+        from nparseplus import __version__
+        from nparseplus.pluginbootstrap import start_plugins
+
+        plugin_host = start_plugins(settings, backend, __version__, saver.request_save)
 
     # Legacy imports come last: helpers.application loads nparse.config.json
     # from the CWD at import time and pulls in Qt.
@@ -248,6 +265,31 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         "triggereditor": trigger_editor,
         "macroeditor": macro_editor,
     }
+
+    # Plugins: consent for never-seen ones, then activate — the driver thread
+    # does not exist yet, so plugin subscriptions/parsers/ticks are race-free.
+    # These stay empty when plugins are off, so the uses below need no branch.
+    plugin_windows_by_key: dict[str, object] = {}  # "plugin.<id>.<key>" -> widget
+    plugin_command_handles: dict[str, object] = {}  # chat toggle_<name> -> widget
+    plugin_tray: dict[str, object] = {}  # tray label -> widget
+    extra_pages: list[object] = []
+    if plugin_host is not None:
+        from nparseplus import __version__
+        from nparseplus.pluginbootstrap import build_plugin_ui
+
+        try:
+            plugin_ui = build_plugin_ui(
+                plugin_host, settings, __version__, save, bridge, window_handles
+            )
+        except Exception:
+            # Same contract as discovery: an add-on may not stop the app.
+            logger.exception("plugin UI setup failed; continuing without plugin windows")
+        else:
+            plugin_windows_by_key = plugin_ui.windows_by_key
+            plugin_command_handles = plugin_ui.command_handles
+            plugin_tray = plugin_ui.tray
+            extra_pages = plugin_ui.extra_pages
+
     settings_window = UnifiedSettingsWindow(
         settings,
         on_save=save,
@@ -261,12 +303,17 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         backend_player=backend.player,
         zones=backend.zones,
         socials_sync=backend.socials_sync,
+        extra_pages=extra_pages,
     )
     layout_windows = {
         **window_handles,
         "settings": settings_window,
         "overlay": event_overlay,
+        **plugin_windows_by_key,
     }
+    # Chat commands reach plugin windows too; merged after layout_windows so
+    # each plugin window joins layouts under its one canonical key.
+    window_handles.update(plugin_command_handles)
     window_layouts = WindowLayoutManager(
         settings,
         {key: window for key, window in layout_windows.items() if window is not None},
@@ -307,11 +354,19 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Console": console_window,
             "Trigger Editor": trigger_editor,
             "Macro Editor": macro_editor,
+            **plugin_tray,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
         window_layouts=window_layouts,
+        # Not plugins_enabled(settings): if discovery failed we dropped the
+        # host, and an "Open Plugins Folder" entry would then be misleading.
+        plugins_enabled=plugin_host is not None,
     )
     app.aboutToQuit.connect(backend.stop)
+    if plugin_host is not None:
+        # After backend.stop: the driver thread has joined, so deactivate
+        # runs with no concurrent ticks.
+        app.aboutToQuit.connect(plugin_host.shutdown)
     app.aboutToQuit.connect(saver.flush)
 
     # Persist the settled settings immediately: on a fresh install nothing
@@ -333,6 +388,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         window_layouts=window_layouts,
         settings=settings,
         save=save,
+        plugin_host=plugin_host,
     )
 
 

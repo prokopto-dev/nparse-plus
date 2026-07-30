@@ -16,8 +16,9 @@ window handles, backend player, zone database) so tests drive it with fakes.
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,8 @@ from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
+logger = logging.getLogger(__name__)
+
 WINDOW_KEY = "settings"
 DEFAULT_GEOMETRY = (240, 160, 640, 560)
 
@@ -83,6 +86,26 @@ NEW_WINDOW_ROWS = [
 
 # Class combo entries: every playable class (no OTHER), EQTool SettingsGeneral.
 PLAYER_CLASSES = [cls for cls in PlayerClass if cls is not PlayerClass.OTHER]
+
+
+class SettingsPageSpec:
+    """An externally contributed settings page (plugin manager, plugin pages).
+
+    Duck-type-compatible with the SDK's ``PluginSettingsPageSpec``: ``title``,
+    ``builder(parent) -> QWidget``, optional ``apply(widget)``. Builder and
+    apply failures are isolated per page — a broken contribution never takes
+    down the settings window or the built-in Apply flow.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        builder: Callable[[QWidget], QWidget],
+        apply: Callable[[QWidget], None] | None = None,
+    ) -> None:
+        self.title = title
+        self.builder = builder
+        self.apply = apply
 
 
 class _DirPicker(QWidget):
@@ -163,6 +186,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         backend_player: ActivePlayer | None = None,
         zones: ZoneDatabase | None = None,
         socials_sync: SocialSyncWatcher | None = None,
+        extra_pages: Sequence[Any] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -208,6 +232,19 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         ):
             self._sidebar.addItem(name.replace("&&", "&"))
             self._stack.addWidget(builder())
+
+        # Externally contributed pages (the Plugins manager, plugin settings
+        # pages). Each page is built and applied under its own guard.
+        self._extra_pages: list[tuple[Any, QWidget]] = []
+        for spec in extra_pages or ():
+            try:
+                page = spec.builder(self)
+            except Exception:
+                logger.exception("settings page %r failed to build", spec.title)
+                page = QLabel("This page failed to build — see nparseplus.log.", self)
+            self._sidebar.addItem(spec.title)
+            self._stack.addWidget(page)
+            self._extra_pages.append((spec, page))
         self._sidebar.setCurrentRow(0)
 
         apply_button = QPushButton("Apply && Save", self)
@@ -1175,6 +1212,24 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         form.addRow(macros_box)
         self._refresh_socials_sync_status()
 
+        plugins_form = QFormLayout()
+        self._plugins_enabled_box = QCheckBox(self)
+        self._plugins_enabled_box.setChecked(self._settings.plugins.enabled)
+        plugins_form.addRow("Enable plugins (add-ons)", self._plugins_enabled_box)
+        plugins_note = QLabel(
+            "Add-ons are third-party code that runs with the same access to your "
+            "computer as nParse+ itself. Off by default — nParse+ needs none of "
+            "them. Turn this on and a Plugins page appears in this window, where "
+            "you install add-ons and approve each one before it ever runs.",
+            self,
+        )
+        plugins_note.setWordWrap(True)
+        plugins_note.setStyleSheet("color: #888888; font-size: 11px;")
+        plugins_form.addRow(plugins_note)
+        plugins_box = QGroupBox("Add-ons (plugins)", self)
+        plugins_box.setLayout(plugins_form)
+        form.addRow(plugins_box)
+
         visionfix_form = QFormLayout()
         self._visionfix_status = QLabel("", self)
         self._visionfix_status.setWordWrap(True)
@@ -1192,6 +1247,42 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         form.addRow(visionfix_box)
         self._refresh_visionfix_status()
         return self._page(form)
+
+    def _notify_plugins_restart(self, *, enabled: bool) -> None:
+        """Tell the user the add-on switch takes effect next launch.
+
+        Plugins cannot be turned on live: activation registers bus
+        subscriptions, pipeline parsers and driver ticks, all of which must
+        happen before the driver thread starts, and plugin windows must exist
+        when the tray menu and window layouts are built. Hot enable/disable is
+        tracked separately — see TODO(#45).
+        """
+        if enabled:
+            box = QMessageBox(
+                QMessageBox.Icon.Information,
+                "Add-ons enabled",
+                "Restart nParse+ to load plugins. A Plugins page will then appear "
+                "in this window, and any add-on you install has to be approved "
+                "before it runs.",
+                parent=self,
+            )
+            open_folder = box.addButton("Open plugins folder", QMessageBox.ButtonRole.ActionRole)
+            box.addButton(QMessageBox.StandardButton.Ok)
+            box.exec()
+            if box.clickedButton() is open_folder:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+
+                from nparseplus.config.paths import ensure_plugins_dir
+
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(ensure_plugins_dir())))
+            return
+        QMessageBox.information(
+            self,
+            "Add-ons disabled",
+            "Plugins will stop loading the next time nParse+ starts. Add-ons "
+            "already running this session keep going until you quit.",
+        )
 
     # -- Night Vision fix (moved from PreferencesWindow) --------------------------------------
 
@@ -1332,12 +1423,24 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.buff_fade_warning_audio = self._buff_fade_audio.isChecked()
         spellwindow.post_expiry_flash_enabled = self._post_expiry_flash.isChecked()
         spellwindow.post_expiry_flash_seconds = self._post_expiry_secs.value()
+        plugins = self._settings.plugins
+        plugins_was_enabled = plugins.enabled
+        plugins.enabled = self._plugins_enabled_box.isChecked()
         self._apply_character()
         self._apply_maps()
         self._apply_windows()
+        for spec, page in self._extra_pages:
+            if spec.apply is None:
+                continue
+            try:
+                spec.apply(page)
+            except Exception:
+                logger.exception("settings page %r failed to apply", spec.title)
 
         if self._on_save is not None:
             self._on_save()
+        if plugins.enabled != plugins_was_enabled:
+            self._notify_plugins_restart(enabled=plugins.enabled)
         if self._on_legacy_save is not None:
             self._on_legacy_save()
         if self._notify_legacy is not None:

@@ -10,6 +10,13 @@ which replaces shader/texture files only when you click Apply (with
 backups and a Revert button). Whether any third-party tool is permitted
 is always the server's call — check your server's current rules.
 
+That describes **nParse+ itself**. If you enable the optional
+[add-on system](plugins/index.md) and install someone else's plugin, that
+plugin is ordinary Python running with the same access to your computer as
+nParse+ — none of the guarantees above extend to it. Add-ons are off by
+default precisely so this promise holds for everyone who never turns them
+on.
+
 ## Which servers does it work with?
 
 It's built for **Project 1999** (Green, Blue, Red) — the zone, respawn,
@@ -82,6 +89,29 @@ Yes — see [Macros & socials](features/macros.md). The
 macros, copies a set onto your other characters, and exports a pack you
 can hand to someone else. Edit while the character is logged out: the
 client rewrites those files when you camp.
+
+## Are plugins safe to install?
+
+Treat them like any other program you download. A plugin is Python that
+runs inside nParse+ with your user account's full permissions — it can read
+and write your files and reach the network, and nParse+ cannot sandbox or
+audit it. What nParse+ does give you: add-ons are **off entirely** until you
+turn them on; every one has to be approved by you the first time it loads,
+before it runs; installs from the curated
+[registry](plugins/registry.md) are pinned to a reviewed sha256 and refused
+if the bytes don't match; and the manager shows where each installed add-on
+came from. Note that installing already runs the plugin's module code (that
+is how nParse+ checks it loads), so the decision point is the download, not
+the first launch. The honest version of all this is in
+[Plugin security & trust](plugins/security.md).
+
+## Can I write my own add-on?
+
+Yes. `nparseplus-sdk` is a documented, semantically-versioned contract:
+subscribe to parsed events, add your own log parsers, own spell-timer rows,
+speak through the TTS engine, and add your own overlay windows and settings
+pages. Start at [Developing plugins](plugins/developing.md); the
+[API reference](plugins/api.md) lists everything the SDK exports.
 
 ## Something's broken — where do I look?
 
