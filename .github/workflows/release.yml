@@ -81,6 +81,17 @@ jobs:
           lipo -archs "$BIN"
           lipo -archs "$BIN" | tr ' ' '\n' | grep -qx "${{ matrix.arch }}" \
             || { echo "::error::built binary is not ${{ matrix.arch }}"; exit 1; }
+      - name: Verify bundle version
+        # The spec reads __version__ out of the source tree; check_version
+        # already proved that equals the tag. This catches the plist silently
+        # going stale again (it shipped "0.0.0-dev" through v1.16.1, which
+        # makes Finder/Spotlight useless for telling builds apart).
+        run: |
+          PLIST="dist/nParse+.app/Contents/Info.plist"
+          GOT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          echo "CFBundleShortVersionString=$GOT"
+          [ "$GOT" = "${RELEASE_TAG#v}" ] \
+            || { echo "::error::Info.plist version $GOT != ${RELEASE_TAG#v}"; exit 1; }
       - name: Ad-hoc codesign
         run: codesign --force --deep -s - "dist/nParse+.app"
       - name: Build DMG
@@ -107,6 +118,18 @@ jobs:
         run: uv sync --frozen --group build
       - name: Build
         run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+      - name: Verify exe version
+        # Same guard as the macOS Info.plist check: the VERSIONINFO resource
+        # must carry the tag, not silently go missing again.
+        shell: pwsh
+        run: |
+          $want = $env:RELEASE_TAG -replace '^v', ''
+          $got = (Get-Item dist/nparseplus/nparseplus.exe).VersionInfo.ProductVersion
+          Write-Host "ProductVersion=$got"
+          if ($got -ne $want) {
+            Write-Host "::error::exe ProductVersion $got != $want"
+            exit 1
+          }
       - name: Zip
         shell: pwsh
         run: |

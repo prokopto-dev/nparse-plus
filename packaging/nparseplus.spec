@@ -12,10 +12,22 @@
 # QtWebEngine stays bundled (Discord overlay works out of the box) — that is
 # most of the bundle size; unused heavyweight Qt modules are excluded.
 
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH).parent  # noqa: F821 - SPECPATH is a PyInstaller global
+
+# Read the version straight out of the source of truth rather than letting CI
+# patch Info.plist after the fact: every build (local or CI) then reports the
+# same version Finder/Spotlight show as the app shows in its settings window.
+# nparseplus isn't importable here (the spec runs under PyInstaller's own
+# interpreter, before the Analysis), so parse the assignment.
+_init = (ROOT / "src" / "nparseplus" / "__init__.py").read_text(encoding="utf-8")
+_match = re.search(r'^__version__ = "([^"]+)"$', _init, re.MULTILINE)
+if not _match:
+    raise SystemExit("cannot find __version__ in src/nparseplus/__init__.py")
+VERSION = _match.group(1)
 
 datas = [
     (str(ROOT / "data"), "data"),
@@ -72,6 +84,48 @@ if sys.platform == "win32":
     )
     splash_args = [splash, splash.binaries]
 
+# Windows-only VERSIONINFO resource, so Explorer's Details tab and
+# `(Get-Item nparseplus.exe).VersionInfo` report the real version instead of
+# nothing. Built as a structure rather than a .txt template so there is still
+# exactly one source of truth (VERSION, above). The module imports pefile,
+# which PyInstaller only pulls in on Windows — hence the guarded import.
+version_args = {}
+if sys.platform == "win32":
+    from PyInstaller.utils.win32.versioninfo import (
+        FixedFileInfo,
+        StringFileInfo,
+        StringStruct,
+        StringTable,
+        VarFileInfo,
+        VarStruct,
+        VSVersionInfo,
+    )
+
+    # VERSIONINFO wants a 4-part numeric tuple; semver gives us three parts.
+    _parts = tuple(int(p) for p in VERSION.split(".")[:3]) + (0,)
+    version_args["version"] = VSVersionInfo(
+        ffi=FixedFileInfo(filevers=_parts, prodvers=_parts),
+        kids=[
+            StringFileInfo(
+                [
+                    StringTable(
+                        "040904B0",  # US English, Unicode
+                        [
+                            StringStruct("CompanyName", "prokopto-dev"),
+                            StringStruct("FileDescription", "nParse+"),
+                            StringStruct("FileVersion", VERSION),
+                            StringStruct("InternalName", "nparseplus"),
+                            StringStruct("OriginalFilename", "nparseplus.exe"),
+                            StringStruct("ProductName", "nParse+"),
+                            StringStruct("ProductVersion", VERSION),
+                        ],
+                    )
+                ]
+            ),
+            VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
+        ],
+    )
+
 exe = EXE(  # noqa: F821
     pyz,
     a.scripts,
@@ -85,6 +139,7 @@ exe = EXE(  # noqa: F821
     icon=str(ROOT / "packaging" / "icon.icns")
     if sys.platform == "darwin"
     else str(ROOT / "data" / "ui" / "icon.ico"),
+    **version_args,
 )
 
 coll = COLLECT(  # noqa: F821
@@ -106,7 +161,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "nParse+",
             "CFBundleDisplayName": "nParse+",
-            "CFBundleShortVersionString": "0.0.0-dev",  # overwritten by CI
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
             # Tray app: no Dock icon would be LSUIElement, but the overlay
