@@ -181,6 +181,13 @@ class SpellWindowSettings(BaseModel):
     show_mob_timers: bool = True
     show_roll_timers: bool = True
     show_custom_timers: bool = True
+    # nparseplus extension: progress bars drift from their type color toward
+    # red as the timer drains, so an about-to-drop buff reads as urgent
+    # without reading the digits. NOT an EQTool port — EQTool's
+    # ProgressBarColor is a static brush per row type — a deliberate
+    # divergence. Boat rows and both kinds of roll row are excluded: their
+    # remaining/total ratio is not a progress value (see ui/spellwindow._fades).
+    bar_fade_to_red: bool = True
     # nparseplus extension (EQTool's best-guess is always on): when False,
     # ambiguous cast lines (multiple candidate spells) create no timer.
     best_guess_spells: bool = True

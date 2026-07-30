@@ -23,8 +23,15 @@ from nparseplus.core.timers import (
 )
 from nparseplus.ui.overlaybase import format_mmss
 from nparseplus.ui.spellwindow import (
+    COLOR_BENEFICIAL,
+    COLOR_DETRIMENTAL,
+    COLOR_ROLL,
+    COLOR_TIMER,
+    FADE_STEPS,
     SpellTimerWindow,
     bar_color,
+    fade_color,
+    row_bar_color,
     row_sort_key,
 )
 
@@ -855,3 +862,117 @@ def test_buff_fade_warning_turns_time_label_red(qtbot):
     # Recast clears the warning again.
     window.refresh(now=NOW)
     assert clarity._value.styleSheet() == ""
+
+
+# -- bar fade to red (bar_fade_to_red) ----------------------------------------
+
+
+def _bar_color_of(window, row_name: str) -> str:
+    return next(w for w in window._row_widgets.values() if w.row_name == row_name)._color
+
+
+def test_fade_color_endpoints():
+    """A full bar is untouched; an empty one is the target red."""
+    assert fade_color(COLOR_BENEFICIAL, 1.0) == COLOR_BENEFICIAL
+    assert fade_color(COLOR_BENEFICIAL, 1.5) == COLOR_BENEFICIAL
+    assert fade_color(COLOR_BENEFICIAL, 0.0) == COLOR_DETRIMENTAL
+    assert fade_color(COLOR_BENEFICIAL, -0.5) == COLOR_DETRIMENTAL
+
+
+def test_fade_color_is_monotonic_and_distinct():
+    ramp = [fade_color(COLOR_BENEFICIAL, f / 10) for f in range(10, -1, -1)]
+    assert ramp[0] == COLOR_BENEFICIAL and ramp[-1] == COLOR_DETRIMENTAL
+    # The red channel climbs the whole way down — the bar visibly reddens.
+    reds = [int(color[1:3], 16) for color in ramp]
+    assert reds == sorted(reds)
+    assert len(set(ramp)) >= 8
+
+
+def test_fade_color_is_quantized():
+    """Fractions inside one bucket must yield the SAME string — update_row only
+    restyles when the color changes, and a continuous fade would defeat that."""
+    step = 1.0 / FADE_STEPS
+    assert fade_color(COLOR_BENEFICIAL, 0.5) == fade_color(COLOR_BENEFICIAL, 0.5 + step / 4)
+    assert fade_color(COLOR_BENEFICIAL, 0.5) != fade_color(COLOR_BENEFICIAL, 0.5 - step)
+
+
+def test_row_bar_color_excludes_boats_and_both_kinds_of_roll():
+    spell = Spell(id=1, name="Clarity")
+    beneficial = SpellRow(
+        name="Clarity",
+        group=YOU_GROUP,
+        updated_at=NOW,
+        spell=spell,
+        ends_at=NOW,
+        total_duration_s=100.0,
+    )
+    boat = TimerRow(
+        name="Barrel Barge", group=BOATS_GROUP, updated_at=NOW, ends_at=NOW, total_duration_s=100.0
+    )
+    api_roll = TimerRow(
+        name="Ring 8", group=ROLL_TIMER_GROUP, updated_at=NOW, ends_at=NOW, total_duration_s=100.0
+    )
+    random_roll = RollRow(
+        name="Joe",
+        group=" Random -- 333",
+        updated_at=NOW,
+        roll=100,
+        max_roll=333,
+        ends_at=NOW,
+        total_duration_s=180.0,
+    )
+    for fraction in (1.0, 0.5, 0.0):
+        assert row_bar_color(boat, fraction, True) == COLOR_TIMER
+        assert row_bar_color(api_roll, fraction, True) == COLOR_TIMER
+        assert row_bar_color(random_roll, fraction, True) == COLOR_ROLL
+    # ...while an ordinary spell row does fade.
+    assert row_bar_color(beneficial, 0.2, True) != COLOR_BENEFICIAL
+    # ...and nothing fades with the setting off.
+    assert row_bar_color(beneficial, 0.2, False) == COLOR_BENEFICIAL
+
+
+def test_bar_reddens_over_a_rows_life(qtbot):
+    backend = make_backend()  # Clarity: 35 minutes in the YOU group
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+
+    window.refresh(now=NOW)
+    assert _bar_color_of(window, "Clarity") == COLOR_BENEFICIAL
+
+    window.refresh(now=NOW + timedelta(minutes=17, seconds=30))
+    midway = _bar_color_of(window, "Clarity")
+
+    window.refresh(now=NOW + timedelta(minutes=35))
+    assert _bar_color_of(window, "Clarity") == COLOR_DETRIMENTAL
+
+    reds = [int(c[1:3], 16) for c in (COLOR_BENEFICIAL, midway, COLOR_DETRIMENTAL)]
+    assert reds == sorted(reds) and len(set(reds)) == 3
+
+    # A recast returns the row to its full-duration color.
+    window.refresh(now=NOW)
+    assert _bar_color_of(window, "Clarity") == COLOR_BENEFICIAL
+
+
+def test_bar_fade_can_be_turned_off(qtbot):
+    backend = make_backend()
+    backend.settings.spellwindow.bar_fade_to_red = False
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+
+    for minutes in (0, 17, 34):
+        window.refresh(now=NOW + timedelta(minutes=minutes))
+        assert _bar_color_of(window, "Clarity") == COLOR_BENEFICIAL
+
+
+def test_fade_does_not_restyle_every_tick(qtbot):
+    """The quantization guard: a long row must not churn its stylesheet at the
+    250 ms refresh rate (setStyleSheet forces a full Qt style re-parse)."""
+    backend = make_backend()
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+
+    seen = []
+    for tick in range(20):  # 5 seconds of ticks on a 35-minute buff
+        window.refresh(now=NOW + timedelta(milliseconds=250 * tick))
+        seen.append(_bar_color_of(window, "Clarity"))
+    assert len(set(seen)) == 1

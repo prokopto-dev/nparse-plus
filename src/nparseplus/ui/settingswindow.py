@@ -715,6 +715,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._show_rolls = QCheckBox(self)
         self._show_rolls.setChecked(spellwindow.show_random_rolls)
         form.addRow("Show random rolls", self._show_rolls)
+        self._bar_fade = QCheckBox(self)
+        self._bar_fade.setChecked(spellwindow.bar_fade_to_red)
+        self._bar_fade.setToolTip(
+            "Progress bars shift from their normal color toward red as the "
+            "timer runs down. Boat and roll timers keep their color."
+        )
+        form.addRow("Fade timer bars to red", self._bar_fade)
         # Category display toggles (hide the section; timers keep running
         # and respawn-expiry audio still fires while hidden).
         self._show_boats = QCheckBox(self)
@@ -1313,6 +1320,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         spellwindow.row_sort = self._row_sort_combo.currentData()
         spellwindow.you_only_spells = self._you_only.isChecked()
         spellwindow.show_random_rolls = self._show_rolls.isChecked()
+        spellwindow.bar_fade_to_red = self._bar_fade.isChecked()
         spellwindow.show_boats = self._show_boats.isChecked()
         spellwindow.show_mob_timers = self._show_mob_timers.isChecked()
         spellwindow.show_roll_timers = self._show_roll_timers.isChecked()

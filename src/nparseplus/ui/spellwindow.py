@@ -9,6 +9,7 @@ rows grouped by target, YOU_GROUP first.
 
 from __future__ import annotations
 
+import colorsys
 from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
@@ -41,6 +42,7 @@ from nparseplus.core.timers import (
     RollRow,
     Row,
     SpellRow,
+    fraction_remaining,
     group_rows_for_display,
 )
 from nparseplus.ui import appquit, theme
@@ -60,6 +62,18 @@ COLOR_TIMER = "#8e5bd1"  # purple
 COLOR_ROLL = "#d99b2b"  # amber
 
 BAR_MAX = 1000
+
+# Bar color fade (``bar_fade_to_red``). NOT an EQTool port — its
+# BaseTriggerViewModel.ProgressBarColor is a static brush picked once from the
+# row type, and SpellWindow.xaml binds it with no converter. We diverge on
+# purpose: a bar that drifts toward red reads as urgent without reading digits.
+FADE_TARGET = COLOR_DETRIMENTAL
+# The fade is quantized to this many steps. update_row only calls
+# setStyleSheet when the color string actually changes; a continuous fade
+# would defeat that guard and force a full Qt style re-parse per row at the
+# 250 ms refresh. 12 buckets means a row restyles at most 12 times over its
+# whole life, whatever its length.
+FADE_STEPS = 12
 
 
 class TimersLike(Protocol):
@@ -96,6 +110,7 @@ def row_sort_key(row: Row, now: datetime, mode: str) -> tuple:
 
 
 def bar_color(row: Row) -> str:
+    """The row's base color at full duration (its type coding)."""
     if isinstance(row, SpellRow):
         if row.is_cooldown:
             return COLOR_COOLDOWN
@@ -105,6 +120,65 @@ def bar_color(row: Row) -> str:
     return COLOR_TIMER
 
 
+def _rgb(color: str) -> tuple[float, float, float]:
+    value = color.lstrip("#")
+    return tuple(int(value[i : i + 2], 16) / 255 for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def fade_color(base: str, fraction: float) -> str:
+    """Blend ``base`` toward :data:`FADE_TARGET` as ``fraction`` drains to 0.
+
+    Interpolation is in HSV along the SHORTER hue arc, not straight RGB: an
+    RGB blend from the beneficial green to red passes through a muddy khaki
+    (#776b4c at the midpoint), while the hue arc gives the expected
+    green -> yellow -> amber -> orange -> red ramp and keeps the blue and
+    purple bases saturated on their way round.
+
+    ``fraction >= 1`` returns ``base`` untouched, so a freshly-added row looks
+    exactly as it did before the fade existed.
+    """
+    if fraction >= 1.0:
+        return base
+    # Quantize first — see FADE_STEPS.
+    t = min(max(1.0 - fraction, 0.0), 1.0)
+    t = round(t * FADE_STEPS) / FADE_STEPS
+    if t <= 0.0:
+        return base
+    h0, s0, v0 = colorsys.rgb_to_hsv(*_rgb(base))
+    h1, s1, v1 = colorsys.rgb_to_hsv(*_rgb(FADE_TARGET))
+    delta = h1 - h0
+    if delta > 0.5:
+        delta -= 1.0
+    elif delta < -0.5:
+        delta += 1.0
+    hue = (h0 + delta * t) % 1.0
+    red, green, blue = colorsys.hsv_to_rgb(hue, s0 + (s1 - s0) * t, v0 + (v1 - v0) * t)
+    return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
+
+
+def _fades(row: Row) -> bool:
+    """Whether ``row``'s bar is eligible for the fade.
+
+    Boat legs and both kinds of roll row are excluded — not just by taste but
+    because their ``remaining / total_duration_s`` is not a progress value.
+    Boats set ``total_duration_s`` to the whole trip but ``ends_at`` to the
+    next dock; the API roll windows (Ring 8, Scout Charisa) carry the nominal
+    10 h / 24 h cycle as their duration; and ``/random`` rolls all share one
+    window that every new roll resets. Each would open part-way toward red.
+    """
+    if row.group in (BOATS_GROUP, ROLL_TIMER_GROUP):
+        return False
+    return not isinstance(row, RollRow)
+
+
+def row_bar_color(row: Row, fraction: float, fade: bool) -> str:
+    """The chunk color to paint: the base color, faded toward red if enabled."""
+    base = bar_color(row)
+    if not fade or not _fades(row):
+        return base
+    return fade_color(base, fraction)
+
+
 class _RowWidget(QFrame):
     """One timer row: name + remaining time above a thin progress bar."""
 
@@ -112,6 +186,7 @@ class _RowWidget(QFrame):
         self,
         parent: QWidget | None = None,
         warning_threshold: Callable[[], int] = lambda: 0,
+        fade_enabled: Callable[[], bool] = lambda: False,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("SpellTimerRow")
@@ -121,6 +196,7 @@ class _RowWidget(QFrame):
         self.row: Row | None = None
         self._color = ""
         self._warning_threshold = warning_threshold
+        self._fade_enabled = fade_enabled
         self._warning = False
         #: True while this row is a post-expiry rebuff prompt (#16) — it drives
         #: the flash and makes a left-click dismiss the row.
@@ -195,10 +271,10 @@ class _RowWidget(QFrame):
         else:
             self._value.setText(format_mmss(remaining))
         self._update_warning(row, remaining)
-        total = max(row.total_duration_s, 0.001)
-        self._bar.setValue(int(min(remaining / total, 1.0) * BAR_MAX))
+        fraction = fraction_remaining(row, now)
+        self._bar.setValue(int(fraction * BAR_MAX))
         self._bar.setVisible(True)
-        color = bar_color(row)
+        color = row_bar_color(row, fraction, self._fade_enabled())
         if color != self._color:
             self._color = color
             self._bar.setStyleSheet(
@@ -424,6 +500,9 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
     def _buff_fade_warning_seconds(self) -> int:
         return self._backend.settings.spellwindow.buff_fade_warning_seconds
 
+    def _bar_fade_enabled(self) -> bool:
+        return self._backend.settings.spellwindow.bar_fade_to_red
+
     def refresh(self, now: datetime | None = None) -> None:
         """Re-render from ``timers.snapshot()`` (rows are never mutated).
 
@@ -491,6 +570,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                     widget = _RowWidget(
                         self._container,
                         warning_threshold=self._buff_fade_warning_seconds,
+                        fade_enabled=self._bar_fade_enabled,
                     )
                     self._row_widgets[key] = widget
                 # In a spell section the row shows its target, not the spell.
