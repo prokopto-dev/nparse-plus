@@ -9,10 +9,12 @@ from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.events import DamageEvent, LineEvent, OverlayEvent, TimerBarEvent
 from nparseplus.core.handlers.consider import MobInfoState
+from nparseplus.core.timers import seconds_left
 from nparseplus.ui.consolewindow import ConsoleWindow
 from nparseplus.ui.dpswindow import DpsMeterWindow
 from nparseplus.ui.eventoverlay import EventOverlayWindow, _ChainLane
 from nparseplus.ui.mobinfo import MobInfoWindow
+from nparseplus.ui.overlaybase import format_mmss, ms_to_next_tick, tick_phase_error_ms
 
 pytestmark = pytest.mark.qt
 
@@ -90,6 +92,56 @@ def test_event_overlay_timer_bars(qtbot) -> None:
     overlay.handle_event(TimerBarEvent(name="Stun Breath", total_seconds=12))
     assert overlay.current_bar_names().count("Stun Breath") == 1
     assert overlay.is_active()
+
+
+def test_timer_bar_matches_spell_window_for_the_same_countdown(qtbot) -> None:
+    """The two countdown surfaces must never disagree: an overlay bar and a
+    spell-window row for the same timer show the same number at the same
+    instant (the bar used to ceil while the window truncated)."""
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(TimerBarEvent(name="Stun Breath", total_seconds=12))
+    entry = overlay._bars["Stun Breath"]
+
+    for offset in (0.0, 3.4, 7.9, 11.2):
+        now = entry.ends_at - timedelta(seconds=12 - offset)
+        overlay._render_bar(entry, now)
+        bar_seconds = entry.widget.format().rsplit("  ", 1)[1].removesuffix("s")
+        assert format_mmss(seconds_left(entry.ends_at, now)) == f"00:{int(bar_seconds):02d}"
+
+
+def test_timer_bar_anchor_is_on_the_second_grid(qtbot) -> None:
+    """Bars are not TimersService rows, so nothing else would snap them."""
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.handle_event(TimerBarEvent(name="Stun Breath", total_seconds=12))
+    assert overlay._bars["Stun Breath"].ends_at.microsecond == 0
+
+
+@pytest.mark.parametrize(
+    ("micros", "expected"),
+    [
+        (0, 20),  # just after the second: wait out the grid offset
+        (20_000, 250),  # exactly on a tick point: a whole slot to the next
+        (100_000, 170),  # -> fires at .270 = the .250 slot + offset
+        (999_000, 21),
+    ],
+)
+def test_ms_to_next_tick(micros: int, expected: int) -> None:
+    assert ms_to_next_tick(T0.replace(microsecond=micros), 250) == expected
+
+
+@pytest.mark.parametrize(
+    ("micros", "expected"),
+    [
+        (20_000, 0),  # on the tick point
+        (25_000, 5),  # 5 ms late
+        (15_000, -5),  # 5 ms early reads negative, not "245 late"
+        (270_000, 0),  # the next slot is equally on-grid
+    ],
+)
+def test_tick_phase_error_is_signed(micros: int, expected: int) -> None:
+    assert tick_phase_error_ms(T0.replace(microsecond=micros), 250) == expected
 
 
 def test_mob_info_renders_state(qtbot) -> None:

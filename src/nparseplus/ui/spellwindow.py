@@ -44,7 +44,7 @@ from nparseplus.core.timers import (
     group_rows_for_display,
 )
 from nparseplus.ui import appquit, theme
-from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss
+from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -353,7 +353,10 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._on_refresh_tick)
-        self._refresh_timer.start(REFRESH_INTERVAL_MS)
+        # Phased to the wall-clock second so every countdown digit changes ON
+        # the second, in step with the event overlay's bars (250 divides 1000,
+        # so the alignment holds once set).
+        start_second_aligned(self._refresh_timer, REFRESH_INTERVAL_MS)
 
         # Post-expiry rebuff prompts flash (#16); cheap and always running.
         self._flash_on = False

@@ -19,11 +19,12 @@ recognized mid-fight just re-groups on the next tick.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import NamedTuple
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.spells.durations import get_duration_seconds
@@ -57,6 +58,39 @@ ROLL_TIMER_GROUP = "  Roll Timers"
 COUNTER_IDLE_EXPIRY = timedelta(minutes=10)
 
 
+def snap_to_second(when: datetime) -> datetime:
+    """Put a countdown anchor on the whole-second grid, truncating.
+
+    Rows built from a log line are already whole-second (the bracket timestamp
+    has no sub-second component — see ``core/lineinfo``) but the wall-clock
+    producers (trigger timers, PigParse roll/boat timers, restored self-buffs,
+    event-overlay bars) land at an arbitrary fraction of a second. Left alone,
+    each of those flips its displayed digit on its own phase, so the window
+    steps raggedly instead of once per second.
+
+    Truncating — not rounding to nearest — is what makes those producers behave
+    exactly like a log-anchored row: the log timestamp already drops its
+    fraction, so an N-second timer reads ``N`` on its first frame. Rounding up
+    (which nearest does for anchors past the half-second) would open on ``N+1``,
+    a second longer than the duration the user asked for. The cost is the same
+    sub-second-early expiry every log-anchored row already has.
+
+    NOT applied to CH lanes: those chips measure time since a specific caster's
+    cast, so a global grid would only smear them.
+    """
+    return when.replace(microsecond=0)
+
+
+def seconds_left(ends_at: datetime, now: datetime) -> int:
+    """Whole seconds remaining, rounded up and clamped at zero.
+
+    Ceiling (not truncation) is what makes a 30 s timer read ``30`` the instant
+    it starts and vanish after showing ``1``; the alternative reads one low for
+    its whole life and parks on ``0`` for the final second.
+    """
+    return max(0, math.ceil((ends_at - now).total_seconds()))
+
+
 class BaseRow(BaseModel):
     """Common fields of one row in the spell/trigger window."""
 
@@ -68,12 +102,29 @@ class BaseRow(BaseModel):
     is_target_player: bool = True
 
 
-class SpellRow(BaseRow):
+class CountdownRow(BaseRow):
+    """A row that counts down to ``ends_at``.
+
+    The validator is the single choke point that puts every countdown on the
+    same one-second grid, whatever produced it. ``validate_assignment`` is on,
+    so it also covers the in-place restarts that bypass the ``add_*`` methods
+    (``TriggerTimerSink.add_timer``, the shared-trigger restart in
+    ``core/sharing``, the group reset in ``add_roll``).
+    """
+
+    ends_at: datetime
+    total_duration_s: float
+
+    @field_validator("ends_at")
+    @classmethod
+    def _snap_ends_at(cls, value: datetime) -> datetime:
+        return snap_to_second(value)
+
+
+class SpellRow(CountdownRow):
     """An active buff/debuff timer (SpellViewModel)."""
 
     spell: Spell
-    ends_at: datetime
-    total_duration_s: float
     detrimental: bool = False
     is_cooldown: bool = False
     # Post-expiration alerts (#16): when > 0, the row is NOT removed the moment
@@ -84,11 +135,8 @@ class SpellRow(BaseRow):
     expired_at: datetime | None = None
 
 
-class TimerRow(BaseRow):
+class TimerRow(CountdownRow):
     """A generic countdown (TimerViewModel: cooldowns, custom timers)."""
-
-    ends_at: datetime
-    total_duration_s: float
 
 
 class CounterRow(BaseRow):
@@ -97,13 +145,11 @@ class CounterRow(BaseRow):
     count: int = 1
 
 
-class RollRow(BaseRow):
+class RollRow(CountdownRow):
     """A /random result (RollViewModel); rolls in a group share their window."""
 
     roll: int
     max_roll: int
-    ends_at: datetime
-    total_duration_s: float
 
 
 type Row = SpellRow | TimerRow | CounterRow | RollRow
@@ -349,7 +395,10 @@ class TimersService:
         out: list[YouSpellSnapshot] = []
         for row in self._rows:
             if isinstance(row, SpellRow) and row.group == YOU_GROUP and not row.is_cooldown:
-                seconds = int((row.ends_at - now).total_seconds())
+                # Same rounding as the display, so a save/restore cycle keeps
+                # the number the user was looking at instead of shedding a
+                # second every time they camp.
+                seconds = seconds_left(row.ends_at, now)
                 if seconds > 0:
                     out.append(YouSpellSnapshot(name=row.name, total_seconds_left=seconds))
         return out

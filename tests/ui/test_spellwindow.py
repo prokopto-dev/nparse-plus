@@ -653,6 +653,66 @@ def test_bar_colors_and_time_format():
     assert format_mmss(3723) == "1:02:03"
 
 
+# -- countdown rounding + the shared one-second grid ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (30.0, "00:30"),  # exact: a fresh 30s timer reads its nominal value
+        (29.001, "00:30"),  # ceiling, not truncation (EQTool divergence)
+        (64.1, "01:05"),
+        (0.2, "00:01"),  # any time left reads at least 1, never 0
+        (0.0, "00:00"),
+        (-5.0, "00:00"),
+        (3722.5, "1:02:03"),
+    ],
+)
+def test_format_mmss_ceils(seconds: float, expected: str) -> None:
+    assert format_mmss(seconds) == expected
+
+
+def _value_of(window, row_name: str) -> str:
+    return next(w for w in window._row_widgets.values() if w.row_name == row_name)._value.text()
+
+
+def test_fresh_row_shows_its_full_duration(qtbot):
+    """A 30 s timer must read 00:30 the moment it starts — the old truncating
+    format made it appear already one second in."""
+    backend = make_backend()  # holds a 30 s "Custom Timer" anchored at NOW
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh(now=NOW)
+    assert _value_of(window, "Custom Timer") == "00:30"
+
+
+def test_row_digit_holds_across_the_second(qtbot):
+    """Renders sampled through one wall-clock second must all agree: a row
+    steps on the boundary, not at some per-row sub-second phase.
+
+    The wall-clock-anchored row is the one that used to drift — trigger
+    timers, PigParse rolls, and restored buffs all arrive mid-second.
+    """
+    backend = make_backend()
+    backend.timers.add_timer(
+        TimerRow(
+            name="Wall Clock",
+            group=TRIGGER_TIMER_GROUP,
+            updated_at=NOW,
+            ends_at=NOW.replace(microsecond=613_000) + timedelta(seconds=300),
+            total_duration_s=300.0,
+        )
+    )
+    window = SpellTimerWindow(backend)
+    qtbot.addWidget(window)
+    seen: dict[str, set[str]] = {"Custom Timer": set(), "Wall Clock": set()}
+    for micros in range(0, 1_000_000, 100_000):
+        window.refresh(now=NOW.replace(microsecond=micros) + timedelta(seconds=10))
+        for name, values in seen.items():
+            values.add(_value_of(window, name))
+    assert [len(v) for v in seen.values()] == [1, 1]
+
+
 # -- window sizing (user-controlled, scroll on overflow) -----------------------
 
 

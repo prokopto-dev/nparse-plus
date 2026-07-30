@@ -18,6 +18,8 @@ from nparseplus.core.timers import (
     TimersService,
     YouSpellSnapshot,
     group_rows_for_display,
+    seconds_left,
+    snap_to_second,
 )
 
 
@@ -393,3 +395,119 @@ def test_display_midfight_target_recognition_has_no_stuck_header(spell_book: Spe
     assert [r.group for r in after[0].rows] == ["Bob", "Joe", "Xanth"]
     # No leftover target-headed group — nothing is stuck.
     assert all(g.orientation == "spell" for g in after)
+
+
+# -- one-second display grid ---------------------------------------------------
+
+
+@pytest.mark.parametrize("micros", [0, 1, 499_999, 500_000, 999_999])
+def test_snap_to_second_truncates(micros: int) -> None:
+    """Truncation, not round-to-nearest: matches what the log timestamp
+    already does, so a wall-clock anchor can never push the end time past the
+    second the caller asked for."""
+    snapped = snap_to_second(T0.replace(microsecond=micros))
+    assert snapped.microsecond == 0
+    assert snapped.second == T0.second
+
+
+def test_snapped_timer_opens_on_its_nominal_duration() -> None:
+    """Regression (caught live): rounding to nearest made a 45 s timer render
+    00:46 on its first frame whenever the anchor sat past the half-second."""
+    for micros in (0, 300_000, 500_000, 900_000):
+        started = T0.replace(microsecond=micros)
+        row = TimerRow(
+            name="Custom",
+            group=TRIGGER_TIMER_GROUP,
+            updated_at=started,
+            ends_at=started + timedelta(seconds=45),
+            total_duration_s=45.0,
+        )
+        assert seconds_left(row.ends_at, started) == 45
+
+
+@pytest.mark.parametrize(
+    ("remaining", "expected"),
+    [
+        (30.0, 30),  # exact boundary keeps the whole value
+        (29.999, 30),  # ceiling: a hair under 30 still reads 30
+        (0.001, 1),  # any time left at all reads at least 1
+        (0.0, 0),
+        (-5.0, 0),  # clamped, never negative
+    ],
+)
+def test_seconds_left_ceils_and_clamps(remaining: float, expected: int) -> None:
+    assert seconds_left(T0 + timedelta(seconds=remaining), T0) == expected
+
+
+def test_ends_at_is_snapped_on_construction(spell_book: SpellBook) -> None:
+    """A wall-clock producer (trigger timers, PigParse rolls, restored buffs)
+    hands us a fractional anchor; the row puts it back on the grid."""
+    row = _spell_row(spell_book)
+    row_off_grid = SpellRow(
+        name="Clarity",
+        group=YOU_GROUP,
+        updated_at=T0,
+        spell=row.spell,
+        ends_at=T0 + timedelta(seconds=100, microseconds=372_000),
+        total_duration_s=100.0,
+    )
+    assert row_off_grid.ends_at == T0 + timedelta(seconds=100)
+
+
+def test_ends_at_is_snapped_on_assignment(spell_book: SpellBook) -> None:
+    """validate_assignment covers the in-place restarts that bypass add_*:
+    TriggerTimerSink.add_timer, the shared-trigger restart, add_roll's group
+    reset."""
+    row = _spell_row(spell_book)
+    row.ends_at = T0 + timedelta(seconds=42, microseconds=800_000)
+    assert row.ends_at == T0 + timedelta(seconds=42)
+
+
+def test_rows_from_different_clocks_step_on_the_same_boundary(spell_book: SpellBook) -> None:
+    """The whole point: a log-anchored row and a wall-clock-anchored one
+    started mid-second must change their digit at the same instant.
+
+    They need not show the *same* number (a timer started 0.6 s later really
+    does end a second later) — what matters is that neither flips mid-second,
+    so the window steps once, together, on the second.
+    """
+    log_anchored = _spell_row(spell_book, seconds=60)
+    wall_clock = TimerRow(
+        name="Custom",
+        group=TRIGGER_TIMER_GROUP,
+        updated_at=T0,
+        ends_at=T0.replace(microsecond=613_000) + timedelta(seconds=60),
+        total_duration_s=60.0,
+    )
+    for row in (log_anchored, wall_clock):
+        base = T0 + timedelta(seconds=30)
+        # Every sub-second sample inside one wall-clock second reads alike...
+        within = {
+            seconds_left(row.ends_at, base + timedelta(microseconds=u))
+            for u in range(0, 1_000_000, 50_000)
+        }
+        assert len(within) == 1
+        # ...and the next second is exactly one lower.
+        assert seconds_left(row.ends_at, base + timedelta(seconds=1)) == within.pop() - 1
+
+
+def test_unsnapped_anchor_would_flip_mid_second(spell_book: SpellBook) -> None:
+    """Guards the reason the validator exists: without the snap, a fractional
+    anchor changes its digit partway through the second, out of step with
+    every other row."""
+    off_grid = T0.replace(microsecond=613_000) + timedelta(seconds=60)
+    base = T0 + timedelta(seconds=30)
+    within = {
+        seconds_left(off_grid, base + timedelta(microseconds=u))
+        for u in range(0, 1_000_000, 50_000)
+    }
+    assert len(within) == 2  # it steps somewhere inside the second
+
+
+def test_export_you_spells_round_trips_without_shedding_a_second(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    timers.add_spell(_spell_row(spell_book, seconds=100))
+    now = T0 + timedelta(seconds=10, microseconds=400_000)
+    saved = timers.export_you_spells(now)
+    assert saved == [YouSpellSnapshot(name="Clarity", total_seconds_left=90)]

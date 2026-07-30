@@ -9,7 +9,9 @@ the DPS meter, mob info, and console windows don't re-implement it.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
+from datetime import datetime
 
 from PySide6.QtCore import QCoreApplication, QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QMouseEvent
@@ -25,13 +27,82 @@ RESIZE_MARGIN = 7
 
 
 def format_mmss(seconds: float) -> str:
-    """mm:ss (or h:mm:ss past the hour), clamped at zero."""
-    total = max(0, int(seconds))
+    """mm:ss (or h:mm:ss past the hour), clamped at zero.
+
+    Deliberate divergence from EQTool, which truncates: we round UP, matching
+    ``core.timers.seconds_left`` and the event-overlay bars. Truncating makes a
+    30 s buff render ``00:29`` the instant it lands and sit on ``00:00`` for its
+    final second — the number is one low for the row's entire life.
+    """
+    total = max(0, math.ceil(seconds))
     minutes, secs = divmod(total, 60)
     hours, minutes = divmod(minutes, 60)
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes:02d}:{secs:02d}"
+
+
+# A periodic QTimer measures each interval from when it last fired, so its
+# slop accumulates and an initial phase alignment decays (measured live: ~0.4 s
+# of wander in 8 s, i.e. visible steps 0.92-1.10 s apart instead of a steady
+# 1 s). Re-anchor once the error passes this fraction of a slot.
+ALIGN_TOLERANCE = 0.2
+
+# Land each tick a few ms PAST its grid point rather than exactly on it. A
+# timer that fires a hair early still reads the old second, so the digit change
+# slips a whole slot: measured live, the spell window changed a steady 250 ms
+# after the second while the overlay bar (landing just after) changed on it.
+GRID_OFFSET_MS = 20
+
+
+def ms_to_next_tick(now: datetime, interval_ms: int) -> int:
+    """Milliseconds until the next tick — the next ``interval_ms`` grid point
+    anchored to the wall-clock second, offset by ``GRID_OFFSET_MS``."""
+    return interval_ms - (now.microsecond // 1000 - GRID_OFFSET_MS) % interval_ms
+
+
+def tick_phase_error_ms(now: datetime, interval_ms: int) -> int:
+    """Signed distance from the nearest tick point, negative when early.
+
+    Pure, so the drift-correction logic is testable without a live window.
+    """
+    into = (now.microsecond // 1000 - GRID_OFFSET_MS) % interval_ms
+    return into if into <= interval_ms // 2 else into - interval_ms
+
+
+def start_second_aligned(timer: QTimer, interval_ms: int) -> None:
+    """Run ``timer`` at ``interval_ms``, phase-locked to the wall-clock second.
+
+    Countdown anchors are all snapped to the second (``core.timers.
+    snap_to_second``), so a repaint timer on the same grid makes every digit
+    change ON the second and keeps separate windows in step with each other.
+    Only meaningful for intervals that divide 1000 evenly (250 ms, 200 ms).
+
+    Timers whose zero is an arbitrary user/game event (CH lanes, alert
+    auto-clear) must NOT use this — their reference is that event, not the
+    wall clock.
+    """
+    timer.setTimerType(Qt.TimerType.PreciseTimer)
+    timer.setInterval(interval_ms)
+    if not timer.property("second_aligned"):
+        # Guard: the event overlay re-starts its bar timer whenever bars
+        # reappear, and one connection per call would stack up.
+        timer.setProperty("second_aligned", True)
+        timer.timeout.connect(lambda: _keep_aligned(timer, interval_ms))
+    _arm_on_grid(timer, interval_ms)
+
+
+def _arm_on_grid(timer: QTimer, interval_ms: int) -> None:
+    # ``timer`` as the singleShot context: Qt drops the pending start if the
+    # window is destroyed first.
+    QTimer.singleShot(ms_to_next_tick(datetime.now(), interval_ms), timer, timer.start)
+
+
+def _keep_aligned(timer: QTimer, interval_ms: int) -> None:
+    """Pull ``timer`` back onto the grid once it has drifted off it."""
+    if abs(tick_phase_error_ms(datetime.now(), interval_ms)) > interval_ms * ALIGN_TOLERANCE:
+        timer.stop()
+        _arm_on_grid(timer, interval_ms)
 
 
 def edge_at(pos: QPoint, rect: QRect, margin: int = RESIZE_MARGIN) -> Qt.Edge:
