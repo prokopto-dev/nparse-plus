@@ -13,7 +13,6 @@ show. Unlike the other overlays it has no tray toggle and persists nothing.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -41,6 +40,8 @@ from nparseplus.core.events import (
     OverlayEvent,
     TimerBarEvent,
 )
+from nparseplus.core.timers import seconds_left, snap_to_second
+from nparseplus.ui.overlaybase import start_second_aligned
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
@@ -867,7 +868,9 @@ class EventOverlayWindow(QWidget):
         bar = self._make_bar_widget(event.name, event.bar_color, total, total)
         entry = _TimerBar(
             name=event.name,
-            ends_at=datetime.now() + timedelta(seconds=total),
+            # Bars are not TimersService rows, so the row validator never sees
+            # them — snap here so they share the spell window's second grid.
+            ends_at=snap_to_second(datetime.now() + timedelta(seconds=total)),
             total_seconds=total,
             widget=bar,
         )
@@ -875,7 +878,9 @@ class EventOverlayWindow(QWidget):
         self._bars_layout.addWidget(bar)
         self._render_bar(entry, datetime.now())
         if not self._bar_timer.isActive():
-            self._bar_timer.start()
+            # Phased to the wall-clock second (200 divides 1000) so a bar's
+            # digit steps in lockstep with the spell window's rows.
+            start_second_aligned(self._bar_timer, BAR_TICK_MS)
         self._update_visibility()
 
     # -- rendering -------------------------------------------------------------
@@ -903,9 +908,9 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
 
     def _render_bar(self, entry: _TimerBar, now: datetime) -> None:
-        remaining = (entry.ends_at - now).total_seconds()
-        entry.widget.setValue(max(0, min(entry.total_seconds, math.ceil(remaining))))
-        entry.widget.setFormat(f"{entry.name}  {max(0, math.ceil(remaining))}s")
+        remaining = seconds_left(entry.ends_at, now)
+        entry.widget.setValue(min(entry.total_seconds, remaining))
+        entry.widget.setFormat(f"{entry.name}  {remaining}s")
 
     def _tick_bars(self) -> None:
         now = datetime.now()
