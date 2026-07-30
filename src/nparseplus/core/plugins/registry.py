@@ -1,8 +1,8 @@
 """The plugin registry index — schema, fetching, and compatibility checks.
 
 The registry is deliberately static: a curated ``index.json`` published on
-GitHub Pages of the (planned) ``prokopto-dev/nparseplus-plugins`` repo,
-maintained by pull-request review. See docs/plugins/registry.md for the
+GitHub Pages of the ``prokopto-dev/nparseplus-plugins`` repo, maintained by
+pull-request review. See docs/plugins/registry.md for the
 full specification. Trust comes from sha256 pinning: the index records the
 hash of each reviewed release artifact, and the installer refuses a
 download whose bytes don't match — the URL is transport, the hash is the
@@ -25,8 +25,8 @@ from nparseplus_sdk.plugin import PLUGIN_ID_RE
 
 REGISTRY_SCHEMA_VERSION = 1
 
-# GitHub Pages of the curated registry repo. Not live yet — the UI treats
-# fetch failures as "registry unavailable", nothing else depends on it.
+# GitHub Pages of the curated registry repo. The UI treats any fetch failure
+# as "registry unavailable"; nothing else in the app depends on reaching it.
 DEFAULT_REGISTRY_URL = "https://prokopto-dev.github.io/nparseplus-plugins/index.json"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

@@ -7,15 +7,9 @@ incompatible combinations are refused cleanly.
 
 ## Installing the SDK
 
-!!! warning "`nparseplus-sdk` is not on PyPI yet"
-    The release workflow exists (`.github/workflows/release-sdk.yml`,
-    trusted publishing on `sdk-v*` tags) but has not published a version, so
-    **`pip install nparseplus-sdk` fails today**. Install it from the app
-    repo's `sdk/` subdirectory until it lands:
-
 ```bash
 # the SDK alone: types, base classes, the validate CLI
-pip install "git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk"
+pip install nparseplus-sdk
 
 # ...or from a checkout of the app repo
 pip install ./sdk
@@ -28,13 +22,12 @@ In a `pyproject.toml`, that first form is:
 
 ```toml
 dependencies = [
-  "nparseplus-sdk @ git+https://github.com/prokopto-dev/nparse-plus@master#subdirectory=sdk",
+  "nparseplus-sdk>=1.0,<2",
 ]
 ```
 
-Once the package is live on PyPI, swap either form for a plain
-`nparseplus-sdk>=1.0,<2`. Nothing else about your plugin changes — the
-import path, the CLI and the contract are identical.
+The app itself is not a PyPI package — that last line stays a git install,
+and you only need it for type checking and live runs.
 
 ## Zero to running
 
@@ -398,8 +391,7 @@ workflow that runs `nparseplus-plugin validate` on every push, and a
 release workflow that — on a `vX.Y.Z` tag matching your `meta.version` —
 builds the installable zip, computes its sha256, and publishes a GitHub
 release whose body contains the ready-made [registry](registry.md) entry
-JSON. Its `pyproject.toml` already uses the git-subdirectory SDK install
-described above. See also the [versioning rules](versioning.md).
+JSON. See also the [versioning rules](versioning.md).
 
 ## Learn from the examples
 

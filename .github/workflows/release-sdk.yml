@@ -10,7 +10,7 @@ name: Release SDK
 # independent `sdk-v*` trigger publishes exactly when the SDK actually changes.
 #
 # Auth is PyPI Trusted Publishing (OIDC) — no API token, no repo secret. See
-# sdk/README.md for the one-time pypi.org + GitHub environment setup.
+# CONTRIBUTING.md ("Working on the SDK") for the release + publishing setup.
 
 on:
   push:

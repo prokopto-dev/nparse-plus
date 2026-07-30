@@ -1,8 +1,12 @@
 # Standing up the registry repository (maintainer notes)
 
-This directory is the complete, ready-to-push content of the planned
-`prokopto-dev/nparseplus-plugins` repository. It lives inside nparse-plus
-until that repo exists.
+`prokopto-dev/nparseplus-plugins` is live, and this directory is the copy of
+its content that stays in nparse-plus. It is kept here because
+`tools/gen_registry_schema.py --check` (run by
+`tests/core/plugins/test_registry_schema.py`) generates and diffs
+`schema/index-v1.schema.json` against it, so the app's pydantic parser and
+the registry's CI cannot drift apart. The notes below record how the
+repository was stood up — and what to re-check if it is ever rebuilt.
 
 ## The name and the URL are load-bearing
 
@@ -158,12 +162,15 @@ needs a deprecation plan, not just a regeneration.
 
 ## Afterwards
 
-- Update the "Status" admonition in `docs/plugins/registry.md` in the app repo
-  — it currently says the registry is not live yet.
+- ~~Update the "Status" admonition in `docs/plugins/registry.md` in the app
+  repo~~ — done; it now says the registry is live and links the index.
 - Point `CONTRIBUTING.md`'s template link at the real
   `prokopto-dev/nparseplus-plugin-template` repo once that exists (see
-  `templates/plugin-repo/TEMPLATE_SETUP.md`).
-- Delete `templates/registry-repo/` from the app repo once this repository is
-  the source of truth, along with the parts of
-  `tests/core/plugins/test_registry_schema.py` that read it — but keep
-  `tools/gen_registry_schema.py`, which is what regenerates the schema.
+  `templates/plugin-repo/TEMPLATE_SETUP.md`). Still pending — that repo has
+  not been created.
+- ~~Delete `templates/registry-repo/` from the app repo~~ — deliberately
+  **not** done. The schema in here is generated from the app's models and
+  guarded by `tools/gen_registry_schema.py --check` +
+  `tests/core/plugins/test_registry_schema.py`; deleting it would remove the
+  drift guard. Regenerate here and copy the result into the registry repo
+  (see "Keeping the schema in sync" above).

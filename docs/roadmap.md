@@ -15,14 +15,6 @@ overview.
 The [add-on system](plugins/index.md) shipped in 1.18 — opt-in, off by
 default. What it's still missing:
 
-- **A live plugin registry** — the app already knows how to browse and
-  install from a curated index (sha256-pinned), but the
-  `prokopto-dev/nparseplus-plugins` repo that publishes it doesn't exist
-  yet, so **Browse registry…** reports *Registry unavailable*. The repo
-  content is written and waiting in `templates/registry-repo/`.
-- **`nparseplus-sdk` on PyPI** — plugin authors currently install the SDK
-  from a checkout. The publish workflow is in place; the package hasn't
-  been pushed.
 - **A plugin template repository** — a `Use this template` GitHub repo
   (CI, release workflow, a working example plugin) so a new add-on starts
   from something that already builds. Content is written in
@@ -53,6 +45,14 @@ Longer-horizon packaging work, waiting on time (and in some cases, money):
 
 ## Shipped
 
-Everything that used to be on this list and made it: see the
+Recently off this list:
+
+- **A live plugin registry** — `prokopto-dev/nparseplus-plugins` publishes
+  the curated index, so **Browse registry…** works. The catalogue is empty
+  until the first submission; see [the registry](plugins/registry.md).
+- **`nparseplus-sdk` on PyPI** — `pip install nparseplus-sdk` is all a
+  plugin author needs; see [developing plugins](plugins/developing.md).
+
+Everything else that used to be on this list and made it: see the
 [changelog](changelog.md) and the
 [releases page](https://github.com/prokopto-dev/nparse-plus/releases).

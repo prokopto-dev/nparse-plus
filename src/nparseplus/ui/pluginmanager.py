@@ -381,10 +381,10 @@ _BROWSER_COLUMNS = ("Name", "Version", "Author", "Compatibility", "")
 class RegistryBrowserDialog(QDialog):
     """Browse the curated plugin registry and one-click install from it.
 
-    The index fetch runs on a worker thread; while the registry repo isn't
-    live (or the user is offline) the dialog degrades to a plain
-    "Registry unavailable" message. Installs delegate back to the manager
-    page's worker with the index's pinned sha256.
+    The index fetch runs on a worker thread; if it fails (offline, or the
+    registry is down) the dialog degrades to a plain "Registry unavailable"
+    message. Installs delegate back to the manager page's worker with the
+    index's pinned sha256.
     """
 
     _index_ready = Signal(object)  # RegistryIndex on success, str(reason) on failure

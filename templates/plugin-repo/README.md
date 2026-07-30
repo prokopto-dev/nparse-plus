@@ -24,15 +24,11 @@ and a small overlay window shows how many times it fired. Replace all of it.
 ## Develop
 
 ```bash
-pip install -e .                 # nparseplus-sdk (installed from git — see below)
+pip install -e .                 # nparseplus-sdk, from PyPI
 pip install -e ".[dev]"          # ...plus pytest and nParse+ itself, for full checks
 pytest                           # unit tests against FakePluginContext
 nparseplus-plugin validate my_nparse_plugin
 ```
-
-`nparseplus-sdk` is not on PyPI yet, so `pyproject.toml` installs it from the
-app repo's `sdk/` subdirectory; the `NOTE:` comments there and in the two
-workflow files say what to switch to once it is published.
 
 Your plugin must work with the **SDK alone** — that is what `ci.yml`
 installs, and what a `nparseplus-plugin validate` run in a bare environment
