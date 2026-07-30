@@ -2,24 +2,16 @@
 
 Runs each layer's import in a subprocess with PySide6 poisoned so any direct
 or transitive Qt import fails loudly.
-"""
 
-import subprocess
-import sys
+nparseplus_sdk is guarded too: it is the contract third-party plugins import,
+and its host re-exports (events/timers/ui) are deliberately lazy so that
+`import nparseplus_sdk` never drags Qt into a plugin's import graph.
+"""
 
 import pytest
 
-_POISON_PRELUDE = """
-import importlib, sys
-
-class _Poison:
-    def find_module(self, name, path=None):
-        if name == "PySide6" or name.startswith("PySide6."):
-            return self
-    def load_module(self, name):
-        raise ImportError(f"Qt import forbidden in this layer: {name}")
-
-sys.meta_path.insert(0, _Poison())
+_BODY = """
+import importlib
 import pkgutil
 import {pkg}
 
@@ -29,18 +21,28 @@ print("ok")
 """
 
 
-@pytest.mark.parametrize("pkg", ["nparseplus.core", "nparseplus.config", "nparseplus.net"])
-def test_layer_is_qt_free(pkg: str) -> None:
+@pytest.mark.parametrize(
+    "pkg",
+    ["nparseplus.core", "nparseplus.config", "nparseplus.net", "nparseplus_sdk"],
+)
+def test_layer_is_qt_free(pkg: str, poisoned_import) -> None:
     try:
         __import__(pkg)
     except ModuleNotFoundError:
         pytest.skip(f"{pkg} does not exist yet")
-    result = subprocess.run(
-        [sys.executable, "-c", _POISON_PRELUDE.replace("{pkg}", pkg)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    result = poisoned_import(["PySide6"], _BODY.replace("{pkg}", pkg))
     assert result.returncode == 0 and "ok" in result.stdout, (
         f"{pkg} (or a submodule) imports PySide6 or fails to import:\n{result.stderr}"
     )
+
+
+def test_the_poison_actually_bites(poisoned_import) -> None:
+    """Guard the guard.
+
+    The previous finder implemented find_module/load_module, removed from
+    CPython's import system in 3.12 — so it silently let every import through
+    and the layer tests above passed vacuously for the whole 3.12 era.
+    """
+    result = poisoned_import(["PySide6"], "import PySide6\nprint('ok')\n")
+    assert result.returncode != 0, "the Qt poison no longer blocks PySide6"
+    assert "forbidden" in result.stderr
