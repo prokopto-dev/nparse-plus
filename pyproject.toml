@@ -4,7 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nparseplus"
-version = "1.16.1"
+# Read from src/nparseplus/__init__.py (see [tool.hatch.version]) rather than
+# duplicated here. A literal version in this table is a THIRD copy of the
+# version — pyproject, __init__.py, and the `version` field uv writes into
+# uv.lock for the root package — and semantic-release only bumps the first
+# two, so the lock drifted every release and was hand-repaired four times.
+# uv omits that field entirely for dynamic-version packages, so this makes
+# the drift impossible rather than merely automating the repair.
+dynamic = ["version"]
 description = "nParse+ — EverQuest Project 1999 log parser: maps, spell timers, triggers, DPS, and sharing. A modernized fork of nomns/nparse with EQTool feature parity."
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -61,13 +68,17 @@ probe = [
   "signalrcore>=0.9.5",
 ]
 
+[tool.hatch.version]
+path = "src/nparseplus/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/nparseplus"]
 
 [tool.semantic_release]
 tag_format = "v{version}"
 commit_message = "chore(release): v{version}"
-version_toml = ["pyproject.toml:project.version"]
+# __init__.py is the ONLY place the version is written; pyproject reads it
+# through [tool.hatch.version]. Do not add version_toml back.
 version_variables = ["src/nparseplus/__init__.py:__version__"]
 allow_zero_version = false
 

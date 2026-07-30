@@ -27,13 +27,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG }}
-      - name: Tag must match nparseplus.__version__ and pyproject
+      - name: Tag must match nparseplus.__version__
+        # __init__.py is the single source of truth: pyproject's version is
+        # dynamic (hatch reads this same file) and uv.lock does not record a
+        # version for dynamic packages, so there is nothing else to check.
         run: |
           TAG="${RELEASE_TAG#v}"
           grep -q "^__version__ = \"$TAG\"$" src/nparseplus/__init__.py \
             || { echo "::error::tag $TAG != __init__.py __version__"; exit 1; }
-          grep -q "^version = \"$TAG\"$" pyproject.toml \
-            || { echo "::error::tag $TAG != pyproject version"; exit 1; }
 
   build-macos:
     needs: check-version

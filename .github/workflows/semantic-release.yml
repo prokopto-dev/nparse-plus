@@ -57,33 +57,6 @@ jobs:
           else
             echo "No releasable Conventional Commits were found." >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Sync uv.lock to the released version
-        # semantic-release bumps pyproject.toml and __init__.py but never
-        # re-locks, so uv.lock's own `nparseplus` entry keeps the PREVIOUS
-        # version. Harmless to the builds (`uv sync --frozen` does not check
-        # it — v1.15.0 through v1.16.1 all shipped from a lock that said
-        # 1.14.0) but it has been hand-repaired by `chore: sync uv.lock`
-        # commits four times now. Do it here instead.
-        #
-        # This cannot ride along in the release commit itself: PSR v10 is a
-        # Docker action, so its build_command runs in a container without uv.
-        # A follow-up commit means the TAG still carries the stale lock entry
-        # — accepted, since the frozen sync ignores it and the app version
-        # comes from __init__.py.
-        if: steps.release.outputs.released == 'true'
-        run: |
-          uv lock
-          if git diff --quiet -- uv.lock; then
-            echo "uv.lock already in sync"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add uv.lock
-          git commit -m "chore: sync uv.lock to v${{ steps.release.outputs.version }}"
-          # GITHUB_TOKEN pushes do not re-trigger workflows, so this does not
-          # loop back into this job (same reasoning as the PSR push above).
-          git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Start platform package build
         if: steps.release.outputs.released == 'true'
         env:
