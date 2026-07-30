@@ -17,6 +17,7 @@ from nparseplus.core.timers import (
     TimerRow,
     TimersService,
     YouSpellSnapshot,
+    fraction_remaining,
     group_rows_for_display,
     seconds_left,
     snap_to_second,
@@ -511,3 +512,37 @@ def test_export_you_spells_round_trips_without_shedding_a_second(
     now = T0 + timedelta(seconds=10, microseconds=400_000)
     saved = timers.export_you_spells(now)
     assert saved == [YouSpellSnapshot(name="Clarity", total_seconds_left=90)]
+
+
+# -- fraction_remaining (drives the bar value AND its color fade) --------------
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected"),
+    [
+        (0, 1.0),  # fresh row is full
+        (25, 0.75),
+        (50, 0.5),
+        (100, 0.0),  # exactly expired
+        (400, 0.0),  # clamped, never negative
+        (-30, 1.0),  # clamped, never over 1 (a row anchored in the future)
+    ],
+)
+def test_fraction_remaining_over_a_rows_life(
+    spell_book: SpellBook, elapsed: float, expected: float
+) -> None:
+    row = _spell_row(spell_book, seconds=100)
+    assert fraction_remaining(row, T0 + timedelta(seconds=elapsed)) == pytest.approx(expected)
+
+
+def test_fraction_remaining_is_full_without_a_countdown() -> None:
+    """CounterRow has no ends_at — "no progress information" reads as full."""
+    counter = CounterRow(name="Resisted", group=YOU_GROUP, updated_at=T0, count=3)
+    assert fraction_remaining(counter, T0 + timedelta(hours=1)) == 1.0
+
+
+def test_fraction_remaining_survives_a_zero_duration_row() -> None:
+    row = TimerRow(
+        name="t", group=TRIGGER_TIMER_GROUP, updated_at=T0, ends_at=T0, total_duration_s=0.0
+    )
+    assert fraction_remaining(row, T0) == 0.0

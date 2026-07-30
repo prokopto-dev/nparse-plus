@@ -11,6 +11,7 @@ and timer engine. (Per-class spell filters live on the
 | **Sort timers by** | Row order under each header: **Time remaining** (default) puts the soonest-to-expire row at the top, or **Alphabetical** by name. Counters (which never expire) always sort last under Time remaining. |
 | **Show only your own spells** | Hide the spell rows other players cast. Boats, mob/roll/custom timers, counters, and rolls are unaffected. |
 | **Show random rolls** | Show `/random` results as amber rows ([Combat tracking](../features/combat.md#random-rolls)). |
+| **Fade timer bars to red** | On by default. Each bar shifts from its normal color toward red as the timer runs down, so an about-to-expire row stands out at a glance. Boat timers and both kinds of roll timer keep their color — their bars track a schedule rather than a countdown you started, so the remaining fraction isn't a progress value. |
 | **Show boat timers** | Show the **Boats** section (boat schedule countdowns). |
 | **Show mob timers** | Show the **Mob Timers** section: mob respawn/Sirran countdowns and FTE raid rules (97%/96%/5-minute). |
 | **Show roll timers** | Show the **Roll Timers** section: Ring 8 and Scout Charisa server roll windows. |

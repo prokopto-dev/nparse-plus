@@ -31,6 +31,12 @@ Bar colors carry meaning:
 | Purple | Ad-hoc timer (mob/roll timers, custom trigger and [chat-command timers](../features/chat-timers.md), respawn timers) |
 | Amber | Random-roll tracking window |
 
+Each bar also **shifts toward red as its timer runs down**, so a buff that is
+about to drop stands out without reading the digits. Boat and roll timers keep
+their color — their bars measure a schedule, not a countdown you started, so a
+fade would be misleading. Turn the fade off with **Fade timer bars to red** in
+[Settings → Spell Timers](../settings/spell-timers.md).
+
 Spell rows show their **gem icon** from the spell data.
 
 ## Useful behaviors

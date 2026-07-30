@@ -91,6 +91,22 @@ def seconds_left(ends_at: datetime, now: datetime) -> int:
     return max(0, math.ceil((ends_at - now).total_seconds()))
 
 
+def fraction_remaining(row: Row, now: datetime) -> float:
+    """How much of ``row``'s duration is still to run, clamped to 0.0-1.0.
+
+    1.0 for a row with no countdown (``CounterRow``) so callers can treat
+    "no progress information" as "full". This is what drives both the
+    progress-bar value and its color fade in the UI; keeping the definition
+    here (and Qt-free) means the two can never disagree.
+    """
+    ends_at = getattr(row, "ends_at", None)
+    if ends_at is None:
+        return 1.0
+    total = max(getattr(row, "total_duration_s", 0.0), 0.001)
+    remaining = max(0.0, (ends_at - now).total_seconds())
+    return min(remaining / total, 1.0)
+
+
 class BaseRow(BaseModel):
     """Common fields of one row in the spell/trigger window."""
 

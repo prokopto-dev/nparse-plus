@@ -109,6 +109,7 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     window._show_mob_timers.setChecked(False)
     window._show_roll_timers.setChecked(False)
     window._show_custom_timers.setChecked(False)
+    window._bar_fade.setChecked(False)
     window._maps_line_width.setValue(3)
     window._z_closest.setValue(42)
     window._z_fade_min.setValue(35)
@@ -125,6 +126,7 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     assert settings.spellwindow.show_mob_timers is False
     assert settings.spellwindow.show_roll_timers is False
     assert settings.spellwindow.show_custom_timers is False
+    assert settings.spellwindow.bar_fade_to_red is False
     # Legacy side.
     assert legacy["maps"]["line_width"] == 3
     assert legacy["maps"]["closest_z_alpha"] == 42
