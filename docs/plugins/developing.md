@@ -166,6 +166,16 @@ The factory runs on the GUI thread with a
 `nparseplus_sdk.ui.PluginWindow` to get the full overlay recipe — frameless,
 drag to move, resize from any edge, quit safety.
 
+Doing so also earns your window a row in the user's
+[Settings → Windows](../settings/windows.md#plugin-windows) grid, labelled
+`<your plugin name> — <window title>`, so they get opacity and always-on-top
+with no work on your part. Two consequences: keep `title` short and human,
+because it is what they read there; and note the opacity slider has a 10%
+floor (a window must stay findable), so a `default_state` below `0.1` is
+raised to it the first time they hit Save. A factory that returns a plain
+widget instead of a `PluginWindow` still opens and still gets its tray entry,
+but has no overlay state to expose, so it gets no row.
+
 **Keep Qt out of your plugin's top-level module.** nParse+ imports that
 module to read your metadata, and so do `nparseplus-plugin validate` and
 your unit tests, which may run without PySide6 (and `nparseplus_sdk.ui`

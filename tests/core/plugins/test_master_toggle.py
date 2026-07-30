@@ -61,6 +61,24 @@ def test_importing_the_app_pulls_in_no_plugin_modules(poisoned_import) -> None:
     )
 
 
+def test_importing_the_settings_window_pulls_in_no_plugin_modules(poisoned_import) -> None:
+    """`nparseplus.ui.settingswindow` must not reach the plugin subsystem.
+
+    The test above does not cover this: `create_app` imports the settings
+    window function-locally, so poisoning `import nparseplus.app` never
+    reaches it, and the AST test below only parses app.py. But create_app
+    builds this window on every launch, plugins on or off — so a typed import
+    of PluginUi to describe the Settings > Windows plugin rows would wake the
+    whole subsystem for users who opted out. Hence the plain-tuple kwarg.
+    """
+    result = poisoned_import(
+        list(PLUGIN_NAMESPACES), "import nparseplus.ui.settingswindow\nprint('ok')\n"
+    )
+    assert result.returncode == 0 and "ok" in result.stdout, (
+        f"nparseplus.ui.settingswindow imports a plugin module at module scope:\n{result.stderr}"
+    )
+
+
 def _module_imports(tree: ast.AST) -> list[tuple[ast.stmt, str]]:
     """Every import statement in `tree` paired with the module it names."""
     found: list[tuple[ast.stmt, str]] = []

@@ -273,6 +273,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     plugin_command_handles: dict[str, object] = {}  # chat toggle_<name> -> widget
     plugin_tray: dict[str, object] = {}  # tray label -> widget
     extra_pages: list[object] = []
+    plugin_window_rows: list[tuple[str, str, object]] = []  # Settings > Windows rows
     if plugin_host is not None:
         from nparseplus import __version__
         from nparseplus.pluginbootstrap import build_plugin_ui
@@ -289,6 +290,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             plugin_command_handles = plugin_ui.command_handles
             plugin_tray = plugin_ui.tray
             extra_pages = plugin_ui.extra_pages
+            plugin_window_rows = plugin_ui.window_rows
 
     settings_window = UnifiedSettingsWindow(
         settings,
@@ -300,6 +302,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         notify_legacy=app._signals["settings"].config_updated.emit,
         repaint_maps=_repaint_maps,
         window_handles=window_handles,
+        plugin_windows=plugin_window_rows,
         backend_player=backend.player,
         zones=backend.zones,
         socials_sync=backend.socials_sync,

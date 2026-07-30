@@ -179,6 +179,10 @@ tray menu and window layouts are built, so there is no safe point to do it
 live. Hot enable/disable is tracked as
 [issue #45](https://github.com/prokopto-dev/nparse-plus/issues/45).
 
+That is also why an add-on you just enabled has no row in
+[Settings → Windows](windows.md#plugin-windows) yet: only windows that
+actually opened this session are listed there.
+
 If an add-on is bad enough to break startup, start nParse+ once with
 `NPARSEPLUS_NO_PLUGINS=1` — see
 [Troubleshooting](../troubleshooting.md#plugins-add-ons).
