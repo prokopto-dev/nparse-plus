@@ -15,7 +15,6 @@ therefore never see ``None``.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import threading
 from collections.abc import Callable
@@ -113,6 +112,10 @@ class HostPluginContext:
         self._parsers: list[LineParser] = []
         self.window_specs: list[PluginWindowSpec] = []
         self.page_specs: list[PluginSettingsPageSpec] = []
+        # Set (on the driver thread) if the driver evicted one of this
+        # plugin's ticks for overrunning its budget; the manager page shows
+        # it. A plain str|None so core stays Qt-free and the GUI just reads.
+        self.tick_dropped: str | None = None
 
     # --- identity / environment -------------------------------------------
     @property
@@ -182,8 +185,19 @@ class HostPluginContext:
             except Exception:
                 plugin_logger.exception("tick raised (plugin %s)", self._meta.id)
 
-        self._backend.driver.on_tick.append(_guarded)
+        # Supervised: the driver times this callback and drops it if it keeps
+        # blowing the budget, because a blocking tick freezes log tailing,
+        # every timer and the sharing inbox along with it.
+        self._backend.driver.add_supervised_tick(
+            _guarded,
+            label=f"plugin {self._meta.id}",
+            on_dropped=self._note_tick_dropped,
+        )
         self._ticks.append(_guarded)
+
+    def _note_tick_dropped(self, reason: str) -> None:
+        """Driver-thread callback; a plain string the GUI reads on refresh."""
+        self.tick_dropped = reason
 
     def submit(
         self,
@@ -218,8 +232,9 @@ class HostPluginContext:
                 logger.exception("unsubscribe failed for plugin %s", self._meta.id)
         self._unsubscribes.clear()
         for tick in self._ticks:
-            with contextlib.suppress(ValueError):
-                self._backend.driver.on_tick.remove(tick)
+            # remove_tick also clears the driver's supervision record; a tick
+            # already dropped for slowness unregisters without complaint.
+            self._backend.driver.remove_tick(tick)
         self._ticks.clear()
         for parser in self._parsers:
             self._backend.pipeline.remove_parser(parser)

@@ -61,6 +61,12 @@ def make_page(qtbot, host) -> PluginManagerPage:
     return page
 
 
+def install_from_file_and_wait(qtbot, page: PluginManagerPage) -> None:
+    """Installs run on a worker thread; spin the loop until the result lands."""
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._install_from_file()
+
+
 def test_lists_discovered_plugins(qtbot, host) -> None:
     page = make_page(qtbot, host)
     assert page._table.rowCount() == 1
@@ -87,7 +93,7 @@ def test_install_from_file_via_dialog(qtbot, host, tmp_path: Path, monkeypatch) 
     infos: list[tuple] = []
     monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: infos.append(a)))
     page = make_page(qtbot, host)
-    page._install_from_file()
+    install_from_file_and_wait(qtbot, page)
     assert (host.plugins_dir / "extra.py").is_file()
     assert infos, "success dialog not shown"
     assert page._table.rowCount() == 2  # session-install row appended
@@ -103,7 +109,7 @@ def test_install_failure_shows_warning(qtbot, host, tmp_path: Path, monkeypatch)
     warnings: list[tuple] = []
     monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a)))
     page = make_page(qtbot, host)
-    page._install_from_file()
+    install_from_file_and_wait(qtbot, page)
     assert warnings, "failure dialog not shown"
     assert page._table.rowCount() == 1
 
@@ -154,12 +160,62 @@ def test_uninstall_of_a_session_install_forgets_it(
         QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
     )
     page = make_page(qtbot, host)
-    page._install_from_file()
+    install_from_file_and_wait(qtbot, page)
     assert host.entry_for("extra") is not None  # provenance recorded at install
     page._table.setCurrentCell(1, 1)  # the session-install row
     page._uninstall_selected()
     assert host.entry_for("extra") is None
     assert not (host.plugins_dir / "extra.py").exists()
+
+
+def test_file_install_runs_off_the_gui_thread(qtbot, host, tmp_path: Path, monkeypatch) -> None:
+    """install_from_file imports AND activates plugin code — never inline."""
+    import threading
+
+    archive = tmp_path / "worker.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("worker.py", PLUGIN_SOURCE.replace('"demo"', '"worker"'))
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(archive), "zip"))
+    )
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    gui_thread = threading.current_thread()
+    ran_on: list[threading.Thread] = []
+    real_install = pluginmanager.install_from_file
+
+    def recording_install(*args, **kwargs):
+        ran_on.append(threading.current_thread())
+        return real_install(*args, **kwargs)
+
+    monkeypatch.setattr(pluginmanager, "install_from_file", recording_install)
+    page = make_page(qtbot, host)
+    install_from_file_and_wait(qtbot, page)
+
+    assert ran_on and ran_on[0] is not gui_thread
+    assert (host.plugins_dir / "worker.py").is_file()
+
+
+def test_install_buttons_re_enable_after_a_worker_crash(qtbot, host, monkeypatch) -> None:
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    page = make_page(qtbot, host)
+
+    def boom():
+        raise RuntimeError("worker exploded")
+
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._start_install(boom)
+    assert page._install_file_button.isEnabled()
+
+
+def test_dropped_plugin_tick_is_shown(qtbot, host) -> None:
+    """The driver's eviction of a slow tick has to reach the user."""
+    loaded = host.statuses()[0]
+    assert loaded.context is not None
+    loaded.context.tick_dropped = "tick removed after 2 consecutive runs over 250 ms"
+    page = make_page(qtbot, host)
+    status_item = page._table.item(0, 3)
+    assert "tick disabled" in status_item.text().lower()
+    assert "250 ms" in status_item.toolTip()
 
 
 def test_page_spec_builds_page(qtbot, host) -> None:
@@ -309,3 +365,53 @@ def test_registry_install_records_provenance(qtbot, host, monkeypatch) -> None:
     assert entry is not None
     assert entry.source_url == "https://example.com/fromreg.zip"
     assert entry.approved is False  # consent still due next launch
+
+
+# --- install provenance -----------------------------------------------------
+
+
+def test_sideloaded_plugin_shows_no_provenance(qtbot, host) -> None:
+    """A plugin dropped into the folder by hand says so, plainly."""
+    page = make_page(qtbot, host)
+    source_item = page._table.item(0, 5)
+    assert source_item.text() == "Sideloaded"
+    assert "no recorded source" in source_item.toolTip()
+
+
+def test_url_installed_plugin_shows_source_and_hash(qtbot, host, monkeypatch) -> None:
+    from nparseplus.core.plugins.install import InstallResult
+    from nparseplus_sdk import PluginMeta
+
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    page = make_page(qtbot, host)
+    page._on_install_finished(
+        InstallResult(
+            ok=True,
+            meta=PluginMeta(id="fromreg", name="From Registry", version="1.0.0"),
+            sha256="b" * 64,
+            source_url="https://example.com/fromreg.zip",
+            installed_path=host.plugins_dir / "fromreg.py",
+        )
+    )
+    source_item = page._table.item(1, 5)  # the session-install row
+    assert "https://example.com/fromreg.zip" in source_item.text()
+    assert "bbbbbbbbbbbb" in source_item.text()  # short hash
+    assert "b" * 64 in source_item.toolTip()  # full hash on hover
+
+
+def test_loaded_plugin_row_reads_provenance_from_the_entry(qtbot, host) -> None:
+    """Next launch the row is a loaded plugin: provenance comes off the entry."""
+    entry = host.entry_for("demo")
+    entry.source_url = "https://example.com/demo.zip"
+    entry.sha256 = "f" * 64
+    page = make_page(qtbot, host)
+    assert "https://example.com/demo.zip" in page._table.item(0, 5).text()
+    assert "f" * 64 in page._table.item(0, 5).toolTip()
+
+
+def test_provenance_display_forms() -> None:
+    text, tip = pluginmanager.provenance_display("https://x/y.zip", "c" * 64)
+    assert text.startswith("https://x/y.zip") and "c" * 64 in tip
+    text, tip = pluginmanager.provenance_display("", "d" * 64)
+    assert text == f"Local file ({'d' * 12}…)"
+    assert pluginmanager.provenance_display("", "")[0] == "Sideloaded"

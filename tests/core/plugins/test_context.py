@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from typing import Any
 
+from nparseplus.core import driver as driver_module
 from nparseplus.core.events import LineEvent
 from nparseplus.core.plugins import context as context_module
 from nparseplus.core.plugins.context import HostPluginContext, _OwnedNet
@@ -101,6 +102,38 @@ def test_add_tick_guarded(backend, tmp_path) -> None:
     for tick in list(backend.driver.on_tick):
         tick(now)  # simulating the driver loop; nothing may raise
     assert ran == [now]
+
+
+def test_plugin_ticks_are_supervised_but_builtins_are_not(backend, tmp_path) -> None:
+    builtin_ticks = list(backend.driver.on_tick)  # composition.py's own
+    assert backend.driver._supervised == {}
+    ctx = make_ctx(backend, tmp_path)
+    ctx.add_tick(lambda now: None)
+    supervised = list(backend.driver._supervised)
+    assert len(supervised) == 1
+    assert supervised[0] not in builtin_ticks
+    assert backend.driver._supervised[supervised[0]].label == "plugin ctx-test"
+
+
+def test_a_hogging_tick_is_dropped_and_the_context_records_it(
+    backend, tmp_path, monkeypatch
+) -> None:
+    """A plugin that stalls the driver loses its tick; the fact is readable."""
+    # Budget 0 makes every run a breach — the timing arithmetic itself is
+    # covered in tests/core/test_driver.py with a hand-cranked clock.
+    monkeypatch.setattr(driver_module, "TICK_BUDGET_S", 0.0)
+    ctx = make_ctx(backend, tmp_path)
+    runs: list[datetime] = []
+    ctx.add_tick(runs.append)
+    assert ctx.tick_dropped is None
+
+    for _ in range(driver_module.TICK_BREACH_LIMIT + 3):
+        backend.driver._run_supervised_ticks(datetime.now())
+
+    assert len(runs) == driver_module.TICK_BREACH_LIMIT
+    assert ctx.tick_dropped is not None and "removed" in ctx.tick_dropped
+    assert backend.driver._supervised == {}
+    ctx.unwind()  # unwinding an already-dropped tick must not raise
 
 
 def test_submit_without_sharing_lazily_creates_worker_and_applies_on_tick(

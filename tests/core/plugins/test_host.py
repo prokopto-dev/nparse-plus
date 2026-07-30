@@ -150,6 +150,43 @@ def test_activate_raise_marks_error_and_unwinds(
     assert host.window_specs() == []
 
 
+def test_dropped_tick_is_reported_on_the_host_record(
+    make_host, plugins_dir: Path, settings: Settings, backend, monkeypatch
+) -> None:
+    """The manager page reads this to tell the user their plugin misbehaved."""
+    from datetime import datetime
+
+    from nparseplus.core import driver as driver_module
+
+    monkeypatch.setattr(driver_module, "TICK_BUDGET_S", 0.0)  # every run breaches
+    write_plugin(
+        plugins_dir,
+        "hog.py",
+        plugin_id="hog",
+        activate_body="        ctx.add_tick(lambda now: None)",
+    )
+    approve(settings, "hog")
+    host = make_host()
+    host.discover_and_load()
+    host.activate_enabled()
+    (loaded,) = host.statuses()
+    assert loaded.tick_dropped is None
+
+    for _ in range(driver_module.TICK_BREACH_LIMIT):
+        backend.driver._run_supervised_ticks(datetime.now())
+
+    assert loaded.status == "active"  # the plugin lives on; only its tick went
+    assert loaded.tick_dropped is not None and "removed" in loaded.tick_dropped
+
+
+def test_tick_dropped_is_none_without_a_context(make_host, plugins_dir: Path) -> None:
+    write_plugin(plugins_dir, "quiet.py", plugin_id="quiet")
+    host = make_host()
+    host.discover_and_load()
+    (loaded,) = host.statuses()  # pending_consent: never activated, no context
+    assert loaded.tick_dropped is None
+
+
 def test_duplicate_id_first_wins(make_host, plugins_dir: Path, settings: Settings) -> None:
     write_plugin(plugins_dir, "aaa.py", plugin_id="twin")
     write_plugin(plugins_dir, "bbb.py", plugin_id="twin")

@@ -4,14 +4,17 @@ Lists every discovered plugin with status, toggles enablement (persisted
 immediately; activation changes take effect next launch), opens the plugins
 folder, uninstalls (to ``plugins/trash/``, forgetting the plugin's consent
 record and stored data along with it), and installs from a local
-zip/.py or an https zip URL. URL downloads and archive validation run on a
-worker thread (validation imports the plugin's module code — the page says
-so next to the buttons); results land back on the GUI thread via a signal.
+zip/.py or an https zip URL. Every install — URL download and local file
+alike — runs on a worker thread, because validation imports AND activates the
+plugin's module code (the page says so next to the buttons) and a plugin that
+hangs there would otherwise hang the GUI thread with it; results land back on
+the GUI thread via a signal.
 """
 
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,7 +64,34 @@ STATUS_LABELS = {
     "duplicate": "Duplicate id",
 }
 
-_COLUMNS = ("Enabled", "Name", "Version", "Status", "Location")
+_COLUMNS = ("Enabled", "Name", "Version", "Status", "Location", "Source")
+_LOCATION_COLUMN = 4
+_SOURCE_COLUMN = 5
+
+
+def provenance_display(source_url: str, sha256: str) -> tuple[str, str]:
+    """Cell text + tooltip for where an installed plugin came from.
+
+    ``PluginHost.record_install`` records this for URL/registry/file
+    installs; a plugin copied into the folder by hand has neither, and
+    saying so plainly is the point — "no recorded source" is exactly the
+    provenance the user needs to see.
+    """
+    short = f"{sha256[:12]}…" if sha256 else ""
+    if source_url:
+        text = f"{source_url} ({short})" if short else source_url
+        tooltip = f"Downloaded from {source_url}"
+    elif short:
+        text = f"Local file ({short})"
+        tooltip = "Installed from a local file on this machine"
+    else:
+        return (
+            "Sideloaded",
+            "Copied into the plugins folder by hand — no recorded source or checksum.",
+        )
+    if sha256:
+        tooltip = f"{tooltip}\nsha256: {sha256}"
+    return text, tooltip
 
 
 class PluginManagerPage(QWidget):
@@ -146,15 +176,27 @@ class PluginManagerPage(QWidget):
             newer = self._registry_update_for(plugin_id, version)
             if newer is not None:
                 status = f"{status} — update available (v{newer})"
+            # A tick the driver evicted for stalling the app: the plugin is
+            # still active, so the status line is the only place it shows.
+            dropped = loaded.tick_dropped
+            if dropped is not None:
+                status = f"{status} — tick disabled (too slow)"
+            source_text, source_tip = provenance_display(
+                entry.source_url if entry is not None else "",
+                entry.sha256 if entry is not None else "",
+            )
             for column, text in (
                 (1, loaded.display_name),
                 (2, version),
                 (3, status),
-                (4, loaded.source.location),
+                (_LOCATION_COLUMN, loaded.source.location),
+                (_SOURCE_COLUMN, source_text),
             ):
                 item = QTableWidgetItem(text)
-                if column == 3 and loaded.error:
-                    item.setToolTip(loaded.error)
+                if column == 3 and (loaded.error or dropped):
+                    item.setToolTip(dropped or loaded.error or "")
+                elif column == _SOURCE_COLUMN:
+                    item.setToolTip(source_tip)
                 self._table.setItem(row_index, column, item)
         for offset, result in enumerate(self._session_installs):
             row_index = len(rows) + offset
@@ -162,13 +204,20 @@ class PluginManagerPage(QWidget):
             name = result.meta.name if result.meta is not None else "?"
             version = result.meta.version if result.meta is not None else ""
             location = str(result.installed_path or "")
+            source_text, source_tip = provenance_display(
+                result.source_url or "", result.sha256 or ""
+            )
             for column, text in (
                 (1, name),
                 (2, version),
                 (3, "Installed — restart to load"),
-                (4, location),
+                (_LOCATION_COLUMN, location),
+                (_SOURCE_COLUMN, source_text),
             ):
-                self._table.setItem(row_index, column, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if column == _SOURCE_COLUMN:
+                    item.setToolTip(source_tip)
+                self._table.setItem(row_index, column, item)
 
     def _registry_update_for(self, plugin_id: str | None, installed_version: str) -> str | None:
         """Newer registry version string for this plugin, if known this session."""
@@ -201,8 +250,12 @@ class PluginManagerPage(QWidget):
         )
         if not path:
             return
-        result = install_from_file(path, self._host.plugins_dir, app_version=self._app_version)
-        self._on_install_finished(result)
+        # Same worker seam as the URL path: install_from_file validates by
+        # importing and activating the plugin's module code, which is
+        # arbitrary third-party work and must never run on the GUI thread.
+        self._start_install(
+            lambda: install_from_file(path, self._host.plugins_dir, app_version=self._app_version)
+        )
 
     def _install_from_url(self) -> None:
         url, ok = QInputDialog.getText(
@@ -214,15 +267,24 @@ class PluginManagerPage(QWidget):
 
     def _start_url_install(self, url: str, expected_sha256: str | None = None) -> None:
         """Download+install on a worker thread (registry installs pin a hash)."""
-        self._set_install_buttons_enabled(False)
-
-        def worker() -> None:
-            result = install_from_url(
+        self._start_install(
+            lambda: install_from_url(
                 url,
                 self._host.plugins_dir,
                 app_version=self._app_version,
                 expected_sha256=expected_sha256,
             )
+        )
+
+    def _start_install(self, install: Callable[[], InstallResult]) -> None:
+        """Run one install off the GUI thread; the result comes back by signal."""
+        self._set_install_buttons_enabled(False)
+
+        def worker() -> None:
+            try:
+                result = install()
+            except Exception as exc:  # never strand the disabled buttons
+                result = InstallResult(ok=False, errors=[f"install failed: {exc!r}"])
             self._install_finished.emit(result)
 
         threading.Thread(target=worker, name="plugin-install", daemon=True).start()

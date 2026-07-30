@@ -69,6 +69,17 @@ class LoadedPlugin:
     def plugin_id(self) -> str | None:
         return self.meta.id if self.meta is not None else None
 
+    @property
+    def tick_dropped(self) -> str | None:
+        """Why the driver evicted this plugin's tick, if it did.
+
+        The driver drops a plugin tick that repeatedly overruns its budget
+        (core/driver.py). The plugin stays active — its parsers, handlers and
+        windows still work — so the fact needs saying somewhere the user
+        looks: the manager page reads this.
+        """
+        return self.context.tick_dropped if self.context is not None else None
+
 
 class PluginHost:
     def __init__(

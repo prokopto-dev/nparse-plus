@@ -1,17 +1,30 @@
-"""Unit tests for LogDriver's character-switch detection.
+"""Unit tests for LogDriver's character-switch detection and tick supervision.
 
 ``_maybe_switch_log`` is synchronous, so it can be exercised directly without
 starting the driver's worker thread. This guards the character-switch path
 (CLAUDE.md notes it has regressed before) which previously had no tests.
+The tick tests drive ``_run_supervised_ticks`` the same way — synchronously,
+with a monkeypatched clock, so nothing has to actually sleep.
 """
 
 from __future__ import annotations
 
 import os
+import threading
+import time
+from datetime import datetime
 from pathlib import Path
 
+import pytest
+
+from nparseplus.core import driver as driver_module
 from nparseplus.core.bus import EventBus
-from nparseplus.core.driver import LOG_SWITCH_CHECK_S, LogDriver
+from nparseplus.core.driver import (
+    LOG_SWITCH_CHECK_S,
+    TICK_BREACH_LIMIT,
+    TICK_BUDGET_S,
+    LogDriver,
+)
 from nparseplus.core.events import AfterPlayerChangedEvent, BeforePlayerChangedEvent
 from nparseplus.core.player import ActivePlayer
 
@@ -104,3 +117,151 @@ def test_no_logs_leaves_the_driver_unattached(tmp_path: Path) -> None:
     assert driver._tail is None
     assert player.name == ""
     assert events == []
+
+
+# --- tick supervision -------------------------------------------------------
+
+
+class FakeClock:
+    """Stands in for the driver module's ``time``: a hand-cranked clock.
+
+    Ticks advance it themselves, so "this callback took 400 ms" costs the
+    test nothing. ``monotonic`` stays real — only tick timing is faked.
+    """
+
+    monotonic = staticmethod(time.monotonic)
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.perf_counter_calls = 0
+
+    def perf_counter(self) -> float:
+        self.perf_counter_calls += 1
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch) -> FakeClock:
+    fake = FakeClock()
+    monkeypatch.setattr(driver_module, "time", fake)
+    return fake
+
+
+def run_ticks(driver: LogDriver, iterations: int) -> None:
+    """Drive the loop's tick section directly, as _run does."""
+    for _ in range(iterations):
+        driver._run_supervised_ticks(datetime.now())
+
+
+def test_fast_supervised_tick_survives_many_iterations(tmp_path: Path, clock: FakeClock) -> None:
+    driver, _player, _events = _make_driver(tmp_path)
+    ran: list[datetime] = []
+
+    def fast(now: datetime) -> None:
+        clock.advance(0.001)
+        ran.append(now)
+
+    driver.add_supervised_tick(fast, label="plugin fast")
+
+    run_ticks(driver, 200)
+
+    assert len(ran) == 200
+    assert len(driver.on_tick) == 1
+
+
+def test_slow_supervised_tick_is_dropped_and_the_loop_continues(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    driver, _player, _events = _make_driver(tmp_path)
+    slow_runs: list[datetime] = []
+    neighbour_runs: list[datetime] = []
+    dropped: list[str] = []
+
+    def slow(now: datetime) -> None:
+        slow_runs.append(now)
+        clock.advance(TICK_BUDGET_S * 2)
+
+    def neighbour(now: datetime) -> None:
+        neighbour_runs.append(now)
+
+    driver.add_supervised_tick(slow, label="plugin hog", on_dropped=dropped.append)
+    driver.add_supervised_tick(neighbour, label="plugin polite")
+
+    run_ticks(driver, 10)
+
+    # Dropped the moment it hit the consecutive-breach limit, and never again.
+    assert len(slow_runs) == TICK_BREACH_LIMIT
+    assert slow not in driver.on_tick
+    assert dropped and "removed" in dropped[0]
+    # Everything else in the loop is untouched.
+    assert len(neighbour_runs) == 10
+    assert driver.on_tick == [neighbour]
+
+
+def test_isolated_slow_runs_do_not_drop_a_tick(tmp_path: Path, clock: FakeClock) -> None:
+    """One-off breaches (a GC pause, a cold import) must not evict a plugin."""
+    driver, _player, _events = _make_driver(tmp_path)
+    runs = 0
+    dropped: list[str] = []
+
+    def occasionally_slow(now: datetime) -> None:
+        nonlocal runs
+        runs += 1
+        clock.advance(TICK_BUDGET_S * 2 if runs % 2 else 0.001)
+
+    driver.add_supervised_tick(occasionally_slow, label="plugin blippy", on_dropped=dropped.append)
+
+    run_ticks(driver, 40)
+
+    assert runs == 40
+    assert dropped == []
+    assert occasionally_slow in driver.on_tick
+
+
+def test_builtin_ticks_are_never_dropped(tmp_path: Path, clock: FakeClock) -> None:
+    """App-owned ticks (timers, sharing) are ours: bounded means broken."""
+    driver, _player, _events = _make_driver(tmp_path)
+    runs: list[datetime] = []
+
+    def builtin(now: datetime) -> None:
+        runs.append(now)
+        clock.advance(TICK_BUDGET_S * 10)
+
+    driver.on_tick.append(builtin)  # how composition.py registers them
+    # A supervised tick alongside, so the timing path is actually in play.
+    driver.add_supervised_tick(lambda now: None, label="plugin fast")
+
+    run_ticks(driver, 20)
+
+    assert len(runs) == 20
+    assert builtin in driver.on_tick
+
+
+def test_remove_tick_deregisters_supervision(tmp_path: Path, clock: FakeClock) -> None:
+    driver, _player, _events = _make_driver(tmp_path)
+
+    def tick(now: datetime) -> None:
+        clock.advance(TICK_BUDGET_S * 2)
+
+    driver.add_supervised_tick(tick, label="plugin gone")
+    driver.remove_tick(tick)
+    assert driver.on_tick == [] and driver._supervised == {}
+    driver.remove_tick(tick)  # idempotent: unwind after an automatic drop
+
+
+def test_no_supervised_ticks_never_reads_the_clock(tmp_path: Path, clock: FakeClock) -> None:
+    """The no-plugin case must not pay for the instrumentation at all."""
+    driver, _player, _events = _make_driver(tmp_path)
+    ran = threading.Event()
+    driver.on_tick.append(lambda now: ran.set())
+
+    driver.start()
+    try:
+        assert ran.wait(2), "driver never ticked"
+    finally:
+        driver.stop()
+
+    assert clock.perf_counter_calls == 0
