@@ -49,7 +49,7 @@ from nparseplus_sdk.plugin import (
 # refusing plugins that declared a newer requires_sdk range — a bug invisible
 # in CI and only reproducible from a release artifact. A plain literal has no
 # such second code path. Bump this, tag `sdk-v<X.Y.Z>` (see sdk/README.md).
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 SDK_VERSION = __version__
 
