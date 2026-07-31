@@ -75,7 +75,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # How many failed updates a batch summary names before collapsing the rest.
-_MAX_REPORTED_FAILURES = 5
+# Not registry.py's identically-valued cap on unreachable registries — these
+# are different lists and there is no reason they should move together.
+_MAX_REPORTED_UPDATE_FAILURES = 5
 
 STATUS_LABELS = {
     "active": "Active",
@@ -202,10 +204,6 @@ class PluginManagerPage(QWidget):
         self._app_version = app_version
         # Installed this session (the host loads them next launch).
         self._session_installs: list[InstallResult] = []
-        # Seeded from the host so a check that ran at launch is already
-        # visible the first time this page is built — the page is rebuilt on
-        # every settings-window open, the host outlives them all.
-        self._check: UpdateCheckResult | None = host.cached_update_check()
         self._checking = False
         # Which registry vouched for the install currently in flight (""
         # for file/plain-URL installs). One value is enough: installs are
@@ -293,13 +291,30 @@ class PluginManagerPage(QWidget):
 
         self.refresh()
 
+    @property
+    def _check(self) -> UpdateCheckResult | None:
+        """The last update check — read straight from the host, never copied.
+
+        The host owns it because this page is rebuilt on every settings-window
+        open while the host outlives them all (so a check that ran at launch
+        is already visible the first time the page is built). Reading through
+        rather than mirroring means there is no second copy to fall out of
+        date with it.
+        """
+        return self._host.cached_update_check()
+
+    @property
+    def _updates(self) -> list[PluginUpdate]:
+        check = self._check
+        return list(check.updates) if check is not None else []
+
     # --- table -------------------------------------------------------------
     def refresh(self) -> None:
         rows = self._host.statuses()
         # Resolved once per refresh: a registry the user has since removed
         # simply won't be in here, which is what makes the display fall back.
         names = {r.url.lower(): r.name for r in self._host.registries()}
-        offers = updates_by_id(self._check.updates if self._check is not None else [])
+        offers = updates_by_id(self._updates)
         self._table.setRowCount(len(rows) + len(self._session_installs))
         for row_index, loaded in enumerate(rows):
             plugin_id = loaded.plugin_id
@@ -376,7 +391,7 @@ class PluginManagerPage(QWidget):
         """Label carries the count; disabled when there is nothing to take."""
         takeable = [
             update
-            for update in same_source_updates(self._check.updates if self._check else [])
+            for update in same_source_updates(self._updates)
             if update.installed_path is not None
         ]
         self._update_all_button.setText(
@@ -445,7 +460,6 @@ class PluginManagerPage(QWidget):
             self._status.setText("Could not check for updates — see nparseplus.log.")
             return
         self._host.cache_update_check(result)
-        self._check = result
         self.refresh()
 
     def _set_listings(self, result: MultiFetchResult) -> None:
@@ -457,11 +471,8 @@ class PluginManagerPage(QWidget):
         own feed — so any self-published offers from an earlier check are
         carried forward rather than silently dropped.
         """
-        carried = [
-            update
-            for update in (self._check.updates if self._check is not None else [])
-            if update.listing.registry.is_self_published
-        ]
+        previous = self._check
+        carried = [u for u in self._updates if u.listing.registry.is_self_published]
         registry_updates = pending_updates(
             self._host.installed_for_update_check(),
             result.listings,
@@ -472,17 +483,17 @@ class PluginManagerPage(QWidget):
         merged = UpdateCheckResult(
             fetched=result,
             updates=[*registry_updates, *(u for u in carried if u.plugin_id not in offered)],
-            self_feeds=self._check.self_feeds if self._check is not None else [],
+            self_feeds=previous.self_feeds if previous is not None else [],
         )
         self._host.cache_update_check(merged)
-        self._check = merged
         self.refresh()
 
     def _refresh_status(self) -> None:
         """The line under the buttons: fetch failures, then the offer count."""
-        lines = list(self._check.summary_lines()) if self._check is not None else []
-        pending = self._check.updates if self._check is not None else []
-        if self._check is None:
+        check = self._check
+        lines = list(check.summary_lines()) if check is not None else []
+        pending = self._updates
+        if check is None:
             lines.append("No update check has run yet this session.")
         elif not pending:
             lines.append("Every installed add-on is up to date.")
@@ -637,7 +648,7 @@ class PluginManagerPage(QWidget):
         activates third-party code, which is not something to do in parallel
         on a whim.
         """
-        pending = same_source_updates(self._check.updates if self._check is not None else [])
+        pending = same_source_updates(self._updates)
         pending = [update for update in pending if update.installed_path is not None]
         if not pending or self._batch_active:
             return
@@ -673,10 +684,12 @@ class PluginManagerPage(QWidget):
             lines += [
                 f"• {u.plugin_id} → {u.offered_version} — "
                 f"{(r.errors[0] if r.errors else 'unknown error')}"
-                for u, r in failed[:_MAX_REPORTED_FAILURES]
+                for u, r in failed[:_MAX_REPORTED_UPDATE_FAILURES]
             ]
-            if len(failed) > _MAX_REPORTED_FAILURES:
-                lines.append(f"• +{len(failed) - _MAX_REPORTED_FAILURES} more — see nparseplus.log")
+            if len(failed) > _MAX_REPORTED_UPDATE_FAILURES:
+                lines.append(
+                    f"• +{len(failed) - _MAX_REPORTED_UPDATE_FAILURES} more — see nparseplus.log"
+                )
         advisories = sum(len(r.warnings) for _u, r in done)
         if advisories:
             # The full text would be a wall across a batch; the per-row
@@ -770,16 +783,15 @@ class PluginManagerPage(QWidget):
         still says otherwise until a restart — so the offer has to be removed
         explicitly rather than recomputed.
         """
-        if self._check is None:
+        check = self._check
+        if check is None:
             return
-        remaining = [u for u in self._check.updates if u.plugin_id != plugin_id]
-        if len(remaining) == len(self._check.updates):
+        remaining = [u for u in check.updates if u.plugin_id != plugin_id]
+        if len(remaining) == len(check.updates):
             return
-        merged = UpdateCheckResult(
-            fetched=self._check.fetched, updates=remaining, self_feeds=self._check.self_feeds
+        self._host.cache_update_check(
+            UpdateCheckResult(fetched=check.fetched, updates=remaining, self_feeds=check.self_feeds)
         )
-        self._host.cache_update_check(merged)
-        self._check = merged
 
     def _set_install_buttons_enabled(self, enabled: bool) -> None:
         self._install_file_button.setEnabled(enabled)
