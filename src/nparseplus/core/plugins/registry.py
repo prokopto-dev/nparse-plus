@@ -19,7 +19,7 @@ import re
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -154,12 +154,27 @@ def fetch_index(url: str, fetch: Callable[[str], bytes] | None = None) -> Regist
 
 @dataclass(frozen=True)
 class ResolvedRegistry:
-    """One registry to fetch: the built-in default, or a user-added one."""
+    """One index to fetch: the built-in default, a user-added registry, or a
+    plugin's own declared update feed.
+
+    ``kind`` exists because ``name`` renders straight into the Source column
+    and the "update available … from <name>" line. A self-published feed
+    dressed as a plain registry would read exactly like one the user chose to
+    trust, so it says which it is and the renderers key off that rather than
+    off the name. It is a trailing defaulted field: every existing
+    construction site keeps working unchanged.
+    """
 
     url: str
     name: str
     enabled: bool
     is_default: bool
+    kind: Literal["default", "user", "self"] = "user"
+
+    @property
+    def is_self_published(self) -> bool:
+        """True for a feed a plugin declared about itself — nobody vouched."""
+        return self.kind == "self"
 
 
 @dataclass(frozen=True)
@@ -256,6 +271,7 @@ def resolve_registries(plugins: PluginsSettings) -> list[ResolvedRegistry]:
         name=DEFAULT_REGISTRY_NAME,
         enabled=plugins.default_registry_enabled,
         is_default=True,
+        kind="default",
     )
     resolved = [default]
     for source in plugins.registries:
@@ -267,6 +283,7 @@ def resolve_registries(plugins: PluginsSettings) -> list[ResolvedRegistry]:
                 name=registry_display_name(source.url, source.name),
                 enabled=source.enabled,
                 is_default=False,
+                kind="user",
             )
         )
     return resolved

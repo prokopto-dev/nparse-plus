@@ -171,9 +171,9 @@ class TestLiveModuleNamespace:
         plugins_dir.mkdir(parents=True, exist_ok=True)
         package = plugins_dir / name
         package.mkdir()
-        # `from .helper import ...`, not `from . import helper` — the latter
-        # needs the grandparent namespace package, which loading.py never
-        # creates (see tests/core/plugins/test_discovery.py for the scheme).
+        # A real relative import, so the submodule ends up in sys.modules
+        # under the plugin's namespace — that entry is what a careless
+        # validation run would strand pointing into the deleted staging dir.
         (package / "__init__.py").write_text(
             GOOD_SOURCE + "\nfrom .helper import VALUE  # noqa: E402\n", encoding="utf-8"
         )
