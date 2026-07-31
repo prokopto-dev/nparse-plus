@@ -228,6 +228,17 @@ def _preserved_plugin_modules(stem: str) -> Iterator[None]:
     candidate's module-level code and its ``activate()`` still ran in this
     process, which is the trust boundary installing already has (see the
     module docstring). It restores the *import namespace*, nothing more.
+
+    Hiding the snapshot for the duration is the other half, and the half that
+    decides whether an update can happen at all: the candidate's own imports
+    go through ``sys.modules`` like anyone else's, so a leftover
+    ``<stem>.inventory`` from the *running* version is what a freshly written
+    ``<stem>.finding`` gets handed when it asks for a name the old copy never
+    had. Validation then fails with an ``ImportError`` naming a file the user
+    is trying to replace, and every plugin that adds a module or a public name
+    between releases is un-updatable without a restart. Emptying the namespace
+    first costs nothing — the live plugin object is held by the host, not by
+    this dict, and the ``finally`` puts every entry back.
     """
     prefix = f"{MODULE_NAMESPACE}.{stem}"
 
@@ -235,6 +246,8 @@ def _preserved_plugin_modules(stem: str) -> Iterator[None]:
         return [name for name in sys.modules if name == prefix or name.startswith(f"{prefix}.")]
 
     saved = {name: sys.modules[name] for name in matching()}
+    for name in saved:
+        del sys.modules[name]
     try:
         yield
     finally:
