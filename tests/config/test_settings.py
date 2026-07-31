@@ -278,6 +278,31 @@ def test_plugins_enabled_roundtrips_and_defaults_off(tmp_path: Path) -> None:
     assert load_settings(path).plugins.enabled is True
 
 
+def test_plugin_entry_update_url_roundtrips(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    assert PluginEntry().update_url == ""
+
+    original = Settings()
+    original.plugins.entries["selfhosted"] = PluginEntry(
+        approved=True, update_url="https://you.example/p/index.json"
+    )
+    save_settings(original, path)
+    loaded = load_settings(path)
+    assert loaded.plugins.entries["selfhosted"].update_url == "https://you.example/p/index.json"
+
+
+def test_plugins_update_check_defaults_on_and_roundtrips(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    # Matches general.update_check: the app checks for its own updates by
+    # default, and this is the same promise for add-ons.
+    assert Settings().plugins.update_check is True
+
+    original = Settings()
+    original.plugins.update_check = False
+    save_settings(original, path)
+    assert load_settings(path).plugins.update_check is False
+
+
 def test_settings_written_by_a_newer_build_still_load(tmp_path: Path) -> None:
     # Downgrading drops the unknown block rather than refusing to start; the
     # consequence is that plugin consent is re-asked, which is the safe way to

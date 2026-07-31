@@ -348,6 +348,11 @@ class PluginEntry(BaseModel):
     # installs and sideloads. Recorded rather than resolved to a name so that
     # removing a registry later doesn't falsify the record.
     registry_url: str = ""
+    # Mirror of the plugin's own PluginMeta.update_url, so the update checker
+    # can still reach the feed of a plugin that is installed but not loaded
+    # (consent declined, disabled, incompatible). The live meta wins whenever
+    # there is one; this is the cache for when there isn't.
+    update_url: str = ""
 
 
 def normalize_registry_url(url: str) -> str:
@@ -405,6 +410,12 @@ class PluginsSettings(BaseModel):
     # URL a past release happened to write into their settings.json.
     registries: list[RegistrySource] = Field(default_factory=list)
     default_registry_enabled: bool = True
+    # Poll the enabled registries (and each plugin's declared update feed)
+    # shortly after launch so Settings > Plugins can say what is out of date
+    # without the user opening Browse first. Only meaningful while `enabled`
+    # is True — with add-ons off, nothing plugin-shaped is even imported.
+    # Matches general.update_check, which defaults on for the app itself.
+    update_check: bool = True
 
     @model_validator(mode="after")
     def _fold_in_legacy_and_sanitize(self) -> PluginsSettings:
