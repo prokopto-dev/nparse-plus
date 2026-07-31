@@ -28,14 +28,17 @@ from __future__ import annotations
 import hashlib
 import shutil
 import stat
+import sys
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from nparseplus.core.plugins.discovery import is_reserved_name
 from nparseplus_sdk import PluginMeta
+from nparseplus_sdk.loading import MODULE_NAMESPACE
 from nparseplus_sdk.validate import validate_plugin
 
 MAX_ARCHIVE_MEMBERS = 2000
@@ -179,6 +182,49 @@ def _extract_limited(zf: zipfile.ZipFile, staging: Path, budget: int) -> str | N
     return None
 
 
+@contextmanager
+def _preserved_plugin_modules(stem: str) -> Iterator[None]:
+    """Undo what validating a candidate does to an already-loaded plugin.
+
+    ``import_plugin_module`` keys ``sys.modules`` by the plugin's *path stem*
+    (``nparseplus_user_plugins.<stem>``), and ``validate_plugin`` imports the
+    candidate to check it. So validating a copy whose stem matches a plugin
+    the app already loaded rebinds that key to a module whose ``__file__`` and
+    ``__path__`` point into the staging directory — which is deleted the
+    moment validation finishes. The live plugin object survives (the host
+    holds it), but its next relative import resolves through the rebound entry
+    into a directory that is gone, and any module-level singleton has silently
+    forked into two copies.
+
+    So snapshot the namespace, let validation do what it likes, then drop
+    whatever it added and restore what was there. This is not a sandbox: the
+    candidate's module-level code and its ``activate()`` still ran in this
+    process, which is the trust boundary installing already has (see the
+    module docstring). It restores the *import namespace*, nothing more.
+    """
+    prefix = f"{MODULE_NAMESPACE}.{stem}"
+
+    def matching() -> list[str]:
+        return [name for name in sys.modules if name == prefix or name.startswith(f"{prefix}.")]
+
+    saved = {name: sys.modules[name] for name in matching()}
+    try:
+        yield
+    finally:
+        for name in matching():
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)
+
+
+def _module_stem(name: str) -> str:
+    """The ``sys.modules`` stem a plugin path would import under.
+
+    Mirrors ``import_plugin_module``'s ``path.stem if path.is_dir() else
+    entry.stem`` for a root name that may or may not carry a ``.py`` suffix.
+    """
+    return name[:-3] if name.endswith(".py") else name
+
+
 def _plugin_root(names: list[str]) -> tuple[str | None, str | None]:
     """Return (root_name, error): the single package dir or single .py file."""
     top_dirs = {n.split("/", 1)[0] for n in names if "/" in n}
@@ -242,7 +288,8 @@ def install_from_zip(
             if extract_error is not None:
                 return InstallResult(ok=False, errors=[extract_error])
             candidate = staging / root
-            report = validate_plugin(candidate, app_version=app_version)
+            with _preserved_plugin_modules(_module_stem(root)):
+                report = validate_plugin(candidate, app_version=app_version)
             if not report.ok:
                 return InstallResult(ok=False, errors=report.errors, warnings=report.warnings)
             plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -275,7 +322,8 @@ def install_from_file(
         digest, checksum_error = _checksum_error(path.read_bytes(), expected_sha256)
         if checksum_error is not None:
             return InstallResult(ok=False, errors=[checksum_error])
-        report = validate_plugin(path, app_version=app_version)
+        with _preserved_plugin_modules(path.stem):
+            report = validate_plugin(path, app_version=app_version)
         if not report.ok:
             return InstallResult(ok=False, errors=report.errors, warnings=report.warnings)
         target = Path(plugins_dir) / path.name

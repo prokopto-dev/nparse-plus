@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import sys
 import zipfile
 from pathlib import Path
+from types import ModuleType
 
 import httpx
 import pytest
@@ -18,6 +20,7 @@ from nparseplus.core.plugins.install import (
     trash_plugin_data,
     uninstall,
 )
+from nparseplus_sdk.loading import MODULE_NAMESPACE, import_plugin_module
 
 from .conftest import PLUGIN_TEMPLATE
 
@@ -137,6 +140,84 @@ def test_already_installed_rejected(tmp_path: Path) -> None:
     result = install_from_zip(archive, plugins_dir)
     assert not result.ok
     assert any("already installed" in e for e in result.errors)
+
+
+class TestLiveModuleNamespace:
+    """Validating a candidate must not repoint an already-loaded plugin.
+
+    ``validate_plugin`` imports the candidate, and ``import_plugin_module``
+    keys ``sys.modules`` by the path *stem* — so without care, validating a
+    same-stem copy leaves the running plugin's import entry pointing into the
+    staging directory the installer then deletes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_sys_modules(self):
+        """These tests import plugins for real; don't leak them to other tests."""
+        before = dict(sys.modules)
+        yield
+        for name in [n for n in sys.modules if n.startswith(MODULE_NAMESPACE)]:
+            if name not in before:
+                del sys.modules[name]
+        sys.modules.update(
+            {n: m for n, m in before.items() if n.startswith(MODULE_NAMESPACE)},
+        )
+
+    @staticmethod
+    def _live_package(plugins_dir: Path, name: str) -> ModuleType:
+        """Install a package plugin with a submodule and import it for real."""
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        package = plugins_dir / name
+        package.mkdir()
+        # `from .helper import ...`, not `from . import helper` — the latter
+        # needs the grandparent namespace package, which loading.py never
+        # creates (see tests/core/plugins/test_discovery.py for the scheme).
+        (package / "__init__.py").write_text(
+            GOOD_SOURCE + "\nfrom .helper import VALUE  # noqa: E402\n", encoding="utf-8"
+        )
+        (package / "helper.py").write_text("VALUE = 'original'\n", encoding="utf-8")
+        return import_plugin_module(package)
+
+    def test_a_fresh_install_does_not_clobber_a_live_module(self, tmp_path: Path) -> None:
+        # The latent bug this guard also covers: a `demo.py` archive installs
+        # cleanly beside a live `demo/` package (the exists-check compares
+        # paths, which differ), but both import under the same stem.
+        plugins_dir = tmp_path / "plugins"
+        live = self._live_package(plugins_dir, "demo")
+        key = f"{MODULE_NAMESPACE}.demo"
+        assert sys.modules[key] is live
+
+        archive = make_zip(tmp_path / "other.zip", {"demo.py": GOOD_SOURCE})
+        assert install_from_zip(archive, plugins_dir).ok
+
+        assert sys.modules[key] is live
+        assert sys.modules[f"{key}.helper"].VALUE == "original"
+
+    def test_validation_leaves_no_staging_paths_behind(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        self._live_package(plugins_dir, "demo")
+        archive = make_zip(tmp_path / "other.zip", {"demo.py": GOOD_SOURCE})
+        install_from_zip(archive, plugins_dir)
+
+        staging = str(plugins_dir / ".install-staging")
+        for name, module in list(sys.modules.items()):
+            if not name.startswith(MODULE_NAMESPACE):
+                continue
+            assert staging not in (getattr(module, "__file__", None) or "")
+
+    def test_a_failed_validation_also_restores_the_namespace(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        live = self._live_package(plugins_dir, "demo")
+        archive = make_zip(tmp_path / "bad.zip", {"demo.py": "import nope_never\n"})
+        assert not install_from_zip(archive, plugins_dir).ok
+        assert sys.modules[f"{MODULE_NAMESPACE}.demo"] is live
+
+    def test_an_unrelated_stem_is_left_alone(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        live = self._live_package(plugins_dir, "demo")
+        archive = make_zip(tmp_path / "other.zip", {"unrelated.py": GOOD_SOURCE})
+        assert install_from_zip(archive, plugins_dir).ok
+        assert sys.modules[f"{MODULE_NAMESPACE}.demo"] is live
 
 
 def test_install_from_local_py_file(tmp_path: Path) -> None:
