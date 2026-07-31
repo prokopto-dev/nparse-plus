@@ -477,3 +477,165 @@ class TestRegistries:
         host.record_install(self._install_result(), registry_url="https://guild.example/i.json")
         host.forget("demo")
         assert "demo" not in settings.plugins.entries
+
+
+class TestUpdates:
+    """Updating keeps what uninstalling deliberately throws away."""
+
+    def test_an_update_preserves_consent_and_plugin_data(
+        self, make_host, plugins_dir: Path, settings: Settings, tmp_path: Path
+    ) -> None:
+        """The headline of #51.
+
+        The old "update" — uninstall then reinstall — went through forget(),
+        which drops the consent record and trashes plugin-data/<id> by
+        design. Replacing in place must do neither.
+        """
+        from nparseplus.core.plugins.install import ReplaceTarget, install_from_file
+        from nparseplus.core.plugins.storage import JsonPluginStorage
+
+        data_root = tmp_path / "plugin-data"
+        data_dir = lambda pid: data_root / pid  # noqa: E731 - one-line test stub
+        write_plugin(plugins_dir, "keeper.py", plugin_id="keeper", version="1.0.0")
+        host = make_host(plugin_data_dir_override=data_dir)
+        host.discover_and_load()
+        host.record_consent("keeper", True)
+        host.activate_enabled()
+        JsonPluginStorage(data_dir("keeper")).save({"api_key": "hunter2"})
+
+        newer = tmp_path / "newer" / "keeper.py"
+        newer.parent.mkdir()
+        write_plugin(newer.parent, "keeper.py", plugin_id="keeper", version="2.0.0")
+        result = install_from_file(
+            newer,
+            plugins_dir,
+            app_version=APP_VERSION,
+            replace=ReplaceTarget(plugin_id="keeper", installed_path=plugins_dir / "keeper.py"),
+        )
+        assert result.ok, result.errors
+        host.record_install(result)
+
+        entry = settings.plugins.entries["keeper"]
+        assert entry.approved is True
+        assert entry.enabled is True
+        assert entry.last_version == "2.0.0"
+        assert JsonPluginStorage(data_dir("keeper")).load() == {"api_key": "hunter2"}
+        # ...and nothing was swept into the plugin-data trash.
+        assert not (plugins_dir / "trash" / "plugin-data").exists()
+
+    def test_an_update_keeps_the_vouching_registry(self, make_host, settings: Settings) -> None:
+        from nparseplus.core.plugins.install import InstallResult
+        from nparseplus_sdk import PluginMeta
+
+        host = make_host()
+        first = InstallResult(
+            ok=True, meta=PluginMeta(id="demo", name="Demo", version="1.0.0"), sha256="a" * 64
+        )
+        host.record_install(first, registry_url="https://guild.example/i.json")
+        second = InstallResult(
+            ok=True, meta=PluginMeta(id="demo", name="Demo", version="2.0.0"), sha256="b" * 64
+        )
+        host.record_install(second, registry_url="https://guild.example/i.json")
+
+        entry = settings.plugins.entries["demo"]
+        assert entry.registry_url == "https://guild.example/i.json"
+        assert entry.last_version == "2.0.0"
+        assert entry.sha256 == "b" * 64
+
+    def test_the_cache_starts_empty_and_round_trips(self, make_host) -> None:
+        from nparseplus.core.plugins.registry import MultiFetchResult
+        from nparseplus.core.plugins.updatecheck import UpdateCheckResult
+
+        host = make_host()
+        assert host.cached_update_check() is None
+        result = UpdateCheckResult(fetched=MultiFetchResult(results=[]))
+        host.cache_update_check(result)
+        assert host.cached_update_check() is result
+
+    def test_set_update_check_persists(self, make_host, settings: Settings) -> None:
+        saves: list[None] = []
+        host = make_host(request_save=lambda: saves.append(None))
+        assert host.update_check_enabled is True
+        host.set_update_check(False)
+        assert settings.plugins.update_check is False
+        assert host.update_check_enabled is False
+        assert saves
+
+
+class TestInstalledForUpdateCheck:
+    def test_reports_id_version_and_provenance(
+        self, make_host, plugins_dir: Path, settings: Settings
+    ) -> None:
+        write_plugin(plugins_dir, "shipped.py", plugin_id="shipped", version="1.4.0")
+        approve(settings, "shipped")
+        settings.plugins.entries["shipped"].registry_url = "https://guild.example/i.json"
+        host = make_host()
+        host.discover_and_load()
+
+        (row,) = host.installed_for_update_check()
+        assert row.plugin_id == "shipped"
+        assert row.version == "1.4.0"
+        assert row.registry_url == "https://guild.example/i.json"
+        assert row.installed_path == plugins_dir / "shipped.py"
+
+    def test_covers_a_plugin_that_never_loaded(
+        self, make_host, plugins_dir: Path, settings: Settings
+    ) -> None:
+        # Disabled is exactly a state an update might resolve, so the row has
+        # to be able to say "update available".
+        write_plugin(plugins_dir, "off.py", plugin_id="off", version="1.0.0")
+        approve(settings, "off", enabled=False)
+        host = make_host()
+        host.discover_and_load()
+        assert [r.plugin_id for r in host.installed_for_update_check()] == ["off"]
+
+    def test_mirrors_the_declared_feed_onto_the_entry(
+        self, make_host, plugins_dir: Path, settings: Settings
+    ) -> None:
+        write_plugin(
+            plugins_dir,
+            "fed.py",
+            plugin_id="fed",
+            extra_meta=", update_url='https://you.example/fed/index.json'",
+        )
+        approve(settings, "fed")
+        host = make_host()
+        host.discover_and_load()
+
+        assert settings.plugins.entries["fed"].update_url == "https://you.example/fed/index.json"
+        (row,) = host.installed_for_update_check()
+        assert row.update_url == "https://you.example/fed/index.json"
+
+    def test_a_removed_feed_clears_the_cached_one(
+        self, make_host, plugins_dir: Path, settings: Settings
+    ) -> None:
+        # An author who drops their feed should stop being polled, not be
+        # polled forever from a stale cache.
+        approve(settings, "fed")
+        settings.plugins.entries["fed"].update_url = "https://you.example/fed/index.json"
+        write_plugin(plugins_dir, "fed.py", plugin_id="fed")
+        host = make_host()
+        host.discover_and_load()
+
+        assert settings.plugins.entries["fed"].update_url == ""
+        assert host.installed_for_update_check()[0].update_url == ""
+
+    def test_a_declined_plugins_feed_is_not_carried_through(
+        self, make_host, plugins_dir: Path, settings: Settings
+    ) -> None:
+        # Declining consent must also decline the outbound request the feed
+        # would make on every launch.
+        write_plugin(
+            plugins_dir,
+            "nope.py",
+            plugin_id="nope",
+            extra_meta=", update_url='https://you.example/nope/index.json'",
+        )
+        host = make_host()
+        host.discover_and_load()
+        host.record_consent("nope", False)
+
+        (row,) = host.installed_for_update_check()
+        assert row.update_url == ""
+        # ...but the registry side of the check still covers it.
+        assert row.plugin_id == "nope"
