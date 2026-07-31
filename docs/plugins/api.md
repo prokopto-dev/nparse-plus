@@ -19,6 +19,7 @@ Frozen pydantic model — your plugin's identity and compatibility claim.
 | `requires_sdk` | `">=1.0,<2"` | PEP 440 range vs the bundled SDK |
 | `min_app_version` | `None` | optional minimum nParse+ version |
 | `description` / `author` / `homepage` | `""` | shown in consent + manager UI |
+| `update_url` | `""` | optional https index the app polls for **your** updates — see [Shipping updates](developing.md#shipping-updates-without-a-registry) |
 
 `check_compat(meta, *, sdk_version, app_version=None) -> str | None` returns
 the human-readable refusal reason, or `None` when loadable. `sdk_version` is

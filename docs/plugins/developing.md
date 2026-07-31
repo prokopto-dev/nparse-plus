@@ -223,6 +223,64 @@ itself. Either way, the rule is the same: nothing Qt at import time.
 - **Changing your `meta.id` costs you every user's consent and their stored
   data.** Pick it once.
 
+## Shipping updates without a registry
+
+If your plugin is listed in a registry, updates come for free: the app polls
+every registry the user has ticked and offers a newer *compatible* release.
+For a plugin distributed any other way — a link on a forum, a release page,
+a zip you hand out — set `update_url` to an https index document and the app
+will poll it for your plugin alone:
+
+```python
+meta = PluginMeta(
+    id="my-plugin",
+    name="My Plugin",
+    version="1.2.0",
+    update_url="https://you.example/my-plugin/index.json",
+)
+```
+
+The document is the ordinary [registry index format](registry.md#index-format-schema-1) —
+usually a one-entry file you regenerate on each release:
+
+```json
+{
+  "schema_version": 1,
+  "plugins": [{
+    "id": "my-plugin",
+    "name": "My Plugin",
+    "latest": {
+      "version": "1.3.0",
+      "url": "https://you.example/my-plugin/my-plugin-1.3.0.zip",
+      "sha256": "…64 hex chars…",
+      "requires_sdk": ">=1.0,<2"
+    }
+  }]
+}
+```
+
+Rules worth knowing before you rely on it:
+
+- **Your feed can only offer your own id.** Any listing whose `id` is not the
+  id of the plugin that declared the feed is discarded. A feed is an update
+  channel for one plugin, not a registry.
+- **It never appears in Browse.** Users discover plugins through registries;
+  a feed only updates something already installed.
+- **A registry install wins.** If the user got your plugin from a registry,
+  that registry's offer is preferred and your feed's offer counts as a
+  different source — which the app makes the user confirm.
+- **The sha256 is your own claim.** It proves the download matches what you
+  published; it does not mean anyone reviewed it. The app says as much next
+  to the offer.
+- **`update_url` must be https, or your plugin will not load.** That is
+  deliberate — `nparseplus-plugin validate` catches it before your users do.
+- The user can switch the whole thing off with **Settings > Plugins > Check
+  for plugin updates**, and it is never polled while your plugin is disabled
+  or its consent was declined.
+
+Version comparison is PEP 440 on `meta.version` vs the feed's `latest.version`,
+strictly greater — so keep bumping it.
+
 ## Testing your plugin locally
 
 There is **no hot reload.** Installing, enabling, disabling and uninstalling
