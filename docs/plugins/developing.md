@@ -372,10 +372,11 @@ asked for.
 **Package** — zip your plugin so the archive contains exactly one top-level
 entry: the package folder (with `__init__.py`) or the single `.py` file.
 That zip is what users feed to Settings > Plugins > *Install from file/URL*.
-Multi-file plugins must be packages using **relative imports**
-(`from .helper import x`) — plugins are imported under the private
-`nparseplus_user_plugins.*` namespace via `spec_from_file_location`, never
-via `sys.path`.
+Multi-file plugins must be packages using **relative imports** — either form
+works (`from .helper import x` or `from . import helper`). Plugins are
+imported under the private `nparseplus_user_plugins.*` namespace via
+`spec_from_file_location`, never via `sys.path`; absolute imports of your own
+modules (`import helper`) will not resolve.
 
 ## Third-party dependencies: there aren't any
 
