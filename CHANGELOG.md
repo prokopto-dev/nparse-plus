@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.21.1 (2026-07-31)
+
+### Bug Fixes
+
+- **plugins**: Let a candidate import its own modules during validation
+  ([`c992de9`](https://github.com/prokopto-dev/nparse-plus/commit/c992de94589520ff0da5357f7e97b59e890f50f7))
+
+### Code Style
+
+- **plugins**: Run ruff format on the new install test
+  ([`fab113b`](https://github.com/prokopto-dev/nparse-plus/commit/fab113b9487f68e24e336385bda50b82437d1036))
+
+
 ## v1.21.0 (2026-07-31)
 
 ### Bug Fixes
