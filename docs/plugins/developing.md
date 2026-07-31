@@ -222,6 +222,14 @@ itself. Either way, the rule is the same: nothing Qt at import time.
   [Security & trust](security.md#a-version-bump-does-not-re-ask).
 - **Changing your `meta.id` costs you every user's consent and their stored
   data.** Pick it once.
+- **Your distribution root name is part of your identity too.** That is the
+  package directory (or the `.py` filename) inside your zip. An update is
+  installed over the copy already on disk, and nParse+ refuses an "update"
+  whose root would land somewhere else — otherwise it would install a second
+  copy beside the first, both claiming your id. Renaming `my-plugin/` to
+  `my_plugin/` between releases therefore strands your users on the
+  uninstall-and-reinstall path, which loses their stored data. Pick that
+  once as well.
 
 ## Shipping updates without a registry
 

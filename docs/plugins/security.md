@@ -119,9 +119,47 @@ ship arbitrary new code under the same id and it runs on the next launch.
 
 That is a deliberate trade (a prompt on every patch release trains people to
 click through), but it means your trust decision is in the *author*, not in
-the particular build you looked at. If you want to re-evaluate, uninstall
+the particular build you looked at. Taking an update from Settings > Plugins
+follows the same rule and keeps your consent — that is what makes it an
+update rather than a fresh install. If you want to re-evaluate, uninstall
 and reinstall: uninstalling forgets the consent record, so the reinstall
 asks again.
+
+**What does re-ask is a change of *source*.** If an update is offered by a
+registry other than the one that supplied your copy — or by any source at
+all, when nParse+ has no record of where your copy came from — you get a
+confirmation naming both ends before anything is downloaded. Same plugin id,
+different publisher, possibly unrelated code: that is a new trust decision,
+not a version bump, and the app refuses to let it be one click.
+
+Note also that installing *or updating* runs the candidate's module-level
+code and its `activate()` during validation, before the swap. That is the
+same trust boundary installing has always had, but on the update path it
+means the new version executes once before you have run it — a reason to
+care who is publishing, not only what the version number says.
+
+## Self-published update feeds
+
+A plugin may declare `PluginMeta.update_url`, an index the app polls for
+that add-on's own releases. It exists so an add-on distributed outside any
+registry can still be updated in place. What it is *not* is a review:
+
+- The author supplies both the artifact URL and the sha256 it is checked
+  against. The pin still works — a tampered download is refused — but it
+  proves the bytes match what that author published, and nothing more. A
+  registry pin at least means someone else chose the hash.
+- A feed can only ever offer the id of the plugin that declared it. Any
+  other listing in that document is discarded, so one add-on cannot publish
+  "updates" for another.
+- A feed never appears in **Browse registry…**. It updates something you
+  already installed; it does not advertise anything new.
+- If your copy came from a registry, that registry's offer wins, and the
+  feed's offer counts as a source change (see above).
+- Feeds are only polled for add-ons that are approved **and** enabled, and
+  not at all if you untick *Check for plugin updates shortly after launch*.
+  Bear in mind that when the box is ticked, a request goes to a URL the
+  author chose each time nParse+ starts — which reveals your IP and roughly
+  when you play. If that matters to you, untick it and check by hand.
 
 ## What uninstalling actually removes
 

@@ -38,14 +38,13 @@ and how far to trust them lives in [Plugins](../plugins/index.md) and
 
 Two annotations can be appended to any of the above:
 
-- **`— update available (v1.2.3)`** — the last **Browse registry…** fetch in
-  this session listed a newer release than the one you have installed, *and*
-  that release can load on this build (an update your nParse+ or SDK version
-  would refuse is not offered at all). If the only newer release comes from a
-  different registry than the one the add-on was installed from, the
-  annotation names it — **`— update available (v1.2.3 from Some Registry)`**
-  — because that is a different publisher of the same plugin id, not the
-  same add-on. See
+- **`— update available (v1.2.3)`** — a newer release than the one you have
+  is listed, *and* it can load on this build (an update your nParse+ or SDK
+  version would refuse is not offered at all). The **Update** column carries
+  a button to take it. If the offer comes from a different source than the
+  copy you have, the annotation names it —
+  **`— update available (v1.2.3 from Some Registry)`** — because that is a
+  different publisher of the same plugin id, not the same add-on. See
   [Updates prefer the registry you installed from](../plugins/registry.md#updates-prefer-the-registry-you-installed-from).
 - **`— tick disabled (too slow)`** — the add-on registered a periodic tick
   and the log driver evicted it for repeatedly overrunning its budget. The
@@ -72,6 +71,32 @@ install is never rewritten.
 
 ## The buttons
 
+**Check for updates** asks every ticked registry, plus the update feed of
+each enabled add-on that declares one, what the newest release is. It runs
+on a worker thread and annotates the table when it comes back; a registry
+that cannot be reached is named above the table rather than blanking it.
+Unless you have turned it off, the same check runs by itself about twelve
+seconds after nParse+ starts, so the page usually already knows — see
+[Automatic checks](#automatic-checks).
+
+**Update** (one per row, in the **Update** column) replaces that add-on
+in place. The download is verified against the sha256 the offering source
+listed, the new code is validated before anything is swapped, and only then
+does the old copy move to `plugins/trash/`. **Your consent record and the
+add-on's stored data are kept** — this is the whole difference from
+uninstalling and reinstalling, which forgets both by design. If the update
+fails at any point, the version you had is still installed and still loads.
+
+If the offer comes from a source other than the one that supplied your
+copy, the button gains an ellipsis and asks first, naming both ends. That is
+not the same add-on arriving with a new version number; it is a different
+publisher of the same plugin id, and it may be entirely different code.
+
+**Update all (n)** takes every update that needs no such decision, one at a
+time. Updates from a different source are deliberately left out — the count
+in the status line says how many and why. One failure does not stop the
+rest; a single summary at the end lists what was updated and what was not.
+
 **Browse registry…** fetches every ticked [registry](../plugins/registry.md)
 at once and merges the listings into one table: name, version, author,
 **Source**, and whether it can load here. Registry installs are the only
@@ -84,8 +109,10 @@ The button on each row reads:
 | Button | Meaning |
 |---|---|
 | **Install** | Compatible, not installed. One click downloads it, verifies the pinned hash, and installs it. |
-| **Installed** | You already have this plugin id, from this registry (or from a file/URL with no registry recorded). Disabled. |
-| **Installed (other source)** | You have this plugin id, but a *different* registry vouched for the copy you have. Disabled — the tooltip names both registries. Same id from another registry may be entirely different code, so swapping is not a one-click action; uninstall the current copy first. |
+| **Update to v1.2.3** | You have an older version, from this same registry. One click replaces it in place — your consent and the add-on's stored data are kept. |
+| **Update to v1.2.3…** | Same, but the offer comes from a *different* source than the copy you have. The ellipsis is the promise of a confirmation naming both ends before anything is downloaded. |
+| **Installed** | You already have this plugin id at this version, from this registry (or from a file/URL with no registry recorded). Disabled. |
+| **Installed (other source)** | You have this plugin id, a *different* registry vouched for your copy, and this listing has nothing newer. Disabled — the tooltip names both registries. |
 | **Incompatible** | The listed release wants an SDK or nParse+ version this build doesn't provide. Disabled. |
 
 The **Source** cell names the registry that served the row, with
@@ -169,10 +196,31 @@ be no way back to it from this page. Untick it instead: that stops it being
 offered while keeping the way back, and it also means a future release can
 move the built-in catalogue without stranding you on an old URL.
 
+## Automatic checks
+
+**Check for plugin updates shortly after launch** (ticked by default) polls
+about twelve seconds after nParse+ starts, on a worker thread, so the
+Plugins page can tell you what is out of date without you going looking. It
+contacts:
+
+- every registry you have ticked, and
+- the update feed of each **enabled** add-on that declares one.
+
+That second one is worth knowing about: a self-published feed is a URL the
+add-on's author chose, so a request goes to a server of their choosing on
+every launch. Feeds of add-ons you disabled or declined are never contacted
+— declining an add-on declines its feed with it. Nothing here is contacted
+at all if no add-ons are installed.
+
+The check is quiet: no popup, no tray notification. It fails soft — a
+registry being down leaves the previous answer in place and is reported the
+next time you open the page. Untick the box to stop it entirely and use
+**Check for updates** by hand instead.
+
 ## Restart semantics
 
 Everything on this page that changes *what runs* takes effect at the next
-launch — enable, disable, install, uninstall. Activation registers bus
+launch — enable, disable, install, uninstall, update. Activation registers bus
 subscriptions, log parsers, and driver ticks that must all be in place
 before the log driver thread starts, and plugin windows must exist when the
 tray menu and window layouts are built, so there is no safe point to do it

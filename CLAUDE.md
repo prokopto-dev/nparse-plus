@@ -398,6 +398,47 @@ annotations, and a Refresh button. Docs: docs/plugins/registry.md "Using
 another registry" is the canonical trust argument; security.md and
 docs/settings/plugins.md point at it.
 
+**In-app plugin updates** (post-1.20, ~1653 tests): closes #51 — the app
+could *detect* an update and had no way to *take* one, and the only
+workaround (uninstall + reinstall) went through `PluginHost.forget`, which
+drops consent and trashes `plugin-data/<id>` by design. `install.py` grows
+`ReplaceTarget` + a `replace=` kwarg on all three entry points: same
+pipeline, already-installed refusal inverted, two identity gates at
+different points because they have to be — the archive root must equal the
+installed path (before extraction; the install path comes from the archive
+root, never `meta.id`, so a renamed root would install a *second* copy under
+one id) and the validated `meta.id` must equal the plugin being replaced
+(after `validate_plugin`, the earliest identity exists). The swap goes
+through a private `.install-backup` sibling and only reaches `trash/` once
+the new copy is in place, so a failure rolls straight back. **Consent and
+plugin-data are untouched** — that is the feature. `core/plugins/
+updatecheck.py` is the Qt-free decision layer: `best_update` stays the one
+decision function and this adds the fan-out plus provenance classification
+(`same_source`/`unknown_provenance`/`needs_confirmation`), plus
+`listing_action` which decides per *browser row* (one row per
+registry×listing, so a v1.0 row can't advertise another registry's v2.0).
+SDK 1.1 adds `PluginMeta.update_url`, a self-published index letting a
+plugin distributed outside any registry be updated: joins the same
+`MergedListing` pipeline via `ResolvedRegistry.kind="self"`, may only ever
+offer its own id (impersonation guard), never enters Browse, never outranks
+the registry a plugin was installed from — but *does* count as same-source
+for a copy nothing vouched for, or `update_url` would be permanently
+two-click for its own use case. Cache lives on `PluginHost` (session-only:
+the page is rebuilt per settings-window open, the host outlives them), fed
+by `pluginbootstrap.schedule_update_check` ~12 s after launch behind
+`plugins.update_check` (default on) — quiet, no popup, no tray balloon, and
+a declined plugin's feed is never contacted. UI: per-row Update, Update all
+(same-source only, serial on the one install worker since staging and the
+download temp file are fixed paths), Check for updates, and Browse offering
+"Update to vX" where it used to disable "Installed" regardless of version.
+A cross-source offer stays a live button behind a confirmation naming both
+ends — refusing outright left no path but the lossy one. Also fixed en
+route: `_preserved_plugin_modules` stops `validate_plugin` repointing a live
+plugin's `sys.modules` entry into the deleted staging dir (reachable today
+via a same-stem install), and #52 — `loading.py` now registers the
+`nparseplus_user_plugins` parent so `from . import helper` works, not just
+`from .helper import x`.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).
