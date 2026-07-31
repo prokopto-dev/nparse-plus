@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +32,12 @@ if TYPE_CHECKING:
     from nparseplus.ui.qtbridge import QtEventBridge
 
 logger = logging.getLogger(__name__)
+
+# Deliberately a local constant, not an import of helpers/application.py's
+# UPDATE_CHECK_DELAY_MS: that module reads nparse.config.json from the CWD at
+# import time and drags in Qt. Staggered past the app's own 10 s check so the
+# two do not fire together on a cold start.
+PLUGIN_UPDATE_CHECK_DELAY_MS = 12_000
 
 
 @dataclass
@@ -127,7 +134,55 @@ def build_plugin_ui(
         _add_window_row(ui, loaded, spec, widget, window_key)
 
     ui.extra_pages.extend(spec for _loaded, spec in plugin_host.page_specs())
+    if settings.plugins.update_check:
+        schedule_update_check(plugin_host, app_version)
     return ui
+
+
+def schedule_update_check(
+    plugin_host: PluginHost,
+    app_version: str,
+    *,
+    delay_ms: int = PLUGIN_UPDATE_CHECK_DELAY_MS,
+) -> None:
+    """Poll for plugin updates a little after launch, quietly.
+
+    Lives here rather than in ``app.py`` because this module holds the line
+    that ``create_app`` has exactly two plugin import sites; adding a third
+    would erode the invariant ``test_master_toggle.py`` exists to protect.
+
+    No Qt signal is needed on the way back: the only consumer is
+    ``cache_update_check``, a single assignment of an immutable result that
+    nothing reacts to at the moment it lands. Settings > Plugins reads it on
+    the GUI thread whenever it is next built. (A settings window already open
+    when the result arrives will not refresh until the user clicks Check for
+    updates — accepted for now.)
+
+    ``delay_ms`` is a parameter so the whole path is testable without waiting.
+    """
+    from PySide6.QtCore import QTimer
+
+    from nparseplus.core.plugins.updatecheck import check_for_updates
+
+    def start() -> None:
+        def work() -> None:
+            try:
+                plugin_host.cache_update_check(
+                    check_for_updates(
+                        plugin_host.installed_for_update_check(),
+                        plugin_host.enabled_registries(),
+                        sdk_version=plugin_host.sdk_version,
+                        app_version=app_version,
+                    )
+                )
+            except Exception:
+                # A registry being down must never surface as a crash — the
+                # user did not ask for this check, it just happens.
+                logger.exception("plugin update check failed")
+
+        threading.Thread(target=work, name="plugin-update-check", daemon=True).start()
+
+    QTimer.singleShot(delay_ms, start)
 
 
 def _add_window_row(
