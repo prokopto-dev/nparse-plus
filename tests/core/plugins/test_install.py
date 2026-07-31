@@ -221,9 +221,7 @@ class TestLiveModuleNamespace:
         assert install_from_zip(archive, plugins_dir).ok
         assert sys.modules[f"{MODULE_NAMESPACE}.demo"] is live
 
-    def test_the_candidate_imports_its_own_modules_not_the_live_ones(
-        self, tmp_path: Path
-    ) -> None:
+    def test_the_candidate_imports_its_own_modules_not_the_live_ones(self, tmp_path: Path) -> None:
         """The update case: a new module asking for a name the old copy lacks.
 
         Both versions' submodules answer to the same ``sys.modules`` keys, so
