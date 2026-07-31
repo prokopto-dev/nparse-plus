@@ -6,6 +6,58 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.21.0 (2026-07-31)
+
+### Bug Fixes
+
+- **plugins**: Keep validation from repointing a live plugin's module
+  ([`a53c7b0`](https://github.com/prokopto-dev/nparse-plus/commit/a53c7b04d6402984dd2199070db2df8a9a9348ee))
+
+- **sdk**: Register the parent namespace package for plugin imports
+  ([`52ac844`](https://github.com/prokopto-dev/nparse-plus/commit/52ac8447fd3d80b60bf9b746087c903da97fbe56))
+
+### Chores
+
+- **deps**: Require nparseplus-sdk >= 1.1
+  ([`4d6d7e8`](https://github.com/prokopto-dev/nparse-plus/commit/4d6d7e86a1f08b5cdf867eaefd96a774997c36e0))
+
+### Documentation
+
+- **plugins**: Document in-app updates, self-feeds, and the update check
+  ([`f5bb034`](https://github.com/prokopto-dev/nparse-plus/commit/f5bb034757354c6d63541554f3c5736402e06633))
+
+- **sdk**: Document update_url and the self-feed contract
+  ([`6e2599b`](https://github.com/prokopto-dev/nparse-plus/commit/6e2599b37f5f6268bf0ff541e9ac85aa88551f79))
+
+### Features
+
+- **plugins**: Add PluginEntry.update_url and plugins.update_check
+  ([`fb94806`](https://github.com/prokopto-dev/nparse-plus/commit/fb948069803cb052beb7da3308543a477b48f6a8))
+
+- **plugins**: Add the Qt-free update-resolution layer
+  ([`b0da60e`](https://github.com/prokopto-dev/nparse-plus/commit/b0da60e7e60cb66e9f253389262829ce44bfa952))
+
+- **plugins**: Cache update checks on the host
+  ([`a295cb0`](https://github.com/prokopto-dev/nparse-plus/commit/a295cb03854931e2223a34a352461cd0dcee68ba))
+
+- **plugins**: Check for plugin updates shortly after launch
+  ([`06c2120`](https://github.com/prokopto-dev/nparse-plus/commit/06c21202fafaa07d82d848245306279adbe7bfbb))
+
+- **plugins**: Replace an installed plugin in place
+  ([`43b5e36`](https://github.com/prokopto-dev/nparse-plus/commit/43b5e36ca93567375165093e15f3e921e4ccbc7b))
+
+- **sdk**: Add PluginMeta.update_url for self-hosted update feeds
+  ([`e7879a7`](https://github.com/prokopto-dev/nparse-plus/commit/e7879a70203cc927da608d1d3d12a1307cf89076))
+
+- **ui**: Update installed plugins from Settings > Plugins
+  ([`b73bed1`](https://github.com/prokopto-dev/nparse-plus/commit/b73bed15dd84e5a235c0276ca83c6efd79599d20))
+
+### Refactoring
+
+- **ui**: Read the update check through the host, not a copy
+  ([`1e1d03f`](https://github.com/prokopto-dev/nparse-plus/commit/1e1d03f965e2e3b8f3b68a3d76b1c96a2e243c16))
+
+
 ## v1.20.0 (2026-07-30)
 
 ### Documentation
