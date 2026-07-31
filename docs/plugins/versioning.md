@@ -54,6 +54,12 @@ always true inside the app and optional for `nparseplus-plugin validate`
   for almost every plugin. Raise the floor (e.g. `">=1.3,<2"`) only when
   you use a capability added in that minor.
 
+### What each 1.x minor added
+
+| SDK | Added |
+| --- | --- |
+| **1.1** | `PluginMeta.update_url` — an optional https index the app polls to offer in-place updates for a plugin distributed outside any registry ([Shipping updates](developing.md#shipping-updates-without-a-registry)). Declare `requires_sdk=">=1.1,<2"` only if your plugin is *useless* without it; a 1.0-declaring plugin loaded by an older app simply gets no update offers. |
+
 What the promise does *not* cover: host objects reached through the context
 (`ctx.timers`, `ctx.player`, `ctx.pigparse`, the classes behind
 `nparseplus_sdk.events` / `.timers`) belong to the app, not the SDK. They

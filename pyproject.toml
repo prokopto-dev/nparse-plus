@@ -37,7 +37,7 @@ dependencies = [
   # The plugin contract package. Published on PyPI, but resolved from sdk/ as
   # a uv workspace member ([tool.uv.sources]) until it moves to its own repo,
   # so an SDK edit is immediately visible to the app's tests (see sdk/README.md).
-  "nparseplus-sdk>=1.0,<2",
+  "nparseplus-sdk>=1.1,<2",
 ]
 
 [project.urls]

@@ -26,6 +26,14 @@ class PluginMeta(BaseModel):
     bundled in the host app (e.g. ``">=1.0,<2"``); ``min_app_version`` is an
     optional lower bound on the nParse+ app version. Incompatible plugins are
     refused with a readable reason — they never crash the app.
+
+    ``update_url`` (optional) points at a registry-format index document the
+    app polls to offer updates for **this plugin only**. It exists so a plugin
+    distributed outside any registry can still be updated in place instead of
+    uninstalled and reinstalled. It is a self-published channel: you supply
+    both the artifact URL and the sha256 it is checked against, so the pin
+    proves the download matches what you published and nothing more. The app
+    ignores any listing in that document whose id is not yours.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -38,6 +46,7 @@ class PluginMeta(BaseModel):
     description: str = ""
     author: str = ""
     homepage: str = ""
+    update_url: str = ""
 
     @field_validator("id")
     @classmethod
@@ -47,6 +56,20 @@ class PluginMeta(BaseModel):
                 "plugin id must match ^[a-z][a-z0-9_-]{1,39}$ (lowercase, digits, '-', '_')"
             )
         return value
+
+    @field_validator("update_url")
+    @classmethod
+    def _https_feed(cls, value: str) -> str:
+        """Empty (no feed) or https. A refused feed beats an ignored one.
+
+        Rejecting here makes a bad URL a load error the author sees in
+        ``nparseplus-plugin validate``, rather than a feed that silently never
+        produces an update. The field is new, so this costs no compatibility.
+        """
+        cleaned = value.strip()
+        if cleaned and not cleaned.lower().startswith("https://"):
+            raise ValueError("update_url must be an https:// URL (or empty for no update feed)")
+        return cleaned
 
 
 @dataclass(frozen=True)

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from nparseplus_sdk.cli import main
-from nparseplus_sdk.loading import import_plugin_module
+from nparseplus_sdk.loading import (
+    MODULE_NAMESPACE,
+    _ensure_namespace_package,
+    import_plugin_module,
+)
 from nparseplus_sdk.validate import validate_plugin
 
 GOOD_PLUGIN = """
@@ -121,6 +126,37 @@ def test_package_plugin_with_relative_import(tmp_path: Path) -> None:
     assert report.ok, report.errors
     module = import_plugin_module(pkg)
     assert module.__name__ == "nparseplus_user_plugins.relpkg"
+
+
+def test_package_plugin_with_dotted_relative_import(tmp_path: Path) -> None:
+    """``from . import helper`` works, not just ``from .helper import x`` (#52).
+
+    This form walks parent packages, so it needs the namespace package that
+    ``spec_from_file_location`` alone never creates.
+    """
+    pkg = tmp_path / "dottedpkg"
+    pkg.mkdir()
+    (pkg / "helper.py").write_text("VALUE = 7\n", encoding="utf-8")
+    (pkg / "__init__.py").write_text(
+        GOOD_PLUGIN.replace(
+            "def create_plugin():",
+            "from . import helper\n\nVALUE = helper.VALUE\n\n\ndef create_plugin():",
+        ),
+        encoding="utf-8",
+    )
+    report = validate_plugin(pkg)
+    assert report.ok, report.errors
+    module = import_plugin_module(pkg)
+    assert module.VALUE == 7
+
+
+def test_namespace_package_is_registered_once() -> None:
+    """The parent is created on demand and never replaced underneath a plugin."""
+    sys.modules.pop(MODULE_NAMESPACE, None)
+    first = _ensure_namespace_package()
+    assert sys.modules[MODULE_NAMESPACE] is first
+    assert first.__path__ == []
+    assert _ensure_namespace_package() is first
 
 
 def test_cli_exit_codes_and_output(tmp_path: Path, capsys) -> None:

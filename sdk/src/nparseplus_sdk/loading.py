@@ -4,11 +4,13 @@ Plugins import under the ``nparseplus_user_plugins.<stem>`` namespace via
 ``spec_from_file_location`` rather than a ``sys.path`` insertion, so a stray
 ``httpx.py`` in the plugins folder can never shadow the app's dependencies.
 Package plugins get ``submodule_search_locations`` so their own relative
-imports work.
+imports work, and the parent namespace package is registered for them so that
+*both* relative forms work — see ``_ensure_namespace_package``.
 """
 
 from __future__ import annotations
 
+import importlib.machinery
 import importlib.util
 import sys
 from pathlib import Path
@@ -34,9 +36,34 @@ def plugin_entry_file(path: Path) -> Path:
     raise PluginLoadError(f"{path} is not a .py file or a plugin package directory")
 
 
+def _ensure_namespace_package() -> ModuleType:
+    """Register the parent package that plugin modules are imported under.
+
+    ``spec_from_file_location`` puts ``nparseplus_user_plugins.<stem>`` into
+    ``sys.modules`` without anything ever creating its parent. The
+    ``from . import helper`` form of a relative import walks parent packages,
+    so it raised ``ModuleNotFoundError: No module named
+    'nparseplus_user_plugins'`` while ``from .helper import x`` — which does
+    not — worked (#52).
+
+    The parent is a namespace package with an empty ``__path__``: plugins are
+    always located by path and inserted by name, so nothing should ever
+    resolve a plugin *through* this module, and an empty search path keeps it
+    that way.
+    """
+    existing = sys.modules.get(MODULE_NAMESPACE)
+    if existing is not None:
+        return existing
+    spec = importlib.machinery.ModuleSpec(MODULE_NAMESPACE, None, is_package=True)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[MODULE_NAMESPACE] = module
+    return module
+
+
 def import_plugin_module(path: Path) -> ModuleType:
     """Import the plugin at ``path`` exactly like the host app does."""
     path = Path(path)
+    _ensure_namespace_package()
     entry = plugin_entry_file(path)
     stem = path.stem if path.is_dir() else entry.stem
     module_name = f"{MODULE_NAMESPACE}.{stem}"

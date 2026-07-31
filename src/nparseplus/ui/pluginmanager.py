@@ -13,6 +13,7 @@ the GUI thread via a signal.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from nparseplus.core.plugins.install import (
     InstallResult,
+    ReplaceTarget,
     install_from_file,
     install_from_url,
     uninstall,
@@ -47,11 +49,21 @@ from nparseplus.core.plugins.registry import (
     MultiFetchResult,
     RegistryFetchResult,
     ResolvedRegistry,
-    best_update,
     duplicate_listing_ids,
     fetch_indexes,
     registry_display_name,
-    release_compat,
+)
+from nparseplus.core.plugins.updatecheck import (
+    SELF_FEED_WARNING,
+    InstalledPlugin,
+    ListingAction,
+    PluginUpdate,
+    UpdateCheckResult,
+    check_for_updates,
+    listing_action,
+    pending_updates,
+    same_source_updates,
+    updates_by_id,
 )
 from nparseplus.ui.pluginconsent import CONSENT_WARNING
 from nparseplus.ui.pluginregistries import REGISTRY_WARNING, RegistryListWidget
@@ -59,6 +71,13 @@ from nparseplus.ui.settingswindow import SettingsPageSpec
 
 if TYPE_CHECKING:
     from nparseplus.core.plugins.host import PluginHost
+
+logger = logging.getLogger(__name__)
+
+# How many failed updates a batch summary names before collapsing the rest.
+# Not registry.py's identically-valued cap on unreachable registries — these
+# are different lists and there is no reason they should move together.
+_MAX_REPORTED_UPDATE_FAILURES = 5
 
 STATUS_LABELS = {
     "active": "Active",
@@ -70,9 +89,57 @@ STATUS_LABELS = {
     "duplicate": "Duplicate id",
 }
 
-_COLUMNS = ("Enabled", "Name", "Version", "Status", "Location", "Source")
+_COLUMNS = ("Enabled", "Name", "Version", "Status", "Location", "Source", "Update")
 _LOCATION_COLUMN = 4
 _SOURCE_COLUMN = 5
+_UPDATE_COLUMN = 6
+
+
+def update_suffix(update: PluginUpdate | None) -> str:
+    """The " — update available…" tail for a status cell, or "".
+
+    Names the offering source when it is NOT the one that vouched for the
+    installed copy: taking that update is a hop to a different publisher of
+    the same id, and the user has to be able to see that before clicking
+    anything. Pure, so the wording is testable without a widget.
+    """
+    if update is None:
+        return ""
+    if update.needs_confirmation:
+        return f" — update available (v{update.offered_version} from {update.source_name})"
+    return f" — update available (v{update.offered_version})"
+
+
+def update_confirm_text(update: PluginUpdate) -> str:
+    """The body of the "this comes from somewhere else" confirmation.
+
+    Two different admissions, because the two situations are not the same:
+    a cross-registry offer can name both ends, while an offer for a plugin
+    nobody vouched for has to say plainly that there is no record at all.
+    """
+    header = (
+        f"Update {update.plugin_id} from v{update.installed_version} to v{update.offered_version}?"
+    )
+    if update.unknown_provenance:
+        origin = (
+            "nParse+ has no record of where your copy of this plugin came from "
+            "(it was sideloaded, or installed from a plain URL).\n\n"
+            f"This update is offered by {update.source_name}."
+        )
+    else:
+        origin = (
+            f"Your copy came from {registry_display_name(update.installed_registry_url)}, "
+            f"but this update is offered by {update.source_name}."
+        )
+    body = [header, "", origin, "", CONSENT_WARNING]
+    if update.listing.registry.is_self_published:
+        body += ["", SELF_FEED_WARNING]
+    body += [
+        "",
+        "The same plugin id from a different source may be entirely different "
+        "code. Your settings and this plugin's stored data are kept.",
+    ]
+    return "\n".join(body)
 
 
 def provenance_display(
@@ -129,6 +196,7 @@ class PluginManagerPage(QWidget):
     """The page widget. Constructed by ``plugin_manager_page_spec``."""
 
     _install_finished = Signal(object)  # InstallResult, queued from the worker
+    _check_finished = Signal(object)  # UpdateCheckResult|None, from the worker
 
     def __init__(self, host: PluginHost, app_version: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -136,14 +204,19 @@ class PluginManagerPage(QWidget):
         self._app_version = app_version
         # Installed this session (the host loads them next launch).
         self._session_installs: list[InstallResult] = []
-        # Merged listings from the last Browse fetch this session; powers the
-        # passive "update available" status decoration.
-        self._last_result: MultiFetchResult | None = None
+        self._checking = False
         # Which registry vouched for the install currently in flight (""
         # for file/plain-URL installs). One value is enough: installs are
-        # single-flight, gated by _set_install_buttons_enabled.
+        # single-flight, gated by _set_install_buttons_enabled — and the
+        # update batch below deliberately keeps it that way.
         self._pending_registry_url = ""
+        # The update currently installing, and the rest of a batch behind it.
+        self._pending_update: PluginUpdate | None = None
+        self._update_queue: list[PluginUpdate] = []
+        self._update_results: list[tuple[PluginUpdate, InstallResult]] = []
+        self._batch_active = False
         self._install_finished.connect(self._on_install_finished)
+        self._check_finished.connect(self._on_check_finished)
 
         self._table = QTableWidget(0, len(_COLUMNS), self)
         self._table.setHorizontalHeaderLabels(_COLUMNS)
@@ -152,6 +225,14 @@ class PluginManagerPage(QWidget):
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setStretchLastSection(True)
+
+        self._check_button = QPushButton("Check for updates", self)
+        self._check_button.clicked.connect(self.start_update_check)
+        self._update_all_button = QPushButton("Update all", self)
+        self._update_all_button.clicked.connect(self._update_all)
+        self._status = QLabel("", self)
+        self._status.setWordWrap(True)
+        self._status.setStyleSheet("color: #888888; font-size: 11px;")
 
         self._browse_button = QPushButton("Browse registry…", self)
         self._browse_button.clicked.connect(self._browse_registry)
@@ -165,12 +246,22 @@ class PluginManagerPage(QWidget):
         open_button.clicked.connect(self._open_folder)
 
         buttons = QHBoxLayout()
+        buttons.addWidget(self._check_button)
+        buttons.addWidget(self._update_all_button)
         buttons.addWidget(self._browse_button)
         buttons.addWidget(self._install_file_button)
         buttons.addWidget(self._install_url_button)
         buttons.addWidget(self._uninstall_button)
         buttons.addWidget(open_button)
         buttons.addStretch(1)
+
+        self._auto_check = QCheckBox("Check for plugin updates shortly after launch", self)
+        self._auto_check.setChecked(host.update_check_enabled)
+        self._auto_check.setToolTip(
+            "Contacts every registry you have ticked, plus the update feed of "
+            "each enabled plugin that declares one."
+        )
+        self._auto_check.toggled.connect(self._host.set_update_check)
 
         note = QLabel(
             f"{CONSENT_WARNING} Installing runs the plugin's module code to "
@@ -192,11 +283,30 @@ class PluginManagerPage(QWidget):
         # fixed footnote under it.
         layout.addWidget(self._table, 1)
         layout.addLayout(buttons)
+        layout.addWidget(self._status)
+        layout.addWidget(self._auto_check)
         layout.addWidget(registries_box)
         layout.addWidget(note)
         self.setLayout(layout)
 
         self.refresh()
+
+    @property
+    def _check(self) -> UpdateCheckResult | None:
+        """The last update check — read straight from the host, never copied.
+
+        The host owns it because this page is rebuilt on every settings-window
+        open while the host outlives them all (so a check that ran at launch
+        is already visible the first time the page is built). Reading through
+        rather than mirroring means there is no second copy to fall out of
+        date with it.
+        """
+        return self._host.cached_update_check()
+
+    @property
+    def _updates(self) -> list[PluginUpdate]:
+        check = self._check
+        return list(check.updates) if check is not None else []
 
     # --- table -------------------------------------------------------------
     def refresh(self) -> None:
@@ -204,6 +314,7 @@ class PluginManagerPage(QWidget):
         # Resolved once per refresh: a registry the user has since removed
         # simply won't be in here, which is what makes the display fall back.
         names = {r.url.lower(): r.name for r in self._host.registries()}
+        offers = updates_by_id(self._updates)
         self._table.setRowCount(len(rows) + len(self._session_installs))
         for row_index, loaded in enumerate(rows):
             plugin_id = loaded.plugin_id
@@ -221,7 +332,8 @@ class PluginManagerPage(QWidget):
             version = loaded.meta.version if loaded.meta is not None else ""
             status = STATUS_LABELS.get(loaded.status, loaded.status)
             registry_url = entry.registry_url if entry is not None else ""
-            status += self._update_suffix(plugin_id, version, registry_url)
+            offer = offers.get(plugin_id or "")
+            status += update_suffix(offer)
             # A tick the driver evicted for stalling the app: the plugin is
             # still active, so the status line is the only place it shows.
             dropped = loaded.tick_dropped
@@ -246,6 +358,7 @@ class PluginManagerPage(QWidget):
                 elif column == _SOURCE_COLUMN:
                     item.setToolTip(source_tip)
                 self._table.setItem(row_index, column, item)
+            self._table.setCellWidget(row_index, _UPDATE_COLUMN, self._update_cell(offer))
         for offset, result in enumerate(self._session_installs):
             row_index = len(rows) + offset
             self._table.setCellWidget(row_index, 0, QCheckBox(self))
@@ -271,65 +384,162 @@ class PluginManagerPage(QWidget):
                 if column == _SOURCE_COLUMN:
                     item.setToolTip(source_tip)
                 self._table.setItem(row_index, column, item)
+        self._refresh_status()
+        self._refresh_update_all()
 
-    def _update_suffix(
-        self, plugin_id: str | None, installed_version: str, installed_registry_url: str
-    ) -> str:
-        """The " — update available…" tail for a row, or "".
+    def _refresh_update_all(self) -> None:
+        """Label carries the count; disabled when there is nothing to take."""
+        takeable = [
+            update
+            for update in same_source_updates(self._updates)
+            if update.installed_path is not None
+        ]
+        self._update_all_button.setText(
+            f"Update all ({len(takeable)})" if takeable else "Update all"
+        )
+        self._update_all_button.setEnabled(bool(takeable) and not self._batch_active)
 
-        Names the offering registry when it is NOT the one that vouched for
-        the installed copy: taking that update is a hop to a different
-        publisher of the same id, and the user has to be able to see it
-        before clicking anything.
+    def _update_cell(self, update: PluginUpdate | None) -> QWidget | None:
+        """The per-row Update button, or nothing when there is no offer."""
+        if update is None:
+            return None
+        button = QPushButton(f"Update to v{update.offered_version}", self)
+        if update.needs_confirmation:
+            # The ellipsis is the promise that a dialog comes first — the
+            # same contract every other "…" button on this page keeps.
+            button.setText(f"Update to v{update.offered_version}…")
+            button.setToolTip(
+                f"Offered by {update.source_name}, which is not where your copy "
+                "came from. nParse+ will ask you to confirm."
+            )
+        else:
+            button.setToolTip(
+                f"Replaces v{update.installed_version} in place. Your consent and "
+                "this plugin's stored data are kept; the old version is moved to "
+                "the plugins trash folder."
+            )
+        button.setEnabled(update.installed_path is not None)
+        if update.installed_path is None:
+            # Entry-point plugins live in site-packages — pip owns them.
+            button.setToolTip("This plugin was installed by pip; update it there.")
+        button.clicked.connect(lambda _checked=False, item=update: self._update_one(item))
+        return button
+
+    # --- update checks -------------------------------------------------------
+    def start_update_check(self) -> None:
+        """Fetch every enabled registry and declared feed on a worker thread.
+
+        Single-flight: a second click while one is in the air is a no-op,
+        matching the Browse dialog and the app's own "Check now".
         """
-        if self._last_result is None or plugin_id is None or not installed_version:
-            return ""
-        listing = best_update(
-            self._last_result.listings,
-            plugin_id=plugin_id,
-            installed_version=installed_version,
-            installed_registry_url=installed_registry_url,
+        if self._checking:
+            return
+        self._checking = True
+        self._check_button.setEnabled(False)
+        self._status.setText("Checking for plugin updates…")
+
+        def worker() -> None:
+            try:
+                result = check_for_updates(
+                    self._host.installed_for_update_check(),
+                    self._host.enabled_registries(),
+                    sdk_version=self._host.sdk_version,
+                    app_version=self._app_version,
+                )
+            except Exception:  # never strand the disabled button on a thread crash
+                logger.exception("plugin update check failed")
+                result = None
+            self._check_finished.emit(result)
+
+        threading.Thread(target=worker, name="plugin-update-check", daemon=True).start()
+
+    def _on_check_finished(self, result: UpdateCheckResult | None) -> None:
+        self._checking = False
+        self._check_button.setEnabled(True)
+        if result is None:
+            self._status.setText("Could not check for updates — see nparseplus.log.")
+            return
+        self._host.cache_update_check(result)
+        self.refresh()
+
+    def _set_listings(self, result: MultiFetchResult) -> None:
+        """Take Browse's fetch as an update check too.
+
+        Browse already paid for the round trip, so re-deriving the offers from
+        it keeps the two surfaces from disagreeing about what is available.
+        It only covers registries — a Browse fetch never touches a plugin's
+        own feed — so any self-published offers from an earlier check are
+        carried forward rather than silently dropped.
+        """
+        previous = self._check
+        carried = [u for u in self._updates if u.listing.registry.is_self_published]
+        registry_updates = pending_updates(
+            self._host.installed_for_update_check(),
+            result.listings,
             sdk_version=self._host.sdk_version,
             app_version=self._app_version,
         )
-        if listing is None:
-            return ""
-        version = listing.plugin.latest.version
-        if (
-            installed_registry_url
-            and listing.registry.url.lower() != installed_registry_url.lower()
-        ):
-            return f" — update available (v{version} from {listing.registry.name})"
-        return f" — update available (v{version})"
-
-    def _set_listings(self, result: MultiFetchResult) -> None:
-        self._last_result = result
+        offered = {update.plugin_id for update in registry_updates}
+        merged = UpdateCheckResult(
+            fetched=result,
+            updates=[*registry_updates, *(u for u in carried if u.plugin_id not in offered)],
+            self_feeds=previous.self_feeds if previous is not None else [],
+        )
+        self._host.cache_update_check(merged)
         self.refresh()
 
-    def installed_provenance(self) -> dict[str, str]:
-        """Installed plugin id -> the registry URL that vouched for it.
+    def _refresh_status(self) -> None:
+        """The line under the buttons: fetch failures, then the offer count."""
+        check = self._check
+        lines = list(check.summary_lines()) if check is not None else []
+        pending = self._updates
+        if check is None:
+            lines.append("No update check has run yet this session.")
+        elif not pending:
+            lines.append("Every installed add-on is up to date.")
+        else:
+            blocked = len(pending) - len(same_source_updates(pending))
+            text = f"{len(pending)} update{'s' if len(pending) != 1 else ''} available."
+            if blocked:
+                text += (
+                    f" {blocked} come{'s' if blocked == 1 else ''} from a different "
+                    "source than the copy you have — update those one at a time."
+                )
+            lines.append(text)
+        self._status.setText("\n".join(lines))
 
-        "" means no registry did (sideloaded, or installed from a bare URL
-        or a file) — which is a different statement from "installed from
-        somewhere else", and the browse dialog treats it as one.
+    def installed_index(self) -> dict[str, InstalledPlugin]:
+        """Installed plugin id -> what the browser needs to decide its row.
+
+        A registry_url of "" means nothing vouched for this copy (sideloaded,
+        or installed from a bare URL or file) — a different statement from
+        "installed from somewhere else", and the browser treats it as one.
+
+        Plugins installed this session are folded in on top of the host's
+        view, so a listing does not offer to install something the user just
+        installed from the same dialog.
         """
-        provenance: dict[str, str] = {}
-
-        def record(plugin_id: str) -> None:
-            entry = self._host.entry_for(plugin_id)
-            provenance[plugin_id] = entry.registry_url if entry is not None else ""
-
-        for loaded in self._host.statuses():
-            if loaded.plugin_id is not None:
-                record(loaded.plugin_id)
+        index = {plugin.plugin_id: plugin for plugin in self._host.installed_for_update_check()}
         for result in self._session_installs:
-            if result.ok and result.meta is not None:
-                record(result.meta.id)
-        return provenance
+            if not result.ok or result.meta is None:
+                continue
+            entry = self._host.entry_for(result.meta.id)
+            index[result.meta.id] = InstalledPlugin(
+                plugin_id=result.meta.id,
+                version=result.meta.version,
+                registry_url=entry.registry_url if entry is not None else "",
+                installed_path=result.installed_path,
+                update_url=result.meta.update_url,
+            )
+        return index
+
+    def installed_provenance(self) -> dict[str, str]:
+        """Installed plugin id -> the registry URL that vouched for it."""
+        return {pid: plugin.registry_url for pid, plugin in self.installed_index().items()}
 
     def installed_ids(self) -> set[str]:
         """Plugin ids present on disk (loaded or installed this session)."""
-        return set(self.installed_provenance())
+        return set(self.installed_index())
 
     # --- actions -----------------------------------------------------------
     def _open_folder(self) -> None:
@@ -390,33 +600,198 @@ class PluginManagerPage(QWidget):
 
         threading.Thread(target=worker, name="plugin-install", daemon=True).start()
 
+    # --- taking an update ----------------------------------------------------
+    def _update_one(self, update: PluginUpdate) -> None:
+        """Install one update, confirming first if the source changed."""
+        if update.needs_confirmation:
+            confirm = QMessageBox.question(
+                self,
+                "Update from a different source?",
+                update_confirm_text(update),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+        self._start_update(update)
+
+    def _start_update(self, update: PluginUpdate) -> None:
+        if update.installed_path is None:
+            return
+        release = update.listing.plugin.latest
+        self._pending_update = update
+        self._pending_registry_url = (
+            # A self-published feed vouches for nothing, so it must not be
+            # recorded as the registry that did — that would make the next
+            # update from it look like it came from a source the user chose.
+            "" if update.listing.registry.is_self_published else update.listing.registry.url
+        )
+        target = ReplaceTarget(
+            plugin_id=update.plugin_id, installed_path=Path(update.installed_path)
+        )
+        self._start_install(
+            lambda: install_from_url(
+                release.url,
+                self._host.plugins_dir,
+                app_version=self._app_version,
+                expected_sha256=release.sha256,
+                replace=target,
+            )
+        )
+
+    def _update_all(self) -> None:
+        """Take every same-source update, one at a time.
+
+        Serial on the one existing worker deliberately: staging and the
+        download temp file are fixed paths inside the plugins folder, so
+        concurrent installs would race on them — and each install imports and
+        activates third-party code, which is not something to do in parallel
+        on a whim.
+        """
+        pending = same_source_updates(self._updates)
+        pending = [update for update in pending if update.installed_path is not None]
+        if not pending or self._batch_active:
+            return
+        self._batch_active = True
+        self._update_results = []
+        self._update_queue = list(pending)
+        self._start_next_update()
+
+    def _start_next_update(self) -> None:
+        if not self._update_queue:
+            self._finish_batch()
+            return
+        self._start_update(self._update_queue.pop(0))
+
+    def _finish_batch(self) -> None:
+        """One summary for the whole batch, not a dialog per plugin."""
+        results, self._update_results = self._update_results, []
+        self._batch_active = False
+        done = [(u, r) for u, r in results if r.ok]
+        failed = [(u, r) for u, r in results if not r.ok]
+        lines = [f"Updated {len(done)} of {len(results)} add-ons."]
+        if done:
+            lines.append("Restart nParse+ to load them.")
+            lines.append("")
+            lines += [
+                f"• {u.plugin_id} {u.installed_version} → {u.offered_version}" for u, _ in done
+            ]
+            lines.append("")
+            lines.append("The previous versions were moved to the plugins trash folder.")
+        if failed:
+            lines.append("")
+            lines.append("Failed (the installed version is unchanged):")
+            lines += [
+                f"• {u.plugin_id} → {u.offered_version} — "
+                f"{(r.errors[0] if r.errors else 'unknown error')}"
+                for u, r in failed[:_MAX_REPORTED_UPDATE_FAILURES]
+            ]
+            if len(failed) > _MAX_REPORTED_UPDATE_FAILURES:
+                lines.append(
+                    f"• +{len(failed) - _MAX_REPORTED_UPDATE_FAILURES} more — see nparseplus.log"
+                )
+        advisories = sum(len(r.warnings) for _u, r in done)
+        if advisories:
+            # The full text would be a wall across a batch; the per-row
+            # tooltip and the log still carry it.
+            lines.append("")
+            lines.append(
+                f"{advisories} advisory finding{'s' if advisories != 1 else ''} across the "
+                "updated add-ons — see nparseplus.log."
+            )
+        QMessageBox.information(self, "Plugins updated", "\n".join(lines))
+
     def _browse_registry(self) -> None:
         dialog = RegistryBrowserDialog(
             self._host,
             self._app_version,
             on_install=self._start_url_install,
             on_index=self._set_listings,
-            installed_provenance=self.installed_provenance,
+            on_update=self._update_from_listing,
+            installed=self.installed_index,
             parent=self,
         )
         dialog.exec()
 
+    def _update_from_listing(self, merged: MergedListing, current: InstalledPlugin) -> None:
+        """Take an update the browser offered.
+
+        Routed through pending_updates rather than hand-building a
+        PluginUpdate, so a Browse row and a table row reach exactly the same
+        same-source verdict — and therefore the same confirmation, or none.
+        """
+        offers = pending_updates(
+            [current],
+            [merged],
+            sdk_version=self._host.sdk_version,
+            app_version=self._app_version,
+        )
+        if offers:
+            self._update_one(offers[0])
+
     def _on_install_finished(self, result: InstallResult) -> None:
         self._set_install_buttons_enabled(True)
+        # Both stashes are popped together and stay single-valued: installs
+        # are strictly one at a time, and the update batch preserves that by
+        # queueing rather than by widening these.
         registry_url, self._pending_registry_url = self._pending_registry_url, ""
+        update, self._pending_update = self._pending_update, None
         if result.ok:
             self._host.record_install(result, registry_url=registry_url)
-            self._session_installs.append(result)
+            if update is None:
+                self._session_installs.append(result)
+            else:
+                self._drop_taken_update(update.plugin_id)
+        if update is not None and self._batch_active:
+            # Each update rolls back on its own, so one failure never stops
+            # the rest — the summary at the end names both lists.
+            self._update_results.append((update, result))
+            self.refresh()
+            self._start_next_update()
+            return
+        if result.ok:
             name = result.meta.name if result.meta is not None else "Plugin"
-            lines = [f"{name} installed. It will load the next time nParse+ starts."]
+            if update is None:
+                lines = [f"{name} installed. It will load the next time nParse+ starts."]
+            else:
+                lines = [
+                    f"{name} updated to v{update.offered_version}. It will load the "
+                    "next time nParse+ starts.",
+                    "",
+                    "Your settings and this plugin's stored data were kept; the "
+                    "previous version was moved to the plugins trash folder.",
+                ]
             if result.warnings:
                 lines.append("")
                 lines.append("Advisory findings (not a security guarantee):")
                 lines.extend(f"• {w}" for w in result.warnings[:12])
-            QMessageBox.information(self, "Plugin installed", "\n".join(lines))
+            QMessageBox.information(
+                self, "Plugin updated" if update else "Plugin installed", "\n".join(lines)
+            )
         else:
-            QMessageBox.warning(self, "Install failed", "\n".join(result.errors) or "Unknown error")
+            QMessageBox.warning(
+                self,
+                "Update failed" if update else "Install failed",
+                "\n".join(result.errors) or "Unknown error",
+            )
         self.refresh()
+
+    def _drop_taken_update(self, plugin_id: str) -> None:
+        """Retire an offer once taken, so the row stops advertising it.
+
+        The plugin on disk is now the new version, but the loaded metadata
+        still says otherwise until a restart — so the offer has to be removed
+        explicitly rather than recomputed.
+        """
+        check = self._check
+        if check is None:
+            return
+        remaining = [u for u in check.updates if u.plugin_id != plugin_id]
+        if len(remaining) == len(check.updates):
+            return
+        self._host.cache_update_check(
+            UpdateCheckResult(fetched=check.fetched, updates=remaining, self_feeds=check.self_feeds)
+        )
 
     def _set_install_buttons_enabled(self, enabled: bool) -> None:
         self._install_file_button.setEnabled(enabled)
@@ -521,8 +896,8 @@ class RegistryBrowserDialog(QDialog):
     dead registry degrades to a line in the status label instead of hiding
     the ones that answered. Rows carry the registry that served them, because
     "which registry vouched for this" is the only thing distinguishing two
-    listings that claim the same plugin id. Installs delegate back to the
-    manager page's worker with the listing's pinned sha256.
+    listings that claim the same plugin id. Installs and updates delegate
+    back to the manager page's worker with the listing's pinned sha256.
     """
 
     _index_ready = Signal(object)  # MultiFetchResult, from the fetch worker
@@ -534,7 +909,8 @@ class RegistryBrowserDialog(QDialog):
         *,
         on_install,
         on_index=None,
-        installed_provenance=None,
+        on_update=None,
+        installed=None,
         auto_fetch: bool = True,
         parent: QWidget | None = None,
     ) -> None:
@@ -545,7 +921,11 @@ class RegistryBrowserDialog(QDialog):
         self._app_version = app_version
         self._on_install = on_install
         self._on_index = on_index
-        self._installed_provenance = installed_provenance or (lambda: {})
+        self._on_update = on_update or (lambda _merged, _current: None)
+        # id -> InstalledPlugin. Carries the version and the path as well as
+        # the provenance, because a row now has to decide between "Installed"
+        # and "Update to vX" rather than just whether to grey the button out.
+        self._installed = installed or (lambda: {})
         self._fetching = False
 
         self._status = QLabel("Fetching the plugin registries…", self)
@@ -617,7 +997,7 @@ class RegistryBrowserDialog(QDialog):
         # are usable, and the ones that didn't are named above them.
         self._status.setText("\n".join([*summary, _BROWSE_NOTE]))
         self._table.setVisible(True)
-        installed = self._installed_provenance()
+        installed = self._installed()
         duplicates = duplicate_listing_ids(listings)
         self._table.setRowCount(len(listings))
         for row, merged in enumerate(listings):
@@ -629,11 +1009,15 @@ class RegistryBrowserDialog(QDialog):
         merged: MergedListing,
         listings: Sequence[MergedListing],
         duplicates: set[str],
-        installed: dict[str, str],
+        installed: dict[str, InstalledPlugin],
     ) -> None:
         listing = merged.plugin
-        reason = release_compat(
-            listing.latest,
+        current = installed.get(listing.id)
+        action = listing_action(
+            merged,
+            installed_version=current.version if current is not None else "",
+            installed_registry_url=current.registry_url if current is not None else "",
+            is_installed=current is not None,
             sdk_version=self._host.sdk_version,
             app_version=self._app_version,
         )
@@ -652,7 +1036,7 @@ class RegistryBrowserDialog(QDialog):
             (_BROWSER_VERSION_COLUMN, listing.latest.version),
             (_BROWSER_AUTHOR_COLUMN, listing.author),
             (_BROWSER_SOURCE_COLUMN, source_text),
-            (_BROWSER_COMPAT_COLUMN, "OK" if reason is None else reason),
+            (_BROWSER_COMPAT_COLUMN, "OK" if action.kind != "incompatible" else action.tooltip),
         ):
             item = QTableWidgetItem(text)
             if column == _BROWSER_NAME_COLUMN and listing.description:
@@ -661,40 +1045,41 @@ class RegistryBrowserDialog(QDialog):
                 item.setToolTip(source_tip)
             self._table.setItem(row, column, item)
         self._table.setCellWidget(
-            row, _BROWSER_ACTION_COLUMN, self._action_button(merged, reason, installed)
+            row, _BROWSER_ACTION_COLUMN, self._action_button(merged, action, current)
         )
 
     def _action_button(
-        self, merged: MergedListing, reason: str | None, installed: dict[str, str]
+        self,
+        merged: MergedListing,
+        action: ListingAction,
+        current: InstalledPlugin | None,
     ) -> QPushButton:
-        listing = merged.plugin
-        button = QPushButton(self)
-        if listing.id in installed:
-            recorded = installed[listing.id]
-            button.setEnabled(False)
-            if recorded and recorded.lower() != merged.registry.url.lower():
-                # Same id, different vouching registry: possibly different
-                # code entirely. Refuse to make that swap a one-click action.
-                button.setText("Installed (other source)")
-                button.setToolTip(
-                    f"Installed from {registry_display_name(recorded)} ({recorded}).\n"
-                    f"This listing comes from {merged.registry.name} "
-                    f"({merged.registry.url}) — the same id from another registry "
-                    "may be entirely different code.\n"
-                    "Uninstall the current copy first if you want this one."
-                )
-            else:
-                button.setText("Installed")
-        elif reason is not None:
-            button.setText("Incompatible")
-            button.setEnabled(False)
-        else:
-            button.setText("Install")
+        """Render one decided action. All six kinds come from listing_action,
+        so this stays a renderer and the browser cannot drift from the table.
+        """
+        button = QPushButton(action.label, self)
+        button.setEnabled(action.enabled)
+        if action.tooltip:
+            button.setToolTip(action.tooltip)
+        if action.kind == "install":
             button.clicked.connect(lambda _checked=False, item=merged: self._install(item))
+        elif action.kind in ("update", "update_other_source"):
+            if current is None or current.installed_path is None:
+                # Installed by pip, so there is nothing here to replace.
+                button.setEnabled(False)
+                button.setToolTip("This plugin was installed by pip; update it there.")
+            else:
+                button.clicked.connect(
+                    lambda _checked=False, item=merged, now=current: self._update(item, now)
+                )
         return button
 
     def _install(self, merged: MergedListing) -> None:
         self._on_install(merged.plugin.latest.url, merged.plugin.latest.sha256, merged.registry.url)
+        self.accept()
+
+    def _update(self, merged: MergedListing, current: InstalledPlugin) -> None:
+        self._on_update(merged, current)
         self.accept()
 
 

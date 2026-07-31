@@ -44,10 +44,12 @@ the canonical explanation of what you are agreeing to.
   [who was allowed to publish it](#using-another-registry).)
 - **Provenance + updates**: a registry install records the download URL, the
   hash, **and which registry listed it** (`PluginEntry.registry_url`), and
-  the Source column names that registry. Once indexes have been fetched this
-  session, the plugins table marks installed plugins with a newer *compatible*
-  release available ("update available (vX)") — and names the registry when
-  the offer comes from a different one than the plugin was installed from.
+  the Source column names that registry. The plugins table marks installed
+  plugins with a newer *compatible* release available ("update available
+  (vX)") — naming the source when the offer comes from a different one than
+  the plugin was installed from — and offers an **Update** button that
+  replaces the copy in place, keeping your consent and the add-on's stored
+  data. See [Taking an update](#taking-an-update).
 - Consent is unchanged: a registry install still gets the first-load
   dialog. Curation reduces risk; it does not replace your trust decision.
 
@@ -141,7 +143,33 @@ another registry lists a higher version. Silently promoting a different
 publisher's build of the same id would be a trust hop you never agreed to;
 when the only offer *does* come from elsewhere, the status line says so by
 name ("update available (v2.0.0 from …)") instead of quietly presenting it
-as the same plugin.
+as the same plugin, and taking it needs a confirmation naming both ends.
+
+A plugin with **no** recorded registry — sideloaded, or installed from a
+plain URL — has a wrinkle worth stating: any registry offer for it counts as
+a source change, because nothing ever vouched for the copy you have. The one
+exception is the plugin's own declared
+[update feed](developing.md#shipping-updates-without-a-registry), which is
+the only source such a copy has ever had, so its offers are not treated as a
+hop. That is what makes a self-hosted add-on updatable in one click without
+pretending a registry endorsed it.
+
+### Taking an update
+
+**Settings > Plugins** shows an **Update** button on any row with a newer
+compatible release, and **Update all** for the ones that need no decision.
+The download is verified against the listed sha256, the new code is
+validated before anything moves, and the old copy goes to `plugins/trash/`
+only once the new one is in place — a failure at any point leaves the
+version you had installed and loading.
+
+Consent and `plugin-data/<id>` survive an update, which is the entire point:
+the old workaround (uninstall, reinstall) went through `PluginHost.forget`
+and destroyed both. The new code loads at the next launch, like every other
+change on that page.
+
+Since an index carries only `latest`, there is no version history and no
+"downgrade" — the previous copy in `plugins/trash/` is the only way back.
 
 ### Where it is stored
 

@@ -37,6 +37,7 @@ from nparseplus_sdk.plugin import PluginSettingsPageSpec, PluginWindowSpec
 if TYPE_CHECKING:
     from nparseplus.composition import Backend
     from nparseplus.core.plugins.registry import ResolvedRegistry
+    from nparseplus.core.plugins.updatecheck import InstalledPlugin, UpdateCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,8 @@ class PluginHost:
         self._plugin_data_dir = plugin_data_dir_override or plugin_data_dir
         self._owned_net = _OwnedNet(backend)
         self._loaded: list[LoadedPlugin] = []
+        # Latest update check, session-only. See cache_update_check.
+        self._update_check: UpdateCheckResult | None = None
 
     @property
     def plugins_dir(self) -> Path:
@@ -152,6 +155,11 @@ class PluginHost:
                 source=source, status="error", meta=meta, error="plugin has no activate() method"
             )
 
+        # Before any classification returns: every state below — incompatible,
+        # declined, disabled — is one where an update might be the fix, so the
+        # feed has to be recorded even when the plugin never runs.
+        self._mirror_update_url(meta)
+
         reason = check_compat(meta, sdk_version=_SDK_VERSION, app_version=self._app_version)
         if reason is not None:
             return LoadedPlugin(source=source, status="incompatible", meta=meta, error=reason)
@@ -166,6 +174,22 @@ class PluginHost:
             self._save()
         return LoadedPlugin(source=source, status="ready", meta=meta, plugin=plugin)
 
+    def _mirror_update_url(self, meta: PluginMeta) -> None:
+        """Cache the plugin's declared update feed on its settings entry.
+
+        The live ``meta`` is the truth while a plugin is loaded, but the
+        checker also has to reach plugins that are not — so the last observed
+        value is kept on the entry. Clearing it when a plugin drops the field
+        matters as much as recording it: an author who removes their feed
+        should stop being polled, not be polled forever from a stale cache.
+        """
+        entry = self._settings.plugins.entries.get(meta.id)
+        declared = meta.update_url
+        if entry is None or entry.update_url == declared:
+            return
+        entry.update_url = declared
+        self._save()
+
     # --- consent -----------------------------------------------------------
     def pending_consent(self) -> list[LoadedPlugin]:
         return [p for p in self._loaded if p.status == "pending_consent"]
@@ -177,7 +201,10 @@ class PluginHost:
                 continue
             assert loaded.meta is not None
             self._settings.plugins.entries[plugin_id] = PluginEntry(
-                enabled=allowed, approved=True, last_version=loaded.meta.version
+                enabled=allowed,
+                approved=True,
+                last_version=loaded.meta.version,
+                update_url=loaded.meta.update_url,
             )
             loaded.status = "ready" if allowed else "disabled"
             self._save()
@@ -267,6 +294,7 @@ class PluginHost:
         entry.source_url = result.source_url or ""
         entry.sha256 = result.sha256 or ""
         entry.registry_url = registry_url
+        entry.update_url = result.meta.update_url
         self._save()
 
     def forget(self, plugin_id: str) -> None:
@@ -283,6 +311,75 @@ class PluginHost:
         error = trash_plugin_data(self._plugin_data_dir(plugin_id), self._plugins_dir)
         if error is not None:
             logger.warning("plugin %s data not moved aside: %s", plugin_id, error)
+
+    # --- update checks -------------------------------------------------------
+    def set_update_check(self, enabled: bool) -> None:
+        """Tick/untick the post-launch poll for plugin updates."""
+        self._settings.plugins.update_check = enabled
+        self._save()
+
+    @property
+    def update_check_enabled(self) -> bool:
+        return self._settings.plugins.update_check
+
+    def cache_update_check(self, result: UpdateCheckResult | None) -> None:
+        """Store the latest check for whoever asks next.
+
+        Written from the post-launch worker thread and read on the GUI thread.
+        That is safe because it is one attribute assignment of an immutable
+        result — there is no partially-visible state to observe — and nothing
+        reacts to the write at the moment it lands. Session-only, deliberately:
+        a persisted "update available" would outlive the update being taken and
+        greet the user again after the restart that applied it.
+        """
+        self._update_check = result
+
+    def cached_update_check(self) -> UpdateCheckResult | None:
+        return self._update_check
+
+    def installed_for_update_check(self) -> list[InstalledPlugin]:
+        """Every installed plugin, as the update checker needs to see it.
+
+        Covers plugins that never loaded — declined, disabled, incompatible —
+        because those are exactly the states an update might resolve, and a
+        row that cannot say "update available" is a dead end for the user.
+
+        Feeds are the exception: ``update_url`` is only carried through for
+        plugins the user approved and left enabled. A declined plugin must not
+        be able to make the app call home to an author-chosen URL on every
+        launch — that is a request the user effectively said no to.
+        """
+        from nparseplus.core.plugins.updatecheck import InstalledPlugin
+
+        installed: list[InstalledPlugin] = []
+        seen: set[str] = set()
+        for loaded in self._loaded:
+            plugin_id = loaded.plugin_id
+            if plugin_id is None or plugin_id in seen:
+                continue
+            seen.add(plugin_id)
+            entry = self._settings.plugins.entries.get(plugin_id)
+            version = loaded.meta.version if loaded.meta is not None else ""
+            if not version and entry is not None:
+                version = entry.last_version
+            allowed = entry is not None and entry.approved and entry.enabled
+            declared = loaded.meta.update_url if loaded.meta is not None else ""
+            if not declared and entry is not None:
+                declared = entry.update_url
+            installed.append(
+                InstalledPlugin(
+                    plugin_id=plugin_id,
+                    version=version,
+                    registry_url=entry.registry_url if entry is not None else "",
+                    # Entry-point plugins live in site-packages; pip owns them,
+                    # so there is nothing here that may be replaced in place.
+                    installed_path=(
+                        Path(loaded.source.location) if loaded.source.origin == "dir" else None
+                    ),
+                    update_url=declared if allowed else "",
+                )
+            )
+        return installed
 
     def set_enabled(self, plugin_id: str, enabled: bool) -> None:
         """Enable/disable a known plugin (takes effect next launch)."""

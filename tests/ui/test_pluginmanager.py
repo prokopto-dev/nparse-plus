@@ -317,7 +317,8 @@ def make_dialog(qtbot, host, page=None, **kwargs):
         "1.15.0",
         on_install=lambda url, sha, registry: installs.append((url, sha, registry)),
         on_index=(page._set_listings if page is not None else None),
-        installed_provenance=(page.installed_provenance if page is not None else None),
+        on_update=(page._update_from_listing if page is not None else None),
+        installed=(page.installed_index if page is not None else None),
         auto_fetch=False,
         **kwargs,
     )
@@ -349,8 +350,9 @@ def test_browser_incompatible_row_disabled_with_reason(qtbot, host) -> None:
 def test_browser_installed_row_disabled(qtbot, host) -> None:
     page = make_page(qtbot, host)
     dialog, _installs = make_dialog(qtbot, host, page)
-    # demo is already installed, with no recorded registry (sideloaded).
-    dialog._on_index_ready(_result((DEFAULT, _index(plugin_id="demo"))))
+    # demo is already installed at 1.2.0; a listing at the same version has
+    # nothing to offer, so the row stays a plain disabled "Installed".
+    dialog._on_index_ready(_result((DEFAULT, _index(version="1.2.0", plugin_id="demo"))))
     button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
     assert button.text() == "Installed" and not button.isEnabled()
 
@@ -359,10 +361,21 @@ def test_update_available_status_after_index(qtbot, host) -> None:
     page = make_page(qtbot, host)
     assert "update available" not in page._table.item(0, 3).text().lower()
     page._set_listings(_result((DEFAULT, _index(version="9.9.9", plugin_id="demo"))))
-    assert "update available (v9.9.9)" in page._table.item(0, 3).text()
+    # demo is sideloaded (no recorded registry), so the offer names the
+    # source it came from — the user is being asked to trust something new.
+    assert "update available (v9.9.9 from Built-in)" in page._table.item(0, 3).text()
     # An index no newer than the installed version adds nothing.
     page._set_listings(_result((DEFAULT, _index(version="1.2.0", plugin_id="demo"))))
     assert "update available" not in page._table.item(0, 3).text().lower()
+
+
+def test_update_available_status_from_the_installing_registry_is_unqualified(qtbot, host) -> None:
+    host.entry_for("demo").registry_url = DEFAULT.url
+    page = make_page(qtbot, host)
+    page._set_listings(_result((DEFAULT, _index(version="9.9.9", plugin_id="demo"))))
+    text = page._table.item(0, 3).text()
+    assert "update available (v9.9.9)" in text
+    assert "from" not in text
 
 
 def test_registry_install_records_provenance(qtbot, host, monkeypatch) -> None:
@@ -529,11 +542,26 @@ def test_browser_marks_an_id_installed_from_another_registry(qtbot, host) -> Non
     host.entry_for("demo").registry_url = GUILD.url
     page = make_page(qtbot, host)
     dialog, _installs = make_dialog(qtbot, host, page)
-    dialog._on_index_ready(_result((DEFAULT, _index(plugin_id="demo"))))
+    # Nothing newer on offer, so the only thing to say is that this copy came
+    # from somewhere else — and that swapping is not a button.
+    dialog._on_index_ready(_result((DEFAULT, _index(version="1.2.0", plugin_id="demo"))))
     button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
     assert button.text() == "Installed (other source)"
     assert not button.isEnabled()
     assert GUILD.url in button.toolTip() and DEFAULT.url in button.toolTip()
+
+
+def test_browser_offers_a_cross_source_update_but_promises_a_dialog(qtbot, host) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    page = make_page(qtbot, host)
+    dialog, _installs = make_dialog(qtbot, host, page)
+    dialog._on_index_ready(_result((DEFAULT, _index(version="9.9.9", plugin_id="demo"))))
+    button = dialog._table.cellWidget(0, pluginmanager._BROWSER_ACTION_COLUMN)
+    # Enabled, because refusing outright leaves the user no path at all —
+    # but the ellipsis, and the confirmation behind it, are the point.
+    assert button.text() == "Update to v9.9.9…"
+    assert button.isEnabled()
+    assert "not where your copy came from" in button.toolTip()
 
 
 def test_browser_refresh_refetches_and_is_single_flight(qtbot, host, monkeypatch) -> None:
@@ -645,3 +673,332 @@ def test_registry_row_shows_the_registry_name_in_source(qtbot, host, monkeypatch
     item = page._table.item(0, 5)
     assert item.text().startswith("Guild registry · ")
     assert "Listed by Guild registry" in item.toolTip()
+
+
+# --- taking updates ----------------------------------------------------------
+
+
+def _fake_update_install(monkeypatch, *, version: str = "2.0.0", fail: set[str] | None = None):
+    """install_from_url that replaces the plugin file in place, or fails.
+
+    Mirrors the real signature including ``replace=``, so a call that forgets
+    to pass a ReplaceTarget shows up as a TypeError rather than a silent pass.
+    """
+    import dataclasses
+
+    from nparseplus.core.plugins.install import InstallResult
+    from nparseplus_sdk import PluginMeta
+
+    failures = fail or set()
+    calls: list[dict] = []
+
+    def fake(url, plugins_dir, app_version=None, expected_sha256=None, replace=None):
+        calls.append({"url": url, "sha256": expected_sha256, "replace": replace})
+        assert replace is not None, "an update must carry a ReplaceTarget"
+        if replace.plugin_id in failures:
+            return InstallResult(ok=False, errors=[f"{replace.plugin_id} exploded"])
+        Path(replace.installed_path).write_text(
+            PLUGIN_SOURCE.replace('"demo"', f'"{replace.plugin_id}"').replace(
+                '"1.2.0"', f'"{version}"'
+            ),
+            encoding="utf-8",
+        )
+        return dataclasses.replace(
+            InstallResult(ok=True),
+            meta=PluginMeta(id=replace.plugin_id, name=replace.plugin_id, version=version),
+            installed_path=Path(replace.installed_path),
+            source_url=url,
+            sha256=expected_sha256 or "",
+        )
+
+    monkeypatch.setattr(pluginmanager, "install_from_url", fake)
+    return calls
+
+
+def _seed_offer(page, *, registry=DEFAULT, version="9.9.9", plugin_id="demo"):
+    page._set_listings(_result((registry, _index(version=version, plugin_id=plugin_id))))
+
+
+def test_update_button_appears_for_a_same_source_offer(qtbot, host) -> None:
+    host.entry_for("demo").registry_url = DEFAULT.url
+    page = make_page(qtbot, host)
+    assert page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN) is None
+    _seed_offer(page)
+    button = page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN)
+    assert button is not None
+    assert button.text() == "Update to v9.9.9"  # no ellipsis: no dialog coming
+    assert button.isEnabled()
+
+
+def test_update_installs_in_place_and_keeps_consent_and_data(qtbot, host, monkeypatch) -> None:
+    from nparseplus.core.plugins.storage import JsonPluginStorage
+
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    host.entry_for("demo").registry_url = DEFAULT.url
+    data_dir = host._plugin_data_dir("demo")
+    JsonPluginStorage(data_dir).save({"api_key": "hunter2"})
+    calls = _fake_update_install(monkeypatch)
+
+    page = make_page(qtbot, host)
+    _seed_offer(page)
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN).click()
+
+    entry = host.entry_for("demo")
+    assert entry.approved is True and entry.enabled is True
+    assert entry.last_version == "2.0.0"
+    assert entry.registry_url == DEFAULT.url
+    assert JsonPluginStorage(data_dir).load() == {"api_key": "hunter2"}
+    # The pinned hash from the index went along with it.
+    assert calls[0]["sha256"] == "a" * 64
+    assert calls[0]["replace"].plugin_id == "demo"
+    # The offer is retired, so the row stops advertising it.
+    assert page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN) is None
+    assert page._pending_update is None
+
+
+def test_a_cross_source_update_asks_first(qtbot, host, monkeypatch) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    calls = _fake_update_install(monkeypatch)
+    asked: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(
+            lambda parent, title, text, *a, **k: (
+                asked.append(text) or QMessageBox.StandardButton.Cancel
+            )
+        ),
+    )
+    page = make_page(qtbot, host)
+    _seed_offer(page)
+    page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN).click()
+
+    assert calls == []  # declined: nothing was installed
+    assert page._pending_update is None
+    # ...and the dialog named both ends of the swap.
+    assert "guild.example" in asked[0]
+    assert "built-in.example" in asked[0] or "Built-in" in asked[0]
+
+
+def test_a_cross_source_update_proceeds_when_confirmed(qtbot, host, monkeypatch) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    calls = _fake_update_install(monkeypatch)
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    page = make_page(qtbot, host)
+    _seed_offer(page)
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN).click()
+
+    assert len(calls) == 1
+    # Provenance moves to the registry that actually supplied the new copy.
+    assert host.entry_for("demo").registry_url == DEFAULT.url
+
+
+def test_an_unvouched_update_confirmation_admits_it_has_no_record(qtbot, host) -> None:
+    page = make_page(qtbot, host)
+    _seed_offer(page)  # demo is sideloaded — registry_url is ""
+    update = page._check.updates[0]
+    text = pluginmanager.update_confirm_text(update)
+    assert "no record of where your copy" in text
+    assert "sideloaded" in text
+
+
+def test_check_for_updates_populates_the_table_without_browse(qtbot, host, monkeypatch) -> None:
+    from nparseplus.core.plugins.registry import MultiFetchResult, RegistryFetchResult
+    from nparseplus.core.plugins.updatecheck import UpdateCheckResult, pending_updates
+
+    built: list[object] = []
+    monkeypatch.setattr(
+        pluginmanager,
+        "RegistryBrowserDialog",
+        lambda *a, **k: built.append(a) or (_ for _ in ()).throw(AssertionError("no dialog")),
+    )
+
+    def fake_check(installed, registries, *, sdk_version, app_version, **kwargs):
+        fetched = MultiFetchResult(
+            results=[RegistryFetchResult(registry=DEFAULT, index=_index(plugin_id="demo"))]
+        )
+        return UpdateCheckResult(
+            fetched=fetched,
+            updates=pending_updates(
+                installed, fetched.listings, sdk_version=sdk_version, app_version=app_version
+            ),
+        )
+
+    monkeypatch.setattr(pluginmanager, "check_for_updates", fake_check)
+    page = make_page(qtbot, host)
+    with qtbot.waitSignal(page._check_finished, timeout=5000):
+        page._check_button.click()
+
+    assert "update available (v9.9.9" in page._table.item(0, 3).text()
+    assert built == []  # never went near the browse dialog
+    assert page._check_button.isEnabled()
+    # ...and the host now carries it for the next time this page is built.
+    assert host.cached_update_check() is not None
+
+
+def test_check_for_updates_is_single_flight(qtbot, host, monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(
+        pluginmanager,
+        "check_for_updates",
+        lambda *a, **k: calls.append(1) or None,
+    )
+    page = make_page(qtbot, host)
+    page._checking = True
+    page.start_update_check()
+    assert calls == []
+
+
+def test_a_failed_check_says_so_without_stranding_the_button(qtbot, host, monkeypatch) -> None:
+    def boom(*a, **k):
+        raise OSError("the internet is closed")
+
+    monkeypatch.setattr(pluginmanager, "check_for_updates", boom)
+    page = make_page(qtbot, host)
+    with qtbot.waitSignal(page._check_finished, timeout=5000):
+        page._check_button.click()
+    assert page._check_button.isEnabled()
+    assert "Could not check" in page._status.text()
+
+
+def test_the_page_seeds_from_the_hosts_cached_check(qtbot, host, monkeypatch) -> None:
+    """A check that ran at launch is visible the first time the page opens."""
+    from nparseplus.core.plugins.registry import MultiFetchResult, RegistryFetchResult
+    from nparseplus.core.plugins.updatecheck import UpdateCheckResult, pending_updates
+
+    monkeypatch.setattr(
+        pluginmanager,
+        "check_for_updates",
+        lambda *a, **k: pytest.fail("the page must not fetch on construction"),
+    )
+    fetched = MultiFetchResult(
+        results=[RegistryFetchResult(registry=DEFAULT, index=_index(plugin_id="demo"))]
+    )
+    host.cache_update_check(
+        UpdateCheckResult(
+            fetched=fetched,
+            updates=pending_updates(
+                host.installed_for_update_check(),
+                fetched.listings,
+                sdk_version=host.sdk_version,
+                app_version="1.15.0",
+            ),
+        )
+    )
+    page = make_page(qtbot, host)
+    assert "update available (v9.9.9" in page._table.item(0, 3).text()
+
+
+def test_the_auto_check_box_writes_through(qtbot, host) -> None:
+    page = make_page(qtbot, host)
+    assert page._auto_check.isChecked() is True
+    page._auto_check.setChecked(False)
+    assert host.update_check_enabled is False
+
+
+# --- update all --------------------------------------------------------------
+
+
+def _two_updatable(host, tmp_path: Path):
+    """Add a second installed plugin so a batch has something to batch."""
+    from nparseplus.config.settings import PluginEntry
+
+    (host.plugins_dir / "extra.py").write_text(
+        PLUGIN_SOURCE.replace('"demo"', '"extra"'), encoding="utf-8"
+    )
+    host._settings.plugins.entries["extra"] = PluginEntry(
+        enabled=True, approved=True, registry_url=DEFAULT.url
+    )
+    host.entry_for("demo").registry_url = DEFAULT.url
+    host._loaded.clear()
+    host.discover_and_load()
+
+
+def _both_index(version: str = "9.9.9"):
+    from nparseplus.core.plugins.registry import RegistryIndex
+
+    return RegistryIndex.model_validate(
+        {
+            "schema_version": 1,
+            "plugins": [
+                {
+                    "id": plugin_id,
+                    "name": plugin_id,
+                    "latest": {
+                        "version": version,
+                        "url": f"https://example.com/{plugin_id}.zip",
+                        "sha256": "a" * 64,
+                        "requires_sdk": ">=1.0,<2",
+                    },
+                }
+                for plugin_id in ("demo", "extra")
+            ],
+        }
+    )
+
+
+def test_update_all_is_disabled_with_nothing_to_take(qtbot, host) -> None:
+    page = make_page(qtbot, host)
+    assert page._update_all_button.text() == "Update all"
+    assert not page._update_all_button.isEnabled()
+
+
+def test_update_all_counts_only_same_source_offers(qtbot, host, tmp_path: Path) -> None:
+    _two_updatable(host, tmp_path)
+    host.entry_for("extra").registry_url = GUILD.url  # a source change, excluded
+    page = make_page(qtbot, host)
+    page._set_listings(_result((DEFAULT, _both_index())))
+
+    assert page._update_all_button.text() == "Update all (1)"
+    assert "one at a time" in page._status.text()
+
+
+def test_update_all_updates_every_same_source_plugin(qtbot, host, tmp_path, monkeypatch) -> None:
+    _two_updatable(host, tmp_path)
+    shown: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda p, t, text, *a, **k: shown.append(text))
+    )
+    calls = _fake_update_install(monkeypatch)
+    page = make_page(qtbot, host)
+    page._set_listings(_result((DEFAULT, _both_index())))
+    assert page._update_all_button.text() == "Update all (2)"
+
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._update_all_button.click()
+    qtbot.waitUntil(lambda: not page._batch_active, timeout=5000)
+
+    assert {call["replace"].plugin_id for call in calls} == {"demo", "extra"}
+    assert "Updated 2 of 2 add-ons." in shown[-1]
+    assert "plugins trash folder" in shown[-1]
+
+
+def test_update_all_partial_failure_reports_both_lists(qtbot, host, tmp_path, monkeypatch) -> None:
+    _two_updatable(host, tmp_path)
+    shown: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda p, t, text, *a, **k: shown.append(text))
+    )
+    calls = _fake_update_install(monkeypatch, fail={"demo"})
+    page = make_page(qtbot, host)
+    page._set_listings(_result((DEFAULT, _both_index())))
+
+    with qtbot.waitSignal(page._install_finished, timeout=5000):
+        page._update_all_button.click()
+    qtbot.waitUntil(lambda: not page._batch_active, timeout=5000)
+
+    # One failure never stops the rest: both were attempted.
+    assert {call["replace"].plugin_id for call in calls} == {"demo", "extra"}
+    summary = shown[-1]
+    assert "Updated 1 of 2 add-ons." in summary
+    assert "Failed (the installed version is unchanged):" in summary
+    assert "demo exploded" in summary
+    # The failed one keeps its offer; the successful one loses it.
+    assert {u.plugin_id for u in page._check.updates} == {"demo"}

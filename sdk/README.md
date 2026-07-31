@@ -81,6 +81,12 @@ and publishing — is the **Plugins** section of the
   against in `PluginMeta.requires_sdk` (e.g. `">=1.0,<2"`); the app refuses
   plugins whose range does not admit the SDK version it bundles. 1.x is
   additive-only.
+- **You can ship updates without a registry.** Set `PluginMeta.update_url`
+  (SDK 1.1+) to an https index document listing your latest release and the
+  app offers in-place updates for your plugin. It can only ever offer your
+  own id, it never appears in the Browse list, and the sha256 in it is your
+  own claim rather than anyone's review — see
+  [Shipping updates without a registry](https://prokopto-dev.github.io/nparse-plus/plugins/developing/#shipping-updates-without-a-registry).
 - **No dependency on the app.** Plugins execute inside nParse+, which provides
   the runtime, so this package installs standalone with nothing but `pydantic`
   and `packaging`. `nparseplus_sdk.events`, `.timers` and `.ui` re-export host
