@@ -221,6 +221,38 @@ class TestLiveModuleNamespace:
         assert install_from_zip(archive, plugins_dir).ok
         assert sys.modules[f"{MODULE_NAMESPACE}.demo"] is live
 
+    def test_the_candidate_imports_its_own_modules_not_the_live_ones(self, tmp_path: Path) -> None:
+        """The update case: a new module asking for a name the old copy lacks.
+
+        Both versions' submodules answer to the same ``sys.modules`` keys, so
+        a leftover ``demo.helper`` from the running version is what the
+        candidate's ``__init__`` was handed — and validation failed with an
+        ImportError naming the very file the user was replacing. Any plugin
+        that grew a module or a public name between releases was un-updatable
+        while it was loaded, which is every interesting update.
+        """
+        plugins_dir = tmp_path / "plugins"
+        live = self._live_package(plugins_dir, "demo")
+        archive = make_zip(
+            tmp_path / "v2.zip",
+            {
+                "demo/__init__.py": (
+                    source_at("2.0.0") + "\nfrom .helper import ADDED_LATER  # noqa: E402\n"
+                ),
+                "demo/helper.py": "VALUE = 'updated'\nADDED_LATER = 'new'\n",
+            },
+        )
+
+        result = install_from_zip(
+            archive, plugins_dir, replace=ReplaceTarget("zipped", plugins_dir / "demo")
+        )
+
+        assert result.ok, result.errors
+        assert result.meta is not None and result.meta.version == "2.0.0"
+        # ...and the running plugin is still the one the host is holding.
+        assert sys.modules[f"{MODULE_NAMESPACE}.demo"] is live
+        assert sys.modules[f"{MODULE_NAMESPACE}.demo.helper"].VALUE == "original"
+
 
 def test_install_from_local_py_file(tmp_path: Path) -> None:
     source = tmp_path / "local.py"
