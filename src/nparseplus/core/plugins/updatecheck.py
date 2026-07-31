@@ -95,6 +95,10 @@ class PluginUpdate:
     installed_path: Path | None
     same_source: bool
     unknown_provenance: bool
+    # Who vouched for the copy on disk, "" if nobody did. Carried so the
+    # confirmation can name BOTH ends of a source change without the UI
+    # having to go back to settings for half the sentence.
+    installed_registry_url: str = ""
 
     @property
     def offered_version(self) -> str:
@@ -234,6 +238,7 @@ def pending_updates(
                 installed_path=plugin.installed_path,
                 same_source=same_source,
                 unknown_provenance=unknown,
+                installed_registry_url=plugin.registry_url,
             )
         )
     return updates
