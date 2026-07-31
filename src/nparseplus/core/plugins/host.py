@@ -184,7 +184,7 @@ class PluginHost:
         should stop being polled, not be polled forever from a stale cache.
         """
         entry = self._settings.plugins.entries.get(meta.id)
-        declared = getattr(meta, "update_url", "")
+        declared = meta.update_url
         if entry is None or entry.update_url == declared:
             return
         entry.update_url = declared
@@ -204,7 +204,7 @@ class PluginHost:
                 enabled=allowed,
                 approved=True,
                 last_version=loaded.meta.version,
-                update_url=getattr(loaded.meta, "update_url", ""),
+                update_url=loaded.meta.update_url,
             )
             loaded.status = "ready" if allowed else "disabled"
             self._save()
@@ -294,7 +294,7 @@ class PluginHost:
         entry.source_url = result.source_url or ""
         entry.sha256 = result.sha256 or ""
         entry.registry_url = registry_url
-        entry.update_url = getattr(result.meta, "update_url", "")
+        entry.update_url = result.meta.update_url
         self._save()
 
     def forget(self, plugin_id: str) -> None:
@@ -363,7 +363,7 @@ class PluginHost:
             if not version and entry is not None:
                 version = entry.last_version
             allowed = entry is not None and entry.approved and entry.enabled
-            declared = getattr(loaded.meta, "update_url", "") if loaded.meta is not None else ""
+            declared = loaded.meta.update_url if loaded.meta is not None else ""
             if not declared and entry is not None:
                 declared = entry.update_url
             installed.append(

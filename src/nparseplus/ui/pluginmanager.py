@@ -518,7 +518,7 @@ class PluginManagerPage(QWidget):
                 version=result.meta.version,
                 registry_url=entry.registry_url if entry is not None else "",
                 installed_path=result.installed_path,
-                update_url=getattr(result.meta, "update_url", ""),
+                update_url=result.meta.update_url,
             )
         return index
 
