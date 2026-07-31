@@ -17,6 +17,11 @@ Installs are deliberately conservative:
 - Uninstall moves the plugin into ``plugins/trash/`` rather than deleting.
   The host pairs it with ``PluginHost.forget`` so the consent record and the
   plugin's private data go with it.
+- Updating (``replace=``) is the same pipeline with the already-installed
+  refusal inverted: the new code must validate *and* prove it is the same
+  ``meta.id`` installed at the same path before the old copy is moved aside.
+  A failure at any point leaves the working copy in place, and — unlike
+  uninstall — consent and ``plugin-data/`` are deliberately untouched.
 
 Note: validation imports the plugin, so its module-level code runs at
 install time — the same trust boundary as running the plugin. The manager
@@ -48,7 +53,26 @@ TRASH_DIR_NAME = "trash"
 # Uninstalled plugin data is parked beside the uninstalled code, not deleted.
 PLUGIN_DATA_TRASH_NAME = "plugin-data"
 _STAGING_DIR_NAME = ".install-staging"
+# The old copy is parked here between "new copy validated" and "new copy in
+# place", then moved on to trash/. Dot-prefixed, so discover_dir_plugins
+# skips it even if a crash leaves one behind.
+_BACKUP_DIR_NAME = ".install-backup"
 _COPY_CHUNK_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class ReplaceTarget:
+    """Permission to install over one specific installed plugin.
+
+    Updating is the same pipeline as installing with one gate inverted, so it
+    is a parameter rather than a second entry point. Both fields are checked,
+    and at different points: ``installed_path`` before anything is extracted,
+    ``plugin_id`` only after validation, because ``meta.id`` does not exist
+    until the candidate has been imported.
+    """
+
+    plugin_id: str
+    installed_path: Path
 
 
 @dataclass
@@ -63,6 +87,9 @@ class InstallResult:
     # manager can distinguish registry installs and detect updates.
     sha256: str | None = None
     source_url: str | None = None
+    # Where the replaced copy was parked, for an update. The UI tells the user,
+    # because the index carries only `latest` — trash/ is the only way back.
+    replaced_path: Path | None = None
 
 
 def _digest(payload: bytes) -> str:
@@ -225,6 +252,98 @@ def _module_stem(name: str) -> str:
     return name[:-3] if name.endswith(".py") else name
 
 
+def _replace_target_error(replace: ReplaceTarget, plugins_dir: Path, target: Path) -> str | None:
+    """Screen a replace request before anything is extracted; None if usable.
+
+    Three separate things can be wrong, and conflating them produces an error
+    nobody can act on, so each says exactly what it found. The identity check
+    that matters most — that the archive really *is* this plugin — cannot run
+    here; see ``_replace_identity_error``.
+    """
+    installed = Path(replace.installed_path)
+    try:
+        installed.relative_to(plugins_dir)
+    except ValueError:
+        return f"{installed} is not inside the plugins directory"
+    if not installed.exists():
+        return (
+            f"the installed copy of {replace.plugin_id} is no longer at {installed} — "
+            "install it fresh instead of updating"
+        )
+    if target != installed:
+        # The install path comes from the archive root, never from meta.id, so
+        # an archive that renames its root would install a SECOND copy beside
+        # the old one under the same id. Refuse, and name both.
+        return (
+            f"this archive installs as {target.name!r} but the installed copy is "
+            f"{installed.name!r} — that is a new plugin, not an update to this one"
+        )
+    return None
+
+
+def _replace_identity_error(replace: ReplaceTarget, meta: PluginMeta | None) -> str | None:
+    """Refuse an archive that validated as a *different* plugin.
+
+    This is the check that stops an update from being an identity takeover: a
+    plugin installed over ``replace.plugin_id`` inherits that id's consent
+    record and its ``plugin-data/`` directory. It has to run after
+    ``validate_plugin``, because nothing before that knows ``meta.id``.
+    """
+    if meta is None:
+        return "the archive did not produce readable plugin metadata"
+    if meta.id != replace.plugin_id:
+        return (
+            f"this archive is plugin {meta.id!r}, not {replace.plugin_id!r} — "
+            "refusing to install it over a different plugin"
+        )
+    return None
+
+
+def _swap_in(candidate: Path, target: Path, plugins_dir: Path) -> tuple[Path | None, str | None]:
+    """Move ``candidate`` onto ``target``, keeping the old copy recoverable.
+
+    Returns ``(trashed_path, error)``. The old copy goes to a private backup
+    sibling first and only reaches ``trash/`` once the new copy is in place:
+    both moves are same-filesystem renames inside ``plugins_dir``, so the
+    window where ``target`` does not exist is a rename apart, and a rollback
+    never has to reason about a numbered public trash slot the user may
+    already be looking at.
+
+    A failure to trash the backup afterwards is deliberately not an error —
+    the update itself succeeded, and stranding a ``.install-backup`` entry is
+    a worse answer than reporting a failure that did not happen.
+    """
+    backup_root = plugins_dir / _BACKUP_DIR_NAME
+    shutil.rmtree(backup_root, ignore_errors=True)
+    backup_root.mkdir(parents=True, exist_ok=True)
+    backup = backup_root / target.name
+    try:
+        shutil.move(str(target), str(backup))
+    except OSError as exc:
+        shutil.rmtree(backup_root, ignore_errors=True)
+        return None, f"could not set the installed copy aside: {exc}"
+    try:
+        shutil.move(str(candidate), str(target))
+    except OSError as exc:
+        try:
+            shutil.move(str(backup), str(target))
+        except OSError as restore_exc:  # pragma: no cover - both renames failing
+            return None, (
+                f"could not install the new version ({exc}) and could not restore "
+                f"the old one ({restore_exc}) — it is in {backup}"
+            )
+        shutil.rmtree(backup_root, ignore_errors=True)
+        return None, f"could not install the new version: {exc}"
+    trashed: Path | None = None
+    try:
+        trashed = _trash_slot(plugins_dir / TRASH_DIR_NAME, target.name)
+        shutil.move(str(backup), str(trashed))
+    except OSError:
+        trashed = None
+    shutil.rmtree(backup_root, ignore_errors=True)
+    return trashed, None
+
+
 def _plugin_root(names: list[str]) -> tuple[str | None, str | None]:
     """Return (root_name, error): the single package dir or single .py file."""
     top_dirs = {n.split("/", 1)[0] for n in names if "/" in n}
@@ -248,7 +367,15 @@ def install_from_zip(
     *,
     app_version: str | None = None,
     expected_sha256: str | None = None,
+    replace: ReplaceTarget | None = None,
 ) -> InstallResult:
+    """Install a plugin zip, optionally replacing an installed copy in place.
+
+    With ``replace``, the old code is moved to ``trash/`` only after the new
+    code has validated *and* proved it is the same plugin. Nothing else about
+    the plugin is touched: its consent record and its ``plugin-data/`` survive,
+    which is the whole difference between updating and uninstall+reinstall.
+    """
     zip_path = Path(zip_path)
     plugins_dir = Path(plugins_dir)
     try:
@@ -274,11 +401,16 @@ def install_from_zip(
         if is_reserved_name(root) or root.startswith(("_", ".")):
             return InstallResult(ok=False, errors=[f"plugin name {root!r} is reserved"])
         target = plugins_dir / root
-        if target.exists():
-            return InstallResult(
-                ok=False,
-                errors=[f"{root} is already installed — uninstall it first"],
-            )
+        if replace is None:
+            if target.exists():
+                return InstallResult(
+                    ok=False,
+                    errors=[f"{root} is already installed — update it, or uninstall it first"],
+                )
+        else:
+            replace_error = _replace_target_error(replace, plugins_dir, target)
+            if replace_error is not None:
+                return InstallResult(ok=False, errors=[replace_error])
 
         staging = plugins_dir / _STAGING_DIR_NAME
         shutil.rmtree(staging, ignore_errors=True)
@@ -293,13 +425,25 @@ def install_from_zip(
             if not report.ok:
                 return InstallResult(ok=False, errors=report.errors, warnings=report.warnings)
             plugins_dir.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(candidate), str(target))
+            if replace is None:
+                shutil.move(str(candidate), str(target))
+                trashed = None
+            else:
+                identity_error = _replace_identity_error(replace, report.meta)
+                if identity_error is not None:
+                    return InstallResult(
+                        ok=False, errors=[identity_error], warnings=report.warnings
+                    )
+                trashed, swap_error = _swap_in(candidate, target, plugins_dir)
+                if swap_error is not None:
+                    return InstallResult(ok=False, errors=[swap_error], warnings=report.warnings)
             return InstallResult(
                 ok=True,
                 warnings=report.warnings,
                 meta=report.meta,
                 installed_path=target,
                 sha256=digest,
+                replaced_path=trashed,
             )
         finally:
             shutil.rmtree(staging, ignore_errors=True)
@@ -311,34 +455,74 @@ def install_from_file(
     *,
     app_version: str | None = None,
     expected_sha256: str | None = None,
+    replace: ReplaceTarget | None = None,
 ) -> InstallResult:
     """Install a plugin from a local .zip archive or a single .py file."""
     path = Path(path)
+    plugins_dir = Path(plugins_dir)
     if path.suffix == ".zip":
         return install_from_zip(
-            path, plugins_dir, app_version=app_version, expected_sha256=expected_sha256
+            path,
+            plugins_dir,
+            app_version=app_version,
+            expected_sha256=expected_sha256,
+            replace=replace,
         )
     if path.suffix == ".py" and path.is_file():
+        # The zip path screens the name before extracting; this one never did,
+        # so a file called `trash.py` (or `.hidden.py`) could land in the
+        # plugins folder and shadow a reserved directory.
+        if is_reserved_name(path.stem) or path.name.startswith(("_", ".")):
+            return InstallResult(ok=False, errors=[f"plugin name {path.name!r} is reserved"])
         digest, checksum_error = _checksum_error(path.read_bytes(), expected_sha256)
         if checksum_error is not None:
             return InstallResult(ok=False, errors=[checksum_error])
+        target = plugins_dir / path.name
+        # Screen the replace request BEFORE validation, matching the zip path:
+        # a refusable update should not run the candidate's module code.
+        if replace is not None:
+            replace_error = _replace_target_error(replace, plugins_dir, target)
+            if replace_error is not None:
+                return InstallResult(ok=False, errors=[replace_error])
         with _preserved_plugin_modules(path.stem):
             report = validate_plugin(path, app_version=app_version)
         if not report.ok:
             return InstallResult(ok=False, errors=report.errors, warnings=report.warnings)
-        target = Path(plugins_dir) / path.name
-        if target.exists():
-            return InstallResult(
-                ok=False, errors=[f"{path.name} is already installed — uninstall it first"]
-            )
-        Path(plugins_dir).mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+        if replace is None:
+            if target.exists():
+                return InstallResult(
+                    ok=False,
+                    errors=[f"{path.name} is already installed — update it, or uninstall it first"],
+                )
+        else:
+            identity_error = _replace_identity_error(replace, report.meta)
+            if identity_error is not None:
+                return InstallResult(ok=False, errors=[identity_error], warnings=report.warnings)
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        trashed: Path | None = None
+        if replace is None:
+            shutil.copyfile(path, target)
+        else:
+            # copyfile, not move: the source is the user's own file, which an
+            # update has no business consuming. Stage a copy, then swap.
+            staging = plugins_dir / _STAGING_DIR_NAME
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True, exist_ok=True)
+            try:
+                candidate = staging / path.name
+                shutil.copyfile(path, candidate)
+                trashed, swap_error = _swap_in(candidate, target, plugins_dir)
+                if swap_error is not None:
+                    return InstallResult(ok=False, errors=[swap_error], warnings=report.warnings)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
         return InstallResult(
             ok=True,
             warnings=report.warnings,
             meta=report.meta,
             installed_path=target,
             sha256=digest,
+            replaced_path=trashed,
         )
     return InstallResult(ok=False, errors=[f"{path} is not a .zip archive or .py file"])
 
@@ -350,6 +534,7 @@ def install_from_url(
     fetch: Callable[[str], bytes] | None = None,
     app_version: str | None = None,
     expected_sha256: str | None = None,
+    replace: ReplaceTarget | None = None,
 ) -> InstallResult:
     """Download a plugin zip over https and install it.
 
@@ -382,7 +567,11 @@ def install_from_url(
     try:
         tmp_zip.write_bytes(payload)
         result = install_from_zip(
-            tmp_zip, plugins_dir, app_version=app_version, expected_sha256=expected_sha256
+            tmp_zip,
+            plugins_dir,
+            app_version=app_version,
+            expected_sha256=expected_sha256,
+            replace=replace,
         )
         result.source_url = url
         return result

@@ -13,6 +13,7 @@ import pytest
 
 from nparseplus.core.plugins import install as install_module
 from nparseplus.core.plugins.install import (
+    ReplaceTarget,
     fetch_https_bytes,
     install_from_file,
     install_from_url,
@@ -21,6 +22,7 @@ from nparseplus.core.plugins.install import (
     uninstall,
 )
 from nparseplus_sdk.loading import MODULE_NAMESPACE, import_plugin_module
+from nparseplus_sdk.validate import validate_plugin
 
 from .conftest import PLUGIN_TEMPLATE
 
@@ -256,6 +258,250 @@ def test_install_from_url_download_failure_isolated(tmp_path: Path) -> None:
     )
     assert not result.ok
     assert any("download failed" in e for e in result.errors)
+
+
+def source_at(version: str, plugin_id: str = "zipped") -> str:
+    return PLUGIN_TEMPLATE.format(
+        plugin_id=plugin_id,
+        name="Zipped",
+        version=version,
+        extra_meta="",
+        activate_body="        pass",
+        deactivate_body="        pass",
+    )
+
+
+class TestReplaceInPlace:
+    """Updating an installed plugin without uninstalling it first.
+
+    The identity trap these tests pin down: the install path comes from the
+    archive root, the consent record and plugin-data come from ``meta.id``,
+    and nothing in the installer reconciles the two — so both have to be
+    checked, at different points in the flow.
+    """
+
+    @staticmethod
+    def _installed(tmp_path: Path, version: str = "1.0.0") -> tuple[Path, Path]:
+        """Install v1 and return (plugins_dir, installed_path)."""
+        plugins_dir = tmp_path / "plugins"
+        archive = make_zip(tmp_path / "v1.zip", {"solo.py": source_at(version)})
+        result = install_from_zip(archive, plugins_dir)
+        assert result.ok, result.errors
+        assert result.installed_path is not None
+        return plugins_dir, result.installed_path
+
+    @staticmethod
+    def _target(installed: Path, plugin_id: str = "zipped") -> ReplaceTarget:
+        return ReplaceTarget(plugin_id=plugin_id, installed_path=installed)
+
+    def test_replace_installs_the_new_version_over_the_old(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert result.ok, result.errors
+        assert result.meta is not None and result.meta.version == "2.0.0"
+        assert result.installed_path == installed
+        assert "2.0.0" in installed.read_text(encoding="utf-8")
+
+    def test_the_replaced_copy_goes_to_trash_and_is_reported(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        trashed = plugins_dir / "trash" / "solo.py"
+        assert trashed.is_file()
+        assert "1.0.0" in trashed.read_text(encoding="utf-8")
+        assert result.replaced_path == trashed
+
+    def test_no_backup_directory_survives_a_successful_update(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+        assert install_from_zip(archive, plugins_dir, replace=self._target(installed)).ok
+        assert not (plugins_dir / ".install-backup").exists()
+        assert not (plugins_dir / ".install-staging").exists()
+
+    def test_a_different_archive_root_is_refused(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        # Same plugin id, renamed distribution root: this would install a
+        # SECOND copy beside the old one, both claiming the same id.
+        archive = make_zip(tmp_path / "v2.zip", {"renamed.py": source_at("2.0.0")})
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert not result.ok
+        assert any("not an update" in e for e in result.errors)
+        assert "1.0.0" in installed.read_text(encoding="utf-8")
+        assert not (plugins_dir / "renamed.py").exists()
+
+    def test_a_different_plugin_id_is_refused_after_validation(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        # Same file name, different identity — an id takeover that would
+        # inherit the victim's consent record and plugin-data.
+        archive = make_zip(
+            tmp_path / "v2.zip", {"solo.py": source_at("2.0.0", plugin_id="stranger")}
+        )
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert not result.ok
+        assert any("'stranger'" in e and "'zipped'" in e for e in result.errors)
+        assert "1.0.0" in installed.read_text(encoding="utf-8")
+
+    def test_a_target_outside_the_plugins_dir_is_refused(self, tmp_path: Path) -> None:
+        plugins_dir, _installed = self._installed(tmp_path)
+        outside = tmp_path / "elsewhere" / "solo.py"
+        outside.parent.mkdir()
+        outside.write_text(source_at("1.0.0"), encoding="utf-8")
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(outside))
+
+        assert not result.ok
+        assert any("not inside the plugins directory" in e for e in result.errors)
+        assert outside.exists()
+
+    def test_a_missing_installed_copy_is_refused(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        installed.unlink()
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert not result.ok
+        assert any("no longer at" in e for e in result.errors)
+
+    def test_a_shape_change_is_refused(self, tmp_path: Path) -> None:
+        # `solo.py` -> `solo/` is a different filesystem node, so the archive
+        # root no longer matches the installed path.
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(
+            tmp_path / "v2.zip",
+            {"solo/__init__.py": source_at("2.0.0"), "solo/helper.py": "VALUE = 1\n"},
+        )
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert not result.ok
+        assert any("not an update" in e for e in result.errors)
+        assert installed.is_file()
+
+    def test_a_checksum_mismatch_leaves_the_installed_copy_alone(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+
+        result = install_from_zip(
+            archive, plugins_dir, replace=self._target(installed), expected_sha256="0" * 64
+        )
+
+        assert not result.ok
+        assert any("checksum mismatch" in e for e in result.errors)
+        assert "1.0.0" in installed.read_text(encoding="utf-8")
+
+    def test_invalid_new_code_leaves_the_installed_copy_alone(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": "import nope_never\n"})
+
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert not result.ok
+        assert "1.0.0" in installed.read_text(encoding="utf-8")
+        assert not (plugins_dir / "trash").exists()
+
+    def test_a_failed_swap_rolls_the_working_copy_back(self, tmp_path: Path, monkeypatch) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+
+        # Fail the second move — the one that puts the new copy in place —
+        # after the old copy has already been set aside.
+        real_move = install_module.shutil.move
+        calls = {"n": 0}
+
+        def flaky_move(src, dst):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("disk went away")
+            return real_move(src, dst)
+
+        monkeypatch.setattr(install_module.shutil, "move", flaky_move)
+        result = install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        assert not result.ok
+        assert any("could not install the new version" in e for e in result.errors)
+        assert installed.is_file()
+        assert "1.0.0" in installed.read_text(encoding="utf-8")
+        assert not (plugins_dir / ".install-backup").exists()
+
+    def test_the_rolled_back_copy_still_loads(self, tmp_path: Path, monkeypatch) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "v2.zip", {"solo.py": source_at("2.0.0")})
+        real_move = install_module.shutil.move
+        calls = {"n": 0}
+
+        def flaky_move(src, dst):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("disk went away")
+            return real_move(src, dst)
+
+        monkeypatch.setattr(install_module.shutil, "move", flaky_move)
+        install_from_zip(archive, plugins_dir, replace=self._target(installed))
+
+        report = validate_plugin(installed)
+        assert report.ok, report.errors
+        assert report.meta is not None and report.meta.version == "1.0.0"
+
+    def test_replace_works_for_a_py_file_install(self, tmp_path: Path) -> None:
+        plugins_dir = tmp_path / "plugins"
+        first = tmp_path / "solo.py"
+        first.write_text(source_at("1.0.0"), encoding="utf-8")
+        installed = install_from_file(first, plugins_dir).installed_path
+        assert installed is not None
+
+        second = tmp_path / "newer" / "solo.py"
+        second.parent.mkdir()
+        second.write_text(source_at("2.0.0"), encoding="utf-8")
+        result = install_from_file(second, plugins_dir, replace=self._target(installed))
+
+        assert result.ok, result.errors
+        assert "2.0.0" in installed.read_text(encoding="utf-8")
+        assert (plugins_dir / "trash" / "solo.py").is_file()
+        # The user's own file is copied, never consumed.
+        assert second.is_file()
+
+    def test_replace_works_through_install_from_url(self, tmp_path: Path) -> None:
+        plugins_dir, installed = self._installed(tmp_path)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("solo.py", source_at("2.0.0"))
+
+        result = install_from_url(
+            "https://example.com/p.zip",
+            plugins_dir,
+            fetch=lambda url: buffer.getvalue(),
+            replace=self._target(installed),
+        )
+
+        assert result.ok, result.errors
+        assert result.source_url == "https://example.com/p.zip"
+        assert "2.0.0" in installed.read_text(encoding="utf-8")
+
+    def test_reinstalling_the_same_version_is_allowed(self, tmp_path: Path) -> None:
+        # Repairing a corrupted copy is legitimate; "is this newer?" is the
+        # offer layer's decision, not the installer's.
+        plugins_dir, installed = self._installed(tmp_path)
+        archive = make_zip(tmp_path / "again.zip", {"solo.py": source_at("1.0.0")})
+        assert install_from_zip(archive, plugins_dir, replace=self._target(installed)).ok
+
+
+def test_reserved_py_filename_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "trash.py"
+    source.write_text(GOOD_SOURCE, encoding="utf-8")
+    result = install_from_file(source, tmp_path / "plugins")
+    assert not result.ok
+    assert any("reserved" in e for e in result.errors)
 
 
 def test_uninstall_moves_to_trash(tmp_path: Path) -> None:
