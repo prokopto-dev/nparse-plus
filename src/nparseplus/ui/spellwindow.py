@@ -14,8 +14,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from PySide6.QtCore import QCoreApplication, QPoint, Qt, QTimer
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QCoreApplication, QPoint, QRect, Qt, QTimer
+from PySide6.QtGui import QColor, QMouseEvent, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -45,8 +45,9 @@ from nparseplus.core.timers import (
     fraction_remaining,
     group_rows_for_display,
 )
-from nparseplus.ui import appquit, theme
+from nparseplus.ui import appquit, skins, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
+from nparseplus.ui.skinwidgets import GemMark, SkinPanel, paint_full_row_bar, set_caps
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -62,6 +63,9 @@ COLOR_TIMER = "#8e5bd1"  # purple
 COLOR_ROLL = "#d99b2b"  # amber
 
 BAR_MAX = 1000
+
+# Separator under a full-row (Ledger) row — see _RowWidget.paintEvent.
+ROW_RULE_COLOR = QColor(0, 0, 0, 140)
 
 # Bar color fade (``bar_fade_to_red``). NOT an EQTool port — its
 # BaseTriggerViewModel.ProgressBarColor is a static brush picked once from the
@@ -179,6 +183,29 @@ def row_bar_color(row: Row, fraction: float, fade: bool) -> str:
     return fade_color(base, fraction)
 
 
+def header_kind(group: str, rows: list[Row]) -> str:
+    """Which accent a group header wears (a ``skins.KIND_*`` value).
+
+    Headers and the bars beneath them have to agree — a red "A SAND GIANT"
+    cap over red debuff bars, tan over your own buffs. The group key settles
+    the special sections; for a target group the dominant row kind decides,
+    so a mob you have debuffed reads red while a buffed groupmate reads as a
+    player. Pure, so the mapping is testable without a window.
+    """
+    if group == YOU_GROUP:
+        return skins.KIND_YOU
+    if group in (TRIGGER_TIMER_GROUP, MOB_TIMER_GROUP, BOATS_GROUP):
+        return skins.KIND_TIMER
+    if group == ROLL_TIMER_GROUP or (rows and all(isinstance(r, RollRow) for r in rows)):
+        return skins.KIND_ROLL
+    spells = [r for r in rows if isinstance(r, SpellRow)]
+    if any(r.detrimental and not r.is_cooldown for r in spells):
+        return skins.KIND_DETRIMENTAL
+    if spells and all(r.is_cooldown for r in spells):
+        return skins.KIND_COOLDOWN
+    return skins.KIND_PLAYER
+
+
 class _RowWidget(QFrame):
     """One timer row: name + remaining time above a thin progress bar."""
 
@@ -187,6 +214,8 @@ class _RowWidget(QFrame):
         parent: QWidget | None = None,
         warning_threshold: Callable[[], int] = lambda: 0,
         fade_enabled: Callable[[], bool] = lambda: False,
+        skin: skins.Skin | None = None,
+        font_size: int = 12,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("SpellTimerRow")
@@ -202,6 +231,10 @@ class _RowWidget(QFrame):
         #: the flash and makes a left-click dismiss the row.
         self.expired = False
         self._flash_on = False
+        self._skin = skin if skin is not None else skins.skin()
+        #: Remaining fraction, kept for the Ledger skin's painted full-row bar
+        #: (the stacked skins read it straight off the QProgressBar instead).
+        self._fraction = 1.0
 
         self._icon = QLabel(self)
         self._icon.setObjectName("SpellTimerRowIcon")
@@ -209,17 +242,17 @@ class _RowWidget(QFrame):
         self._icon.setVisible(False)
         self._icon_index: int | None = None
         self._name = QLabel(self)
-        self._name.setObjectName("SpellTimerRowName")
+        self._name.setObjectName("SkinRowName")
         self._value = QLabel(self)
-        self._value.setObjectName("SpellTimerRowValue")
+        self._value.setObjectName("SkinRowValue")
         self._value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        text_row = QHBoxLayout()
-        text_row.setContentsMargins(0, 0, 0, 0)
-        text_row.setSpacing(4)
-        text_row.addWidget(self._icon, 0)
-        text_row.addWidget(self._name, 1)
-        text_row.addWidget(self._value, 0)
+        self._text_row = QHBoxLayout()
+        self._text_row.setContentsMargins(0, 0, 0, 0)
+        self._text_row.setSpacing(4)
+        self._text_row.addWidget(self._icon, 0)
+        self._text_row.addWidget(self._name, 1)
+        self._text_row.addWidget(self._value, 0)
 
         self._bar = QProgressBar(self)
         self._bar.setObjectName("SpellTimerRowBar")
@@ -228,11 +261,54 @@ class _RowWidget(QFrame):
         self._bar.setFixedHeight(5)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(4, 1, 4, 1)
         layout.setSpacing(1)
-        layout.addLayout(text_row)
+        layout.addLayout(self._text_row)
         layout.addWidget(self._bar)
         self.setLayout(layout)
+        self.apply_skin(self._skin, font_size)
+
+    def apply_skin(self, skin: skins.Skin, font_size: int) -> None:
+        """Re-lay the row for ``skin``: stacked bar vs. painted full-row bar.
+
+        Under ``row_style == "full"`` (Ledger) the progress bar is not a
+        widget at all — the row paints the draining block behind its own
+        labels — so the QProgressBar is hidden and the row takes a fixed
+        height instead of hugging its two stacked lines.
+        """
+        self._skin = skin
+        top, right, bottom, left = skin.row_pad
+        self.layout().setContentsMargins(left, top, right, bottom)
+        self._icon.setFixedSize(skin.icon_size, skin.icon_size)
+        full = skin.row_style == "full"
+        self._bar.setVisible(not full and not self.expired)
+        if full:
+            self.setFixedHeight(skin.row_height)
+            self.layout().setSpacing(0)
+        else:
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)
+            self._bar.setFixedHeight(skin.bar_height)
+            self.layout().setSpacing(1)
+        self._color = ""  # force the next update_row to restyle the bar
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        """Ledger's row background — drawn here, under the child labels.
+
+        Qt paints a widget before its children, so the block lands behind the
+        name and countdown without a stacking-order dance.
+        """
+        super().paintEvent(event)
+        if self._skin.row_style != "full" or not self._color or self.expired:
+            return
+        painter = QPainter(self)
+        rect = self.rect()
+        paint_full_row_bar(painter, rect, self._color, self._fraction, self._skin.row_rule)
+        # Rows butt against each other in this skin; a dark hairline is what
+        # separates them (the stacked skins get that separation for free from
+        # the gap between a bar and the next row's name).
+        painter.fillRect(QRect(rect.left(), rect.bottom(), rect.width(), 1), ROW_RULE_COLOR)
+        painter.end()
 
     def update_row(self, row: Row, now: datetime, label: str | None = None) -> None:
         """Render ``row`` — read-only; never mutates the model.
@@ -255,15 +331,19 @@ class _RowWidget(QFrame):
                 self._name.setStyleSheet("")
                 self._value.setStyleSheet("")
                 self._warning = False
+        full = self._skin.row_style == "full"
         if expired:
             # Post-expiry rebuff prompt: no countdown, flashing handled below.
             self._value.setText("REBUFF")
             self._bar.setVisible(False)
+            self._fraction = 0.0
             self.apply_flash(self._flash_on)
             return
         if isinstance(row, CounterRow):
             self._value.setText(f"x{row.count}")
             self._bar.setVisible(False)
+            self._fraction = 0.0
+            self.update()
             return
         remaining = max(0.0, (row.ends_at - now).total_seconds())
         if isinstance(row, RollRow):
@@ -273,14 +353,25 @@ class _RowWidget(QFrame):
         self._update_warning(row, remaining)
         fraction = fraction_remaining(row, now)
         self._bar.setValue(int(fraction * BAR_MAX))
-        self._bar.setVisible(True)
+        self._bar.setVisible(not full)
         color = row_bar_color(row, fraction, self._fade_enabled())
         if color != self._color:
             self._color = color
-            self._bar.setStyleSheet(
-                f"QProgressBar {{ background-color: {theme.palette().bar_track}; border: none; }}"
-                f"QProgressBar::chunk {{ background-color: {color}; }}"
-            )
+            if not full:
+                self._bar.setStyleSheet(skins.row_bar_style(self._skin, color))
+        if full:
+            # The painted bar redraws only when the block visibly moves —
+            # a 250 ms repaint of every row is the cost this guard avoids.
+            step = round(fraction * self.width())
+            if step != getattr(self, "_painted_step", None) or color != getattr(
+                self, "_painted_color", None
+            ):
+                self._painted_step = step
+                self._painted_color = color
+                self._fraction = fraction
+                self.update()
+            else:
+                self._fraction = fraction
 
     def apply_flash(self, on: bool) -> None:
         """Toggle the post-expiry flash (#16). No-op unless this row is an
@@ -355,29 +446,23 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self.setGeometry(*(state.geometry or DEFAULT_GEOMETRY))
         self.setWindowOpacity(state.opacity)
 
-        font_size = max(8, backend.settings.general.font_size)
-        colors = theme.palette()
-        self.setStyleSheet(
-            "#SpellTimerContainer {"
-            f" background-color: {colors.panel_bg}; border-radius: 4px; }}"
-            f"QLabel {{ color: {colors.text}; font-size: {font_size - 2}px; }}"
-            f"#SpellTimerGroup {{ color: {colors.heading}; font-weight: bold;"
-            f" font-size: {font_size}px; background-color: rgba(0, 68, 0, 160);"
-            " padding: 1px 4px; }"
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea > QWidget > QWidget { background: transparent; }"
-            "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
-            "QScrollBar::handle:vertical {"
-            " background: rgba(136, 136, 136, 120); border-radius: 3px; min-height: 20px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
-            " background: transparent; }"
-            "QSizeGrip { background: transparent; width: 12px; height: 12px; }"
-        )
+        self._skin = skins.skin()
+        self._font_size = max(8, backend.settings.general.font_size)
 
-        self._title = QLabel("Spell Timers", self)
-        self._title.setObjectName("SpellTimerTitle")
-        self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        # Skinned title bar: the gem mark + the window's caps.
+        self._mark = GemMark(self._skin, self)
+        self._title = QLabel("SPELL TIMERS", self)
+        self._title.setObjectName("SkinTitle")
+        self._title_count = QLabel("", self)
+        self._title_count.setObjectName("SkinTitleCount")
+        self._title_bar = QWidget(self)
+        self._title_bar.setObjectName("SkinTitleBar")
+        title_layout = QHBoxLayout(self._title_bar)
+        title_layout.setContentsMargins(6, 3, 6, 3)
+        title_layout.setSpacing(6)
+        title_layout.addWidget(self._mark, 0)
+        title_layout.addWidget(self._title, 1)
+        title_layout.addWidget(self._title_count, 0)
 
         self._rows_layout = QVBoxLayout()
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -400,15 +485,12 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._scroll.setWidget(rows_host)
 
-        container_layout = QVBoxLayout()
-        container_layout.setContentsMargins(2, 2, 2, 2)
-        container_layout.setSpacing(1)
-        container_layout.addWidget(self._title, 0)
-        container_layout.addWidget(self._scroll, 1)
-
-        self._container = QFrame(self)
+        self._container = SkinPanel(self._skin, parent=self)
         self._container.setObjectName("SpellTimerContainer")
-        self._container.setLayout(container_layout)
+        container_layout = QVBoxLayout(self._container)
+        container_layout.setSpacing(0)
+        container_layout.addWidget(self._title_bar, 0)
+        container_layout.addWidget(self._scroll, 1)
 
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
@@ -443,6 +525,10 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._on_app_quit)
+
+        # Last: apply_skin renders through refresh(), which needs the flash
+        # phase and the timers above to exist.
+        self.apply_skin()
 
         if state.shown:
             self.show()
@@ -546,10 +632,15 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                 header.setObjectName("SpellTimerGroup")
                 # Only target headers map to a clearable group (context menu).
                 header.setProperty("group_key", None if spell_headed else group.header)
+                set_caps(header)
                 self._headers[hkey] = header
             elif header.text() != label:
                 # Target class can arrive later (PlayerTracker /who sync).
                 header.setText(label)
+            kind = header_kind(group.header, group.rows)
+            if header.property("kind") != kind:
+                header.setProperty("kind", kind)
+                header.setStyleSheet(skins.header_style(self._skin, self._font_size, kind))
             entries.append(header)
             order.append(("H", hkey))
             used_headers.add(hkey)
@@ -571,6 +662,8 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                         self._container,
                         warning_threshold=self._buff_fade_warning_seconds,
                         fade_enabled=self._bar_fade_enabled,
+                        skin=self._skin,
+                        font_size=self._font_size,
                     )
                     self._row_widgets[key] = widget
                 # In a spell section the row shows its target, not the spell.
@@ -584,6 +677,8 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             self._headers.pop(hkey).deleteLater()
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
+
+        self._title_count.setText(str(len(used_rows)) if used_rows else "")
 
         # Only touch the layout when the widget sequence actually changed —
         # the per-tick takeAt/addWidget/adjustSize teardown forced a full
@@ -676,6 +771,28 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
 
     def _resize_frameless(self) -> bool:
         return self._state.frameless
+
+    def apply_skin(self) -> None:
+        """Re-style from the active skin (``ui.skins.set_skin``) — live.
+
+        Unlike the theme, a skin switch never needs a restart: the tray's UI
+        Skin submenu flips it mid-fight, so every skinned surface has to be
+        able to re-dress itself in place.
+        """
+        self._skin = skins.skin()
+        self._font_size = max(8, self._backend.settings.general.font_size)
+        self.setStyleSheet(
+            skins.overlay_window_style(self._skin, theme.palette(), self._font_size)
+            + skins.title_bar_style(self._skin, self._font_size)
+        )
+        self._container.apply_skin(self._skin, self._backend.settings.general.frame_opacity / 100)
+        self._mark.apply_skin(self._skin)
+        for header in self._headers.values():
+            kind = header.property("kind") or skins.KIND_PLAYER
+            header.setStyleSheet(skins.header_style(self._skin, self._font_size, kind))
+        for widget in self._row_widgets.values():
+            widget.apply_skin(self._skin, self._font_size)
+        self.refresh()
 
     def apply_window_state(self) -> None:
         """Re-apply opacity/flags from the (possibly just-edited) state.

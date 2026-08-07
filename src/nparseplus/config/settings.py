@@ -84,6 +84,19 @@ class GeneralSettings(BaseModel):
     # UI theme (eqtool #148); applied at startup, restart to change.
     theme: Literal["dark", "light"] = "dark"
     font_size: int = Field(default=12, ge=6)
+    # Overlay skin (ui/skins.py): the frame, type hierarchy and bar geometry
+    # of every in-fight overlay AND the on-game event text. Unlike ``theme``
+    # this applies live — the tray's UI Skin submenu switches it mid-fight.
+    skin: Literal["duxa", "velious", "ledger"] = "duxa"
+    # Alpha of the skin's frame plate and glass, as a percent. Text, bars and
+    # icons are never dimmed by it — that is the whole point of splitting it
+    # off the window opacity (which fades everything).
+    frame_opacity: int = Field(default=100, ge=20, le=100)
+    # Height of the big on-game alert word, in px.
+    overlay_text_size: int = Field(default=32, ge=14, le=72)
+    # How hard the on-game alert pushes: plain, a slow opacity pulse, or the
+    # pulse plus a colored glow behind the text and the newest timer bar.
+    alert_emphasis: Literal["plain", "pulse", "glow"] = "pulse"
     global_audio_volume: int = Field(default=100, ge=0, le=100)
     tts_voice: str | None = None
     log_archive_enabled: bool = False

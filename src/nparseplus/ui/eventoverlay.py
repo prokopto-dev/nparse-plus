@@ -41,7 +41,9 @@ from nparseplus.core.events import (
     TimerBarEvent,
 )
 from nparseplus.core.timers import seconds_left, snap_to_second
+from nparseplus.ui import skins
 from nparseplus.ui.overlaybase import start_second_aligned
+from nparseplus.ui.skinwidgets import paint_hairline, qcolor, set_caps
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
@@ -49,6 +51,16 @@ BAR_WIDTH = 320
 LANES_WIDTH = 520
 DEFAULT_TEXT_COLOR = "red"
 DEFAULT_BAR_COLOR = "steelblue"
+DEFAULT_TEXT_SIZE = 32
+DEFAULT_EMPHASIS = "pulse"
+# Alert pulse cadence. Slow on purpose: fast enough to catch the eye at the
+# edge of vision, slow enough that reading the word is never a chase.
+PULSE_INTERVAL_MS = 700
+PULSE_DIM = 0.42
+
+# Separators an alert's "kicker — HEADLINE" is split on, longest first so
+# " - " never steals the dash out of an em-dash form.
+ALERT_SEPARATORS = (" — ", " -- ", " - ", ": ")
 
 # Positioning-mode chrome.
 EDIT_HINT_HEIGHT = 56
@@ -86,6 +98,50 @@ DEFAULT_CH_LANE_RETENTION_S = 20.0
 # past ``max(retention, chip flight) + grace`` regardless of chip bookkeeping.
 CH_LANE_SWEEP_MS = 1000
 CH_LANE_FORCE_GRACE_S = 1.0
+
+
+def split_alert_text(text: str) -> tuple[str, str]:
+    """Split an alert into its kicker caps and its headline.
+
+    Alerts arrive as one string ("Gorenaire — ENRAGED", "FTE: Someone"), and
+    the design gives the two halves different jobs: a small tracked-out cap
+    naming *who*, and the big word saying *what*. Splitting is presentational
+    only — ``current_text`` and the reset match still use the whole string.
+    Returns ``("", text)`` when there is nothing to split on.
+    """
+    for separator in ALERT_SEPARATORS:
+        head, found, tail = text.partition(separator)
+        if found and head.strip() and tail.strip():
+            return head.strip(), tail.strip()
+    return "", text
+
+
+class _Hairline(QWidget):
+    """The rule under an alert — solid in the middle, gone at both ends."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._color = ""
+        self.setFixedHeight(1)
+
+    def apply_skin(self, skin: skins.Skin) -> None:
+        self._color = skin.alert_rule_color
+        if not self._color or not skin.alert_rule_width:
+            self.setFixedSize(0, 0)
+            self.setVisible(False)
+        else:
+            self.setFixedHeight(1)
+            self.setMinimumWidth(skin.alert_rule_width)
+            self.setMaximumWidth(skin.alert_rule_width)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        if not self._color:
+            return
+        painter = QPainter(self)
+        paint_hairline(painter, self.rect(), self._color)
+        painter.end()
 
 
 def resolve_color(token: str | None, fallback: str) -> str:
@@ -225,6 +281,8 @@ class EventOverlayWindow(QWidget):
         state: WindowState | None = None,
         on_save: Callable[[], None] | None = None,
         text_shadow: bool = True,
+        text_size: int = DEFAULT_TEXT_SIZE,
+        emphasis: str = DEFAULT_EMPHASIS,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -235,6 +293,12 @@ class EventOverlayWindow(QWidget):
         # The blur effect is re-evaluated per repaint of this translucent
         # always-on-top surface — expensive on macOS; setting-gated.
         self._text_shadow = text_shadow
+        self._text_size = max(10, int(text_size))
+        self._emphasis = emphasis if emphasis in ("plain", "pulse", "glow") else DEFAULT_EMPHASIS
+        self._skin = skins.skin()
+        #: The whole un-split alert string — what ``current_text`` reports and
+        #: what a reset event must match (the labels show it in two pieces).
+        self._alert_text = ""
         self._edit_mode = False
         self._drag_offset: QPoint | None = None
         self.setObjectName("EventOverlayWindow")
@@ -266,10 +330,25 @@ class EventOverlayWindow(QWidget):
         # in ``_bars``/``_chain_lanes`` and never written to ``_center_text``.
         self._preview_widgets: list[QWidget] = []
 
+        self._alert_kicker = QLabel("", self)
+        self._alert_kicker.setObjectName("EventOverlayKicker")
+        set_caps(self._alert_kicker)
+        self._alert_kicker.hide()
         self._center_text = QLabel("", self)
         self._center_text.setObjectName("EventOverlayText")
-        self._center_text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._center_text.setWordWrap(True)
+        self._alert_rule = _Hairline(self)
+
+        # Alert emphasis (pulse/glow): a slow opacity beat on the headline.
+        # Driven by a plain stylesheet swap rather than a graphics effect —
+        # the label already carries the shadow/glow effect, and a widget only
+        # gets one. Set up before the first _set_text_color, which reads the
+        # pulse phase.
+        self._pulse_on = True
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.setInterval(PULSE_INTERVAL_MS)
+        self._pulse_timer.timeout.connect(self._toggle_pulse)
+
         self._apply_text_shadow(self._center_text)
         self._set_text_color(DEFAULT_TEXT_COLOR)
 
@@ -297,7 +376,9 @@ class EventOverlayWindow(QWidget):
         self._alert_layout = QVBoxLayout()
         self._alert_layout.setContentsMargins(0, 0, 0, 0)
         self._alert_layout.setSpacing(4)
+        self._alert_layout.addWidget(self._alert_kicker)
         self._alert_layout.addWidget(self._center_text)
+        self._alert_layout.addWidget(self._alert_rule)
         self._alert_host = QWidget(self)
         self._alert_host.setObjectName("OverlayAlertHost")
         self._alert_host.setLayout(self._alert_layout)
@@ -388,7 +469,71 @@ class EventOverlayWindow(QWidget):
         if self._region_mode():
             self._activate_region_layout()
 
+        self.apply_skin()
         self.hide()
+
+    # -- skin --------------------------------------------------------------------
+
+    def apply_skin(
+        self, text_size: int | None = None, emphasis: str | None = None, shadow: bool | None = None
+    ) -> None:
+        """Re-dress the on-game surface from the active skin — live.
+
+        The overlay is the one surface that sits directly on EverQuest, so it
+        follows the skin like every other window but never follows the *theme*
+        (a pale panel over the game is a flashbang; ``ui/theme.py`` says the
+        same). Optional arguments let Settings push a changed text size,
+        emphasis or shadow through in the same call.
+        """
+        self._skin = skins.skin()
+        if text_size is not None:
+            self._text_size = max(10, int(text_size))
+        if emphasis is not None and emphasis in ("plain", "pulse", "glow"):
+            self._emphasis = emphasis
+        if shadow is not None and shadow != self._text_shadow:
+            self._text_shadow = shadow
+            self._center_text.setGraphicsEffect(None)
+            self._apply_text_shadow(self._center_text)
+
+        skin = self._skin
+        align = (
+            Qt.AlignmentFlag.AlignLeft
+            if skin.alert_align == "left"
+            else Qt.AlignmentFlag.AlignHCenter
+        )
+        for widget in (self._alert_kicker, self._center_text):
+            widget.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+        for widget in (self._alert_kicker, self._center_text, self._alert_rule):
+            self._alert_layout.setAlignment(widget, align)
+        kicker_size = max(8, round(self._text_size * skin.alert_kicker_scale * 0.34))
+        self._alert_kicker.setStyleSheet(
+            f"color: {skin.alert_kicker_color}; font-size: {kicker_size}px;"
+            " font-weight: bold; background: transparent;"
+            f" letter-spacing: {kicker_size * skin.alert_kicker_tracking:.2f}px;"
+        )
+        self._alert_rule.apply_skin(skin)
+        self._restyle_alert()
+        for entry in self._bars.values():
+            self._style_bar(entry.widget)
+        for widget in self._preview_widgets:
+            if isinstance(widget, QProgressBar):
+                self._style_bar(widget)
+        self._sync_pulse()
+
+    def _sync_pulse(self) -> None:
+        """Run the pulse timer only while an alert is up and asking for it."""
+        wants = self._emphasis in ("pulse", "glow") and bool(self._alert_text)
+        if wants and not self._pulse_timer.isActive():
+            self._pulse_on = True
+            self._pulse_timer.start()
+        elif not wants and self._pulse_timer.isActive():
+            self._pulse_timer.stop()
+            self._pulse_on = True
+            self._restyle_alert()
+
+    def _toggle_pulse(self) -> None:
+        self._pulse_on = not self._pulse_on
+        self._restyle_alert()
 
     # -- position mode -----------------------------------------------------------
 
@@ -614,10 +759,17 @@ class EventOverlayWindow(QWidget):
         # Sample alert label styled exactly like ``_center_text`` (yellow, like
         # the bard counter). Divergence from the Phase-1 note: inserted into the
         # alert host's layout (not the main layout) so it rides the alert region.
-        label = QLabel("ENRAGED — sample alert", self)
-        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        label = QLabel("ENRAGED", self)
+        label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft
+            if self._skin.alert_align == "left"
+            else Qt.AlignmentFlag.AlignHCenter
+        )
         label.setWordWrap(True)
-        label.setStyleSheet("color: yellow; font-size: 32px; font-weight: bold;")
+        label.setStyleSheet(
+            f"color: yellow; font-size: {self._text_size}px; font-weight: bold;"
+            " background: transparent;"
+        )
         self._apply_text_shadow(label)
         self._alert_layout.insertWidget(self._alert_layout.indexOf(self._center_text) + 1, label)
         label.show()
@@ -787,12 +939,22 @@ class EventOverlayWindow(QWidget):
             self._on_utility_event(event)
             return
         if event.reset:
-            # EQTool only clears when the reset matches what is displayed.
-            if self._center_text.text() == event.text:
+            # EQTool only clears when the reset matches what is displayed —
+            # matched against the whole alert, not the split headline.
+            if self._alert_text == event.text:
                 self.clear_text()
             return
-        self._center_text.setText(event.text)
+        self._alert_text = event.text
+        kicker, headline = split_alert_text(event.text)
+        if kicker and self._skin.alert_mark:
+            kicker = f"◆ {kicker} ◆"
+        self._alert_kicker.setText(kicker)
+        self._alert_kicker.setVisible(bool(kicker))
+        self._center_text.setText(headline)
+        self._alert_rule.setVisible(bool(self._skin.alert_rule_color))
         self._set_text_color(resolve_color(event.foreground, DEFAULT_TEXT_COLOR))
+        self._restyle_alert()
+        self._sync_pulse()
         self._clear_timer.start()
         self._update_visibility()
 
@@ -842,21 +1004,38 @@ class EventOverlayWindow(QWidget):
     def _make_bar_widget(
         self, name: str, color: str | None, total: int, remaining: int
     ) -> QProgressBar:
-        """Build a styled countdown bar (shared by live bars and preview)."""
+        """Build a skinned countdown bar (shared by live bars and preview).
+
+        Still a ``QProgressBar`` — the chunk is what drains — but the text is
+        two child labels rather than ``setFormat``: the design puts the
+        trigger's name at the left edge and the countdown hard right, which a
+        single centered format string cannot express.
+        """
         total = max(1, int(total))
         bar = QProgressBar(self)
         bar.setObjectName("EventOverlayBar")
         bar.setRange(0, total)
         bar.setValue(max(0, min(total, int(remaining))))
-        bar.setFixedHeight(22)
-        bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bar.setTextVisible(False)
         resolved = resolve_color(color, DEFAULT_BAR_COLOR)
-        bar.setStyleSheet(
-            "QProgressBar { background-color: rgba(10, 10, 10, 200);"
-            " border: 1px solid #ffffff; color: #ffffff; font-weight: bold; }"
-            f"QProgressBar::chunk {{ background-color: {resolved}; }}"
-        )
-        bar.setFormat(f"{name}  {max(0, int(remaining))}s")
+        bar.setProperty("bar_color", resolved)
+
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(7, 0, 7, 0)
+        row.setSpacing(6)
+        name_label = QLabel(name, bar)
+        name_label.setObjectName("OverlayBarName")
+        value_label = QLabel(f"{max(0, int(remaining))}s", bar)
+        value_label.setObjectName("OverlayBarValue")
+        value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(name_label, 1)
+        row.addWidget(value_label, 0)
+        # Stored as properties so ``_style_bar``/``_render_bar`` can reach them
+        # from a plain QProgressBar handle (no bar subclass to keep in step).
+        bar.setProperty("name_label", name_label)
+        bar.setProperty("value_label", value_label)
+
+        self._style_bar(bar)
         return bar
 
     def _on_timer_bar_event(self, event: TimerBarEvent) -> None:
@@ -886,31 +1065,93 @@ class EventOverlayWindow(QWidget):
     # -- rendering -------------------------------------------------------------
 
     def _apply_text_shadow(self, label: QLabel) -> None:
-        """Soft black halo behind alert text — skipped when the
+        """Soft halo behind alert text — black by default, the alert's own
+        color under the "glow" emphasis, and skipped entirely when the
         overlay_text_shadow setting is off (the blur re-renders per repaint
         of this translucent surface, a macOS compositing cost)."""
-        if not self._text_shadow:
+        glow = self._emphasis == "glow"
+        if not self._text_shadow and not glow:
             return
         shadow = QGraphicsDropShadowEffect(label)
         shadow.setOffset(0, 0)
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor("black"))
+        if glow:
+            halo = QColor(self._text_color or DEFAULT_TEXT_COLOR)
+            halo.setAlpha(190)
+            shadow.setBlurRadius(26)
+            shadow.setColor(halo)
+        else:
+            shadow.setBlurRadius(8)
+            shadow.setColor(QColor("black"))
         label.setGraphicsEffect(shadow)
 
     def _set_text_color(self, color: str) -> None:
         if color != self._text_color:
             self._text_color = color
-            self._center_text.setStyleSheet(f"color: {color}; font-size: 32px; font-weight: bold;")
+            if self._emphasis == "glow" and self._center_text.graphicsEffect() is not None:
+                # The halo is tinted from the alert color; re-make it.
+                self._center_text.setGraphicsEffect(None)
+                self._apply_text_shadow(self._center_text)
+            self._restyle_alert()
+
+    def _restyle_alert(self) -> None:
+        """Paint the headline at the current size, color and pulse phase."""
+        color = self._text_color or DEFAULT_TEXT_COLOR
+        if not self._pulse_on:
+            dim = qcolor(color)
+            dim.setAlpha(round(255 * PULSE_DIM))
+            color = f"rgba({dim.red()}, {dim.green()}, {dim.blue()}, {dim.alpha()})"
+        self._center_text.setStyleSheet(
+            f"color: {color}; font-size: {self._text_size}px; font-weight: bold;"
+            " background: transparent;"
+        )
 
     def clear_text(self) -> None:
         self._clear_timer.stop()
+        self._alert_text = ""
         self._center_text.setText("")
+        self._alert_kicker.setText("")
+        self._alert_kicker.hide()
+        self._alert_rule.setVisible(False)
+        self._sync_pulse()
         self._update_visibility()
+
+    def _style_bar(self, bar: QProgressBar) -> None:
+        """(Re)apply the active skin to one countdown bar."""
+        skin = self._skin
+        color = bar.property("bar_color") or DEFAULT_BAR_COLOR
+        bar.setFixedHeight(skin.overlay_bar_height)
+        fill = (
+            f"qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,"
+            f" stop: 0 {skins.rgba(color, 0.62)}, stop: 1 {skins.rgba(color, 0.16)})"
+        )
+        chunk = f"QProgressBar::chunk {{ background: {fill};"
+        if skin.overlay_bar_style == "full":
+            chunk += f" border-left: {skin.row_rule}px solid {color};"
+        chunk += " }"
+        border = f"1px solid {skin.overlay_bar_border}" if skin.overlay_bar_border else "none"
+        bar.setStyleSheet(
+            f"QProgressBar {{ background-color: {skin.overlay_bar_bg}; border: {border}; }}" + chunk
+        )
+        name = bar.property("name_label")
+        value = bar.property("value_label")
+        text_size = max(8, round(skin.overlay_bar_height * 0.5))
+        if name is not None:
+            name.setStyleSheet(
+                f"color: #f3f5fe; font-size: {text_size}px; font-weight: bold;"
+                " background: transparent;"
+            )
+        if value is not None:
+            value.setStyleSheet(
+                f"color: {color}; font-size: {text_size + 2}px; font-weight: bold;"
+                " background: transparent;"
+            )
 
     def _render_bar(self, entry: _TimerBar, now: datetime) -> None:
         remaining = seconds_left(entry.ends_at, now)
         entry.widget.setValue(min(entry.total_seconds, remaining))
-        entry.widget.setFormat(f"{entry.name}  {remaining}s")
+        value = entry.widget.property("value_label")
+        if value is not None:
+            value.setText(f"{remaining}s")
 
     def _tick_bars(self) -> None:
         now = datetime.now()
@@ -935,7 +1176,7 @@ class EventOverlayWindow(QWidget):
                 self.show()
             return
         active = (
-            bool(self._center_text.text())
+            bool(self._alert_text)
             or bool(self._bars)
             or bool(self._chain_lanes)
             or bool(self._utility_lines)
@@ -948,7 +1189,21 @@ class EventOverlayWindow(QWidget):
     # -- test/debug hooks --------------------------------------------------------
 
     def current_text(self) -> str:
-        return self._center_text.text()
+        """The whole alert string — the labels show it split (see
+        ``split_alert_text``), so the headline label alone is not it."""
+        return self._alert_text
+
+    def bar_countdown_text(self, name: str) -> str:
+        """The countdown as rendered on ``name``'s bar (test/debug hook).
+
+        The bar's text is two child labels now, not ``QProgressBar.format()``
+        — this is the supported way to read what a bar says.
+        """
+        entry = self._bars.get(name)
+        if entry is None:
+            return ""
+        label = entry.widget.property("value_label")
+        return label.text() if label is not None else ""
 
     def current_bar_names(self) -> list[str]:
         out: list[str] = []

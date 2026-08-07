@@ -12,12 +12,13 @@ import webbrowser
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.handlers.consider import MobInfoState
-from nparseplus.ui import theme
+from nparseplus.ui import skins, theme
 from nparseplus.ui.overlaybase import OverlayWindowBase, format_mmss
+from nparseplus.ui.skinwidgets import GemMark, SkinPanel
 
 WINDOW_KEY = "mobinfo"
 REFRESH_INTERVAL_MS = 500
@@ -61,38 +62,63 @@ class MobInfoWindow(OverlayWindowBase):
         self._wiki_button.clicked.connect(self._open_wiki)
         self._wiki_button.setEnabled(False)
 
-        container = QFrame(self)
-        container.setObjectName("MobInfoContainer")
-        layout = QVBoxLayout()
-        layout.setContentsMargins(8, 6, 8, 6)
+        self._skin = skins.skin()
+        self._mark = GemMark(self._skin, self)
+        self._title = QLabel("MOB INFO", self)
+        self._title.setObjectName("SkinTitle")
+        self._title_bar = QWidget(self)
+        self._title_bar.setObjectName("SkinTitleBar")
+        title_layout = QHBoxLayout(self._title_bar)
+        title_layout.setContentsMargins(6, 3, 6, 3)
+        title_layout.setSpacing(6)
+        title_layout.addWidget(self._mark, 0)
+        title_layout.addWidget(self._title, 1)
+
+        self._container = SkinPanel(self._skin, parent=self)
+        self._container.setObjectName("MobInfoContainer")
+        layout = QVBoxLayout(self._container)
         layout.setSpacing(4)
-        layout.addWidget(self._name)
-        layout.addWidget(self._detail)
-        layout.addWidget(self._loot)
-        layout.addStretch(1)
-        layout.addWidget(self._wiki_button)
-        container.setLayout(layout)
+        layout.addWidget(self._title_bar)
+        body = QVBoxLayout()
+        body.setContentsMargins(6, 2, 6, 4)
+        body.setSpacing(4)
+        body.addWidget(self._name)
+        body.addWidget(self._detail)
+        body.addWidget(self._loot)
+        body.addStretch(1)
+        body.addWidget(self._wiki_button)
+        layout.addLayout(body, 1)
 
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(container)
+        outer.addWidget(self._container)
         self.setLayout(outer)
-
-        font_size = max(8, settings.general.font_size)
-        colors = theme.palette()
-        self.setStyleSheet(
-            f"#MobInfoContainer {{ background-color: {colors.panel_bg}; border-radius: 4px; }}"
-            f"QLabel {{ color: {colors.text}; font-size: {font_size - 2}px; }}"
-            f"#MobInfoName {{ color: {colors.heading}; font-weight: bold;"
-            f" font-size: {font_size}px; }}"
-        )
 
         # Poll (cheap) rather than marshalling on_change across threads.
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._on_refresh_tick)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
+        self.apply_skin()
         self.restore_visibility()
+
+    def apply_skin(self) -> None:
+        """Re-style from the active skin — live, no restart (see spellwindow)."""
+        self._skin = skins.skin()
+        font_size = max(8, self._settings.general.font_size)
+        colors = theme.palette()
+        self.setStyleSheet(
+            skins.overlay_window_style(self._skin, colors, font_size)
+            + skins.title_bar_style(self._skin, font_size)
+            + f"#MobInfoName {{ color: {self._skin.value_color}; font-weight: bold;"
+            f" font-size: {skins.px(font_size, 1.05)}px; background: transparent; }}"
+            f"#MobInfoContainer QPushButton {{ color: {self._skin.title_color};"
+            f" background: transparent; border: 1px solid {self._skin.plate_border};"
+            " padding: 3px 8px; }"
+            f"#MobInfoContainer QPushButton:hover {{ background: {skins.rgba('#c8a951', 0.14)}; }}"
+        )
+        self._container.apply_skin(self._skin, self._settings.general.frame_opacity / 100)
+        self._mark.apply_skin(self._skin)
 
     def _on_refresh_tick(self) -> None:
         """Poll-timer entry: no render work while hidden (showEvent re-renders

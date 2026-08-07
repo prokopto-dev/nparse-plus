@@ -107,6 +107,7 @@ nav:
   - Settings Reference:
       - settings/index.md
       - General: settings/general.md
+      - Appearance: settings/appearance.md
       - Character: settings/character.md
       - Friends: settings/friends.md
       - Spell Timers: settings/spell-timers.md

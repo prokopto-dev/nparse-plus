@@ -92,6 +92,20 @@ def verify_settings():
     # Needs on-hardware validation (memory vs. paint trade-off) before it can
     # default on — hence False.
     data["maps"]["band_cache"] = get_setting(data["maps"].get("band_cache", False), False)
+    # Backdrop alpha, split off window opacity: window opacity fades the whole
+    # window (geometry and labels with it), this fades only the fill behind
+    # the map. Defaults to 100 so an upgrade looks exactly as it did.
+    data["maps"]["backdrop_opacity"] = get_setting(
+        data["maps"].get("backdrop_opacity", 100), 100, lambda x: 0 <= x <= 100
+    )
+    # Drop the backdrop to zero after a few idle seconds, so a map you are not
+    # touching stops inking the game.
+    data["maps"]["backdrop_fade_idle"] = get_setting(
+        data["maps"].get("backdrop_fade_idle", False), False
+    )
+    data["maps"]["backdrop_fade_seconds"] = get_setting(
+        data["maps"].get("backdrop_fade_seconds", 5), 5, lambda x: 1 <= x <= 120
+    )
     data["maps"]["closest_z_alpha"] = get_setting(
         data["maps"].get("closest_z_alpha", 20), 20, lambda x: 1 <= x <= 100
     )

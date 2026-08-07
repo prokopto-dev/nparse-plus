@@ -99,12 +99,20 @@ src/nparseplus/
                         # platformdirs user_log_dir — frozen stderr is invisible,
                         # so check these first on any crash/connection report)
   ui/                   # PySide6 windows; overlaybase.py is the shared overlay recipe
+                        #   theme.py (Palette: dark/light, restart) + skins.py
+                        #   (Skin: the overlay chrome — duxa/velious/ledger —
+                        #   Qt-free data + pure stylesheet builders, applies LIVE),
+                        #   skinwidgets.py (what QSS can't express: the notched
+                        #   plate, the full-row bar, the gem mark, previews),
                         #   pluginmanager.py (Settings > Plugins + registry browser),
                         #   pluginconsent.py (the one-time approval dialog),
                         #   pluginwindow.py (the PluginWindow base plugins subclass)
   audio/tts.py          # Speaker protocol: macOS `say`, PowerShell, espeak, Null
   data/                 # generated/ported data — regenerate via tools/, never hand-edit JSON
   helpers/, parsers/    # LEGACY nparse code (maps + discord windows) — see below
+                        #   parsers/maps/chrome.py is NEW code in the legacy
+                        #   tree: the map's summoned surfaces (header, toolbar,
+                        #   rail, recenter puck, edge tabs) + pure geometry
 sdk/                    # uv WORKSPACE MEMBER: nparseplus-sdk, the stable third-party
                         # plugin contract. Versioned + released independently of the
                         # app (sdk-v* tags -> PyPI); __init__.py's exports are public
@@ -438,6 +446,61 @@ plugin's `sys.modules` entry into the deleted staging dir (reachable today
 via a same-stem install), and #52 — `loading.py` now registers the
 `nparseplus_user_plugins` parent so `from . import helper` works, not just
 `from .helper import x`.
+
+**The visual redesign** (post-1.21, ~1750 tests): the app got a look. Four
+pieces, all UI — no parser, event, handler or wire change.
+
+*Skins.* `ui/skins.py` is the second half of `ui/theme.py`: where a
+`Palette` answers "what color is body text", a `Skin` answers "what does
+the window's edge look like, how loud is the title, is the bar a rule under
+the row or the row's own background". Three ship — **duxa** (thin
+double-line frame, black glass, tan caps; the default, and what a
+DuxaUI-skinned P99 client already looks like), **velious** (beveled stone
+plate, notched corners, gem sockets, engraved gold), **ledger** (Duxa
+frame, full-row draining bars) — driven by one `general.skin`. Qt-free like
+theme.py: data plus PURE stylesheet builders, so the whole layer is
+testable without a window; the three things QSS cannot express (the corner
+notch, the full-row bar behind its own labels, the gem mark) live in
+`ui/skinwidgets.py` as painters. Unlike the theme a skin applies **live** —
+`app._apply_appearance` is the single landing point, called by both the
+tray's UI Skin submenu and the Settings picker's live preview, and every
+skinned window grows an `apply_skin()` that re-dresses in place. Sizes are
+multipliers of `general.font_size`, never px, so the user's font choice
+keeps working. `frame_opacity` fades ONLY the plate and glass — the split
+from window opacity (which fades the countdowns too) is the point.
+
+*Appearance page.* A new Settings page between General and Character:
+three live-previewing skin cards, theme (moved off General), overlay text
+size, alert emphasis, alert text shadow (moved off Audio & Overlays),
+frame opacity. The picker previews by mutating `general.skin` and calling
+the appearance callback, so **Close reverts** and Apply re-baselines —
+`_skin_on_open` owns that, re-read on every `showEvent` because the tray
+can change the skin while the window is hidden.
+
+*Event overlay.* `split_alert_text` splits "Gorenaire — ENRAGED" into a
+tracked-out kicker and the big word — presentation only: `current_text()`
+and the reset match still use the whole string (`_alert_text`). Emphasis
+(plain / pulse / pulse+glow) is a stylesheet swap on a timer, NOT a
+graphics effect, because the label already carries the shadow effect and a
+widget gets one. Bars stay `QProgressBar`s (the chunk is what drains) but
+their text is two child labels, name-left/time-right — read them via
+`bar_countdown_text`, not `format()`.
+
+*Maps.* Backdrop opacity is now its own number: `MapCanvas` paints a scene
+`backgroundBrush` with its own alpha and the `#MapCanvas` opaque black went
+away, so the map can be glass while its geometry stays full-contrast
+(`apply_backdrop_opacity` displays, `set_backdrop_opacity` also adopts —
+the idle fade needs to drop to 0 without forgetting the user's value). A
+wheel inside the edge band nudges it instead of zooming. The single-glyph
+button strip is gone: `parsers/maps/chrome.py` holds a hover-revealed
+header (zone, loc chip + age, Z badge, exit chips, find/rail) and labelled
+toolbar, edge tabs naming each exit on the border you would leave through
+(up only while the header is down), a recenter puck that lights with
+bearing + distance once you pan off yourself, a Tab rail showing what the
+zone actually has, and a Ctrl+F find palette (an empty one lists the zone's
+notables — that was the old ☰ NPCs button). The interesting parts are pure
+functions (`bearing_index`, `edge_anchor`, `zone_line_label`,
+`place_chrome`) and tested as such.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

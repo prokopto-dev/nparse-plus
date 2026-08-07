@@ -26,6 +26,37 @@ CURRENT_VERSION = Version(nparseplus.__version__)
 UPDATE_CHECK_DELAY_MS = 10_000  # don't block or race startup
 
 
+def build_skin_menu(menu, *, current_skin, enabled=True, with_appearance=True):
+    """Add the UI Skin submenu to ``menu``, beside Window Layouts.
+
+    A skin is the thing you most want to change *without* stopping to open
+    Settings — you notice the frame is wrong mid-pull — so it gets a tray
+    entry of its own. Returns ``({action: skin name}, appearance action)``;
+    empty/None when no skin callback was wired into ``attach_backend_ui``.
+
+    A module function rather than a method so the tray builder can be driven
+    over a stub self in tests (see tests/ui/test_tray_plugins_entry.py).
+    """
+    if not enabled:
+        return {}, None
+    from nparseplus.ui import skins
+
+    submenu = menu.addMenu("UI Skin")
+    actions = {}
+    for name in skins.SKIN_ORDER:
+        skin = skins.SKINS[name]
+        action = submenu.addAction(skin.label)
+        action.setCheckable(True)
+        action.setChecked(name == current_skin)
+        action.setToolTip(skin.blurb)
+        actions[action] = name
+    appearance_action = None
+    if with_appearance:
+        submenu.addSeparator()
+        appearance_action = submenu.addAction("Appearance…")
+    return actions, appearance_action
+
+
 class NomnsParse(QApplication):
     """Application Control.
 
@@ -56,6 +87,8 @@ class NomnsParse(QApplication):
         self._save_new_settings = None
         self._backend_windows = {}
         self._window_layouts = None
+        self._on_skin_changed = None
+        self._open_settings = None
         self._available_release = None
         self._update_window = None
         self.update_available.connect(self._on_update_available)
@@ -173,6 +206,8 @@ class NomnsParse(QApplication):
         windows=None,
         window_layouts=None,
         plugins_enabled=False,
+        on_skin_changed=None,
+        open_settings=None,
     ):
         """Backend mode wiring (called by nparseplus.app.create_app):
         feed LineEvents from the Qt bridge into the legacy parse path and
@@ -181,13 +216,19 @@ class NomnsParse(QApplication):
         .toggle() and .isVisible()).
 
         ``plugins_enabled`` gates the add-on tray entry: a user who has not
-        opted in must not see plugins mentioned anywhere."""
+        opted in must not see plugins mentioned anywhere.
+
+        ``on_skin_changed(name)`` re-dresses every overlay for the tray's UI
+        Skin submenu; ``open_settings()`` opens Settings on its Appearance
+        page. Both optional, so tests can attach a bare backend."""
         self._bridge = bridge
         self._spell_window = spell_window
         self._save_new_settings = save_new_settings
         self._backend_windows = dict(windows or {})
         self._window_layouts = window_layouts
         self._plugins_enabled = plugins_enabled
+        self._on_skin_changed = on_skin_changed
+        self._open_settings = open_settings
         bridge.events_batch.connect(self._on_backend_events)
 
     def _on_backend_events(self, events):
@@ -271,8 +312,15 @@ class NomnsParse(QApplication):
             window_action.setChecked(window.isVisible())
             backend_window_actions[window_action] = window
 
+        menu.addSeparator()
+        skin_actions, appearance_action = build_skin_menu(
+            menu,
+            current_skin=self._backend.settings.general.skin if self._on_skin_changed else "",
+            enabled=self._on_skin_changed is not None,
+            with_appearance=self._open_settings is not None,
+        )
+
         if self._window_layouts is not None:
-            menu.addSeparator()
             self._window_layouts.populate_menu(menu)
 
         menu.addSeparator()
@@ -294,6 +342,8 @@ class NomnsParse(QApplication):
             "discord_conf": discord_conf_action,
             "quit": quit_action,
             "parser_toggles": parser_toggles,
+            "skins": skin_actions,
+            "appearance": appearance_action,
         }
         return menu, actions
 
@@ -331,6 +381,12 @@ class NomnsParse(QApplication):
 
         elif action in actions["backend_windows"]:
             actions["backend_windows"][action].toggle()
+
+        elif action in actions["skins"]:
+            self._on_skin_changed(actions["skins"][action])
+
+        elif actions["appearance"] is not None and action == actions["appearance"]:
+            self._open_settings()
 
         elif actions["open_plugins"] is not None and action == actions["open_plugins"]:
             from PySide6.QtCore import QUrl

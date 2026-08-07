@@ -578,17 +578,19 @@ def cap_settings(backend, settings) -> None:
         )
     )
     w._friends_text.setPlainText("Alistra\nBorin Stoutmug\nCaldwell\nDelphine\nEbonhawk")
+    # Indices track the sidebar order in UnifiedSettingsWindow.__init__.
     pages = [
         (0, "settings--overview"),
         (0, "settings--general"),
-        (1, "settings--character"),
-        (2, "settings--friends"),
-        (3, "settings--spell-timers"),
-        (4, "settings--maps"),
-        (5, "settings--windows"),
-        (6, "settings--audio-overlays"),
-        (7, "settings--sharing"),
-        (8, "settings--advanced"),
+        (1, "settings--appearance"),
+        (2, "settings--character"),
+        (3, "settings--friends"),
+        (4, "settings--spell-timers"),
+        (5, "settings--maps"),
+        (6, "settings--windows"),
+        (7, "settings--audio-overlays"),
+        (8, "settings--sharing"),
+        (9, "settings--advanced"),
     ]
     for idx, name in pages:
         w._sidebar.setCurrentRow(idx)

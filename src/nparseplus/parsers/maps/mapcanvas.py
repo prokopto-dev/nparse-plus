@@ -36,6 +36,11 @@ from nparseplus.parsers.maps.mapclasses import (
 from nparseplus.parsers.maps.mapdata import ICON_MAP, MAP_FILES_PATHLIB, MapData
 from nparseplus.parsers.maps.zfade import fade_opacity
 
+# Width of the band along each map edge where the scroll wheel nudges the
+# backdrop instead of zooming (see MapCanvas.wheelEvent).
+BACKDROP_EDGE_PX = 18
+BACKDROP_WHEEL_STEP = 8
+
 
 class MapCanvas(QGraphicsView):
     """Map Widget for Everquest Map Files."""
@@ -49,8 +54,18 @@ class MapCanvas(QGraphicsView):
         # UI Init
         super().__init__()
         self.setObjectName("MapCanvas")
-        self.setAutoFillBackground(True)
+        # The backdrop is a scene background brush with its own alpha, NOT the
+        # opaque widget background the stylesheet used to paint. Window
+        # opacity fades the whole window — geometry, labels and player dots
+        # included — so it could never answer "let me see the game through the
+        # map without losing the lines". These two now do different jobs:
+        # window opacity stays yours, the backdrop is the see-through knob.
+        self.setStyleSheet("#MapCanvas { background: transparent; border: none; }")
+        self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.viewport().setAutoFillBackground(False)
+        self._backdrop_opacity = 100
+        self.apply_backdrop_opacity(config.data["maps"].get("backdrop_opacity", 100))
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setContentsMargins(0, 0, 0, 0)
@@ -112,6 +127,39 @@ class MapCanvas(QGraphicsView):
 
     # (parsed, generation, keep_loc) from the map-loader thread.
     _parsed_ready = Signal(object, int, bool)
+
+    # -- backdrop -----------------------------------------------------------
+
+    def apply_backdrop_opacity(self, percent):
+        """Set the map's backdrop alpha (0-100) without touching the ink.
+
+        0 is glass — geometry floating on the game. ~60 separates the lines
+        from whatever is behind them. 100 reads like a paper map, for when
+        you have parked and are planning a route. Display only: it does not
+        write the setting (see ``set_backdrop_opacity``), so the idle fade can
+        drop the backdrop to 0 without destroying the user's chosen value.
+        """
+        percent = max(0, min(100, int(percent)))
+        self._backdrop_opacity = percent
+        self.setBackgroundBrush(QColor(0, 0, 0, round(percent * 255 / 100)))
+        self.viewport().update()
+
+    def set_backdrop_opacity(self, percent, persist=False):
+        """Apply AND adopt ``percent`` as the user's setting."""
+        self.apply_backdrop_opacity(percent)
+        config.data["maps"]["backdrop_opacity"] = self._backdrop_opacity
+        if persist:
+            self._config_save_timer.start()
+
+    def backdrop_opacity(self):
+        return self._backdrop_opacity
+
+    def _in_backdrop_band(self, position):
+        """True when ``position`` (widget-local) is in the edge band the
+        backdrop wheel-nudge owns."""
+        band = BACKDROP_EDGE_PX
+        x, y = position.x(), position.y()
+        return x <= band or y <= band or x >= self.width() - band or y >= self.height() - band
 
     def load_map(self, map_name, keep_loc=False):
         """Synchronous zone load (startup, menus, tests)."""
@@ -726,6 +774,12 @@ class MapCanvas(QGraphicsView):
     def wheelEvent(self, event):
         # Scale based on scroll wheel direction
         movement = event.angleDelta().y()
+        # A wheel inside the edge band nudges the backdrop instead of zooming,
+        # so making the map see-through mid-pull never costs a settings trip.
+        if self._in_backdrop_band(event.position()):
+            step = BACKDROP_WHEEL_STEP if movement > 0 else -BACKDROP_WHEEL_STEP
+            self.set_backdrop_opacity(self._backdrop_opacity + step, persist=True)
+            return
         if self.dragMode() == QGraphicsView.DragMode.NoDrag:
             if movement > 0:
                 self.update_(self._scale + self._scale * 0.1)
