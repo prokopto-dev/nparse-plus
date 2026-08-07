@@ -45,7 +45,7 @@ from nparseplus.core.timers import (
     fraction_remaining,
     group_rows_for_display,
 )
-from nparseplus.ui import appquit, skins, theme
+from nparseplus.ui import appquit, chrome, skins, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
 from nparseplus.ui.skinwidgets import GemMark, SkinPanel, paint_full_row_bar, set_caps
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
@@ -55,12 +55,15 @@ REFRESH_INTERVAL_MS = 250
 FLASH_INTERVAL_MS = 500  # post-expiry rebuff-prompt flash cadence (#16)
 DEFAULT_GEOMETRY = (400, 0, 220, 400)
 
-# Progress-bar chunk colors per row kind.
-COLOR_BENEFICIAL = "#2f9e6e"  # green
-COLOR_DETRIMENTAL = "#c0392b"  # red-ish
-COLOR_COOLDOWN = "#3a7bd5"  # blue
-COLOR_TIMER = "#8e5bd1"  # purple
-COLOR_ROLL = "#d99b2b"  # amber
+# Progress-bar chunk colors per row kind. These name a row's MEANING, so they
+# read from the semantic tokens rather than repeating the hex — several of
+# which are shared with unrelated surfaces (a zone exit is the same green) and
+# must stay free to diverge.
+COLOR_BENEFICIAL = chrome.GOOD
+COLOR_DETRIMENTAL = chrome.BAD
+COLOR_COOLDOWN = chrome.COOLDOWN
+COLOR_TIMER = chrome.TIMER
+COLOR_ROLL = chrome.ROLL
 
 BAR_MAX = 1000
 

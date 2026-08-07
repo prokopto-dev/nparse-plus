@@ -78,6 +78,24 @@ def test_shade_clamps_instead_of_overflowing() -> None:
     assert skins.shade("#000000", -0.9) == "#000000"
 
 
+def test_base_color_reads_a_fill_in_any_notation() -> None:
+    """A skin's plate may be hex, rgba() or transparent; a caller that wants a
+    color rather than a fill wants one answer."""
+    assert skins.base_color(("#3a3122", "#241e14")) == "#3a3122"
+    assert skins.base_color(("rgba(6, 7, 10, 219)",)) == "#06070a"
+    assert skins.base_color(("rgb(6, 7, 10)",)) == "#06070a"
+    assert skins.base_color(("transparent",)) == "#000000"
+    assert skins.base_color(()) == "#000000"
+
+
+def test_base_color_survives_every_shipped_plate_and_glass() -> None:
+    for skin in skins.SKINS.values():
+        for colors in (theme.DARK, theme.LIGHT):
+            resolved = skin.resolved(colors)
+            for stops in (resolved.plate, resolved.glass, resolved.title_fill):
+                assert skins.base_color(stops).startswith("#")
+
+
 def test_rgba_carries_the_alpha_through() -> None:
     assert skins.rgba("#2f9e6e", 0.5) == "rgba(47, 158, 110, 0.500)"
     assert skins.rgba("#2f9e6e", 5) == "rgba(47, 158, 110, 1.000)"  # clamped
@@ -166,6 +184,31 @@ def test_light_theme_lifts_the_glass_but_keeps_the_skins_geometry() -> None:
     assert light.plate_padding == skins.VELIOUS.plate_padding
     assert light.glass != skins.VELIOUS.glass
     assert light.title_color == skins.VELIOUS.title_color  # the gold stays gold
+
+
+def test_light_theme_darkens_the_chrome_accent_and_nothing_else_new() -> None:
+    """``chrome_accent`` lands on a pale config surface, where the gold every
+    other accent keeps would be illegible. The four overlay fields need no
+    branch — the event overlay is never themed."""
+    for skin in skins.SKINS.values():
+        light = skin.resolved(theme.LIGHT)
+        assert light.chrome_accent != skin.chrome_accent
+        assert light.chrome_band == skin.chrome_band
+        assert light.lane_bg == skin.lane_bg
+        assert light.lane_border == skin.lane_border
+        assert light.overlay_chip_fill == skin.overlay_chip_fill
+        assert light.overlay_chip_text == skin.overlay_chip_text
+
+
+def test_the_new_overlay_fields_are_visible_under_every_skin() -> None:
+    """These exist precisely because deriving them broke on Ledger, whose
+    ``overlay_bar_bg`` is transparent and whose ``mark_color`` is empty."""
+    for skin in skins.SKINS.values():
+        assert skin.lane_bg and skin.lane_bg != "transparent", skin.name
+        assert skin.lane_border, skin.name
+        assert skin.overlay_chip_fill and skin.overlay_chip_text, skin.name
+        assert skin.chrome_accent, skin.name
+        assert skin.chrome_band and skin.chrome_band[0] != "transparent", skin.name
 
 
 def test_skin_reads_through_the_active_theme() -> None:

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.handlers.consider import MobInfoState
-from nparseplus.ui import skins, theme
+from nparseplus.ui import chrome, skins, theme
 from nparseplus.ui.overlaybase import OverlayWindowBase, format_mmss
 from nparseplus.ui.skinwidgets import GemMark, SkinPanel
 
@@ -176,7 +176,9 @@ class MobInfoWindow(OverlayWindowBase):
         rows = []
         for entry in loot[:12]:
             price = f" — {entry.price}p" if entry.price and entry.price != "0" else ""
-            rows.append(f'<a href="{entry.url}" style="color:#9ecfff;">{entry.name}</a>{price}')
+            rows.append(
+                f'<a href="{entry.url}" style="color:{chrome.LINK};">{entry.name}</a>{price}'
+            )
         more = f"<br>… +{len(loot) - 12} more" if len(loot) > 12 else ""
         self._loot.setText("Known loot:<br>" + "<br>".join(rows) + more)
         self._loot.show()

@@ -29,6 +29,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QFrame, QWidget
 
+from nparseplus.ui import chrome
 from nparseplus.ui.skins import Skin
 
 _RGBA = re.compile(
@@ -261,7 +262,8 @@ def paint_full_row_bar(
 
 #: Row colors in a preview thumbnail — one beneficial, one custom timer, one
 #: detrimental, so every skin's three bar treatments are visible at a glance.
-PREVIEW_ROW_COLORS = ("#2f9e6e", "#8e5bd1", "#c0392b")
+#: Read from the semantic tokens so a preview cannot drift from the real rows.
+PREVIEW_ROW_COLORS = (chrome.GOOD, chrome.TIMER, chrome.BAD)
 
 
 class SkinPreview(QWidget):

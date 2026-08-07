@@ -89,6 +89,16 @@ class Skin:
     mark_size: int
     mark_glow: str
 
+    # -- config surfaces (Settings, the editors) -------------------------
+    #: The one hue a skin lends the chrome: selection bands, focus rings,
+    #: group titles, hairlines. Its own field rather than ``mark_color``
+    #: because Ledger has no gem, and ``title_color`` because Duxa's gem and
+    #: caps deliberately differ. ``ui/chrome.py`` owns everything downstream.
+    chrome_accent: str
+    #: Fill behind a selected sidebar row. Not derived from ``title_fill``:
+    #: Ledger's is transparent, which would make the selection invisible.
+    chrome_band: tuple[str, ...]
+
     # -- group headers ---------------------------------------------------
     header_scale: float
     header_tracking: float
@@ -135,6 +145,15 @@ class Skin:
     overlay_bar_bg: str
     overlay_bar_border: str
     overlay_bar_style: str  # "boxed" (Duxa/Velious) or "full" (Ledger)
+    #: The CH chain lane's own plate. Separate from ``overlay_bar_bg``, which
+    #: is transparent on Ledger — a lane that vanishes is not a lane.
+    lane_bg: str
+    lane_border: str
+    #: Small opaque plates over the game: the Utility header, region chips,
+    #: the edit hint. The header tints are alpha-0.14 bands tuned to sit on
+    #: black glass, not on Norrath, so these get their own pair.
+    overlay_chip_fill: str
+    overlay_chip_text: str
 
     def resolved(self, colors: Palette | None = None) -> Skin:
         """This skin adapted to the active theme.
@@ -144,6 +163,11 @@ class Skin:
         geometry (that is the user's choice) but lift the two glass fills and
         the row text so the window is still readable as a light-theme window;
         the accents, gold caps and bar colors stay as drawn.
+
+        ``chrome_accent`` is the one exception to "accents stay as drawn": it
+        lands on a pale config surface, where gold is illegible. The four
+        overlay fields below it need no branch — the event overlay is never
+        themed (see ``theme.py``).
         """
         colors = colors if colors is not None else palette()
         if colors.name != "light":
@@ -159,6 +183,7 @@ class Skin:
             value_shadow=False,
             bar_track="rgba(0, 0, 0, 40)",
             bar_track_border="rgba(0, 0, 0, 60)",
+            chrome_accent=shade(self.chrome_accent, -0.45),
         )
 
 
@@ -200,6 +225,8 @@ DUXA = Skin(
     mark_color="#c8a951",
     mark_size=5,
     mark_glow="",
+    chrome_accent="#c8a951",
+    chrome_band=("rgba(107, 90, 58, 77)", "rgba(107, 90, 58, 15)"),
     header_scale=0.80,
     header_tracking=0.16,
     header_pad=(3, 7, 2, 7),
@@ -231,6 +258,10 @@ DUXA = Skin(
     overlay_bar_bg="rgba(6, 7, 10, 199)",
     overlay_bar_border="#6b5a3a",
     overlay_bar_style="boxed",
+    lane_bg="rgba(6, 7, 10, 199)",
+    lane_border="#6b5a3a",
+    overlay_chip_fill="rgba(58, 123, 213, 0.780)",
+    overlay_chip_text="#e4e7f5",
 )
 
 VELIOUS = Skin(
@@ -253,6 +284,8 @@ VELIOUS = Skin(
     mark_color="#e2c882",
     mark_size=7,
     mark_glow="rgba(226, 200, 130, 178)",
+    chrome_accent="#e2c882",
+    chrome_band=("#5c4d31", "#332a1c"),
     header_scale=0.84,
     header_tracking=0.20,
     header_pad=(3, 7, 3, 7),
@@ -293,6 +326,10 @@ VELIOUS = Skin(
     overlay_bar_bg="rgba(6, 7, 10, 184)",
     overlay_bar_border="#6b5a3a",
     overlay_bar_style="boxed",
+    lane_bg="rgba(10, 11, 15, 220)",
+    lane_border="#6b5a3a",
+    overlay_chip_fill="rgba(92, 77, 49, 0.860)",
+    overlay_chip_text="#f0dcae",
 )
 
 LEDGER = Skin(
@@ -315,6 +352,9 @@ LEDGER = Skin(
     mark_color="",
     mark_size=0,
     mark_glow="",
+    # No gem and a transparent title fill — exactly why these are fields.
+    chrome_accent="#8a7549",
+    chrome_band=("rgba(107, 90, 58, 56)",),
     header_scale=0.76,
     header_tracking=0.18,
     header_pad=(7, 8, 2, 8),
@@ -346,6 +386,10 @@ LEDGER = Skin(
     overlay_bar_bg="transparent",
     overlay_bar_border="",
     overlay_bar_style="full",
+    lane_bg="rgba(6, 7, 10, 179)",
+    lane_border="#3a3122",
+    overlay_chip_fill="rgba(6, 7, 10, 0.800)",
+    overlay_chip_text="#d4b675",
 )
 
 SKINS: dict[str, Skin] = {skin.name: skin for skin in (DUXA, VELIOUS, LEDGER)}
@@ -403,6 +447,27 @@ def rgba(color: str, alpha: float) -> str:
     """``#rrggbb`` -> ``rgba(r, g, b, a)`` with ``alpha`` in 0..1."""
     red, green, blue = _hex_rgb(color)
     return f"rgba({red}, {green}, {blue}, {max(0.0, min(1.0, alpha)):.3f})"
+
+
+def base_color(stops: tuple[str, ...]) -> str:
+    """The first stop of a fill as ``#rrggbb``, whatever notation it uses.
+
+    A skin's ``plate``/``glass`` may be hex, ``rgba(...)`` or ``transparent``;
+    callers that need a *color* rather than a fill (the map chrome derives its
+    ink from ``plate``) want one answer, not three cases. Alpha is dropped —
+    that is the point, since the caller is about to pick its own.
+    """
+    if not stops:
+        return "#000000"
+    value = stops[0].strip()
+    if value.startswith("#"):
+        red, green, blue = _hex_rgb(value)
+        return f"#{red:02x}{green:02x}{blue:02x}"
+    if value.startswith("rgba(") or value.startswith("rgb("):
+        parts = value[value.index("(") + 1 : value.rindex(")")].split(",")
+        red, green, blue = (max(0, min(255, int(float(part)))) for part in parts[:3])
+        return f"#{red:02x}{green:02x}{blue:02x}"
+    return "#000000"  # "transparent" and anything unparseable
 
 
 def gradient(stops: tuple[str, ...], horizontal: bool = False) -> str:
