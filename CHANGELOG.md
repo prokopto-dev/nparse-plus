@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v1.22.0 (2026-08-07)
+
+### Features
+
+- **ui**: Give the overlays a look — skins, an Appearance page, map chrome
+  ([`07e37d6`](https://github.com/prokopto-dev/nparse-plus/commit/07e37d6b8bf10ad4adf5c8684d090e66297ccca0))
+
+
 ## v1.21.1 (2026-07-31)
 
 ### Bug Fixes
