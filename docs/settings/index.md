@@ -7,11 +7,12 @@ sidebar pages, documented one-per-page here, mirroring the app:
 
 | Page | Covers |
 |---|---|
-| [General](general.md) | Log/install directories, updates, theme, font size |
+| [General](general.md) | Log/install directories, updates, font size |
+| [Appearance](appearance.md) | Overlay skin, theme, on-game alert size and emphasis |
 | [Character](character.md) | Per-character profiles: class, level, sharing, spell filters |
 | [Friends](friends.md) | Friends-list merge and push |
 | [Spell Timers](spell-timers.md) | Timer behavior toggles and buff-fade warnings |
-| [Maps](maps.md) | Line widths, label size, other players, z-fade |
+| [Maps](maps.md) | Line widths, label size, other players, backdrop, z-fade |
 | [Windows](windows.md) | Per-window on-top / opacity / click-through |
 | [Audio & Overlays](audio-overlays.md) | TTS voice/volume, alert durations |
 | [Sharing](sharing.md) | Network mode, pigparse.org account, inventory upload |
@@ -20,7 +21,8 @@ sidebar pages, documented one-per-page here, mirroring the app:
 
 **Apply & Save** writes everything to disk; **Close** discards pending
 edits. A few settings note that they apply after restart (theme, font
-size, TTS engine, sharing mode).
+size, TTS engine, sharing mode); the overlay skin is not one of them —
+it applies the moment you pick it.
 
 Settings persist to `settings.json` in your
 [platform config directory](../getting-started/first-run.md#where-settings-live).

@@ -30,7 +30,7 @@ from nparseplus.config.settings import (
 )
 from nparseplus.core.events import WindowCommandEvent
 from nparseplus.core.player import tracking_distance
-from nparseplus.ui import theme
+from nparseplus.ui import skins, theme
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +146,11 @@ def _apply_window_command(event: object, window_handles: dict[str, object]) -> N
         window.toggle()  # type: ignore[attr-defined]
 
 
+def _open_appearance_settings(settings_window) -> None:
+    """Tray "Appearance…": open Settings already on the Appearance page."""
+    settings_window.show_page("Appearance")
+
+
 @dataclass
 class AppContext:
     """Everything ``run_app`` builds, exposed for tests/e2e drivers."""
@@ -221,6 +226,9 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
     app = NomnsParse(list(argv), backend=backend)
     theme.set_theme(settings.general.theme)
+    # Before any window is built: the overlays read the active skin in their
+    # constructors, and a skin change is live thereafter (unlike the theme).
+    skins.set_skin(settings.general.skin)
     with open(resource_path(os.path.join("data", "ui", theme.stylesheet_filename()))) as css:
         app.setStyleSheet(css.read())
     app.setWindowIcon(QIcon(resource_path(os.path.join("data", "ui", "icon.png"))))
@@ -247,8 +255,33 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         state=overlay_state,
         on_save=save,
         text_shadow=settings.general.overlay_text_shadow,
+        text_size=settings.general.overlay_text_size,
+        emphasis=settings.general.alert_emphasis,
     )
     trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
+
+    def _apply_appearance(skin_name: str | None = None) -> None:
+        """Re-dress every skinned surface from ``settings.general``.
+
+        The one place a skin change lands. Both entry points (the tray's UI
+        Skin submenu and the Settings picker's live preview) write the value
+        into settings first and then call this, so there is a single source
+        of truth and no window can end up wearing a different skin than the
+        others. Only the tray path passes ``skin_name`` and saves.
+        """
+        if skin_name is not None:
+            settings.general.skin = skin_name  # type: ignore[assignment]
+        skins.set_skin(settings.general.skin)
+        for window in (spell_window, dps_window, mob_info_window):
+            window.apply_skin()
+        event_overlay.apply_skin(
+            text_size=settings.general.overlay_text_size,
+            emphasis=settings.general.alert_emphasis,
+            shadow=settings.general.overlay_text_shadow,
+        )
+        if skin_name is not None:
+            save()
+
     macro_editor = MacroEditorWindow(settings, on_save=save, store_dir=ensure_socials_dir())
 
     def _repaint_maps() -> None:
@@ -297,6 +330,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_save=save,
         on_log_dir_changed=backend.driver.set_log_dir,
         on_audio_changed=backend.rebuild_speaker,
+        on_appearance_changed=_apply_appearance,
         legacy_config=legacy_config.data,
         on_legacy_save=legacy_config.save,
         notify_legacy=app._signals["settings"].config_updated.emit,
@@ -364,6 +398,8 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         # Not plugins_enabled(settings): if discovery failed we dropped the
         # host, and an "Open Plugins Folder" entry would then be misleading.
         plugins_enabled=plugin_host is not None,
+        on_skin_changed=_apply_appearance,
+        open_settings=lambda: _open_appearance_settings(settings_window),
     )
     app.aboutToQuit.connect(backend.stop)
     if plugin_host is not None:

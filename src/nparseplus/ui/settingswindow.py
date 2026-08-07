@@ -66,7 +66,9 @@ from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
+from nparseplus.ui import skins
 from nparseplus.ui.overlaybase import OverlayWindowBase
+from nparseplus.ui.skinwidgets import SkinPreview
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,53 @@ def elide(text: str, limit: int = LABEL_LIMIT) -> str:
 
 # Class combo entries: every playable class (no OTHER), EQTool SettingsGeneral.
 PLAYER_CLASSES = [cls for cls in PlayerClass if cls is not PlayerClass.OTHER]
+
+
+#: Alert text sizes offered on the Appearance page (label, px).
+OVERLAY_TEXT_SIZES = (("Small", 22), ("Medium", 28), ("Large", 32), ("Huge", 42))
+#: Alert emphasis choices (label, stored value) — see GeneralSettings.
+ALERT_EMPHASIS = (("Plain", "plain"), ("Pulse", "pulse"), ("Pulse + glow", "glow"))
+
+
+class _SkinChoice(QFrame):
+    """One clickable skin card: a live thumbnail over the skin's name.
+
+    Selection is the card's own border, so the three sit side by side and the
+    picked one is obvious without a radio column beside them.
+    """
+
+    def __init__(self, skin: skins.Skin, on_pick: Callable[[str], None], parent: QWidget) -> None:
+        super().__init__(parent)
+        self.skin_name = skin.name
+        self._on_pick = on_pick
+        self._selected = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(skin.blurb)
+        preview = SkinPreview(skin, self)
+        preview.setFixedHeight(48)
+        label = QLabel(skin.label, self)
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 4)
+        layout.setSpacing(5)
+        layout.addWidget(preview, 1)
+        layout.addWidget(label, 0)
+        self.set_selected(False)
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = selected
+        width, color = (2, "#3277c4") if selected else (1, "#4a4f55")
+        self.setStyleSheet(f"_SkinChoice {{ border: {width}px solid {color}; }}")
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._on_pick(self.skin_name)
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
 
 class SettingsPageSpec:
@@ -197,6 +246,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         discord_login_fn: Callable[[], DiscordAuthResult | None] = discord_login,
         on_log_dir_changed: Callable[[Path], None] | None = None,
         on_audio_changed: Callable[[], None] | None = None,
+        on_appearance_changed: Callable[[], None] | None = None,
         legacy_config: dict[str, Any] | None = None,
         on_legacy_save: Callable[[], None] | None = None,
         notify_legacy: Callable[[], None] | None = None,
@@ -221,6 +271,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         )
         self._on_log_dir_changed = on_log_dir_changed
         self._on_audio_changed = on_audio_changed
+        self._on_appearance_changed = on_appearance_changed
+        # The skin the window opened with, so Close can undo a live preview.
+        self._skin_on_open = settings.general.skin
         self._legacy = legacy_config if legacy_config is not None else {}
         self._on_legacy_save = on_legacy_save
         self._notify_legacy = notify_legacy
@@ -246,6 +299,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
 
         for name, builder in (
             ("General", self._build_general),
+            ("Appearance", self._build_appearance),
             ("Character", self._build_character),
             ("Friends", self._build_friends),
             ("Spell Timers", self._build_spell_timers),
@@ -275,7 +329,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         apply_button = QPushButton("Apply && Save", self)
         apply_button.clicked.connect(self.apply)
         close_button = QPushButton("Close", self)
-        close_button.clicked.connect(self.hide)
+        # Not plain hide(): the skin picker previews live, so closing without
+        # applying has to put the windows back the way they were.
+        close_button.clicked.connect(self._close_discarding_preview)
 
         body = QHBoxLayout()
         body.addWidget(self._sidebar)
@@ -315,6 +371,41 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._update_check.setChecked(general.update_check)
         form.addRow("Check for updates", self._update_check)
         form.addRow("Version", self._build_version_indicator())
+        # Theme lives on the Appearance page now (with the skin picker).
+        self._font_size = QSpinBox(self)
+        self._font_size.setRange(6, 32)
+        self._font_size.setValue(general.font_size)
+        form.addRow("Font size", self._font_size)
+        note = QLabel("Font size, TTS, and overlay durations apply after restart.", self)
+        note.setStyleSheet("color: #888888; font-size: 11px;")
+        form.addRow(note)
+        return self._page(form)
+
+    # -- Appearance ----------------------------------------------------------------
+
+    def _build_appearance(self) -> QWidget:
+        """Skin, theme and the on-game alert's look, in one place.
+
+        Theme moved here off the General page: it and the skin answer the same
+        question from two sides (the skin dresses what sits on the game, the
+        theme dresses everything else), and splitting them across two pages
+        made changing "how nParse+ looks" a scavenger hunt.
+        """
+        general = self._settings.general
+        outer = QVBoxLayout()
+
+        outer.addWidget(self._section_caption("OVERLAY SKIN"))
+        self._skin_choices: list[_SkinChoice] = []
+        cards = QHBoxLayout()
+        cards.setSpacing(8)
+        for name in skins.SKIN_ORDER:
+            card = _SkinChoice(skins.SKINS[name], self._preview_skin, self)
+            cards.addWidget(card, 1)
+            self._skin_choices.append(card)
+        outer.addLayout(cards)
+        self._select_skin_card(general.skin)
+
+        form = QFormLayout()
         self._theme_combo = QComboBox(self)
         self._theme_combo.addItem("Dark", "dark")
         self._theme_combo.addItem("Light", "light")
@@ -324,14 +415,117 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "it renders over the game)."
         )
         form.addRow("Theme", self._theme_combo)
-        self._font_size = QSpinBox(self)
-        self._font_size.setRange(6, 32)
-        self._font_size.setValue(general.font_size)
-        form.addRow("Font size", self._font_size)
-        note = QLabel("Theme, font size, TTS, and overlay durations apply after restart.", self)
+
+        self._overlay_text_size = QComboBox(self)
+        for label, size in OVERLAY_TEXT_SIZES:
+            self._overlay_text_size.addItem(f"{label} ({size}px)", size)
+        if self._overlay_text_size.findData(general.overlay_text_size) < 0:
+            self._overlay_text_size.addItem(
+                f"Custom ({general.overlay_text_size}px)", general.overlay_text_size
+            )
+        self._overlay_text_size.setCurrentIndex(
+            max(self._overlay_text_size.findData(general.overlay_text_size), 0)
+        )
+        form.addRow("Overlay text size", self._overlay_text_size)
+
+        self._alert_emphasis = QComboBox(self)
+        for label, value in ALERT_EMPHASIS:
+            self._alert_emphasis.addItem(label, value)
+        self._alert_emphasis.setCurrentIndex(
+            max(self._alert_emphasis.findData(general.alert_emphasis), 0)
+        )
+        self._alert_emphasis.setToolTip(
+            "How hard an on-game alert pushes: a steady word, a slow pulse, "
+            "or the pulse plus a colored halo behind it."
+        )
+        form.addRow("Alert emphasis", self._alert_emphasis)
+
+        self._overlay_shadow = QCheckBox(self)
+        self._overlay_shadow.setChecked(general.overlay_text_shadow)
+        self._overlay_shadow.setToolTip(
+            "Soft drop shadow behind overlay alert text. The blur re-renders "
+            "on every repaint of the always-on-top overlay — turn it off if "
+            "the overlay stutters."
+        )
+        form.addRow("Alert text shadow", self._overlay_shadow)
+
+        self._frame_opacity = QSlider(Qt.Orientation.Horizontal, self)
+        self._frame_opacity.setRange(20, 100)
+        self._frame_opacity.setValue(general.frame_opacity)
+        self._frame_opacity_label = QLabel(f"{general.frame_opacity}%", self)
+        self._frame_opacity.valueChanged.connect(
+            lambda value: self._frame_opacity_label.setText(f"{value}%")
+        )
+        opacity_row = QHBoxLayout()
+        opacity_row.addWidget(self._frame_opacity, 1)
+        opacity_row.addWidget(self._frame_opacity_label, 0)
+        opacity_holder = QWidget(self)
+        opacity_holder.setLayout(opacity_row)
+        self._frame_opacity.setToolTip(
+            "Fades only the skin's frame and glass. Countdowns, bars and icons "
+            "stay at full contrast — unlike window opacity, which dims those too."
+        )
+        form.addRow("Frame opacity", opacity_holder)
+        outer.addLayout(form)
+
+        note = QLabel(
+            "Skin applies live to every overlay; theme and font size apply after restart.",
+            self,
+        )
         note.setStyleSheet("color: #888888; font-size: 11px;")
-        form.addRow(note)
-        return self._page(form)
+        outer.addWidget(note)
+        outer.addStretch(1)
+        page = QWidget(self)
+        page.setLayout(outer)
+        return page
+
+    def show_page(self, title: str) -> None:
+        """Show the window with ``title``'s page selected (unknown = no-op
+        beyond showing). Used by the tray's "Appearance…" entry."""
+        items = self._sidebar.findItems(title, Qt.MatchFlag.MatchExactly)
+        if items:
+            self._sidebar.setCurrentRow(self._sidebar.row(items[0]))
+        self.show()
+        self.raise_()
+
+    def _section_caption(self, text: str) -> QLabel:
+        label = QLabel(text, self)
+        label.setStyleSheet("color: #9aa0a6; font-size: 11px; letter-spacing: 1px;")
+        return label
+
+    def _select_skin_card(self, name: str) -> None:
+        for card in self._skin_choices:
+            card.set_selected(card.skin_name == name)
+
+    def selected_skin(self) -> str:
+        """The skin the picker currently shows as chosen (test/debug hook)."""
+        for card in self._skin_choices:
+            if card.is_selected():
+                return card.skin_name
+        return skins.DEFAULT_SKIN
+
+    def _preview_skin(self, name: str) -> None:
+        """Apply a clicked skin to the live windows straight away.
+
+        A skin is a look; you judge it by looking at it, so the picker is the
+        preview. The value is written into settings here so the appearance
+        callback (shared with the tray) has one source of truth — Apply is
+        what makes it durable, and Close puts it back (see
+        ``_close_discarding_preview``).
+        """
+        self._select_skin_card(name)
+        self._settings.general.skin = name  # type: ignore[assignment]
+        if self._on_appearance_changed is not None:
+            self._on_appearance_changed()
+
+    def _close_discarding_preview(self) -> None:
+        """Close, undoing any un-applied skin preview."""
+        if self._settings.general.skin != self._skin_on_open:
+            self._settings.general.skin = self._skin_on_open  # type: ignore[assignment]
+            self._select_skin_card(self._skin_on_open)
+            if self._on_appearance_changed is not None:
+                self._on_appearance_changed()
+        self.hide()
 
     # -- version / update indicator ------------------------------------------------
 
@@ -570,6 +764,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        # Re-baseline the skin preview: the tray's UI Skin submenu can have
+        # changed it while this window was hidden, and Close must revert to
+        # what is live now, not to whatever was live at the last open.
+        self._skin_on_open = self._settings.general.skin
+        self._select_skin_card(self._skin_on_open)
         self.refresh_characters()
         # Always reload the character fields: the backend mutates the profile
         # (/who, level dings, zoning) while the window is hidden, and
@@ -888,6 +1087,48 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "own location — it only hides theirs."
         )
         form.addRow("Show other players' dots", self._maps_show_others)
+
+        # Transparency: two controls, not one. Window opacity (Settings >
+        # Windows) fades the whole window — geometry, labels and player dots
+        # with it — so it could never answer "let me see the game through the
+        # map without losing the lines". The backdrop fills only behind the
+        # map, and the ink always draws at full strength.
+        backdrop_box = QGroupBox("Transparency", self)
+        backdrop_form = QFormLayout()
+        self._maps_backdrop = QSlider(Qt.Orientation.Horizontal, self)
+        self._maps_backdrop.setRange(0, 100)
+        self._maps_backdrop.setValue(int(self._lc("maps", "backdrop_opacity", 100)))
+        backdrop_value = QLabel(f"{self._maps_backdrop.value()}%", self)
+        self._maps_backdrop.valueChanged.connect(lambda value: backdrop_value.setText(f"{value}%"))
+        backdrop_row = QHBoxLayout()
+        backdrop_row.addWidget(self._maps_backdrop, 1)
+        backdrop_row.addWidget(backdrop_value, 0)
+        backdrop_holder = QWidget(self)
+        backdrop_holder.setLayout(backdrop_row)
+        self._maps_backdrop.setToolTip(
+            "0% is glass — geometry floating on the game. ~60% separates the "
+            "lines from what is behind them. 100% reads like a paper map. "
+            "Scroll the wheel near a map edge to nudge it without coming here."
+        )
+        backdrop_form.addRow("Backdrop", backdrop_holder)
+        self._maps_fade_idle = QCheckBox(self)
+        self._maps_fade_idle.setChecked(bool(self._lc("maps", "backdrop_fade_idle", False)))
+        backdrop_form.addRow("Fade when idle", self._maps_fade_idle)
+        self._maps_fade_seconds = QSpinBox(self)
+        self._maps_fade_seconds.setRange(1, 120)
+        self._maps_fade_seconds.setSuffix(" s")
+        self._maps_fade_seconds.setValue(int(self._lc("maps", "backdrop_fade_seconds", 5)))
+        backdrop_form.addRow("Idle after", self._maps_fade_seconds)
+        backdrop_note = QLabel(
+            "Backdrop only fills behind the map. Lines, labels and player dots "
+            "always draw at full strength.",
+            self,
+        )
+        backdrop_note.setWordWrap(True)
+        backdrop_note.setStyleSheet("color: #888888; font-size: 11px;")
+        backdrop_form.addRow(backdrop_note)
+        backdrop_box.setLayout(backdrop_form)
+        form.addRow(backdrop_box)
         self._z_current = QSpinBox(self)
         self._z_closest = QSpinBox(self)
         self._z_other = QSpinBox(self)
@@ -938,6 +1179,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._lc_set("maps", "grid_line_width", self._maps_grid_width.value())
         self._lc_set("maps", "map_font_scale", self._maps_font_scale.value())
         self._lc_set("maps", "show_other_players", self._maps_show_others.isChecked())
+        self._lc_set("maps", "backdrop_opacity", self._maps_backdrop.value())
+        self._lc_set("maps", "backdrop_fade_idle", self._maps_fade_idle.isChecked())
+        self._lc_set("maps", "backdrop_fade_seconds", self._maps_fade_seconds.value())
         self._lc_set("maps", "current_z_alpha", self._z_current.value())
         self._lc_set("maps", "closest_z_alpha", self._z_closest.value())
         self._lc_set("maps", "other_z_alpha", self._z_other.value())
@@ -1117,14 +1361,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._overlay_seconds.setSingleStep(0.5)
         self._overlay_seconds.setValue(general.overlay_text_seconds)
         form.addRow("Alert text duration (s)", self._overlay_seconds)
-        self._overlay_shadow = QCheckBox(self)
-        self._overlay_shadow.setChecked(general.overlay_text_shadow)
-        self._overlay_shadow.setToolTip(
-            "Soft shadow behind overlay alert text. Turning it off removes a "
-            "per-repaint blur (helps overlay stutter, especially on macOS). "
-            "Takes effect on restart."
-        )
-        form.addRow("Alert text shadow", self._overlay_shadow)
+        # Alert text shadow, size and emphasis live on the Appearance page.
         self._ch_retention = QDoubleSpinBox(self)
         self._ch_retention.setRange(5.0, 300.0)
         self._ch_retention.setSingleStep(5.0)
@@ -1472,6 +1709,10 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         general.update_check = self._update_check.isChecked()
         general.theme = self._theme_combo.currentData()
         general.font_size = self._font_size.value()
+        general.skin = self.selected_skin()  # type: ignore[assignment]
+        general.overlay_text_size = int(self._overlay_text_size.currentData())
+        general.alert_emphasis = self._alert_emphasis.currentData()
+        general.frame_opacity = self._frame_opacity.value()
         # Persist the VoiceInfo.id from userData (not the label); "" -> None.
         general.tts_voice = self._voice.currentData() or None
         general.global_audio_volume = self._volume.value()
@@ -1537,6 +1778,10 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             general.tts_voice != old_voice or general.global_audio_volume != old_volume
         ):
             self._on_audio_changed()  # live-swap the shared TTS speaker
+        # Skin, frame opacity, alert size/emphasis/shadow all apply live.
+        self._skin_on_open = general.skin
+        if self._on_appearance_changed is not None:
+            self._on_appearance_changed()
 
     # -- keep normal window mouse behavior (text fields, sliders) ------------------------------
 

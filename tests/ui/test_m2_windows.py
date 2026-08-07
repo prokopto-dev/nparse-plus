@@ -106,7 +106,7 @@ def test_timer_bar_matches_spell_window_for_the_same_countdown(qtbot) -> None:
     for offset in (0.0, 3.4, 7.9, 11.2):
         now = entry.ends_at - timedelta(seconds=12 - offset)
         overlay._render_bar(entry, now)
-        bar_seconds = entry.widget.format().rsplit("  ", 1)[1].removesuffix("s")
+        bar_seconds = overlay.bar_countdown_text("Stun Breath").removesuffix("s")
         assert format_mmss(seconds_left(entry.ends_at, now)) == f"00:{int(bar_seconds):02d}"
 
 

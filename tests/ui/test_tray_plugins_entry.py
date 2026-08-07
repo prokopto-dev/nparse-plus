@@ -23,6 +23,8 @@ def _stub(*, plugins_enabled: bool) -> SimpleNamespace:
         _spell_window=None,
         _window_layouts=None,
         _plugins_enabled=plugins_enabled,
+        _on_skin_changed=None,
+        _open_settings=None,
     )
 
 

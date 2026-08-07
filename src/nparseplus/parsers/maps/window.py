@@ -1,16 +1,15 @@
 """Map parser for nparse."""
 
+import math
 import re
 from datetime import datetime
 
-from PySide6.QtCore import QObject, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
-    QHBoxLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QPushButton,
 )
 
 from nparseplus.config.settings import WaypointMarker
@@ -24,12 +23,37 @@ from nparseplus.core.npc_search import NpcSearchIndex, normalize_name, search_al
 from nparseplus.core.zones import load_zone_database
 from nparseplus.helpers import config, to_real_xy
 from nparseplus.helpers.parser import ParserWindow
+from nparseplus.parsers.maps import chrome
+from nparseplus.parsers.maps.chrome import (
+    MapHeader,
+    MapRail,
+    MapToolbar,
+    RecenterPuck,
+    ZoneEdgeTab,
+)
 from nparseplus.parsers.maps.mapcanvas import MapCanvas
 from nparseplus.parsers.maps.mapclasses import MapPoint
 from nparseplus.parsers.maps.mapdata import MapData
 from nparseplus.ui import theme
 
 ZONE_MATCHER = re.compile(r"There (is|are) \d+ players? in (?P<zone>.+)\.")
+
+# How often the live chrome (loc chip, Z badge, recenter puck, edge tabs)
+# re-reads the canvas. Cheap — it only touches label text and a few moves.
+CHROME_TICK_MS = 250
+# A player fix this far off the view center lights the recenter puck. Below
+# it you are effectively centred and a lit puck would just be noise.
+RECENTER_DEAD_ZONE = 30
+# Interactions that count as "you are using the map" for the idle backdrop fade.
+_WAKE_EVENTS = frozenset(
+    {
+        QEvent.Type.MouseMove,
+        QEvent.Type.MouseButtonPress,
+        QEvent.Type.Wheel,
+        QEvent.Type.Enter,
+        QEvent.Type.KeyPress,
+    }
+)
 
 
 def _search_box_style():
@@ -70,6 +94,10 @@ class WikiSearchBridge(QObject):
 
 
 class Maps(ParserWindow):
+    #: Sentinel for _chrome_ready(): ParserWindow.__init__ can deliver a
+    #: resize/enter before this subclass has built any chrome.
+    _header = None
+
     def __init__(self):
         self.name = "maps"
         super().__init__()
@@ -86,74 +114,36 @@ class Maps(ParserWindow):
         self._transient_timer = QTimer(self)
         self._transient_timer.setSingleShot(True)
         self._transient_timer.timeout.connect(self._hide_search_results)
-        # buttons
-        button_layout = QHBoxLayout()
-        # NPC/label search box
-        self._search_box = QLineEdit()
+        # NPC/label search: the input is the find palette (Ctrl+F) now, not a
+        # permanent box in a button strip.
+        self._search_box = QLineEdit(self)
         self._search_box.setObjectName("MapSearchBox")
-        self._search_box.setPlaceholderText("Find NPC/label…")
-        self._search_box.setFixedWidth(130)
+        self._search_box.setPlaceholderText("Find NPC, label or zone…")
         self._search_box.setStyleSheet(_search_box_style())
         self._search_box.textChanged.connect(self._search_text_changed)
-        button_layout.addWidget(self._search_box)
-        # notable NPCs quick list
-        self._npc_button = QPushButton("☰ NPCs")
-        self._npc_button.setCheckable(True)
-        self._npc_button.setToolTip("Notable NPCs in this zone")
-        self._npc_button.setStyleSheet("QPushButton { min-width: 50px; }")
-        self._npc_button.clicked.connect(self._toggle_npc_list)
-        button_layout.addWidget(self._npc_button)
+        self._search_box.hide()
         # results dropdown (child overlay, styled like the dark menu)
         self._search_results = QListWidget(self)
         self._search_results.setObjectName("MapSearchResults")
         self._search_results.setStyleSheet(_search_results_style())
         self._search_results.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Long "elsewhere: <zone>" rows must elide, not grow a horizontal
+        # scrollbar under a palette that is only as wide as the map.
+        self._search_results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._search_results.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._search_results.itemClicked.connect(self._search_hit_selected)
         self._search_results.hide()
         # P99 wiki lookup (lazy client; results marshalled back via signal).
         self._wiki_client = None
         self._wiki_bridge = WikiSearchBridge()
         self._wiki_bridge.results_ready.connect(self._wiki_results_ready)
-        show_poi = QPushButton("\u272a")
-        show_poi.setCheckable(True)
-        show_poi.setChecked(config.data["maps"]["show_poi"])
-        show_poi.setToolTip("Show Points of Interest")
-        show_poi.clicked.connect(self._toggle_show_poi)
-        button_layout.addWidget(show_poi)
-        self._show_others_button = QPushButton("\U0001f465")
-        self._show_others_button.setCheckable(True)
-        self._show_others_button.setChecked(config.data["maps"].get("show_other_players", True))
-        self._show_others_button.setToolTip(
-            "Show other players' shared dots (your own location is still shared)"
-        )
-        self._show_others_button.clicked.connect(self._toggle_show_others)
-        button_layout.addWidget(self._show_others_button)
-        auto_follow = QPushButton("\u25ce")
-        auto_follow.setCheckable(True)
-        auto_follow.setChecked(config.data["maps"]["auto_follow"])
-        auto_follow.setToolTip("Auto Center")
-        auto_follow.clicked.connect(self._toggle_auto_follow)
-        button_layout.addWidget(auto_follow)
-        toggle_z_layers = QPushButton("\u24cf")
-        toggle_z_layers.setCheckable(True)
-        toggle_z_layers.setChecked(config.data["maps"]["use_z_layers"])
-        toggle_z_layers.setToolTip("Show Z Layers")
-        toggle_z_layers.clicked.connect(self._toggle_z_layers)
-        button_layout.addWidget(toggle_z_layers)
-        show_grid_lines = QPushButton("#")
-        show_grid_lines.setCheckable(True)
-        show_grid_lines.setChecked(config.data["maps"]["show_grid"])
-        show_grid_lines.setToolTip("Show Grid")
-        show_grid_lines.clicked.connect(self._toggle_show_grid)
-        button_layout.addWidget(show_grid_lines)
-        show_mouse_location = QPushButton("\U0001f6c8")
-        show_mouse_location.setCheckable(True)
-        show_mouse_location.setChecked(config.data["maps"]["show_mouse_location"])
-        show_mouse_location.setToolTip("Show Loc Under Mouse Pointer")
-        show_mouse_location.clicked.connect(self._toggle_show_mouse_location)
-        button_layout.addWidget(show_mouse_location)
 
-        self.menu_area.addLayout(button_layout)
+        # The single-glyph button strip is gone; its toggles live in the
+        # hover-revealed toolbar, in words. The legacy ParserWindow menu strip
+        # stays built (other code reads it) but never shows for maps.
+        self._auto_hide_menu = True
+        self._menu.setVisible(False)
+        self._build_chrome()
 
         if config.data["maps"]["last_zone"]:
             self._map.load_map(config.data["maps"]["last_zone"])
@@ -174,6 +164,369 @@ class Maps(ParserWindow):
         # Settings-window changes to show_other_players (ParserWindow already
         # connects this signal for its own opacity/flag keys).
         QApplication.instance()._signals["settings"].config_updated.connect(self.sync_show_others)
+        QApplication.instance()._signals["settings"].config_updated.connect(self.sync_map_chrome)
+
+        self._chrome_timer = QTimer(self)
+        self._chrome_timer.setInterval(CHROME_TICK_MS)
+        self._chrome_timer.timeout.connect(self._refresh_chrome)
+        self._chrome_timer.start()
+        self._refresh_chrome()
+
+    # -- chrome ---------------------------------------------------------------
+
+    def _build_chrome(self):
+        """Build the over-canvas chrome and the backdrop idle-fade timer.
+
+        The window itself goes translucent so a backdrop below 100% actually
+        shows the game: the legacy stylesheet painted ``#ParserWindow`` opaque
+        black, which would have swallowed the canvas's new alpha.
+        """
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet("#ParserWindow { background: transparent; }")
+
+        self._header = MapHeader(
+            self, on_find=self.open_find, on_rail=self.toggle_rail, on_exit=self._flash_point
+        )
+        self._toolbar = MapToolbar(self)
+        for key, text, tooltip in (
+            ("show_poi", "✪ POI", "Show Points of Interest"),
+            ("show_other_players", "◉ OTHERS", "Show other players' shared dots"),
+            ("auto_follow", "⊙ FOLLOW", "Auto-center on your own location"),
+            ("use_z_layers", "Ⓩ LAYERS", "Show Z layers"),
+            ("show_grid", "# GRID", "Show the grid"),
+            ("show_mouse_location", "⌖ LOC", "Show the loc under the mouse pointer"),
+        ):
+            self._toolbar.add_toggle(key, text, tooltip, lambda k=key: self._toggle_map_option(k))
+        self._toolbar.add_toggle(
+            "frame", "▣ FRAME", "Show the window title bar", self._toggle_frame
+        )
+        self._toolbar.finish()
+        self._sync_toolbar()
+
+        self._rail = MapRail(self)
+        self._rail_open = False
+        self._puck = RecenterPuck(self, on_click=self._recenter)
+        self._puck.show()
+        self._edge_tabs = []
+        self._chrome_shown = False
+
+        # Idle fade: drop the backdrop to nothing when the map is just sitting
+        # there, and restore the user's value the moment they touch it again.
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._fade_backdrop)
+        self._backdrop_faded = False
+        # Both: the viewport sees the mouse, the view itself holds the focus
+        # and so receives the key presses (see eventFilter).
+        self._map.installEventFilter(self)
+        self._map.viewport().installEventFilter(self)
+        self._arm_idle_fade()
+
+    def sync_map_chrome(self):
+        """Settings-window changes reach the chrome through config_updated."""
+        self._sync_toolbar()
+        self._backdrop_faded = False
+        self._map.apply_backdrop_opacity(config.data["maps"].get("backdrop_opacity", 100))
+        self._arm_idle_fade()
+
+    def _sync_toolbar(self):
+        for key in (
+            "show_poi",
+            "show_other_players",
+            "auto_follow",
+            "use_z_layers",
+            "show_grid",
+            "show_mouse_location",
+        ):
+            self._toolbar.set_toggle(key, bool(config.data["maps"].get(key, True)))
+        self._toolbar.set_toggle("frame", not self._frameless)
+
+    def _toggle_map_option(self, key):
+        """Flip one boolean map option and do whatever it implies."""
+        value = not config.data["maps"].get(key, True)
+        config.data["maps"][key] = value
+        config.save()
+        self._toolbar.set_toggle(key, value)
+        if key == "show_other_players":
+            self._show_others_changed(value)
+        elif key == "auto_follow":
+            self._map.center()
+        elif key != "show_mouse_location":
+            self._map.update_()
+
+    # -- backdrop idle fade -----------------------------------------------------
+
+    def _arm_idle_fade(self):
+        if not config.data["maps"].get("backdrop_fade_idle", False):
+            return
+        seconds = config.data["maps"].get("backdrop_fade_seconds", 5)
+        self._idle_timer.start(max(1, int(seconds)) * 1000)
+
+    def _wake_backdrop(self):
+        """Any interaction restores the chosen backdrop and re-arms the fade."""
+        if self._backdrop_faded:
+            self._backdrop_faded = False
+            self._map.apply_backdrop_opacity(config.data["maps"].get("backdrop_opacity", 100))
+        self._idle_timer.stop()
+        self._arm_idle_fade()
+
+    def _fade_backdrop(self):
+        """Idle: drop the fill to nothing. The geometry keeps full contrast —
+        only the thing that was inking the game goes away."""
+        if config.data["maps"].get("backdrop_fade_idle", False):
+            self._backdrop_faded = True
+            self._map.apply_backdrop_opacity(0)
+
+    def eventFilter(self, obj, event):
+        """Wake the backdrop on any interaction, and own the chrome's keys.
+
+        The map canvas takes strong focus, so Tab/Ctrl+F/Esc land there and
+        never reach this window's ``keyPressEvent`` — Tab would just move
+        focus. Intercepting here is what makes those shortcuts real.
+        """
+        kind = event.type()
+        if kind in _WAKE_EVENTS:
+            self._wake_backdrop()
+        # Not elif: a key press both wakes the backdrop and may be one of ours.
+        if kind == QEvent.Type.KeyPress and self._handle_chrome_key(event):
+            return True
+        return False
+
+    def _handle_chrome_key(self, event):
+        """Tab = rail, Ctrl+F = find, Esc = close find. True if consumed."""
+        key = event.key()
+        if key == Qt.Key.Key_Tab:
+            self.toggle_rail()
+            return True
+        if key == Qt.Key.Key_Escape and self._search_box.isVisible():
+            self.close_find()
+            return True
+        if key == Qt.Key.Key_F and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.open_find()
+            return True
+        return False
+
+    # -- chrome placement + live values -----------------------------------------
+
+    def _chrome_ready(self):
+        """False until ``_build_chrome`` has run.
+
+        ``ParserWindow.__init__`` calls ``setGeometry`` before this subclass
+        gets to build anything, so the very first resize/enter arrives with no
+        chrome to place. (PySide6 swallows exceptions out of virtual overrides
+        — this would have been an invisible traceback, not a crash.)
+        """
+        return self._header is not None
+
+    def resizeEvent(self, event):
+        if self._chrome_ready():
+            chrome.place_chrome(
+                self.rect(), self._header, self._toolbar, self._rail, self._puck, self._rail_open
+            )
+            self._position_search()
+        super().resizeEvent(event)
+
+    def enterEvent(self, event):
+        # Deliberately NOT super(): ParserWindow would reveal the legacy menu
+        # strip, which the header replaces.
+        if self._chrome_ready():
+            self._set_chrome_visible(True)
+            self._wake_backdrop()
+
+    def leaveEvent(self, event):
+        if self._chrome_ready():
+            self._set_chrome_visible(False)
+
+    def _set_chrome_visible(self, shown):
+        if shown == self._chrome_shown:
+            return
+        self._chrome_shown = shown
+        chrome.place_chrome(
+            self.rect(), self._header, self._toolbar, self._rail, self._puck, self._rail_open
+        )
+        self._header.setVisible(shown)
+        self._toolbar.setVisible(shown)
+        if shown:
+            self._header.raise_()
+            self._toolbar.raise_()
+            self._puck.raise_()
+        # The edge tabs and the header answer the same question; only one of
+        # them is ever up.
+        for tab in self._edge_tabs:
+            tab.setVisible(not shown)
+
+    def _refresh_chrome(self):
+        """Per-tick chrome values: zone, loc chip, Z badge, puck, edge tabs.
+
+        Skipped while the window is hidden — same gating as the other windows'
+        refresh timers; a closed map has nothing to keep current.
+        """
+        data = self._map._data
+        if data is None or not self.isVisible():
+            return
+        self._header.set_zone(data.zone or "")
+        self._header.set_z(self._z_badge_text())
+        self._header.set_location(*self._loc_chip_text())
+        self._header.set_exits(self._zone_line_exits())
+        self._toolbar.set_recording(bool(self._map._path_recording))
+        self._update_puck()
+        self._update_edge_tabs()
+
+    def _z_badge_text(self):
+        data = self._map._data
+        groups = getattr(data.geometry, "z_groups", None) if data else None
+        if not groups:
+            return "Z —"
+        index = min(max(self._map._z_index, 0), len(groups) - 1)
+        return f"Z {index + 1}/{len(groups)}"
+
+    def _you(self):
+        data = self._map._data
+        return data.players.get("__you__") if data else None
+
+    def _loc_chip_text(self):
+        player = self._you()
+        if player is None or player.timestamp is None:
+            return "no /loc yet", ""
+        age = int((datetime.now() - player.timestamp).total_seconds())
+        loc = f"{-player.location.y:.0f}, {-player.location.x:.0f}"
+        return loc, f"{age}s" if age < 600 else "stale"
+
+    def _zone_line_exits(self):
+        """``[(display name, (scene x, scene y)), …]`` from the zone's own
+        ``to_*`` POI labels — nothing invented."""
+        data = self._map._data
+        if data is None:
+            return []
+        return [
+            (chrome.zone_line_label(text), (x, y))
+            for text, x, y, _z in data.poi_entries()
+            if chrome.is_zone_line(text)
+        ]
+
+    def _view_center_scene(self):
+        return self._map.mapToScene(self._map.viewport().rect().center())
+
+    def _update_puck(self):
+        player = self._you()
+        if player is None:
+            self._puck.set_offset("", "")
+            return
+        center = self._view_center_scene()
+        dx = player.location.x - center.x()
+        dy = player.location.y - center.y()
+        if math.hypot(dx, dy) * self._map._scale < RECENTER_DEAD_ZONE:
+            self._puck.set_offset("", "")
+            return
+        self._puck.set_offset(
+            chrome.bearing_arrow(dx, dy), chrome.format_distance(math.hypot(dx, dy))
+        )
+
+    def _update_edge_tabs(self):
+        """Park a tab on the edge you would leave through, per zone line."""
+        exits = self._zone_line_exits()
+        while len(self._edge_tabs) > len(exits):
+            self._edge_tabs.pop().deleteLater()
+        center = self._view_center_scene()
+        width, height = self.width(), self.height()
+        for index, (name, (x, y)) in enumerate(exits):
+            dx, dy = x - center.x(), y - center.y()
+            arrow = chrome.bearing_arrow(dx, dy)
+            vertical = abs(dy) * max(1, width) >= abs(dx) * max(1, height)
+            if index < len(self._edge_tabs):
+                tab = self._edge_tabs[index]
+                if tab.property("signature") == (name, arrow, vertical):
+                    self._place_edge_tab(tab, dx, dy)
+                    continue
+                tab.deleteLater()
+                self._edge_tabs[index] = tab = ZoneEdgeTab(self, name, arrow, vertical)
+            else:
+                tab = ZoneEdgeTab(self, name, arrow, vertical)
+                self._edge_tabs.append(tab)
+            tab.setProperty("signature", (name, arrow, vertical))
+            tab.setVisible(not self._chrome_shown)
+            self._place_edge_tab(tab, dx, dy)
+
+    def _place_edge_tab(self, tab, dx, dy):
+        tab.adjustSize()
+        x, y = chrome.edge_anchor(dx, dy, self.width(), self.height())
+        tab.move(
+            min(max(0, x - tab.width() // 2), max(0, self.width() - tab.width())),
+            min(max(0, y - tab.height() // 2), max(0, self.height() - tab.height())),
+        )
+        tab.raise_()
+
+    def _recenter(self):
+        player = self._you()
+        if player is not None:
+            self._map.centerOn(player.location.x, player.location.y)
+            self._wake_backdrop()
+
+    def _flash_point(self, location):
+        self._map.flash_location(location[0], location[1])
+
+    # -- rail + find ------------------------------------------------------------
+
+    def toggle_rail(self):
+        self._rail_open = not self._rail_open
+        if self._rail_open:
+            self._rebuild_rail()
+        chrome.place_chrome(
+            self.rect(), self._header, self._toolbar, self._rail, self._puck, self._rail_open
+        )
+        self._rail.setVisible(self._rail_open)
+        if self._rail_open:
+            self._rail.raise_()
+
+    def _rebuild_rail(self):
+        data = self._map._data
+        if data is None:
+            return
+        exits = [(name, "", chrome.GREEN) for name, _location in self._zone_line_exits()]
+        markers = [
+            (name, f"{-point.location.y:.0f}, {-point.location.x:.0f}", chrome.GOLD)
+            for name, point in list(data.waypoints.items())[:8]
+        ]
+        others = [(name, "", chrome.GREEN) for name in data.players if name != "__you__"][:8]
+        respawn = chrome.format_respawn(data.get_default_spawn_timer())
+        self._rail.rebuild(
+            data.zone or "",
+            [
+                ("RESPAWN", [("default", respawn, chrome.EDGE)]),
+                ("ZONE LINES", exits),
+                ("MARKERS", markers),
+                ("SHARING", others),
+            ],
+        )
+
+    def open_find(self):
+        self._search_box.clear()
+        self._search_box.show()
+        self._position_search()
+        self._search_box.raise_()
+        self._search_box.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        # Explicitly, not via textChanged: clearing an already-empty box emits
+        # nothing, and an empty palette showing the zone's notables is the
+        # point (it replaced the old "☰ NPCs" button).
+        self.show_notables()
+
+    def close_find(self):
+        self._search_box.hide()
+        self._hide_search_results()
+
+    def _position_search(self):
+        """Center the find input near the top of the map (a palette, not a
+        box wedged into a toolbar)."""
+        width = min(330, max(180, self.width() - 60))
+        self._search_box.setGeometry((self.width() - width) // 2, 52, width, 26)
+
+    def keyPressEvent(self, event):
+        # The event filter handles the same keys when the map canvas holds
+        # focus; this covers a press that lands on the window itself.
+        if self._chrome_ready() and self._handle_chrome_key(event):
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def handle_remote_event(self, event):
         """Shared-player events from the backend bus (queued Qt bridge).
@@ -284,46 +637,17 @@ class Maps(ParserWindow):
         for name in [n for n in self._map._data.players if n != "__you__"]:
             self._map.remove_player(name)
 
-    def _toggle_show_others(self, _):
-        shown = not config.data["maps"].get("show_other_players", True)
-        config.data["maps"]["show_other_players"] = shown
-        config.save()
-        self._show_others_button.setChecked(shown)
+    def _show_others_changed(self, shown):
+        """Display-only gate (eqtool #211): hiding others never stops sending
+        your own location — it just drops the dots already on screen."""
         if not shown:
             self._purge_remote_players()
 
     def sync_show_others(self):
         """Settings-window flips arrive via config_updated (see app.py)."""
         shown = config.data["maps"].get("show_other_players", True)
-        self._show_others_button.setChecked(shown)
-        if not shown:
-            self._purge_remote_players()
-
-    def _toggle_show_poi(self, _):
-        config.data["maps"]["show_poi"] = not config.data["maps"]["show_poi"]
-        config.save()
-        self._map.update_()
-
-    def _toggle_auto_follow(self, _):
-        config.data["maps"]["auto_follow"] = not config.data["maps"]["auto_follow"]
-        config.save()
-        self._map.center()
-
-    def _toggle_z_layers(self, _):
-        config.data["maps"]["use_z_layers"] = not config.data["maps"]["use_z_layers"]
-        config.save()
-        self._map.update_()
-
-    def _toggle_show_grid(self, _):
-        config.data["maps"]["show_grid"] = not config.data["maps"]["show_grid"]
-        config.save()
-        self._map.update_()
-
-    def _toggle_show_mouse_location(
-        self,
-    ):
-        config.data["maps"]["show_mouse_location"] = not config.data["maps"]["show_mouse_location"]
-        config.save()
+        self._toolbar.set_toggle("show_other_players", shown)
+        self._show_others_changed(shown)
 
     # NPC finder -----------------------------------------------------------
 
@@ -340,11 +664,11 @@ class Maps(ParserWindow):
         )
 
     def _search_text_changed(self, text):
-        if self._npc_button.isChecked():
-            self._npc_button.setChecked(False)
         query = text.strip()
         if len(query) < 2:
-            self._hide_search_results()
+            # An empty palette is where the zone's notable NPCs live now (they
+            # used to need their own button in the strip).
+            self.show_notables()
             return
         hits = self._search_index.search(query) if self._search_index else []
         current_zone = self._search_index.zone_key if self._search_index else None
@@ -438,13 +762,11 @@ class Maps(ParserWindow):
                 f"{hit.name} — no location known — respawn {format_respawn(hit.respawn_seconds)}"
             )
 
-    def _toggle_npc_list(self, checked):
-        if not checked:
-            self._hide_search_results()
-            return
+    def show_notables(self):
+        """The zone's notable NPCs — what an empty find palette offers."""
         notables = self._search_index.notables() if self._search_index else []
         if not notables:
-            self._show_transient("No notable NPCs for this zone")
+            self._hide_search_results()
             return
         self._search_results.clear()
         for hit in notables:
@@ -463,16 +785,13 @@ class Maps(ParserWindow):
 
     def _show_search_results(self):
         self._transient_timer.stop()
-        top_left = self._search_box.mapTo(self, QPoint(0, self._search_box.height() + 2))
+        box = self._search_box.geometry()
         rows = self._search_results.count()
-        height = min(24 * rows + 6, 220)
-        width = max(self._search_box.width() + 90, 220)
-        self._search_results.setGeometry(top_left.x(), top_left.y(), width, height)
+        height = min(24 * rows + 6, max(80, self.height() - box.bottom() - 40))
+        self._search_results.setGeometry(box.left(), box.bottom() + 2, box.width(), height)
         self._search_results.raise_()
         self._search_results.show()
 
     def _hide_search_results(self):
         self._transient_timer.stop()
         self._search_results.hide()
-        if self._npc_button.isChecked():
-            self._npc_button.setChecked(False)
