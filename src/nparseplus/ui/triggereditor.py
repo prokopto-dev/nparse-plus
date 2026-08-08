@@ -71,6 +71,7 @@ from nparseplus.core.triggers.model import (
     trigger_group_key,
 )
 from nparseplus.core.zones import load_zone_database
+from nparseplus.ui import chromewidgets
 from nparseplus.ui.triggeractivity import TriggerActivityView
 
 WINDOW_KEY = "triggereditor"
@@ -121,7 +122,7 @@ def _hms(total_seconds: float) -> tuple[int, int, int]:
     return hours, minutes, seconds
 
 
-class TriggerEditorWindow(QWidget):
+class TriggerEditorWindow(chromewidgets.ChromeMixin, QWidget):
     """Framed trigger-editor tool window.
 
     Public API (for integration/tests): ``toggle()``, ``apply()``,
@@ -167,6 +168,7 @@ class TriggerEditorWindow(QWidget):
         self._build_ui()
         self._rebuild_tree()
         self._load_form(None)
+        self.apply_chrome()
 
     # -- window state ----------------------------------------------------------
 

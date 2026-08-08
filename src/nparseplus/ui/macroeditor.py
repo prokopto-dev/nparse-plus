@@ -199,7 +199,7 @@ class _MacroLineEdit(QLineEdit):
         super().keyPressEvent(event)
 
 
-class MacroEditorWindow(QWidget):
+class MacroEditorWindow(chromewidgets.ChromeMixin, QWidget):
     """Framed macro-editor tool window.
 
     Public API (for integration/tests): ``toggle()``, ``load()``,
@@ -246,6 +246,7 @@ class MacroEditorWindow(QWidget):
         self._build_ui()
         self._refresh_characters()
         self._render()
+        self.apply_chrome()
 
     # -- window state ---------------------------------------------------------
 

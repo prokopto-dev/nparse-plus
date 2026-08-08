@@ -235,7 +235,7 @@ class _WindowRow:
                 self.handle.setWindowOpacity(value / 100)
 
 
-class UnifiedSettingsWindow(OverlayWindowBase):
+class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     # Emitted from the login worker thread; queued onto the GUI thread.
     _discord_auth_done = Signal(object)
     # Emitted from the update-check worker thread; carries a ReleaseInfo or
@@ -349,6 +349,10 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         layout.addLayout(buttons)
         self.setLayout(layout)
 
+        apply_button.setObjectName(chrome.PRIMARY)
+        self._sidebar.setObjectName(chrome.SIDEBAR)
+        # Last: the pages must exist before the sheet reaches them.
+        self.apply_chrome()
         self.restore_visibility()
 
     # -- legacy dict access -----------------------------------------------------

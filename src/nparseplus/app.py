@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -207,6 +208,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
+    from nparseplus.ui import chromewidgets
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
     from nparseplus.ui.eventoverlay import EventOverlayWindow
@@ -229,6 +231,13 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # Before any window is built: the overlays read the active skin in their
     # constructors, and a skin change is live thereafter (unlike the theme).
     skins.set_skin(settings.general.skin)
+    # Fusion honours QPalette fully and identically on every platform. Without
+    # it, a dark chrome ground gets the host's native (light) combo boxes and
+    # spin buttons drawn inside it; with it, those internals come from the
+    # palette below instead of ~150 lines of sub-control QSS that would look
+    # subtly wrong somewhere. One line, and a one-line revert.
+    app.setStyle("Fusion")
+    chromewidgets.apply_app_palette(app, settings.general.font_size)
     with open(resource_path(os.path.join("data", "ui", theme.stylesheet_filename()))) as css:
         app.setStyleSheet(css.read())
     app.setWindowIcon(QIcon(resource_path(os.path.join("data", "ui", "icon.png"))))
@@ -255,10 +264,16 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         state=overlay_state,
         on_save=save,
         text_shadow=settings.general.overlay_text_shadow,
+        font_size=settings.general.font_size,
         text_size=settings.general.overlay_text_size,
         emphasis=settings.general.alert_emphasis,
     )
     trigger_editor = TriggerEditorWindow(settings, backend.trigger_engine, on_save=save)
+
+    # Declared before the closure that reads it and filled once every window
+    # exists — settings_window is built further down, and a skin change can
+    # only arrive after the tray is up.
+    chrome_surfaces: list[object] = []
 
     def _apply_appearance(skin_name: str | None = None) -> None:
         """Re-dress every skinned surface from ``settings.general``.
@@ -272,13 +287,24 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         if skin_name is not None:
             settings.general.skin = skin_name  # type: ignore[assignment]
         skins.set_skin(settings.general.skin)
+        chromewidgets.apply_app_palette(app, settings.general.font_size)
         for window in (spell_window, dps_window, mob_info_window):
             window.apply_skin()
         event_overlay.apply_skin(
+            font_size=settings.general.font_size,
             text_size=settings.general.overlay_text_size,
             emphasis=settings.general.alert_emphasis,
             shadow=settings.general.overlay_text_shadow,
         )
+        # The config windows, duck-typed: settings, the editors, the console,
+        # maps, discord and any plugin window. Isolated per surface for the
+        # same reason plugin setup is — an add-on may not break a skin switch.
+        for surface in chrome_surfaces:
+            for hook in ("apply_chrome", "apply_skin"):
+                method = getattr(surface, hook, None)
+                if method is not None:
+                    with contextlib.suppress(Exception):
+                        method()
         if skin_name is not None:
             save()
 
@@ -348,6 +374,16 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         "overlay": event_overlay,
         **plugin_windows_by_key,
     }
+    # Every surface a skin change must re-dress. Uses layout_windows because
+    # that is already "every window the app owns", plus the settings window
+    # itself, which is built too late to be captured by the closure directly.
+    _dressed_directly = {id(spell_window), id(dps_window), id(mob_info_window), id(event_overlay)}
+    chrome_surfaces.extend(
+        window
+        for window in layout_windows.values()
+        if window is not None and id(window) not in _dressed_directly
+    )
+
     # Chat commands reach plugin windows too; merged after layout_windows so
     # each plugin window joins layouts under its one canonical key.
     window_handles.update(plugin_command_handles)

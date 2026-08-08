@@ -13,10 +13,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from nparseplus.ui import chromewidgets
 from nparseplus.updater import ReleaseInfo, format_release_notes
 
 
-class UpdateAvailableDialog(QDialog):
+class UpdateAvailableDialog(chromewidgets.ChromeMixin, QDialog):
     install_requested = Signal()
     open_release_requested = Signal()
 

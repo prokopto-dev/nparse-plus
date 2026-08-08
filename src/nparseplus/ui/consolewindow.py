@@ -14,14 +14,20 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPlainTextEdit, QV
 
 from nparseplus.config.settings import Settings, WindowState
 from nparseplus.core.events import LineEvent
+from nparseplus.ui import chromewidgets
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "console"
 DEFAULT_GEOMETRY = (200, 200, 560, 320)
 MAX_LINES = 2000
 
+#: Console text is a log, so it wants a fixed pitch. Qt resolves the first
+#: family that exists on the host, which is why this is a list and not one
+#: name — the old hardcoded "Menlo" is macOS-only.
+MONOSPACE_FAMILIES = ["Menlo", "Consolas", "DejaVu Sans Mono", "monospace"]
 
-class ConsoleWindow(OverlayWindowBase):
+
+class ConsoleWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     def __init__(
         self,
         settings: Settings,
@@ -54,7 +60,9 @@ class ConsoleWindow(OverlayWindowBase):
         self._text = QPlainTextEdit(self)
         self._text.setReadOnly(True)
         self._text.setMaximumBlockCount(MAX_LINES)
-        self._text.setFont(QFont("Menlo", 11))
+        # A family list, not "Menlo": that exists only on macOS, so Windows
+        # and Linux silently fell back to the default proportional face.
+        self._text.setFont(QFont(MONOSPACE_FAMILIES))
 
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 6, 6, 6)
@@ -62,6 +70,7 @@ class ConsoleWindow(OverlayWindowBase):
         layout.addWidget(self._text)
         self.setLayout(layout)
 
+        self.apply_chrome()
         self.restore_visibility()
 
     def handle_event(self, event: object) -> None:

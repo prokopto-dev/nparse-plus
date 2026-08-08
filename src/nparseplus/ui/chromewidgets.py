@@ -1,9 +1,10 @@
 """The Qt half of the chrome layer — label factories and the live-apply mixin.
 
 ``ui/chrome.py`` is pure data and stylesheet strings. This is where those meet
-real widgets: the three label factories that stamp the object names the sheet
-targets, the property flips that need a repolish, and (later) the mixin every
-config window uses to re-dress itself on a skin change.
+real widgets: the label factories that stamp the object names the sheet
+targets, the property flips that need a repolish, the mixin every config window
+uses to re-dress itself on a skin change, and the QPalette the Fusion style
+reads for the control internals a stylesheet cannot reach.
 
 Deliberately not folded into ``ui/skinwidgets.py``: that module is the painted
 half of the skin layer — everything in it overrides ``paintEvent`` to draw what
@@ -12,14 +13,11 @@ a stylesheet cannot express. A hint label paints nothing.
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 from nparseplus.ui import chrome, skins, theme
 from nparseplus.ui.skinwidgets import set_caps
-
-#: Font size the factories dress at before a window sheet takes over. Matches
-#: ``GeneralSettings.font_size``'s default; Phase-3 windows pass the real one.
-_FALLBACK_FONT_SIZE = 12
 
 
 def current() -> chrome.Chrome:
@@ -29,17 +27,6 @@ def current() -> chrome.Chrome:
     both as arguments so it stays pure and testable.
     """
     return chrome.chrome_for(skins.skin(), theme.palette())
-
-
-def _dress(label: QLabel, style: str) -> None:
-    """Apply a per-widget sheet so the factories work before the window sheet.
-
-    TEMPORARY. Once the config windows carry ``chrome.window_style`` these
-    rules arrive from the window and this must go — a widget-level sheet beats
-    a window-level one, so leaving it here would make a hint the one label a
-    live skin change cannot re-dress.
-    """
-    label.setStyleSheet(style)
 
 
 def repolish(widget: QWidget) -> None:
@@ -64,7 +51,6 @@ def hint(text: str, parent: QWidget | None = None) -> QLabel:
     label = QLabel(text, parent)
     label.setObjectName(chrome.HINT)
     label.setWordWrap(True)
-    _dress(label, chrome.hint_style(current(), _FALLBACK_FONT_SIZE))
     return label
 
 
@@ -73,7 +59,6 @@ def caption(text: str, parent: QWidget | None = None) -> QLabel:
     label = QLabel(text, parent)
     label.setObjectName(chrome.CAPTION)
     set_caps(label)
-    _dress(label, chrome.caption_style(current(), _FALLBACK_FONT_SIZE))
     return label
 
 
@@ -81,7 +66,6 @@ def badge(parent: QWidget | None = None) -> QLabel:
     """A status pill. Starts empty and untoned; see :func:`set_badge`."""
     label = QLabel("", parent)
     label.setObjectName(chrome.BADGE)
-    _dress(label, chrome.badge_rules(current(), _FALLBACK_FONT_SIZE))
     return label
 
 
@@ -96,3 +80,52 @@ def set_badge(label: QLabel, text: str, tone: str = "") -> None:
     label.setText(text)
     label.setProperty(chrome.PROP_TONE, tone if tone in chrome.BADGE_TONES else "")
     repolish(label)
+
+
+# -- the live-apply seam ---------------------------------------------------------
+
+
+def build_qpalette(spec: dict[str, str]) -> QPalette:
+    """A QPalette from :func:`chrome.qt_palette_spec`.
+
+    Unknown role names are skipped rather than raising: the spec is data, and
+    a Qt version that drops a role should not stop the app from starting.
+    """
+    result = QPalette()
+    for name, value in spec.items():
+        role = getattr(QPalette.ColorRole, name, None)
+        if role is not None:
+            result.setColor(role, QColor(value))
+    return result
+
+
+def apply_app_palette(app: QApplication, font_size: int) -> None:
+    """Point the application's QPalette at the active skin and theme.
+
+    Paired with the Fusion style in ``app.create_app``. Without this, a dark
+    chrome ground would be drawn with the platform's native (light) combo
+    boxes and spin buttons inside it.
+    """
+    app.setPalette(build_qpalette(chrome.qt_palette_spec(current())))
+
+
+class ChromeMixin:
+    """Gives a config window a ``apply_chrome()`` that re-dresses it in place.
+
+    Mixed in *before* the Qt base class so the method resolution order finds
+    this first. The window must call ``apply_chrome()`` at the end of its
+    ``__init__`` — ``app._apply_appearance`` never runs at startup, only on a
+    skin change, exactly like the overlays reading ``skins.skin()`` in theirs.
+    """
+
+    def _chrome_font_size(self) -> int:
+        """The user's base font size, or the default if this window has no
+        settings handle (dialogs built standalone in tests)."""
+        settings = getattr(self, "_settings", None)
+        general = getattr(settings, "general", None)
+        return max(6, getattr(general, "font_size", 12))
+
+    def apply_chrome(self) -> None:
+        self.setStyleSheet(  # type: ignore[attr-defined]
+            chrome.window_style(skins.skin(), theme.palette(), self._chrome_font_size())
+        )

@@ -31,7 +31,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from nparseplus.ui.skins import SMALL_DISPLAY, Skin, TypographyRole, typography_style
+from nparseplus.ui.skins import (
+    SMALL_DISPLAY,
+    Skin,
+    TypographyRole,
+    gradient,
+    typography_style,
+)
 from nparseplus.ui.theme import Palette, palette
 
 # -- the object-name contract ---------------------------------------------------
@@ -71,6 +77,10 @@ HINT_TEXT = TypographyRole(scale=0.90)
 BADGE_TEXT = TypographyRole(scale=0.90, weight="bold")
 #: A config window's own heading.
 CHROME_TITLE = TypographyRole(scale=1.15, weight="bold")
+#: Body text on a config surface. Full size, unlike the overlays' BODY_TEXT —
+#: an overlay row is glanced at over a raid and wants to be compact, a settings
+#: form is read at a desk and wants to be legible.
+CHROME_BODY = TypographyRole(scale=1.0)
 
 # -- shared layout ---------------------------------------------------------------
 # Plain px on purpose: these are gutters and touch targets, not type, so they
@@ -222,3 +232,236 @@ def card_rules(ch: Chrome) -> str:
         f" border-radius: 3px; background: {ch.surface_alt}; }}"
         f'#{CARD}[{PROP_SELECTED}="true"] {{ border: 2px solid {ch.accent}; }}'
     )
+
+
+def ground_rules(ch: Chrome, font_size: int) -> str:
+    """The window's own ground and default type.
+
+    MUST be emitted before every type-selector rule below. ``QWidget`` and
+    ``QLineEdit`` match a QLineEdit with equal specificity, so within one
+    sheet the later rule wins — put this last and every text field turns into
+    the page background.
+    """
+    return (
+        f"QWidget {{ background-color: {ch.surface}; color: {ch.text};"
+        f" {typography_style(font_size, CHROME_BODY)} }}"
+    )
+
+
+def group_rules(ch: Chrome, font_size: int) -> str:
+    """QSS for a titled section box."""
+    return (
+        f"QGroupBox {{ border: 1px solid {ch.rule}; border-radius: 3px;"
+        f" margin-top: {SECTION_SPACING}px; padding-top: {ROW_SPACING}px;"
+        f" background: {ch.surface_alt}; }}"
+        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left;"
+        f" left: {ROW_SPACING}px; padding: 0 4px;"
+        f" {typography_style(font_size, SMALL_DISPLAY, color=ch.accent)} }}"
+    )
+
+
+def field_rules(ch: Chrome, font_size: int) -> str:
+    """QSS for every text/number/choice input.
+
+    The focus ring is the skin's accent — the one place a config form shows
+    which skin is active while you are actually using it.
+    """
+    inputs = (
+        "QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QSpinBox, QDoubleSpinBox, QComboBox"
+    )
+    return (
+        f"{inputs} {{ background-color: {ch.field_bg}; color: {ch.field_text};"
+        f" border: 1px solid {ch.field_border}; border-radius: 3px; padding: 2px 4px;"
+        f" selection-background-color: {ch.accent}; selection-color: {PILL_TEXT}; }}"
+        f"{_focus(inputs)} {{ border: 1px solid {ch.accent}; }}"
+        f"{_disabled(inputs)} {{ color: {ch.disabled}; }}"
+        f"QComboBox QAbstractItemView {{ background-color: {ch.field_bg};"
+        f" color: {ch.field_text}; border: 1px solid {ch.field_border};"
+        f" selection-background-color: {ch.accent}; selection-color: {PILL_TEXT}; }}"
+    )
+
+
+def button_rules(ch: Chrome, font_size: int) -> str:
+    """QSS for push buttons, including the one emphasised per row."""
+    return (
+        f"QPushButton {{ background-color: {ch.surface_alt}; color: {ch.text};"
+        f" border: 1px solid {ch.field_border}; border-radius: 3px;"
+        f" padding: 3px 10px; {typography_style(font_size, CHROME_BODY)} }}"
+        f"QPushButton:hover {{ border: 1px solid {ch.accent}; }}"
+        f"QPushButton:pressed {{ background-color: {ch.field_bg}; }}"
+        f"QPushButton:disabled {{ color: {ch.disabled};"
+        f" border: 1px solid {ch.field_border}; }}"
+        f"QPushButton#{PRIMARY} {{ border: 1px solid {ch.accent}; color: {ch.heading}; }}"
+        f"QPushButton#{PRIMARY}:hover {{ background-color: {gradient(ch.band)}; }}"
+    )
+
+
+def view_rules(ch: Chrome, font_size: int) -> str:
+    """QSS for the list/tree/table views — plugin tables, trigger trees."""
+    views = "QListWidget, QTreeWidget, QTableWidget, QTreeView, QTableView, QListView"
+    return (
+        f"{views} {{ background-color: {ch.field_bg}; color: {ch.text};"
+        f" border: 1px solid {ch.field_border}; border-radius: 3px;"
+        f" alternate-background-color: {ch.surface_alt}; }}"
+        f"{_selected(views)} {{ background-color: {gradient(ch.band)};"
+        f" color: {ch.accent_text}; }}"
+        f"QHeaderView::section {{ background-color: {ch.surface_alt}; color: {ch.accent};"
+        f" border: none; border-bottom: 1px solid {ch.rule}; padding: 3px 6px;"
+        f" {typography_style(font_size, SMALL_DISPLAY)} }}"
+        "QHeaderView { background: transparent; }"
+    )
+
+
+def tab_rules(ch: Chrome, font_size: int) -> str:
+    """QSS for tab bars — the trigger editor and macro editor use them."""
+    return (
+        f"QTabWidget::pane {{ border: 1px solid {ch.rule}; border-radius: 3px;"
+        f" background: {ch.surface}; }}"
+        f"QTabBar::tab {{ background: transparent; color: {ch.hint};"
+        f" padding: 4px 12px; border-bottom: 2px solid transparent;"
+        f" {typography_style(font_size, SMALL_DISPLAY)} }}"
+        f"QTabBar::tab:selected {{ color: {ch.accent};"
+        f" border-bottom: 2px solid {ch.accent}; }}"
+        f"QTabBar::tab:hover {{ color: {ch.text}; }}"
+    )
+
+
+def sidebar_rules(ch: Chrome, font_size: int) -> str:
+    """QSS for the settings window's page list."""
+    return (
+        f"#{SIDEBAR} {{ background-color: {ch.surface_alt}; color: {ch.text};"
+        f" border: none; border-right: 1px solid {ch.rule}; }}"
+        f"#{SIDEBAR}::item {{ padding: 5px 8px; border: none;"
+        f" {typography_style(font_size, CHROME_BODY)} }}"
+        f"#{SIDEBAR}::item:selected {{ background: {gradient(ch.band)};"
+        f" color: {ch.accent_text}; }}"
+        f"#{SIDEBAR}::item:hover:!selected {{ color: {ch.accent}; }}"
+    )
+
+
+def slider_rules(ch: Chrome) -> str:
+    """QSS for the opacity sliders."""
+    return (
+        f"QSlider::groove:horizontal {{ background: {ch.field_bg};"
+        f" border: 1px solid {ch.field_border}; height: 4px; border-radius: 2px; }}"
+        f"QSlider::handle:horizontal {{ background: {ch.accent};"
+        " width: 12px; margin: -5px 0; border-radius: 3px; }"
+    )
+
+
+def misc_rules(ch: Chrome) -> str:
+    """Checkboxes, radios, splitters and the scroll areas that hold pages.
+
+    The indicators are drawn here rather than left to Fusion. Fusion renders
+    them from the palette, and this palette's Base is near-black, so an
+    UNCHECKED box came out invisible against the page — a settings row that
+    reads as a label with nothing to click. Checked is a filled accent square
+    rather than a glyph: no image asset, and it stays legible at any font size.
+    """
+    box = "13px"
+    return (
+        f"QCheckBox, QRadioButton {{ background: transparent; color: {ch.text};"
+        " spacing: 6px; }"
+        f"QCheckBox:disabled, QRadioButton:disabled {{ color: {ch.disabled}; }}"
+        f"QCheckBox::indicator, QRadioButton::indicator {{ width: {box}; height: {box};"
+        f" background-color: {ch.field_bg}; border: 1px solid {ch.field_border}; }}"
+        "QCheckBox::indicator { border-radius: 2px; }"
+        "QRadioButton::indicator { border-radius: 7px; }"
+        "QCheckBox::indicator:hover, QRadioButton::indicator:hover"
+        f" {{ border: 1px solid {ch.accent}; }}"
+        "QCheckBox::indicator:checked, QRadioButton::indicator:checked"
+        f" {{ background-color: {ch.accent}; border: 1px solid {ch.accent}; }}"
+        "QCheckBox::indicator:disabled, QRadioButton::indicator:disabled"
+        f" {{ border: 1px solid {ch.disabled}; }}"
+        "QScrollArea { background: transparent; border: none; }"
+        f"QSplitter::handle {{ background: {ch.rule}; }}"
+        f"QToolTip {{ background-color: {ch.surface_alt}; color: {ch.text};"
+        f" border: 1px solid {ch.accent}; padding: 3px; }}"
+    )
+
+
+def scrollbar_rules(ch: Chrome, width: int = 10) -> str:
+    """QSS for the chrome scrollbars.
+
+    Wider than the overlays' 6px: these are dragged with a mouse in a settings
+    form, not glanced at over a raid.
+    """
+    return (
+        f"QScrollBar:vertical {{ background: transparent; width: {width}px; margin: 0; }}"
+        f"QScrollBar:horizontal {{ background: transparent; height: {width}px; margin: 0; }}"
+        f"QScrollBar::handle {{ background: {ch.field_border}; border-radius: {width // 2}px;"
+        " min-height: 24px; min-width: 24px; }"
+        f"QScrollBar::handle:hover {{ background: {ch.accent}; }}"
+        "QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }"
+    )
+
+
+def window_style(skin: Skin, colors: Palette, font_size: int) -> str:
+    """The whole stylesheet for one config window.
+
+    Scoped to a window rather than the application, deliberately: this sheet
+    carries bare type selectors, and at app scope a ``QLabel`` rule here would
+    land on the overlays sitting on top of EverQuest. ``skins.overlay_window_style``
+    only overrides three properties on QLabel, and Qt resolves conflicts
+    per-property — anything it does not name would leak through.
+
+    Rule order is load-bearing; see :func:`ground_rules`.
+    """
+    ch = chrome_for(skin, colors)
+    return (
+        ground_rules(ch, font_size)
+        + f"#{HINT} {{ {hint_style(ch, font_size)} }}"
+        + f"#{CAPTION} {{ {caption_style(ch, font_size)} }}"
+        + f"#{TITLE} {{ {title_style(ch, font_size)} }}"
+        + badge_rules(ch, font_size)
+        + card_rules(ch)
+        + group_rules(ch, font_size)
+        + field_rules(ch, font_size)
+        + button_rules(ch, font_size)
+        + view_rules(ch, font_size)
+        + tab_rules(ch, font_size)
+        + sidebar_rules(ch, font_size)
+        + slider_rules(ch)
+        + misc_rules(ch)
+        + scrollbar_rules(ch)
+    )
+
+
+def qt_palette_spec(ch: Chrome) -> dict[str, str]:
+    """QPalette role name -> color, for the Fusion style.
+
+    Fusion honours QPalette fully and identically across platforms, so the
+    parts of a control a stylesheet cannot reach without redrawing it wholesale
+    (spin arrows, combo drop-downs, check indicators, tree branches) come out
+    right from this instead of ~150 lines of sub-control QSS that would look
+    subtly wrong on at least one platform.
+    """
+    return {
+        "Window": ch.surface,
+        "WindowText": ch.text,
+        "Base": ch.field_bg,
+        "AlternateBase": ch.surface_alt,
+        "Text": ch.field_text,
+        "Button": ch.surface_alt,
+        "ButtonText": ch.text,
+        "BrightText": ch.danger,
+        "Highlight": ch.accent,
+        "HighlightedText": PILL_TEXT,
+        "ToolTipBase": ch.surface_alt,
+        "ToolTipText": ch.text,
+        "PlaceholderText": ch.hint,
+        "Link": LINK,
+    }
+
+
+def _focus(selectors: str) -> str:
+    return ", ".join(f"{part.strip()}:focus" for part in selectors.split(","))
+
+
+def _disabled(selectors: str) -> str:
+    return ", ".join(f"{part.strip()}:disabled" for part in selectors.split(","))
+
+
+def _selected(selectors: str) -> str:
+    return ", ".join(f"{part.strip()}::item:selected" for part in selectors.split(","))

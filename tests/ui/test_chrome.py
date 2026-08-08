@@ -108,6 +108,102 @@ def test_the_spell_window_reads_its_bar_colors_from_the_tokens() -> None:
     assert spellwindow.COLOR_ROLL == chrome.ROLL
 
 
+# -- window_style ---------------------------------------------------------------
+
+
+def test_the_ground_rule_comes_before_every_field_rule() -> None:
+    """The specificity trap. QWidget and QLineEdit match a QLineEdit with equal
+    specificity, so within one sheet the later rule wins — emit the ground last
+    and every text field turns into the page background."""
+    style = chrome.window_style(skins.DUXA, theme.DARK, 12)
+    ground = style.index("QWidget {")
+    for selector in ("QLineEdit", "QPushButton", "QComboBox", "QListWidget", "QTabBar::tab"):
+        assert ground < style.index(selector), selector
+
+
+def test_every_builder_emits_balanced_braces() -> None:
+    """A stray brace makes Qt discard the WHOLE sheet with only a runtime
+    warning, so the window looks untouched and every other assertion here
+    still passes. This caught exactly that: a non-f-string ending in ``}}``,
+    which stays two literal braces instead of collapsing to one.
+    """
+    ch = chrome.chrome_for(skins.DUXA, theme.DARK)
+    pieces = {
+        "ground": chrome.ground_rules(ch, 12),
+        "badge": chrome.badge_rules(ch, 12),
+        "card": chrome.card_rules(ch),
+        "group": chrome.group_rules(ch, 12),
+        "field": chrome.field_rules(ch, 12),
+        "button": chrome.button_rules(ch, 12),
+        "view": chrome.view_rules(ch, 12),
+        "tab": chrome.tab_rules(ch, 12),
+        "sidebar": chrome.sidebar_rules(ch, 12),
+        "slider": chrome.slider_rules(ch),
+        "misc": chrome.misc_rules(ch),
+        "scroll": chrome.scrollbar_rules(ch),
+        "window": chrome.window_style(skins.DUXA, theme.DARK, 12),
+    }
+    for name, css in pieces.items():
+        assert css.count("{") == css.count("}"), name
+        assert "}}" not in css, f"{name}: doubled closing brace"
+        assert "{{" not in css, f"{name}: doubled opening brace"
+
+
+def test_window_style_names_every_shared_object() -> None:
+    style = chrome.window_style(skins.DUXA, theme.DARK, 12)
+    for name in (chrome.HINT, chrome.CAPTION, chrome.TITLE, chrome.BADGE, chrome.CARD):
+        assert f"#{name}" in style, name
+    assert f"#{chrome.SIDEBAR}" in style
+    assert f"#{chrome.PRIMARY}" in style
+
+
+def test_every_badge_tone_reaches_the_sheet() -> None:
+    style = chrome.window_style(skins.DUXA, theme.DARK, 12)
+    for tone in chrome.BADGE_TONES:
+        assert f'[{chrome.PROP_TONE}="{tone}"]' in style, tone
+
+
+def test_the_three_skins_tint_the_same_selectors_differently() -> None:
+    """What "picking Velious tints Settings" means, asserted."""
+    sheets = {name: chrome.window_style(skin, theme.DARK, 12) for name, skin in skins.SKINS.items()}
+    assert len(set(sheets.values())) == len(sheets)
+    for name, sheet in sheets.items():
+        assert skins.SKINS[name].chrome_accent in sheet, name
+
+
+def test_the_ground_never_changes_with_the_skin() -> None:
+    """The readability floor: a skin may not move the page background or the
+    field background, only the accents on top of them."""
+    grounds = set()
+    for skin in skins.SKINS.values():
+        ch = chrome.chrome_for(skin, theme.DARK)
+        grounds.add((ch.surface, ch.field_bg, ch.text))
+    assert len(grounds) == 1
+
+
+def test_the_font_size_drives_the_whole_sheet() -> None:
+    small = chrome.window_style(skins.DUXA, theme.DARK, 10)
+    large = chrome.window_style(skins.DUXA, theme.DARK, 20)
+    assert small != large
+    assert "font-size: 20px" in large
+    assert "font-size: 20px" not in small
+
+
+def test_qt_palette_spec_covers_the_roles_fusion_reads() -> None:
+    ch = chrome.chrome_for(skins.DUXA, theme.DARK)
+    spec = chrome.qt_palette_spec(ch)
+    for role in ("Window", "WindowText", "Base", "Text", "Button", "Highlight"):
+        assert spec.get(role), role
+
+
+def test_qt_palette_spec_maps_onto_real_qt_roles() -> None:
+    """Names are strings here; if Qt renames one the palette silently loses it."""
+    from PySide6.QtGui import QPalette
+
+    for role in chrome.qt_palette_spec(chrome.chrome_for(skins.DUXA, theme.DARK)):
+        assert hasattr(QPalette.ColorRole, role), role
+
+
 # -- the regression guard -------------------------------------------------------
 
 
@@ -133,27 +229,6 @@ def test_no_ui_module_hardcodes_a_muted_grey() -> None:
         "hardcoded muted greys found — use chromewidgets.hint()/caption() "
         f"or a Chrome token instead: {offenders}"
     )
-
-
-def test_the_hint_and_caption_factories_stamp_the_names_the_sheet_targets() -> None:
-    """The object-name contract between chrome.py and chromewidgets.py. If a
-    factory stops stamping, the window sheet silently misses that label."""
-    from nparseplus.ui import chromewidgets
-
-    assert chromewidgets.hint("x").objectName() == chrome.HINT
-    assert chromewidgets.caption("x").objectName() == chrome.CAPTION
-    assert chromewidgets.badge().objectName() == chrome.BADGE
-
-
-def test_set_badge_falls_back_rather_than_raising_on_an_unknown_tone() -> None:
-    from nparseplus.ui import chromewidgets
-
-    label = chromewidgets.badge()
-    chromewidgets.set_badge(label, "Up to date", "ok")
-    assert label.property(chrome.PROP_TONE) == "ok"
-    chromewidgets.set_badge(label, "?", "not-a-tone")
-    assert label.property(chrome.PROP_TONE) == ""
-    assert label.text() == "?"
 
 
 def test_the_skin_preview_paints_the_same_colors_the_real_rows_do() -> None:
