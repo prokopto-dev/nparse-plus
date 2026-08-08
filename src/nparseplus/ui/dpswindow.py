@@ -20,7 +20,12 @@ from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightRow, SessionSummary
 from nparseplus.ui import skins, theme
 from nparseplus.ui.overlaybase import OverlayWindowBase
-from nparseplus.ui.skinwidgets import GemMark, SkinPanel, paint_full_row_bar, set_caps
+from nparseplus.ui.skinwidgets import (
+    SkinPanel,
+    SkinTitleBar,
+    paint_full_row_bar,
+    set_caps,
+)
 
 WINDOW_KEY = "dps"
 REFRESH_INTERVAL_MS = 500
@@ -156,16 +161,7 @@ class DpsMeterWindow(OverlayWindowBase):
         self._skin = skins.skin()
         self._font_size = max(6, backend.settings.general.font_size)
 
-        self._mark = GemMark(self._skin, self)
-        self._title = QLabel("DPS METER", self)
-        self._title.setObjectName("SkinTitle")
-        self._title_bar = QWidget(self)
-        self._title_bar.setObjectName("SkinTitleBar")
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(6, 3, 6, 3)
-        title_layout.setSpacing(6)
-        title_layout.addWidget(self._mark, 0)
-        title_layout.addWidget(self._title, 1)
+        self._title_bar = SkinTitleBar(self._skin, "DPS METER", parent=self)
 
         self._rows_layout = QVBoxLayout()
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -247,7 +243,7 @@ class DpsMeterWindow(OverlayWindowBase):
             " }"
         )
         self._container.apply_skin(self._skin, self._backend.settings.general.frame_opacity / 100)
-        self._mark.apply_skin(self._skin)
+        self._title_bar.apply_skin(self._skin)
         for header in self._headers.values():
             self._style_header(header, bool(getattr(header, "_styled_dead", False)))
         for row in self._rows.values():

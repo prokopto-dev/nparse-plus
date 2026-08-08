@@ -27,7 +27,7 @@ from PySide6.QtGui import (
     QPen,
     QPolygonF,
 )
-from PySide6.QtWidgets import QFrame, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from nparseplus.ui import chrome
 from nparseplus.ui.skins import Skin
@@ -231,6 +231,52 @@ def _diamond(center: QPointF, radius: float) -> QPolygonF:
             QPointF(center.x() - radius, center.y()),
         ]
     )
+
+
+class SkinTitleBar(QWidget):
+    """The gem + caps strip every skinned overlay wears.
+
+    Three windows built this by hand, identically, down to the layout margins
+    and the object names — the *styling* was already shared through
+    ``skins.title_bar_style``, only the construction was not. The object names
+    stay exactly as they were so that stylesheet is untouched.
+    """
+
+    def __init__(
+        self,
+        skin: Skin,
+        title: str,
+        *,
+        count: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("SkinTitleBar")
+        self.mark = GemMark(skin, self)
+        self.title = QLabel(title, self)
+        self.title.setObjectName("SkinTitle")
+        #: Only the spell window shows a count; the others leave it out
+        #: entirely rather than carrying an empty label around.
+        self.count: QLabel | None = None
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 3, 6, 3)
+        layout.setSpacing(6)
+        layout.addWidget(self.mark, 0)
+        layout.addWidget(self.title, 1)
+        if count:
+            self.count = QLabel("", self)
+            self.count.setObjectName("SkinTitleCount")
+            layout.addWidget(self.count, 0)
+
+    def set_title(self, text: str) -> None:
+        self.title.setText(text)
+
+    def set_count(self, text: str) -> None:
+        if self.count is not None:
+            self.count.setText(text)
+
+    def apply_skin(self, skin: Skin) -> None:
+        self.mark.apply_skin(skin)
 
 
 def paint_full_row_bar(

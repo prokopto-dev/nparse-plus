@@ -36,7 +36,9 @@ from nparseplus.ui.skins import (
     SMALL_DISPLAY,
     Skin,
     TypographyRole,
+    base_color,
     gradient,
+    rgba,
     typography_style,
 )
 from nparseplus.ui.theme import Palette, palette
@@ -251,9 +253,14 @@ def ground_rules(ch: Chrome, font_size: int) -> str:
 
 def group_rules(ch: Chrome, font_size: int) -> str:
     """QSS for a titled section box."""
+    # margin-top makes room for the title, which is drawn in the margin;
+    # the paddings keep the box's own content clear of the border on every
+    # side. Too little bottom padding and the last row in a group is clipped
+    # by the next group's edge.
     return (
         f"QGroupBox {{ border: 1px solid {ch.rule}; border-radius: 3px;"
-        f" margin-top: {SECTION_SPACING}px; padding-top: {ROW_SPACING}px;"
+        f" margin-top: {SECTION_SPACING}px;"
+        f" padding: {SECTION_SPACING}px {ROW_SPACING}px {ROW_SPACING}px {ROW_SPACING}px;"
         f" background: {ch.surface_alt}; }}"
         "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left;"
         f" left: {ROW_SPACING}px; padding: 0 4px;"
@@ -471,6 +478,34 @@ def legacy_parser_style(ch: Chrome, font_size: int) -> str:
         f" border-radius: 3px; padding: 3px;"
         f" {typography_style(font_size, CHROME_BODY)} }}"
     )
+
+
+def discord_menu_style(ch: Chrome, red: int, green: int, blue: int, alpha: float) -> str:
+    """QSS for the Discord overlay's hover menu strip.
+
+    The GROUND stays the user's configured colour and opacity — that is the
+    whole point of the Discord window's colour picker, and a skin has no
+    business overriding a deliberate choice. Everything drawn ON it (the title,
+    the move handle, the button hover and checked states) comes from the skin,
+    so the strip stops being the one piece of chrome wearing 2019's darkgreen.
+    """
+    ground = f"rgba({red}, {green}, {blue}, {alpha})"
+    return (
+        f"#ParserWindowMenuReal {{ background-color: {ground}; }}"
+        f"#ParserWindowMenuReal QPushButton {{"
+        f" background-color: rgba({red}, {green}, {blue}, 0); }}"
+        f"#ParserWindowMenu QPushButton {{ color: {rgba_of(ch.text, alpha)}; }}"
+        f"#ParserWindowMenu QPushButton:hover {{ color: {ch.accent};"
+        f" background: {rgba_of(ch.accent, min(alpha, 0.35))}; }}"
+        f"#ParserWindowMenu QPushButton:checked {{ color: {ch.accent_text}; }}"
+        f"#ParserWindowMoveButton {{ color: {rgba_of(ch.accent, alpha)}; }}"
+        f"#ParserWindowTitle {{ color: {rgba_of(ch.accent, alpha)}; }}"
+    )
+
+
+def rgba_of(color: str, alpha: float) -> str:
+    """``color`` at ``alpha`` (0..1), accepting hex or an existing rgba()."""
+    return rgba(base_color((color,)), alpha)
 
 
 def app_stylesheet(skin: Skin, colors: Palette, font_size: int) -> str:

@@ -47,7 +47,12 @@ from nparseplus.core.timers import (
 )
 from nparseplus.ui import appquit, chrome, skins, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
-from nparseplus.ui.skinwidgets import GemMark, SkinPanel, paint_full_row_bar, set_caps
+from nparseplus.ui.skinwidgets import (
+    SkinPanel,
+    SkinTitleBar,
+    paint_full_row_bar,
+    set_caps,
+)
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -453,19 +458,8 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._font_size = max(6, backend.settings.general.font_size)
 
         # Skinned title bar: the gem mark + the window's caps.
-        self._mark = GemMark(self._skin, self)
-        self._title = QLabel("SPELL TIMERS", self)
-        self._title.setObjectName("SkinTitle")
-        self._title_count = QLabel("", self)
-        self._title_count.setObjectName("SkinTitleCount")
-        self._title_bar = QWidget(self)
-        self._title_bar.setObjectName("SkinTitleBar")
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(6, 3, 6, 3)
-        title_layout.setSpacing(6)
-        title_layout.addWidget(self._mark, 0)
-        title_layout.addWidget(self._title, 1)
-        title_layout.addWidget(self._title_count, 0)
+        self._title_bar = SkinTitleBar(self._skin, "SPELL TIMERS", count=True, parent=self)
+        self._title_count = self._title_bar.count
 
         self._rows_layout = QVBoxLayout()
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -789,7 +783,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             + skins.title_bar_style(self._skin, self._font_size)
         )
         self._container.apply_skin(self._skin, self._backend.settings.general.frame_opacity / 100)
-        self._mark.apply_skin(self._skin)
+        self._title_bar.apply_skin(self._skin)
         for header in self._headers.values():
             kind = header.property("kind") or skins.KIND_PLAYER
             header.setStyleSheet(skins.header_style(self._skin, self._font_size, kind))

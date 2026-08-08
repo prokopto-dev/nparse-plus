@@ -73,6 +73,7 @@ from nparseplus.core.socials_exchange import (
 )
 from nparseplus.core.socialstore import SocialOrigin, SocialStore
 from nparseplus.ui import chromewidgets
+from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "macroeditor"
 DEFAULT_GEOMETRY = (220, 140, 940, 660)
@@ -199,7 +200,7 @@ class _MacroLineEdit(QLineEdit):
         super().keyPressEvent(event)
 
 
-class MacroEditorWindow(chromewidgets.ChromeMixin, QWidget):
+class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     """Framed macro-editor tool window.
 
     Public API (for integration/tests): ``toggle()``, ``load()``,
@@ -216,9 +217,18 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, QWidget):
         store_dir: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
-        self._settings = settings
-        self._on_save = on_save
+        super().__init__(
+            settings=settings,
+            window_key=WINDOW_KEY,
+            title="Macro Editor",
+            default_geometry=DEFAULT_GEOMETRY,
+            on_save=on_save,
+            # See the trigger editor: framed, never on top, and deliberately
+            # not restore_visibility()'d.
+            default_state=WindowState(frameless=False, always_on_top=False, shown=False),
+            translucent=False,
+            parent=parent,
+        )
         self._store_dir = Path(store_dir) if store_dir is not None else None
 
         self._working: list[Social] = []
@@ -239,42 +249,42 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, QWidget):
         #: Set False (e.g. in tests) to skip the EQ-is-running warning.
         self.warn_eq_running = True
 
-        self.setWindowTitle("Macro Editor")
-        self.setWindowFlags(Qt.WindowType.Window)
-        self._restore_geometry()
-
         self._build_ui()
         self._refresh_characters()
         self._render()
         self.apply_chrome()
 
-    # -- window state ---------------------------------------------------------
-
-    def _window_state(self) -> WindowState:
-        state = self._settings.windows.get(WINDOW_KEY)
-        if state is None:
-            state = WindowState(frameless=False, always_on_top=False, shown=False)
-            self._settings.windows[WINDOW_KEY] = state
-        return state
-
-    def _restore_geometry(self) -> None:
-        state = self._window_state()
-        self.setGeometry(*(state.geometry or DEFAULT_GEOMETRY))
-
-    def _persist_geometry(self) -> None:
-        state = self._window_state()
-        geo = self.geometry()
-        state.geometry = (geo.x(), geo.y(), geo.width(), geo.height())
-        state.shown = False
-        self._on_save()
+    # -- window state ----------------------------------------------------------
 
     def toggle(self) -> None:
+        """Deliberately close() rather than the base's hide().
+
+        closeEvent runs the unsaved-changes prompt; hiding would drop an edit
+        in progress with no warning at all.
+        """
         if self.isVisible():
             self.close()
         else:
             self.show()
             self.raise_()
             self.activateWindow()
+
+    # -- keep normal window mouse behavior -------------------------------------
+    # OverlayWindowBase drags the window by its body. In an editor full of text
+    # fields, a splitter and a tree that is exactly wrong: it would eat text
+    # selection and splitter drags. Same recipe as settingswindow/consolewindow.
+
+    def mousePressEvent(self, event) -> None:
+        QWidget.mousePressEvent(self, event)
+
+    def mouseMoveEvent(self, event) -> None:
+        QWidget.mouseMoveEvent(self, event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        QWidget.mouseReleaseEvent(self, event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        QWidget.mouseDoubleClickEvent(self, event)
 
     # -- UI construction ------------------------------------------------------
 
@@ -1166,7 +1176,6 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, QWidget):
                 self.save_to_character()
             else:
                 self._dirty = False
-        self._persist_geometry()
         super().closeEvent(event)
 
 
