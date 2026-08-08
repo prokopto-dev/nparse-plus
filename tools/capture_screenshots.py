@@ -158,6 +158,7 @@ def _build_backend():
     from nparseplus.composition import build_backend
     from nparseplus.config.settings import PlayerInfo, Settings
     from nparseplus.core.enums import PlayerClass, Server
+
     settings = Settings()
     settings.general.update_check = False
     settings.general.eq_log_dir = SCRATCH

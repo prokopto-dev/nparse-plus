@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMenu
+from PySide6.QtWidgets import QLabel, QMenu
 
 from nparseplus.config.settings import Settings, load_settings, save_settings
 from nparseplus.core.player import ActivePlayer
@@ -428,3 +428,140 @@ def test_an_unknown_emphasis_falls_back_instead_of_raising(qtbot) -> None:
     overlay = EventOverlayWindow(emphasis="disco")
     qtbot.addWidget(overlay)
     assert overlay._emphasis == "pulse"
+
+
+# -- the event overlay's remaining literals -------------------------------------
+
+
+def test_switching_skins_redresses_a_live_ch_lane(qtbot) -> None:
+    """A chain already on screen mid-raid has to change with everything else,
+    so apply_skin walks the live lanes rather than only new ones."""
+    from nparseplus.ui import skins
+    from nparseplus.ui.eventoverlay import EventOverlayWindow, _ChainLane
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    lane = _ChainLane("Tanky", overlay)
+    overlay._chain_lanes["Tanky"] = lane
+    skins.set_skin("duxa")
+    overlay.apply_skin()
+    duxa = lane.styleSheet()
+
+    skins.set_skin("velious")
+    overlay.apply_skin()
+    velious = lane.styleSheet()
+
+    assert duxa != velious
+    assert skins.VELIOUS.lane_bg in velious
+    skins.set_skin(skins.DEFAULT_SKIN)
+
+
+def test_the_overlay_never_reads_the_palette() -> None:
+    """It renders over the game, where the app's config-surface values are
+    exactly wrong. It reads the skin and nothing else."""
+    import inspect
+
+    from nparseplus.ui import eventoverlay
+
+    source = inspect.getsource(eventoverlay)
+    assert "theme.palette" not in source
+    assert "from nparseplus.ui import chrome, skins" in source
+
+
+def test_a_user_configured_utility_colour_survives_a_skin_change(qtbot) -> None:
+    """The three resolve_color sites carry a colour from the trigger's own
+    config. The skin owns their size and weight; it must not own their hue."""
+    from nparseplus.ui import skins
+    from nparseplus.ui.eventoverlay import EventOverlayWindow
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    label = QLabel("x", overlay)
+    label.setProperty("line_color", "#ff00ff")
+    overlay._utility_lines["x"] = label
+    skins.set_skin("velious")
+    overlay.apply_skin()
+    assert "#ff00ff" in label.styleSheet()
+    skins.set_skin(skins.DEFAULT_SKIN)
+
+
+# -- alert layout: centered always, and never clipped ---------------------------
+
+
+def test_the_alert_is_centered_under_every_skin(qtbot) -> None:
+    """A user reported Ledger left-justifying the alert. The alert panel is
+    centered inside its region regardless of skin — this is the one place the
+    skin does NOT get a say, because an alert is read at a glance and a moving
+    anchor costs the glance."""
+    from nparseplus.ui import skins
+    from nparseplus.ui.eventoverlay import EventOverlayWindow
+
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    for name in skins.SKINS:
+        skins.set_skin(name)
+        overlay.apply_skin()
+        for widget in (overlay._center_text, overlay._alert_kicker):
+            centered = widget.alignment() & Qt.AlignmentFlag.AlignHCenter
+            assert centered == Qt.AlignmentFlag.AlignHCenter, name
+    skins.set_skin(skins.DEFAULT_SKIN)
+    # and no skin carries an alignment token any more
+    assert not any(hasattr(skin, "alert_align") for skin in skins.SKINS.values())
+
+
+def test_fit_text_size_returns_the_largest_size_that_fits() -> None:
+    from PySide6.QtCore import QRect
+
+    from nparseplus.ui.eventoverlay import MIN_ALERT_TEXT_SIZE, fit_text_size
+
+    # height == size: everything up to the budget fits.
+    assert fit_text_size(lambda s: QRect(0, 0, 10, s), 40, 32) == 32
+    assert fit_text_size(lambda s: QRect(0, 0, 10, s), 20, 32) == 20
+    # nothing fits -> the floor, never zero or negative.
+    assert fit_text_size(lambda s: QRect(0, 0, 10, s * 10), 5, 32) == MIN_ALERT_TEXT_SIZE
+    # a max at or below the floor is returned untouched.
+    assert fit_text_size(lambda s: QRect(0, 0, 10, 999), 1, MIN_ALERT_TEXT_SIZE) == (
+        MIN_ALERT_TEXT_SIZE
+    )
+
+
+def test_a_long_alert_shrinks_instead_of_clipping(qtbot) -> None:
+    """The reported bug: a full raid-mob description wrapped past the bottom of
+    the region and was cut off mid-word."""
+    from datetime import datetime
+
+    from nparseplus.core.events import OverlayEvent
+    from nparseplus.ui.eventoverlay import EventOverlayWindow
+
+    long_text = (
+        "[CH Unslowed: Instant, Slowed: 3s] // Ancient Breath (PBAOE 350 mag, "
+        "DR -150 check, 60s CD): 250 dmg + 20 HP/tick DoT (lasts a very long "
+        "time) + 40% slow // Gift of Aerr (PBAOE 1000 dmg)"
+    )
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    overlay.resize(500, 300)
+    overlay.show()
+    overlay.handle_event(
+        OverlayEvent(
+            timestamp=datetime.now(),
+            line="",
+            line_number=1,
+            text=long_text,
+            foreground="Red",
+        )
+    )
+    assert overlay._headline_size() < overlay._text_size
+
+    # A short one is untouched.
+    overlay.clear_text()
+    overlay.handle_event(
+        OverlayEvent(
+            timestamp=datetime.now(),
+            line="",
+            line_number=1,
+            text="ENRAGED",
+            foreground="Red",
+        )
+    )
+    assert overlay._headline_size() == overlay._text_size
