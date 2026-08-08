@@ -6,6 +6,45 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.0.0 (2026-08-08)
+
+### Bug Fixes
+
+- **test**: Read source files as utf-8 so the Windows job passes
+  ([`03c08de`](https://github.com/prokopto-dev/nparse-plus/commit/03c08de4e0aeac4afcd5c9e9cc12de54af4f37c2))
+
+### Documentation
+
+- Bring the appearance, maps and architecture notes in line
+  ([`0aa5eb6`](https://github.com/prokopto-dev/nparse-plus/commit/0aa5eb6128630494b389e9ff1ee69d008d4df091))
+
+### Features
+
+- **maps**: Make the map chrome follow the skin, and let exits be turned off
+  ([`b1378d4`](https://github.com/prokopto-dev/nparse-plus/commit/b1378d4c9aa5eff7b8e3ce47d405c88bc9b3a97f))
+
+- **maps**: Put Clear Corpse Markers on the map's own right-click menu
+  ([`32a8f76`](https://github.com/prokopto-dev/nparse-plus/commit/32a8f7609850ff26acd598f31bc6a20e60302869))
+
+- **overlay**: Finish the skin coverage and stop clipping long alerts
+  ([`75d9427`](https://github.com/prokopto-dev/nparse-plus/commit/75d9427657f2838b592114fc8de3270a3e8eeb2b))
+
+- **ui**: Add the chrome token layer under the config windows
+  ([`4ccd7e5`](https://github.com/prokopto-dev/nparse-plus/commit/4ccd7e57d6c3d8231a0925d18d3aaa78150f34be))
+
+- **ui**: Dress the config windows in the active skin
+  ([`5188ac9`](https://github.com/prokopto-dev/nparse-plus/commit/5188ac93d71e3174246453ad7f202803a59c617b))
+
+- **ui**: Drop the light theme and generate the app stylesheet
+  ([`765e046`](https://github.com/prokopto-dev/nparse-plus/commit/765e0466e200ab63aaa1f7d7448700d42d47d463))
+
+- **ui**: Give the config windows one muted-text treatment
+  ([`e6436da`](https://github.com/prokopto-dev/nparse-plus/commit/e6436da7918ab0f45af6b32fd5a7a17a9335fa93))
+
+- **ui**: Share the title bar, skin the Discord strip, put the editors on the base
+  ([`d0757e4`](https://github.com/prokopto-dev/nparse-plus/commit/d0757e4d7792c85db348e54dee09daad41dda144))
+
+
 ## v1.22.0 (2026-08-07)
 
 ### Features
