@@ -59,7 +59,7 @@ def test_the_discord_window_exposes_apply_skin() -> None:
         "nparseplus",
         "parsers",
         "discord.py",
-    ).read_text()
+    ).read_text(encoding="utf-8")
     tree = ast.parse(source)
     methods = {
         node.name

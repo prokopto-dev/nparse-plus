@@ -267,7 +267,9 @@ def test_no_ui_module_hardcodes_a_muted_grey() -> None:
     for path in sorted(ui.glob("*.py")):
         if path.name in allowed:
             continue
-        text = path.read_text()
+        # encoding is not optional: Windows defaults to cp1252, and these
+        # modules contain em-dashes.
+        text = path.read_text(encoding="utf-8")
         for literal in ("#888888", "#9aa0a6", "#777777"):
             if literal in text:
                 offenders.append(f"{path.name}: {literal}")
