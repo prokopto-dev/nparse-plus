@@ -12,13 +12,13 @@ import webbrowser
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.handlers.consider import MobInfoState
-from nparseplus.ui import skins, theme
+from nparseplus.ui import chrome, skins, theme
 from nparseplus.ui.overlaybase import OverlayWindowBase, format_mmss
-from nparseplus.ui.skinwidgets import GemMark, SkinPanel
+from nparseplus.ui.skinwidgets import SkinPanel, SkinTitleBar
 
 WINDOW_KEY = "mobinfo"
 REFRESH_INTERVAL_MS = 500
@@ -63,16 +63,7 @@ class MobInfoWindow(OverlayWindowBase):
         self._wiki_button.setEnabled(False)
 
         self._skin = skins.skin()
-        self._mark = GemMark(self._skin, self)
-        self._title = QLabel("MOB INFO", self)
-        self._title.setObjectName("SkinTitle")
-        self._title_bar = QWidget(self)
-        self._title_bar.setObjectName("SkinTitleBar")
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(6, 3, 6, 3)
-        title_layout.setSpacing(6)
-        title_layout.addWidget(self._mark, 0)
-        title_layout.addWidget(self._title, 1)
+        self._title_bar = SkinTitleBar(self._skin, "MOB INFO", parent=self)
 
         self._container = SkinPanel(self._skin, parent=self)
         self._container.setObjectName("MobInfoContainer")
@@ -105,20 +96,26 @@ class MobInfoWindow(OverlayWindowBase):
     def apply_skin(self) -> None:
         """Re-style from the active skin — live, no restart (see spellwindow)."""
         self._skin = skins.skin()
-        font_size = max(8, self._settings.general.font_size)
+        font_size = max(6, self._settings.general.font_size)
         colors = theme.palette()
         self.setStyleSheet(
             skins.overlay_window_style(self._skin, colors, font_size)
             + skins.title_bar_style(self._skin, font_size)
-            + f"#MobInfoName {{ color: {self._skin.value_color}; font-weight: bold;"
-            f" font-size: {skins.px(font_size, 1.05)}px; background: transparent; }}"
+            + "#MobInfoName {"
+            + skins.typography_style(
+                font_size,
+                skins.NUMERIC_TEXT,
+                color=self._skin.value_color,
+            )
+            + " background: transparent; }"
             f"#MobInfoContainer QPushButton {{ color: {self._skin.title_color};"
             f" background: transparent; border: 1px solid {self._skin.plate_border};"
             " padding: 3px 8px; }"
-            f"#MobInfoContainer QPushButton:hover {{ background: {skins.rgba('#c8a951', 0.14)}; }}"
+            f"#MobInfoContainer QPushButton:hover {{"
+            f" background: {skins.rgba(self._skin.chrome_accent, 0.14)}; }}"
         )
         self._container.apply_skin(self._skin, self._settings.general.frame_opacity / 100)
-        self._mark.apply_skin(self._skin)
+        self._title_bar.apply_skin(self._skin)
 
     def _on_refresh_tick(self) -> None:
         """Poll-timer entry: no render work while hidden (showEvent re-renders
@@ -176,7 +173,9 @@ class MobInfoWindow(OverlayWindowBase):
         rows = []
         for entry in loot[:12]:
             price = f" — {entry.price}p" if entry.price and entry.price != "0" else ""
-            rows.append(f'<a href="{entry.url}" style="color:#9ecfff;">{entry.name}</a>{price}')
+            rows.append(
+                f'<a href="{entry.url}" style="color:{chrome.LINK};">{entry.name}</a>{price}'
+            )
         more = f"<br>… +{len(loot) - 12} more" if len(loot) > 12 else ""
         self._loot.setText("Known loot:<br>" + "<br>".join(rows) + more)
         self._loot.show()

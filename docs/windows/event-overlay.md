@@ -5,7 +5,9 @@ that sits over the game and renders these kinds of content:
 
 - **Alert text** — big centered outlined messages from
   [triggers](../features/triggers.md) (raid AOE warnings, failed feign,
-  charm break, …), in the trigger's color, cleared automatically.
+  charm break, …), in the trigger's color, cleared automatically. The alert
+  panel is centered within its configured region in every skin; other overlay
+  windows keep their normal row and column alignment.
 - **Timer bars** — countdown bars stacked bottom-center (AOE countdowns,
   trigger timers). Re-triggering a bar restarts it; bars vanish at zero.
 - **CH chain lanes** — one lane per heal target with green chips sliding
@@ -40,6 +42,10 @@ the Utility section) can be dragged independently to lay out the overlay.
     Make the overlay match your EQ window, not your whole monitor — alert
     text centers within the overlay region, so a full-monitor overlay on a
     windowed game puts alerts outside the game view.
+
+The alert's compact kicker follows the shared **UI / overlay font size**.
+Its large headline uses the independent **Alert headline size** control; both
+are on [Settings → Appearance](../settings/appearance.md).
 
 ## Tuning
 

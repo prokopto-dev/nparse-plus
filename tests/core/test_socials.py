@@ -7,6 +7,8 @@ from nparseplus.core.socials import (
     DEFAULT_BUTTONS,
     DEFAULT_COLOR,
     DEFAULT_PAGES,
+    DISPLAY_LINK_DELIM,
+    LINK_DELIM,
     MAX_LINES,
     DuplicateKind,
     Placement,
@@ -14,6 +16,8 @@ from nparseplus.core.socials import (
     SocialGrid,
     copy_socials,
     find_duplicates,
+    for_display,
+    from_display,
     normalize_socials,
     place_socials,
     push_socials,
@@ -383,3 +387,43 @@ def test_find_duplicates_does_not_group_name_only_macros_by_empty_body() -> None
         Social(page=1, button=2, name="Two", lines=[]),
     ]
     assert find_duplicates(socials) == []
+
+
+# -- item-link delimiters -------------------------------------------------------
+
+
+def test_for_display_makes_the_invisible_delimiter_visible() -> None:
+    """DC2 draws as nothing, so a perfectly good link reads on screen as random
+    hex glued to an item name — which looks exactly like a corrupted macro."""
+    line = f"/say look at this {LINK_DELIM}{'A' * 45}Fungi Tunic{LINK_DELIM}"
+    shown = for_display(line)
+    assert LINK_DELIM not in shown
+    assert shown.count(DISPLAY_LINK_DELIM) == 2
+    assert "Fungi Tunic" in shown
+
+
+def test_display_swapping_round_trips() -> None:
+    """What the editor shows must go back into the ini byte-identical, or
+    saving a macro you only looked at would break its links."""
+    for line in (
+        "",
+        "/say plain text",
+        f"{LINK_DELIM}{'0' * 45}Cloak{LINK_DELIM}",
+        f"a{LINK_DELIM}b{LINK_DELIM}c{LINK_DELIM}d{LINK_DELIM}e",
+    ):
+        assert from_display(for_display(line)) == line
+
+
+def test_typing_the_visible_glyph_is_how_you_write_a_delimiter() -> None:
+    """There is otherwise no way to enter DC2 from a keyboard, and a link you
+    cannot type is a link you cannot repair."""
+    assert from_display(f"/say {DISPLAY_LINK_DELIM}x{DISPLAY_LINK_DELIM}") == (
+        f"/say {LINK_DELIM}x{LINK_DELIM}"
+    )
+
+
+def test_the_stand_in_glyph_cannot_collide_with_real_macro_text() -> None:
+    """The client's charset is single-byte, so ␒ can never have come from the
+    game — which is what makes swapping it back unambiguous."""
+    assert ord(DISPLAY_LINK_DELIM) > 255
+    assert ord(LINK_DELIM) < 256

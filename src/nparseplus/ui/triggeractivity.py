@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from nparseplus.core.events import TriggerFiredEvent
+from nparseplus.ui import chromewidgets
 
 #: How many fires to keep. Bounded like the console's scrollback; a fire is
 #: far rarer than a log line, so this covers a long raid.
@@ -172,8 +173,9 @@ class TriggerActivityView(QWidget):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_context_menu)
 
-        hint = QLabel("Double-click a row to open that trigger in the editor.", self)
-        hint.setEnabled(False)  # muted, matches the app's de-emphasised labels
+        # Was setEnabled(False), which yields Qt's disabled-text role rather
+        # than the app's hint colour — and silently blocked text selection.
+        hint = chromewidgets.hint("Double-click a row to open that trigger in the editor.", self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)

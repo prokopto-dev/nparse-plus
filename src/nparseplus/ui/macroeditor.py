@@ -72,11 +72,12 @@ from nparseplus.core.socials_exchange import (
     sanitize_all,
 )
 from nparseplus.core.socialstore import SocialOrigin, SocialStore
+from nparseplus.ui import chromewidgets
+from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "macroeditor"
 DEFAULT_GEOMETRY = (220, 140, 940, 660)
 
-HINT_STYLE = "color: #888888; font-size: 11px;"
 GRID_COLUMNS = 2
 
 #: A glyph rather than colour alone, so the badge survives both themes and
@@ -199,7 +200,7 @@ class _MacroLineEdit(QLineEdit):
         super().keyPressEvent(event)
 
 
-class MacroEditorWindow(QWidget):
+class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     """Framed macro-editor tool window.
 
     Public API (for integration/tests): ``toggle()``, ``load()``,
@@ -216,9 +217,18 @@ class MacroEditorWindow(QWidget):
         store_dir: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
-        self._settings = settings
-        self._on_save = on_save
+        super().__init__(
+            settings=settings,
+            window_key=WINDOW_KEY,
+            title="Macro Editor",
+            default_geometry=DEFAULT_GEOMETRY,
+            on_save=on_save,
+            # See the trigger editor: framed, never on top, and deliberately
+            # not restore_visibility()'d.
+            default_state=WindowState(frameless=False, always_on_top=False, shown=False),
+            translucent=False,
+            parent=parent,
+        )
         self._store_dir = Path(store_dir) if store_dir is not None else None
 
         self._working: list[Social] = []
@@ -239,41 +249,42 @@ class MacroEditorWindow(QWidget):
         #: Set False (e.g. in tests) to skip the EQ-is-running warning.
         self.warn_eq_running = True
 
-        self.setWindowTitle("Macro Editor")
-        self.setWindowFlags(Qt.WindowType.Window)
-        self._restore_geometry()
-
         self._build_ui()
         self._refresh_characters()
         self._render()
+        self.apply_chrome()
 
-    # -- window state ---------------------------------------------------------
-
-    def _window_state(self) -> WindowState:
-        state = self._settings.windows.get(WINDOW_KEY)
-        if state is None:
-            state = WindowState(frameless=False, always_on_top=False, shown=False)
-            self._settings.windows[WINDOW_KEY] = state
-        return state
-
-    def _restore_geometry(self) -> None:
-        state = self._window_state()
-        self.setGeometry(*(state.geometry or DEFAULT_GEOMETRY))
-
-    def _persist_geometry(self) -> None:
-        state = self._window_state()
-        geo = self.geometry()
-        state.geometry = (geo.x(), geo.y(), geo.width(), geo.height())
-        state.shown = False
-        self._on_save()
+    # -- window state ----------------------------------------------------------
 
     def toggle(self) -> None:
+        """Deliberately close() rather than the base's hide().
+
+        closeEvent runs the unsaved-changes prompt; hiding would drop an edit
+        in progress with no warning at all.
+        """
         if self.isVisible():
             self.close()
         else:
             self.show()
             self.raise_()
             self.activateWindow()
+
+    # -- keep normal window mouse behavior -------------------------------------
+    # OverlayWindowBase drags the window by its body. In an editor full of text
+    # fields, a splitter and a tree that is exactly wrong: it would eat text
+    # selection and splitter drags. Same recipe as settingswindow/consolewindow.
+
+    def mousePressEvent(self, event) -> None:
+        QWidget.mousePressEvent(self, event)
+
+    def mouseMoveEvent(self, event) -> None:
+        QWidget.mouseMoveEvent(self, event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        QWidget.mouseReleaseEvent(self, event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        QWidget.mouseDoubleClickEvent(self, event)
 
     # -- UI construction ------------------------------------------------------
 
@@ -339,9 +350,7 @@ class MacroEditorWindow(QWidget):
         buttons.addWidget(close_button)
         root.addLayout(buttons)
 
-        self.status = QLabel("Load a character to see their macros.", self)
-        self.status.setWordWrap(True)
-        self.status.setStyleSheet(HINT_STYLE)
+        self.status = chromewidgets.hint("Load a character to see their macros.", self)
         root.addWidget(self.status)
 
     def _build_library_tab(self) -> QWidget:
@@ -354,9 +363,7 @@ class MacroEditorWindow(QWidget):
         self.library_tree.itemSelectionChanged.connect(self._library_selection_changed)
         layout.addWidget(self.library_tree, 1)
         row = QHBoxLayout()
-        self.library_status = QLabel("", page)
-        self.library_status.setWordWrap(True)
-        self.library_status.setStyleSheet(HINT_STYLE)
+        self.library_status = chromewidgets.hint("", page)
         self.restore_button = QPushButton("Restore from local copy", page)
         self.restore_button.clicked.connect(self.restore_from_local_copy)
         row.addWidget(self.library_status, 1)
@@ -395,12 +402,9 @@ class MacroEditorWindow(QWidget):
             "Type <b>/</b> for client commands or <b>%</b> for tokens like %T to autocomplete.",
             box,
         )
-        completion_hint.setWordWrap(True)
-        completion_hint.setStyleSheet(HINT_STYLE)
         form.addRow(completion_hint)
 
-        self.origin_label = QLabel("", box)
-        self.origin_label.setStyleSheet(HINT_STYLE)
+        self.origin_label = chromewidgets.hint("", box)
         self.origin_label.setWordWrap(True)
         form.addRow(self.origin_label)
 
@@ -610,7 +614,9 @@ class MacroEditorWindow(QWidget):
             if (page, button) in duplicates:
                 marks += DUPLICATE_BADGE
             label = f"{_slot_label(page, button)} {marks}  {social.name or '(unnamed)'}"
-            tooltip = f"{origin_text}\n" + "\n".join(social.lines)
+            tooltip = f"{origin_text}\n" + "\n".join(
+                socials_core.for_display(line) for line in social.lines
+            )
             group = duplicates.get((page, button))
             if group is not None:
                 others = [
@@ -629,7 +635,7 @@ class MacroEditorWindow(QWidget):
         # The filter dims rather than hides, so slot positions stay readable.
         dimmed = wanted is not None and (social is None or origin is not wanted)
         if dimmed:
-            widget.setStyleSheet("color: #777777;")
+            widget.setStyleSheet(f"color: {chromewidgets.current().disabled};")
         widget.setProperty("dimmed", dimmed)
         return widget
 
@@ -715,7 +721,9 @@ class MacroEditorWindow(QWidget):
             self.color_spin.setValue(social.color if social else socials_core.DEFAULT_COLOR)
             lines = list(social.lines) if social else []
             for index, edit in enumerate(self.line_edits):
-                edit.setText(lines[index] if index < len(lines) else "")
+                # Shown with visible delimiters; _commit_form puts the real
+                # ones back, so what lands in the ini is unchanged.
+                edit.setText(socials_core.for_display(lines[index]) if index < len(lines) else "")
             enabled = self._current is not None
             self.name_edit.setEnabled(enabled)
             self.color_spin.setEnabled(enabled)
@@ -746,7 +754,7 @@ class MacroEditorWindow(QWidget):
         if self._loading or self._current is None:
             return
         page, button = self._current
-        lines = [edit.text() for edit in self.line_edits]
+        lines = [socials_core.from_display(edit.text()) for edit in self.line_edits]
         candidate = Social(
             page=page,
             button=button,
@@ -779,7 +787,9 @@ class MacroEditorWindow(QWidget):
             return
         marks = badge + (DUPLICATE_BADGE if (page, button) in duplicates else "")
         widget.setText(f"{_slot_label(page, button)} {marks}  {social.name or '(unnamed)'}")
-        widget.setToolTip(f"{origin_text}\n" + "\n".join(social.lines))
+        widget.setToolTip(
+            f"{origin_text}\n" + "\n".join(socials_core.for_display(line) for line in social.lines)
+        )
 
     def _clear_current(self) -> None:
         if self._current is None:
@@ -1166,7 +1176,6 @@ class MacroEditorWindow(QWidget):
                 self.save_to_character()
             else:
                 self._dirty = False
-        self._persist_geometry()
         super().closeEvent(event)
 
 
@@ -1246,8 +1255,6 @@ class _DuplicatesDialog(QDialog):
             "clear a slot from the editor if you want it gone.",
             self,
         )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(HINT_STYLE)
         layout.addWidget(hint)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
         buttons.rejected.connect(self.reject)

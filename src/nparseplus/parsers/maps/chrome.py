@@ -19,29 +19,64 @@ should say) are testable without a live window.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-# The chrome's own palette. Deliberately NOT the overlay skin's: the map is a
-# single surface with one look, and the frame tokens a skin carries (plate,
-# notch, row style) have nothing to answer here. It matches the skins' shared
-# tan/black EQ register so the windows still read as one app.
-GOLD = "#c8a951"
-GOLD_DIM = "#8a7549"
-GOLD_BRIGHT = "#d4b675"
-INK = "rgba(6, 7, 10, 0.86)"
-INK_SOLID = "rgba(6, 7, 10, 0.96)"
-RULE = "#2b2519"
-EDGE = "#6b5a3a"
-GREEN = "#2f9e6e"
+from nparseplus.ui import chrome, skins
+
+# Status accents. These stay module constants because they mean a THING (a
+# reachable exit, a live recording) rather than "the chrome's gold" — see
+# ui/chrome.py on why the semantic token and the frame token must be free to
+# diverge even where they share a hex today.
+GREEN = chrome.GOOD
 GREEN_TEXT = "#7fe0b4"
-AMBER = "#d99b2b"
+AMBER = chrome.ROLL
 AMBER_TEXT = "#f0dcae"
 RED = "#e05a49"
-TEXT = "#e4e7f5"
-MUTED = "#595d6c"
+
+
+@dataclass(frozen=True)
+class MapColors:
+    """The map chrome's frame colours, derived from the active overlay skin.
+
+    These used to be module constants that happened to equal Duxa's, so the
+    map stayed tan no matter which skin you picked — the one surface the
+    picker did not reach. The map is still a single flat surface rather than a
+    plate-and-glass overlay (the frame tokens a skin carries have nothing to
+    answer here), but its INK and GOLD are the skin's now, so Velious gives
+    the header a warm stone ground and Ledger a dimmer brass.
+    """
+
+    gold: str
+    gold_dim: str
+    gold_bright: str
+    ink: str
+    ink_solid: str
+    rule: str
+    edge: str
+    text: str
+    muted: str
+
+
+def map_colors(skin: skins.Skin | None = None) -> MapColors:
+    """Map chrome colours for ``skin`` (the active one by default)."""
+    skin = skin if skin is not None else skins.skin()
+    base = skins.base_color(skin.plate)
+    return MapColors(
+        gold=skin.chrome_accent,
+        gold_dim=skin.plate_border,
+        gold_bright=skin.title_color,
+        ink=skins.rgba(base, 0.86),
+        ink_solid=skins.rgba(base, 0.96),
+        rule=skin.glass_border,
+        edge=skin.plate_border,
+        text=skin.name_color,
+        muted=skins.shade(skin.name_color, -0.55),
+    )
+
 
 #: Compass points, N first, clockwise — ``bearing_arrow`` indexes into this.
 ARROWS = ("↑", "↗", "→", "↘", "↓", "↙", "←", "↖")
@@ -138,11 +173,15 @@ def format_respawn(value) -> str:
 
 def _chip(text: str, color: str, tint: str, parent: QWidget) -> QLabel:
     label = QLabel(text, parent)
+    _style_chip(label, color, tint)
+    return label
+
+
+def _style_chip(label: QLabel, color: str, tint: str) -> None:
     label.setStyleSheet(
         f"color: {color}; background-color: {tint}; font-size: 9px; font-weight: bold;"
         f" letter-spacing: 0.6px; padding: 1px 6px;"
     )
-    return label
 
 
 class _Fading(QWidget):
@@ -157,7 +196,16 @@ class _Fading(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self._c = map_colors()
         self.hide()
+
+    def apply_skin(self, skin: skins.Skin | None = None) -> None:
+        """Re-derive this panel's colours and re-run its stylesheets."""
+        self._c = map_colors(skin)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        """Re-apply every stylesheet this panel owns from ``self._c``."""
 
 
 class MapHeader(_Fading):
@@ -171,16 +219,10 @@ class MapHeader(_Fading):
         super().__init__(parent)
         self._on_exit = on_exit
         self.setObjectName("MapHeader")
-        self.setStyleSheet(
-            f"#MapHeader {{ background-color: {INK_SOLID}; border-bottom: 1px solid {RULE}; }}"
-        )
 
         self._zone = QLabel("", self)
-        self._zone.setStyleSheet(
-            f"color: {GOLD_BRIGHT}; font-size: 10px; font-weight: bold; letter-spacing: 1.8px;"
-        )
         self._loc = _chip("—", AMBER_TEXT, "rgba(217, 155, 43, 0.14)", self)
-        self._z = _chip("Z —", GOLD, "rgba(200, 169, 81, 0.12)", self)
+        self._z = _chip("Z —", self._c.gold, "rgba(200, 169, 81, 0.12)", self)
 
         top = QHBoxLayout()
         top.setContentsMargins(8, 5, 8, 3)
@@ -190,9 +232,6 @@ class MapHeader(_Fading):
         top.addWidget(self._z, 0)
 
         self._exits_caption = QLabel("EXITS", self)
-        self._exits_caption.setStyleSheet(
-            f"color: {MUTED}; font-size: 8px; font-weight: bold; letter-spacing: 1.4px;"
-        )
         self._exits_row = QHBoxLayout()
         self._exits_row.setContentsMargins(0, 0, 0, 0)
         self._exits_row.setSpacing(4)
@@ -215,13 +254,31 @@ class MapHeader(_Fading):
         layout.setSpacing(0)
         layout.addLayout(top)
         layout.addLayout(bottom)
+        self._actions = (find, rail)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        self.setStyleSheet(
+            f"#MapHeader {{ background-color: {self._c.ink_solid};"
+            f" border-bottom: 1px solid {self._c.rule}; }}"
+        )
+        self._zone.setStyleSheet(
+            f"color: {self._c.gold_bright}; font-size: 10px; font-weight: bold;"
+            " letter-spacing: 1.8px;"
+        )
+        _style_chip(self._loc, AMBER_TEXT, "rgba(217, 155, 43, 0.14)")
+        _style_chip(self._z, self._c.gold, "rgba(200, 169, 81, 0.12)")
+        self._exits_caption.setStyleSheet(
+            f"color: {self._c.muted}; font-size: 8px; font-weight: bold; letter-spacing: 1.4px;"
+        )
+        for label in getattr(self, "_actions", ()):
+            label.setStyleSheet(
+                f"color: {self._c.gold}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
+            )
 
     def _action(self, text: str, callback) -> QLabel:
         label = QLabel(text, self)
         label.setCursor(Qt.CursorShape.PointingHandCursor)
-        label.setStyleSheet(
-            f"color: {GOLD}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
-        )
         label.mousePressEvent = lambda event, cb=callback: cb()
         return label
 
@@ -255,19 +312,26 @@ class MapToolbar(_Fading):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setObjectName("MapToolbar")
-        self.setStyleSheet(
-            f"#MapToolbar {{ background-color: {INK_SOLID}; border-top: 1px solid {RULE}; }}"
-        )
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
         self._buttons: dict[str, QLabel] = {}
+        self._on: dict[str, bool] = {}
         self._recording = QLabel("● REC TRAIL", self)
+        self._recording.hide()
+        self._restyle()
+
+    def _restyle(self) -> None:
+        self.setStyleSheet(
+            f"#MapToolbar {{ background-color: {self._c.ink_solid};"
+            f" border-top: 1px solid {self._c.rule}; }}"
+        )
         self._recording.setStyleSheet(
             f"color: {RED}; font-size: 8px; font-weight: bold; letter-spacing: 1.4px;"
-            f" padding: 5px 8px; border-left: 1px solid {RULE};"
+            f" padding: 5px 8px; border-left: 1px solid {self._c.rule};"
         )
-        self._recording.hide()
+        for key in self._buttons:
+            self.set_toggle(key, self._on.get(key, False))
 
     def add_toggle(self, key: str, text: str, tooltip: str, callback) -> None:
         label = QLabel(text, self)
@@ -287,10 +351,11 @@ class MapToolbar(_Fading):
         label = self._buttons.get(key)
         if label is None:
             return
-        color = GOLD if on else MUTED
+        self._on[key] = on
+        color = self._c.gold if on else self._c.muted
         label.setStyleSheet(
             f"color: {color}; font-size: 8px; font-weight: bold; letter-spacing: 1.4px;"
-            f" padding: 5px 8px; border-right: 1px solid {RULE};"
+            f" padding: 5px 8px; border-right: 1px solid {self._c.rule};"
         )
 
     def set_recording(self, on: bool) -> None:
@@ -316,6 +381,11 @@ class RecenterPuck(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setToolTip("Recenter on you")
+        self._c = map_colors()
+
+    def apply_skin(self, skin: skins.Skin | None = None) -> None:
+        self._c = map_colors(skin)
+        self.update()
 
     def set_offset(self, arrow: str, distance: str) -> None:
         """``("", "")`` = centred (the muted state)."""
@@ -338,10 +408,14 @@ class RecenterPuck(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(1, 1, -1, -1)
         lit = self.is_lit()
-        painter.setBrush(QColor(6, 7, 10, 220 if lit else 179))
-        painter.setPen(QColor(GOLD) if lit else QColor(107, 90, 58, 140))
+        ground = QColor(skins.base_color((self._c.ink_solid,)))
+        ground.setAlpha(220 if lit else 179)
+        painter.setBrush(ground)
+        dim = QColor(self._c.edge)
+        dim.setAlpha(140)
+        painter.setPen(QColor(self._c.gold) if lit else dim)
         painter.drawEllipse(rect)
-        painter.setPen(QColor(GREEN_TEXT) if lit else QColor(107, 90, 58))
+        painter.setPen(QColor(GREEN_TEXT) if lit else QColor(self._c.edge))
         font = painter.font()
         if lit:
             font.setPixelSize(15)
@@ -354,7 +428,7 @@ class RecenterPuck(QWidget):
             )
             font.setPixelSize(9)
             painter.setFont(font)
-            painter.setPen(QColor(GOLD_BRIGHT))
+            painter.setPen(QColor(self._c.gold_bright))
             painter.drawText(
                 QRect(rect.left(), rect.top() + 21, rect.width(), 12),
                 Qt.AlignmentFlag.AlignHCenter,
@@ -379,15 +453,23 @@ class ZoneEdgeTab(QWidget):
         super().__init__(parent)
         text = f"{name} {arrow}" if not vertical else f"{arrow} {name}"
         self._label = QLabel(text.upper(), self)
-        side = "border-bottom" if vertical else "border-right"
-        self._label.setStyleSheet(
-            f"color: {GREEN_TEXT}; background-color: {INK_SOLID};"
-            f" font-size: 9px; font-weight: bold; letter-spacing: 1px;"
-            f" padding: 2px 6px; {side}: 2px solid {GREEN};"
-        )
+        self._side = "border-bottom" if vertical else "border-right"
+        self._c = map_colors()
+        self._restyle()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._label)
+
+    def apply_skin(self, skin: skins.Skin | None = None) -> None:
+        self._c = map_colors(skin)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        self._label.setStyleSheet(
+            f"color: {GREEN_TEXT}; background-color: {self._c.ink_solid};"
+            f" font-size: 9px; font-weight: bold; letter-spacing: 1px;"
+            f" padding: 2px 6px; {self._side}: 2px solid {GREEN};"
+        )
 
 
 class MapRail(_Fading):
@@ -404,18 +486,27 @@ class MapRail(_Fading):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setObjectName("MapRail")
-        self.setStyleSheet(
-            f"#MapRail {{ background-color: {INK_SOLID}; border-left: 1px solid {EDGE}; }}"
-        )
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
         self._rows: list[QWidget] = []
+        #: Last rebuild()'s arguments, so a skin change can re-render in place.
+        self._last: tuple | None = None
+        self._restyle()
+
+    def _restyle(self) -> None:
+        self.setStyleSheet(
+            f"#MapRail {{ background-color: {self._c.ink_solid};"
+            f" border-left: 1px solid {self._c.edge}; }}"
+        )
+        if self._last is not None:
+            self.rebuild(*self._last)
 
     def rebuild(self, zone: str, sections: list[tuple[str, list[tuple[str, str, str]]]]) -> None:
         """Re-render. ``sections`` is ``[(caption, [(name, value, accent), …])]``;
         an empty section is dropped rather than shown as a heading with nothing
         under it."""
+        self._last = (zone, sections)
         for row in self._rows:
             self._layout.removeWidget(row)
             row.deleteLater()
@@ -423,8 +514,9 @@ class MapRail(_Fading):
 
         title = QLabel(zone.upper(), self)
         title.setStyleSheet(
-            f"color: {GOLD_BRIGHT}; font-size: 9px; font-weight: bold; letter-spacing: 1.8px;"
-            f" padding: 6px 9px; border-bottom: 1px solid {RULE};"
+            f"color: {self._c.gold_bright}; font-size: 9px; font-weight: bold;"
+            f" letter-spacing: 1.8px; padding: 6px 9px;"
+            f" border-bottom: 1px solid {self._c.rule};"
         )
         self._add(title)
         for caption, entries in sections:
@@ -432,7 +524,8 @@ class MapRail(_Fading):
                 continue
             head = QLabel(f"{caption}   {len(entries)}", self)
             head.setStyleSheet(
-                f"color: {GOLD_DIM}; font-size: 8px; font-weight: bold; letter-spacing: 1.6px;"
+                f"color: {self._c.gold_dim}; font-size: 8px; font-weight: bold;"
+                " letter-spacing: 1.6px;"
                 " padding: 8px 9px 3px;"
             )
             self._add(head)
@@ -441,8 +534,8 @@ class MapRail(_Fading):
         self._layout.addStretch(1)
         hint = QLabel("TAB TO DISMISS", self)
         hint.setStyleSheet(
-            f"color: {MUTED}; font-size: 8px; letter-spacing: 1px; padding: 5px 9px;"
-            f" border-top: 1px solid {RULE};"
+            f"color: {self._c.muted}; font-size: 8px; letter-spacing: 1px; padding: 5px 9px;"
+            f" border-top: 1px solid {self._c.rule};"
         )
         self._add(hint)
 
@@ -456,9 +549,9 @@ class MapRail(_Fading):
         layout.setContentsMargins(9, 2, 9, 2)
         layout.setSpacing(6)
         label = QLabel(name, row)
-        label.setStyleSheet(f"color: {TEXT}; font-size: 10px;")
+        label.setStyleSheet(f"color: {self._c.text}; font-size: 10px;")
         amount = QLabel(value, row)
-        amount.setStyleSheet(f"color: {MUTED}; font-size: 9px;")
+        amount.setStyleSheet(f"color: {self._c.muted}; font-size: 9px;")
         layout.addWidget(label, 1)
         layout.addWidget(amount, 0)
         row.setStyleSheet(f"border-left: 2px solid {accent};")

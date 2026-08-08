@@ -1,13 +1,21 @@
-"""UI palette — the dark/light theme switch (eqtool #148).
+"""UI palette — the app's colour values, as opposed to its skin.
 
-The DARK values are the exact literals the windows used before theming
-existed (zero visual regression); LIGHT is the alternative set. app.py calls
-``set_theme`` once at startup from ``settings.general.theme`` and picks the
-matching stylesheet file (data/ui/_.css vs light.css) for the legacy windows;
-theme changes take effect on restart.
+One palette, deliberately. nParse+ renders on top of EverQuest, where a pale
+panel is a flashbang, so every surface is dark; a light alternative existed
+briefly (eqtool #148) and bought nothing but a second set of values to keep in
+sync and a restart to switch between them.
 
-The full-screen event overlay is deliberately NOT themed: it renders over the
-game, where translucent dark panels are right in both themes.
+What survives is the split that does earn its keep, with ``ui/skins.py``:
+
+    the palette owns VALUE, the skin owns HUE.
+
+A palette answers "what colour is body text, a field background, a page
+ground" — the readability floor, which no skin may move. A :class:`Skin`
+answers "what does the window's edge look like, how loud is the title" and
+contributes one accent on top. ``ui/chrome.py`` composes the two for the
+config windows; the overlays read both directly.
+
+Qt-free, like skins.py and chrome.py.
 """
 
 from __future__ import annotations
@@ -29,6 +37,13 @@ class Palette:
     map_input_bg: str  # maps search box / results chrome
     map_input_text: str
     map_input_border: str
+    # -- config surfaces (Settings, the editors, the plugin manager) -------
+    # ``map_input_*`` above already means "an input field", so ``chrome_for``
+    # aliases the field tokens to them rather than duplicating.
+    surface: str  # a config window's ground
+    surface_alt: str  # a raised strip on it (group box, header band)
+    hint: str  # de-emphasised caption under a field
+    disabled: str  # a control the user cannot reach right now
 
 
 DARK = Palette(
@@ -44,36 +59,18 @@ DARK = Palette(
     map_input_bg="#050505",
     map_input_text="white",
     map_input_border="#333",
+    surface="#16171b",
+    surface_alt="#1d1f24",
+    hint="#8b8f9a",
+    disabled="#5a5e69",
 )
-
-LIGHT = Palette(
-    name="light",
-    panel_bg="rgba(245, 245, 245, 215)",
-    text="#222222",
-    heading="#000000",
-    bar_track="rgba(0, 0, 0, 40)",
-    warning_text="#c62828",
-    dps_you="#9a6d00",
-    dps_dead_header="rgba(220, 150, 150, 190)",
-    dps_live_header="rgba(150, 190, 230, 190)",
-    map_input_bg="#f5f5f5",
-    map_input_text="#222222",
-    map_input_border="#bbb",
-)
-
-_PALETTES = {"dark": DARK, "light": LIGHT}
-_current = DARK
-
-
-def set_theme(name: str) -> None:
-    global _current
-    _current = _PALETTES.get(name, DARK)
 
 
 def palette() -> Palette:
-    return _current
+    """The app's colour values.
 
-
-def stylesheet_filename() -> str:
-    """The legacy-window stylesheet for the active theme (under data/ui/)."""
-    return "_.css" if _current is DARK else "light.css"
+    A function rather than a bare constant so the call sites read the same as
+    ``skins.skin()`` and so a second palette, if one is ever justified again,
+    lands here instead of in every caller.
+    """
+    return DARK

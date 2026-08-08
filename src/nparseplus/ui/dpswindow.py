@@ -20,7 +20,12 @@ from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightRow, SessionSummary
 from nparseplus.ui import skins, theme
 from nparseplus.ui.overlaybase import OverlayWindowBase
-from nparseplus.ui.skinwidgets import GemMark, SkinPanel, paint_full_row_bar, set_caps
+from nparseplus.ui.skinwidgets import (
+    SkinPanel,
+    SkinTitleBar,
+    paint_full_row_bar,
+    set_caps,
+)
 
 WINDOW_KEY = "dps"
 REFRESH_INTERVAL_MS = 500
@@ -89,7 +94,7 @@ class _AttackerRow(QFrame):
         top, right, bottom, left = skin.row_pad
         self.layout().setContentsMargins(left, top, right, bottom)
         if skin.row_style == "full":
-            self.setFixedHeight(skin.row_height + 2)
+            self.setFixedHeight(skins.full_row_height(skin, font_size) + 2)
         else:
             self.setMinimumHeight(0)
             self.setMaximumHeight(16777215)
@@ -154,18 +159,9 @@ class DpsMeterWindow(OverlayWindowBase):
         self.setObjectName("DpsMeterWindow")
         self.setMinimumSize(220, 140)
         self._skin = skins.skin()
-        self._font_size = max(8, backend.settings.general.font_size)
+        self._font_size = max(6, backend.settings.general.font_size)
 
-        self._mark = GemMark(self._skin, self)
-        self._title = QLabel("DPS METER", self)
-        self._title.setObjectName("SkinTitle")
-        self._title_bar = QWidget(self)
-        self._title_bar.setObjectName("SkinTitleBar")
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(6, 3, 6, 3)
-        title_layout.setSpacing(6)
-        title_layout.addWidget(self._mark, 0)
-        title_layout.addWidget(self._title, 1)
+        self._title_bar = SkinTitleBar(self._skin, "DPS METER", parent=self)
 
         self._rows_layout = QVBoxLayout()
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -220,25 +216,34 @@ class DpsMeterWindow(OverlayWindowBase):
     def apply_skin(self) -> None:
         """Re-style from the active skin — live, no restart (see spellwindow)."""
         self._skin = skins.skin()
-        self._font_size = max(8, self._backend.settings.general.font_size)
+        self._font_size = max(6, self._backend.settings.general.font_size)
         colors = theme.palette()
+        footer_caption = skins.typography_style(
+            self._font_size,
+            skins.TypographyRole(0.68, "bold", 0.18),
+            color=self._skin.plate_border,
+        )
+        footer_value = skins.typography_style(
+            self._font_size, skins.NUMERIC_TEXT, color=self._skin.title_color
+        )
         self.setStyleSheet(
             skins.overlay_window_style(self._skin, colors, self._font_size)
             + skins.title_bar_style(self._skin, self._font_size)
             + f"#DpsRowDamage {{ color: {colors.text}; background: transparent;"
-            f" font-size: {skins.px(self._font_size, 0.88)}px; }}"
+            f" {skins.typography_style(self._font_size, skins.TypographyRole(0.88))} }}"
             f"#DpsRowPercent {{ color: {self._skin.plate_border}; background: transparent;"
-            f" font-size: {skins.px(self._font_size, 0.82)}px; }}"
+            f" {skins.typography_style(self._font_size, skins.TypographyRole(0.82))} }}"
             f"#DpsFooter {{ background: {skins.gradient(tuple(reversed(self._skin.title_fill)))};"
             f" border-top: 1px solid {self._skin.title_rule}; }}"
-            f"#DpsFooterCaption {{ color: {self._skin.plate_border}; background: transparent;"
-            f" font-size: {skins.px(self._font_size, 0.68)}px; font-weight: bold;"
-            f" letter-spacing: {skins.tracking(self._font_size, 0.68, 0.18)}; }}"
-            f"#DpsFooterValue {{ color: {self._skin.title_color}; background: transparent;"
-            f" font-size: {skins.px(self._font_size, 1.05)}px; font-weight: bold; }}"
+            f"#DpsFooterCaption {{ background: transparent;"
+            f" {footer_caption}"
+            " }"
+            f"#DpsFooterValue {{ background: transparent;"
+            f" {footer_value}"
+            " }"
         )
         self._container.apply_skin(self._skin, self._backend.settings.general.frame_opacity / 100)
-        self._mark.apply_skin(self._skin)
+        self._title_bar.apply_skin(self._skin)
         for header in self._headers.values():
             self._style_header(header, bool(getattr(header, "_styled_dead", False)))
         for row in self._rows.values():

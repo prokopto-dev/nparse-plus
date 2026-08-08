@@ -85,6 +85,21 @@ def test_reconcile_never_touches_persistent_markers(maps: Maps) -> None:
     assert "Tester's corpse" in maps._map._data.waypoints
 
 
+def test_persistent_waypoint_keys_sees_only_corpse_markers(maps: Maps) -> None:
+    """What the context menu counts. A plain waypoint is not a corpse."""
+    maps._map.add_persistent_waypoint("Tester's corpse", MapPoint(x=1.0, y=2.0, z=0.0))
+    maps._map.add_waypoint("Someone:1789.0", MapPoint(x=3.0, y=4.0, z=0.0), "waypoint")
+    assert maps._map.persistent_waypoint_keys() == ["Tester's corpse"]
+
+
+def test_clearing_corpse_markers_leaves_other_waypoints_alone(maps: Maps) -> None:
+    maps._map.add_persistent_waypoint("Tester's corpse", MapPoint(x=1.0, y=2.0, z=0.0))
+    maps._map.add_waypoint("Someone:1789.0", MapPoint(x=3.0, y=4.0, z=0.0), "waypoint")
+    maps._map.clear_persistent_waypoints()
+    assert maps._map.persistent_waypoint_keys() == []
+    assert "Someone:1789.0" in maps._map._data.waypoints
+
+
 def test_corpse_marker_draws_and_persists(maps: Maps) -> None:
     from nparseplus.config.settings import MapMarkerStore, Settings
     from nparseplus.core.events import CorpseMarkerEvent
@@ -107,3 +122,26 @@ def test_corpse_marker_draws_and_persists(maps: Maps) -> None:
     assert (drawn.location.x, drawn.location.y) == (-222.0, -111.0)
     saved = store._settings.map_markers["freportw"].user_waypoints
     assert [w.name for w in saved] == ["Tester's corpse"]
+
+
+# -- the zone-line exits toggle -------------------------------------------------
+
+
+def test_zone_lines_toggle_gates_every_exit_surface(maps: Maps) -> None:
+    """Header chips, edge tabs and the rail's ZONE LINES section are one
+    answer to "which way out" shown three ways. They all read one gate, so
+    turning it off actually clears the screen instead of leaving two of them."""
+    config.data["maps"]["show_zone_lines"] = True
+    with_lines = maps._zone_line_exits()
+    assert with_lines, "west freeport should have zone lines to gate"
+
+    config.data["maps"]["show_zone_lines"] = False
+    assert maps._zone_line_exits() == []
+
+
+def test_zone_lines_default_on(tmp_path) -> None:
+    """It was always-on before the toggle existed; a new key must not
+    silently turn a feature off for everyone who upgrades."""
+    config.load(str(tmp_path / "nparse.config.json"))
+    config.verify_settings()
+    assert config.data["maps"]["show_zone_lines"] is True

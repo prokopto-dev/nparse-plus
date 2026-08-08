@@ -32,7 +32,7 @@ The map spends its pixels on the map. Everything else is summoned:
   step back out when it leaves. The header names the zone, your last
   `/loc` with its age, the Z band you are on, and the zone's exits (click
   one to flash it). The toolbar carries the display toggles in words —
-  POI, OTHERS, FOLLOW, LAYERS, GRID, LOC, FRAME — plus a **REC TRAIL**
+  POI, OTHERS, FOLLOW, LAYERS, GRID, LOC, EXITS, FRAME — plus a **REC TRAIL**
   light while a path recording is running.
 - **Edge tabs** name each exit on the border you would leave through,
   while the pointer is away. They stand down once the header is up, since
@@ -44,6 +44,12 @@ The map spends its pixels on the map. Everything else is summoned:
   respawn timer, its zone lines, your markers, who is sharing with you,
   and any trail being recorded. Sections with nothing in them are not
   shown rather than shown empty.
+
+!!! tip "Turning the exit signposting off"
+    A zone with six zone lines gets six edge tabs on your border plus chips
+    in the header. **EXITS** on the toolbar turns all of it off at once —
+    the edge tabs, the header chips and the rail's ZONE LINES section — and
+    it is on by default.
 
 ## NPC search and the notables list
 

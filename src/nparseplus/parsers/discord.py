@@ -19,6 +19,7 @@ except ImportError:  # QtWebEngine missing/broken on this system (Linux libs)
 
 from nparseplus.helpers import config
 from nparseplus.helpers.parser import ParserWindow
+from nparseplus.ui import chrome, chromewidgets
 
 JS_ADD_CSS_TEMPLATE = """(
 function() {
@@ -69,28 +70,6 @@ CSS_HIDE_HEADER = (
     "       !important;"
     "}"
 )
-CSS_MENU = """
-#ParserWindowMenu QPushButton:hover {{
-    background: darkgreen;
-}}
-#ParserWindowMenu QPushButton:checked {{
-    color: white;
-}}
-#ParserWindowMenu QPushButton {{
-    color: rgba(255, 255, 255, {alpha});
-}}
-#ParserWindowMenuReal {{
-    background-color:rgba({red},{green},{blue},{alpha})
-}}
-#ParserWindowMenuReal QPushButton {{
-    background-color:rgba({red},{green},{blue},0)
-}}
-#ParserWindowMoveButton {{
-    color: rgba(255,255,255,{alpha})
-}}
-#ParserWindowTitle {{
-    color: rgba(200, 200, 200, {alpha})
-}}"""
 HTML_NO_CONFIG = """
 <html><font color='lightgrey' size='5px'>
 Hover this window and click the gear icon to configure your Discord overlay.
@@ -157,13 +136,23 @@ class Discord(ParserWindow):
         intcolor = int(self._color.replace("#", "0x"), 16)
         qcolor = QColor(intcolor)
         self._menu.setStyleSheet(
-            CSS_MENU.format(
-                red=qcolor.red(),
-                green=qcolor.green(),
-                blue=qcolor.blue(),
-                alpha=self._window_opacity / 100,
+            chrome.discord_menu_style(
+                chromewidgets.current(),
+                qcolor.red(),
+                qcolor.green(),
+                qcolor.blue(),
+                self._window_opacity / 100,
             )
         )
+
+    def apply_skin(self):
+        """Re-dress the menu strip for the active skin.
+
+        ``window_handles["discord"]`` is already wired, so _apply_appearance's
+        duck-typed loop reaches this. The web view below is Discord's own page
+        and is deliberately untouched.
+        """
+        self.update_background_color()
 
     def _setup_webview(self):
         setup_button = QPushButton("\u2699")

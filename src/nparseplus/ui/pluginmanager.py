@@ -65,6 +65,7 @@ from nparseplus.core.plugins.updatecheck import (
     same_source_updates,
     updates_by_id,
 )
+from nparseplus.ui import chromewidgets
 from nparseplus.ui.pluginconsent import CONSENT_WARNING
 from nparseplus.ui.pluginregistries import REGISTRY_WARNING, RegistryListWidget
 from nparseplus.ui.settingswindow import SettingsPageSpec
@@ -230,9 +231,7 @@ class PluginManagerPage(QWidget):
         self._check_button.clicked.connect(self.start_update_check)
         self._update_all_button = QPushButton("Update all", self)
         self._update_all_button.clicked.connect(self._update_all)
-        self._status = QLabel("", self)
-        self._status.setWordWrap(True)
-        self._status.setStyleSheet("color: #888888; font-size: 11px;")
+        self._status = chromewidgets.hint("", self)
 
         self._browse_button = QPushButton("Browse registry…", self)
         self._browse_button.clicked.connect(self._browse_registry)
@@ -269,8 +268,6 @@ class PluginManagerPage(QWidget):
             "next time nParse+ starts.",
             self,
         )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #888888; font-size: 11px;")
 
         self._registries = RegistryListWidget(host, self)
         registries_box = QGroupBox("Plugin registries", self)

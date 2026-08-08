@@ -135,6 +135,7 @@ def verify_settings():
     )
     data["maps"]["scale"] = get_setting(data["maps"].get("scale", 0.07), 0.07)
     data["maps"]["show_grid"] = get_setting(data["maps"].get("show_grid", True), True)
+    data["maps"]["show_zone_lines"] = get_setting(data["maps"].get("show_zone_lines", True), True)
     data["maps"]["show_mouse_location"] = get_setting(
         data["maps"].get("show_mouse_location", True), True
     )

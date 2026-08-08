@@ -45,9 +45,14 @@ from nparseplus.core.timers import (
     fraction_remaining,
     group_rows_for_display,
 )
-from nparseplus.ui import appquit, skins, theme
+from nparseplus.ui import appquit, chrome, skins, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
-from nparseplus.ui.skinwidgets import GemMark, SkinPanel, paint_full_row_bar, set_caps
+from nparseplus.ui.skinwidgets import (
+    SkinPanel,
+    SkinTitleBar,
+    paint_full_row_bar,
+    set_caps,
+)
 from nparseplus.ui.spellicons import ICON_SIZE, spell_icon_pixmap
 
 WINDOW_KEY = "spells"
@@ -55,12 +60,15 @@ REFRESH_INTERVAL_MS = 250
 FLASH_INTERVAL_MS = 500  # post-expiry rebuff-prompt flash cadence (#16)
 DEFAULT_GEOMETRY = (400, 0, 220, 400)
 
-# Progress-bar chunk colors per row kind.
-COLOR_BENEFICIAL = "#2f9e6e"  # green
-COLOR_DETRIMENTAL = "#c0392b"  # red-ish
-COLOR_COOLDOWN = "#3a7bd5"  # blue
-COLOR_TIMER = "#8e5bd1"  # purple
-COLOR_ROLL = "#d99b2b"  # amber
+# Progress-bar chunk colors per row kind. These name a row's MEANING, so they
+# read from the semantic tokens rather than repeating the hex — several of
+# which are shared with unrelated surfaces (a zone exit is the same green) and
+# must stay free to diverge.
+COLOR_BENEFICIAL = chrome.GOOD
+COLOR_DETRIMENTAL = chrome.BAD
+COLOR_COOLDOWN = chrome.COOLDOWN
+COLOR_TIMER = chrome.TIMER
+COLOR_ROLL = chrome.ROLL
 
 BAR_MAX = 1000
 
@@ -282,7 +290,7 @@ class _RowWidget(QFrame):
         full = skin.row_style == "full"
         self._bar.setVisible(not full and not self.expired)
         if full:
-            self.setFixedHeight(skin.row_height)
+            self.setFixedHeight(skins.full_row_height(skin, font_size))
             self.layout().setSpacing(0)
         else:
             self.setMinimumHeight(0)
@@ -447,22 +455,11 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self.setWindowOpacity(state.opacity)
 
         self._skin = skins.skin()
-        self._font_size = max(8, backend.settings.general.font_size)
+        self._font_size = max(6, backend.settings.general.font_size)
 
         # Skinned title bar: the gem mark + the window's caps.
-        self._mark = GemMark(self._skin, self)
-        self._title = QLabel("SPELL TIMERS", self)
-        self._title.setObjectName("SkinTitle")
-        self._title_count = QLabel("", self)
-        self._title_count.setObjectName("SkinTitleCount")
-        self._title_bar = QWidget(self)
-        self._title_bar.setObjectName("SkinTitleBar")
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(6, 3, 6, 3)
-        title_layout.setSpacing(6)
-        title_layout.addWidget(self._mark, 0)
-        title_layout.addWidget(self._title, 1)
-        title_layout.addWidget(self._title_count, 0)
+        self._title_bar = SkinTitleBar(self._skin, "SPELL TIMERS", count=True, parent=self)
+        self._title_count = self._title_bar.count
 
         self._rows_layout = QVBoxLayout()
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -780,13 +777,13 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         able to re-dress itself in place.
         """
         self._skin = skins.skin()
-        self._font_size = max(8, self._backend.settings.general.font_size)
+        self._font_size = max(6, self._backend.settings.general.font_size)
         self.setStyleSheet(
             skins.overlay_window_style(self._skin, theme.palette(), self._font_size)
             + skins.title_bar_style(self._skin, self._font_size)
         )
         self._container.apply_skin(self._skin, self._backend.settings.general.frame_opacity / 100)
-        self._mark.apply_skin(self._skin)
+        self._title_bar.apply_skin(self._skin)
         for header in self._headers.values():
             kind = header.property("kind") or skins.KIND_PLAYER
             header.setStyleSheet(skins.header_style(self._skin, self._font_size, kind))

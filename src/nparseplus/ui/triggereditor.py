@@ -71,6 +71,8 @@ from nparseplus.core.triggers.model import (
     trigger_group_key,
 )
 from nparseplus.core.zones import load_zone_database
+from nparseplus.ui import chromewidgets
+from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus.ui.triggeractivity import TriggerActivityView
 
 WINDOW_KEY = "triggereditor"
@@ -121,7 +123,7 @@ def _hms(total_seconds: float) -> tuple[int, int, int]:
     return hours, minutes, seconds
 
 
-class TriggerEditorWindow(QWidget):
+class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     """Framed trigger-editor tool window.
 
     Public API (for integration/tests): ``toggle()``, ``apply()``,
@@ -140,10 +142,20 @@ class TriggerEditorWindow(QWidget):
         on_save: Callable[[], None],
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
-        self._settings = settings
+        super().__init__(
+            settings=settings,
+            window_key=WINDOW_KEY,
+            title="Trigger Editor",
+            default_geometry=DEFAULT_GEOMETRY,
+            on_save=on_save,
+            # Framed, never on top, and never auto-reopened: an editor popping
+            # open at launch is surprising in a way an overlay is not, so
+            # restore_visibility() is deliberately not called below.
+            default_state=WindowState(frameless=False, always_on_top=False, shown=False),
+            translucent=False,
+            parent=parent,
+        )
         self._engine = engine
-        self._on_save = on_save
 
         self._working: list[Trigger] = [
             t.model_copy(deep=True) for t in (settings.triggers or engine.triggers)
@@ -160,41 +172,42 @@ class TriggerEditorWindow(QWidget):
         #: Set False (e.g. in tests) to skip the delete-group confirmation prompt.
         self.confirm_delete = True
 
-        self.setWindowTitle("Trigger Editor")
-        self.setWindowFlags(Qt.WindowType.Window)
-        self._restore_geometry()
-
         self._build_ui()
         self._rebuild_tree()
         self._load_form(None)
+        self.apply_chrome()
 
     # -- window state ----------------------------------------------------------
 
-    def _window_state(self) -> WindowState:
-        state = self._settings.windows.get(WINDOW_KEY)
-        if state is None:
-            state = WindowState(frameless=False, always_on_top=False, shown=False)
-            self._settings.windows[WINDOW_KEY] = state
-        return state
-
-    def _restore_geometry(self) -> None:
-        state = self._window_state()
-        self.setGeometry(*(state.geometry or DEFAULT_GEOMETRY))
-
-    def _persist_geometry(self) -> None:
-        state = self._window_state()
-        geo = self.geometry()
-        state.geometry = (geo.x(), geo.y(), geo.width(), geo.height())
-        state.shown = False
-        self._on_save()
-
     def toggle(self) -> None:
+        """Deliberately close() rather than the base's hide().
+
+        closeEvent runs the unsaved-changes prompt; hiding would drop an edit
+        in progress with no warning at all.
+        """
         if self.isVisible():
             self.close()
         else:
             self.show()
             self.raise_()
             self.activateWindow()
+
+    # -- keep normal window mouse behavior -------------------------------------
+    # OverlayWindowBase drags the window by its body. In an editor full of text
+    # fields, a splitter and a tree that is exactly wrong: it would eat text
+    # selection and splitter drags. Same recipe as settingswindow/consolewindow.
+
+    def mousePressEvent(self, event) -> None:
+        QWidget.mousePressEvent(self, event)
+
+    def mouseMoveEvent(self, event) -> None:
+        QWidget.mouseMoveEvent(self, event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        QWidget.mouseReleaseEvent(self, event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        QWidget.mouseDoubleClickEvent(self, event)
 
     # -- UI construction --------------------------------------------------------
 
@@ -1210,7 +1223,6 @@ class TriggerEditorWindow(QWidget):
                 self.apply()
             else:
                 self._discard_changes()
-        self._persist_geometry()
         super().closeEvent(event)
 
 

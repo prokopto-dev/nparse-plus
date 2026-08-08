@@ -752,8 +752,12 @@ class MapCanvas(QGraphicsView):
             self.persist_markers()
         self.update_()
 
+    def persistent_waypoint_keys(self):
+        """Keys of the corpse markers currently on this zone's map."""
+        return [k for k, w in self._data.waypoints.items() if getattr(w, "persistent", False)]
+
     def clear_persistent_waypoints(self):
-        for key in [k for k, w in self._data.waypoints.items() if getattr(w, "persistent", False)]:
+        for key in self.persistent_waypoint_keys():
             self.remove_waypoint(key)
         self.persist_markers()
         self.update_()
@@ -826,7 +830,16 @@ class MapCanvas(QGraphicsView):
         way_point_menu = menu.addMenu("Way Point")
         way_point_create = way_point_menu.addAction("Create on Cursor")
         way_point_delete = way_point_menu.addAction("Clear")
-        corpse_clear = way_point_menu.addAction("Clear Corpse Markers")
+        # Top level, not under "Way Point": a corpse marker is not a waypoint
+        # to the person looking for it, and it is the one map item that piles
+        # up on its own. Counted so you know what you are about to lose, and
+        # disabled rather than hidden so its absence reads as "none here"
+        # instead of "this build cannot do that".
+        corpses = len(self.persistent_waypoint_keys())
+        corpse_clear = menu.addAction(
+            f"Clear Corpse Markers ({corpses})" if corpses else "Clear Corpse Markers"
+        )
+        corpse_clear.setEnabled(bool(corpses))
         pathing_menu = menu.addMenu("Custom Pathing")
         pathing_start_recording = QAction("Start Recording")
         pathing_rename_recording = QAction("Rename Path")

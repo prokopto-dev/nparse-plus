@@ -158,10 +158,8 @@ def _build_backend():
     from nparseplus.composition import build_backend
     from nparseplus.config.settings import PlayerInfo, Settings
     from nparseplus.core.enums import PlayerClass, Server
-    from nparseplus.ui import theme
 
     settings = Settings()
-    settings.general.theme = "dark"
     settings.general.update_check = False
     settings.general.eq_log_dir = SCRATCH
     settings.sharing.mode = "off"
@@ -175,7 +173,6 @@ def _build_backend():
             map_location_sharing="everyone",
         )
     )
-    theme.set_theme("dark")
     backend = build_backend(settings, speaker=_StubSpeaker())
     backend.player.reset_for("Xantik", Server.GREEN)
     return backend, settings
@@ -840,59 +837,25 @@ PHASE_A = {
 }
 
 
-def _apply_dark_palette(app) -> None:
-    """A dark Fusion palette so the standard-widget windows (settings, trigger
-    editor) render dark offscreen. The app itself sets no palette — on a real
-    machine those windows inherit the OS theme (dark on a dark desktop); this
-    reproduces that deterministically for the docs, which want the dark theme.
-    """
-    from PySide6.QtGui import QColor, QPalette
-
-    app.setStyle("Fusion")
-    window = QColor("#2d2f36")
-    base = QColor("#1e2026")
-    text = QColor("#dddddd")
-    disabled = QColor("#7a7d85")
-    accent = QColor("#3584e4")
-    pal = QPalette()
-    for role, color in (
-        (QPalette.ColorRole.Window, window),
-        (QPalette.ColorRole.WindowText, text),
-        (QPalette.ColorRole.Base, base),
-        (QPalette.ColorRole.AlternateBase, window),
-        (QPalette.ColorRole.Text, text),
-        (QPalette.ColorRole.Button, window),
-        (QPalette.ColorRole.ButtonText, text),
-        (QPalette.ColorRole.ToolTipBase, base),
-        (QPalette.ColorRole.ToolTipText, text),
-        (QPalette.ColorRole.PlaceholderText, disabled),
-        (QPalette.ColorRole.Highlight, accent),
-        (QPalette.ColorRole.HighlightedText, QColor("#ffffff")),
-    ):
-        pal.setColor(role, color)
-    for role in (
-        QPalette.ColorRole.Text,
-        QPalette.ColorRole.ButtonText,
-        QPalette.ColorRole.WindowText,
-    ):
-        pal.setColor(QPalette.ColorGroup.Disabled, role, disabled)
-    app.setPalette(pal)
-
-
 def _apply_app_chrome(app) -> None:
-    """Dark palette + the app's global QSS + fonts, so standard-widget windows
-    (settings, trigger editor) render in the dark theme like app.create_app."""
+    """Dress the standard-widget windows exactly as ``app.create_app`` does.
+
+    This used to hand-roll a dark Fusion palette and read data/ui/_.css, which
+    only approximated the real thing — the docs could drift from the app
+    without anyone noticing. Both are generated now, so call the same function
+    the app calls and the screenshots cannot disagree with what ships.
+    """
     from PySide6.QtGui import QFontDatabase
 
-    from nparseplus.ui import theme
-
-    _apply_dark_palette(app)
-    css_path = REPO_ROOT / "data" / "ui" / theme.stylesheet_filename()
-    app.setStyleSheet(css_path.read_text(encoding="utf-8"))
     for font in ("NotoSans-Regular.ttf", "NotoSans-Bold.ttf"):
         path = REPO_ROOT / "data" / "fonts" / font
         if path.is_file():
             QFontDatabase.addApplicationFont(str(path))
+
+    from nparseplus.ui import chromewidgets
+
+    app.setStyle("Fusion")
+    chromewidgets.apply_app_chrome(app, 12)
 
 
 def run_phase_a(only: set[str] | None) -> None:
@@ -923,7 +886,6 @@ def _write_scratch_settings(path: Path) -> None:
     from nparseplus.core.enums import PlayerClass
 
     s = Settings()
-    s.general.theme = "dark"
     s.general.update_check = False
     s.general.eq_log_dir = SCRATCH
     s.sharing.mode = "off"
@@ -1053,7 +1015,8 @@ def _run_phase_b_captures(scratch_settings: Path, only: set[str] | None) -> None
 
     ctx = create_app([sys.argv[0]], settings_file=scratch_settings)  # do NOT start()
     app = ctx.app
-    _apply_dark_palette(app)  # dark tray menu (the app sets no palette itself)
+    # create_app now sets the Fusion style, palette and app sheet itself, so
+    # the tray menu and every window are already dressed.
     legacy_config.APP_EXIT = True  # suppress config writes on any teardown path
 
     restore = freeze_now(mapcanvas)

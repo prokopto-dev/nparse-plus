@@ -41,7 +41,7 @@ same network, so your raid sees no difference.
 - **nParse+ adds** the [Discord overlay](../windows/discord-overlay.md),
   the self-hostable `nparse` sharing mode, window layout presets, in-game
   [window-toggle commands](../windows/index.md#in-game-chat-commands),
-  per-window click-through/opacity, and a light theme.
+  per-window click-through/opacity, and three overlay skins.
 - **EQTool still gets new features first** — nParse+ ports them after.
   If a brand-new EQTool feature is missing, check the
   [release notes](https://github.com/prokopto-dev/nparse-plus/releases)

@@ -46,9 +46,9 @@ def test_every_skin_tints_every_header_kind() -> None:
 def test_set_skin_falls_back_to_the_default_on_an_unknown_name() -> None:
     try:
         skins.set_skin("velious")
-        assert skins.raw_skin() is skins.VELIOUS
+        assert skins.skin() is skins.VELIOUS
         skins.set_skin("nonsense")
-        assert skins.raw_skin() is skins.SKINS[skins.DEFAULT_SKIN]
+        assert skins.skin() is skins.SKINS[skins.DEFAULT_SKIN]
     finally:
         skins.set_skin(skins.DEFAULT_SKIN)
 
@@ -76,6 +76,22 @@ def test_shade_moves_toward_white_and_black_without_leaving_the_ramp() -> None:
 def test_shade_clamps_instead_of_overflowing() -> None:
     assert skins.shade("#ffffff", 0.9) == "#ffffff"
     assert skins.shade("#000000", -0.9) == "#000000"
+
+
+def test_base_color_reads_a_fill_in_any_notation() -> None:
+    """A skin's plate may be hex, rgba() or transparent; a caller that wants a
+    color rather than a fill wants one answer."""
+    assert skins.base_color(("#3a3122", "#241e14")) == "#3a3122"
+    assert skins.base_color(("rgba(6, 7, 10, 219)",)) == "#06070a"
+    assert skins.base_color(("rgb(6, 7, 10)",)) == "#06070a"
+    assert skins.base_color(("transparent",)) == "#000000"
+    assert skins.base_color(()) == "#000000"
+
+
+def test_base_color_survives_every_shipped_plate_and_glass() -> None:
+    for skin in skins.SKINS.values():
+        for stops in (skin.plate, skin.glass, skin.title_fill):
+            assert skins.base_color(stops).startswith("#")
 
 
 def test_rgba_carries_the_alpha_through() -> None:
@@ -114,6 +130,32 @@ def test_tracking_is_expressed_in_px_because_qt_has_no_em() -> None:
     assert skins.tracking(12, 1.0, 0.2) == "2.40px"
 
 
+def test_typography_roles_name_the_bundled_family_and_scale_from_the_setting() -> None:
+    body = skins.typography_style(12, skins.BODY_TEXT)
+    large_body = skins.typography_style(24, skins.BODY_TEXT)
+    assert f'font-family: "{skins.NOTO_SANS}"' in body
+    assert "font-size: 10px" in body
+    assert "font-size: 20px" in large_body
+
+
+def test_only_display_typography_is_tracked() -> None:
+    display = skins.typography_style(12, skins.SMALL_DISPLAY)
+    body = skins.typography_style(12, skins.BODY_TEXT)
+    numeric = skins.typography_style(12, skins.NUMERIC_TEXT)
+    assert "letter-spacing:" in display
+    assert "letter-spacing:" not in body
+    assert "letter-spacing:" not in numeric
+
+
+def test_ledger_row_height_preserves_default_geometry_and_grows_for_large_type() -> None:
+    assert skins.full_row_height(skins.LEDGER, 12) == skins.LEDGER.row_height
+    assert skins.full_row_height(skins.LEDGER, 32) > skins.LEDGER.row_height
+
+
+def test_overlay_type_roles_honor_the_settings_minimum() -> None:
+    assert "font-size: 7px" in skins.typography_style(6, skins.BODY_TEXT)
+
+
 # -- stylesheet builders --------------------------------------------------------
 
 
@@ -147,35 +189,30 @@ def test_overlay_window_style_names_the_shared_row_objects() -> None:
     style = skins.overlay_window_style(skins.DUXA, theme.DARK, 12)
     for selector in ("#SkinTitle", "#SkinRowName", "#SkinRowValue", "QScrollBar"):
         assert selector in style
+    assert f'font-family: "{skins.NOTO_SANS}"' in style
 
 
-# -- theme adaptation -----------------------------------------------------------
+def test_titles_and_group_headers_use_the_tracked_display_role() -> None:
+    title = skins.title_style(skins.DUXA, 12)
+    header = skins.header_style(skins.DUXA, 12, skins.KIND_PLAYER)
+    for style in (title, header):
+        assert f'font-family: "{skins.NOTO_SANS}"' in style
+        assert "font-weight: bold" in style
+        assert "letter-spacing:" in style
 
 
-def test_skins_pass_through_unchanged_on_the_dark_theme() -> None:
-    assert skins.DUXA.resolved(theme.DARK) is skins.DUXA
+def test_the_skin_needs_no_theme_adaptation() -> None:
+    """One palette means what a skin declares is what every surface gets."""
+    assert not hasattr(skins.DUXA, "resolved")
+    assert not hasattr(skins, "raw_skin")
 
 
-def test_light_theme_lifts_the_glass_but_keeps_the_skins_geometry() -> None:
-    """A dark plate under the light theme would be a hole in the desktop; the
-    frame's SHAPE is the user's choice and must survive."""
-    light = skins.VELIOUS.resolved(theme.LIGHT)
-    assert light is not skins.VELIOUS
-    assert light.notch == skins.VELIOUS.notch
-    assert light.row_style == skins.VELIOUS.row_style
-    assert light.plate_padding == skins.VELIOUS.plate_padding
-    assert light.glass != skins.VELIOUS.glass
-    assert light.title_color == skins.VELIOUS.title_color  # the gold stays gold
-
-
-def test_skin_reads_through_the_active_theme() -> None:
-    try:
-        skins.set_skin("duxa")
-        theme.set_theme("light")
-        assert skins.skin().glass != skins.DUXA.glass
-        assert skins.raw_skin() is skins.DUXA  # the picker still previews the real one
-        theme.set_theme("dark")
-        assert skins.skin() is skins.DUXA
-    finally:
-        theme.set_theme("dark")
-        skins.set_skin(skins.DEFAULT_SKIN)
+def test_the_new_overlay_fields_are_visible_under_every_skin() -> None:
+    """These exist precisely because deriving them broke on Ledger, whose
+    ``overlay_bar_bg`` is transparent and whose ``mark_color`` is empty."""
+    for skin in skins.SKINS.values():
+        assert skin.lane_bg and skin.lane_bg != "transparent", skin.name
+        assert skin.lane_border, skin.name
+        assert skin.overlay_chip_fill and skin.overlay_chip_text, skin.name
+        assert skin.chrome_accent, skin.name
+        assert skin.chrome_band and skin.chrome_band[0] != "transparent", skin.name

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -41,7 +41,7 @@ from nparseplus.core.events import (
     TimerBarEvent,
 )
 from nparseplus.core.timers import seconds_left, snap_to_second
-from nparseplus.ui import skins
+from nparseplus.ui import chrome, skins
 from nparseplus.ui.overlaybase import start_second_aligned
 from nparseplus.ui.skinwidgets import paint_hairline, qcolor, set_caps
 
@@ -52,6 +52,13 @@ LANES_WIDTH = 520
 DEFAULT_TEXT_COLOR = "red"
 DEFAULT_BAR_COLOR = "steelblue"
 DEFAULT_TEXT_SIZE = 32
+# An alert that does not fit its region is shrunk to fit rather than clipped.
+# A raid warning cut off mid-sentence is worse than a small one: the whole
+# point is that it is readable at a glance without looking away from the game.
+MIN_ALERT_TEXT_SIZE = 12
+# What a headline may occupy of the overlay's height before it shrinks.
+ALERT_HEIGHT_FRACTION = 0.42
+DEFAULT_FONT_SIZE = 12
 DEFAULT_EMPHASIS = "pulse"
 # Alert pulse cadence. Slow on purpose: fast enough to catch the eye at the
 # edge of vision, slow enough that reading the word is never a chase.
@@ -98,6 +105,9 @@ DEFAULT_CH_LANE_RETENTION_S = 20.0
 # past ``max(retention, chip flight) + grace`` regardless of chip bookkeeping.
 CH_LANE_SWEEP_MS = 1000
 CH_LANE_FORCE_GRACE_S = 1.0
+# A chip is one lane cell wide and must stay legible at that size, so its type
+# is pinned rather than following general.font_size like everything else.
+CH_CHIP_FONT_SIZE = 11
 
 
 def split_alert_text(text: str) -> tuple[str, str]:
@@ -114,6 +124,28 @@ def split_alert_text(text: str) -> tuple[str, str]:
         if found and head.strip() and tail.strip():
             return head.strip(), tail.strip()
     return "", text
+
+
+def fit_text_size(
+    measure: Callable[[int], QRect],
+    max_height: int,
+    max_size: int,
+    min_size: int = MIN_ALERT_TEXT_SIZE,
+) -> int:
+    """The largest size in ``[min_size, max_size]`` whose wrapped text fits.
+
+    ``measure(size)`` returns the rect the text would occupy at that size;
+    injecting it keeps the search itself Qt-free and testable. Steps down one
+    px at a time rather than binary-searching: the range is ~30 wide, it runs
+    once per alert, and monotonicity is an assumption worth not making about
+    a font's line-breaking.
+    """
+    if max_size <= min_size:
+        return max_size
+    for size in range(max_size, min_size - 1, -1):
+        if measure(size).height() <= max_height:
+            return size
+    return min_size
 
 
 class _Hairline(QWidget):
@@ -178,9 +210,25 @@ class _ChainLane(QFrame):
         self.row: QWidget | None = None
         self.setObjectName("ChChainLane")
         self.setFixedHeight(CH_LANE_HEIGHT)
+        self.apply_skin(skins.skin())
+
+    def apply_skin(self, skin: skins.Skin) -> None:
+        """Re-dress this lane. Called for live lanes on a skin change, so a
+        chain already on screen mid-raid changes with everything else."""
+        self._skin = skin
         self.setStyleSheet(
-            "#ChChainLane { background-color: rgba(0, 0, 0, 130);"
-            " border: 1px solid rgba(255, 255, 255, 60); border-radius: 3px; }"
+            f"#ChChainLane {{ background-color: {skin.lane_bg};"
+            f" border: 1px solid {skin.lane_border}; border-radius: 3px; }}"
+        )
+        for chip in self.chips:
+            self._style_chip(chip)
+
+    def _style_chip(self, chip: QLabel) -> None:
+        skin = self._skin
+        chip.setStyleSheet(
+            skins.typography_style(CH_CHIP_FONT_SIZE, skins.SMALL_DISPLAY, color=chrome.PILL_TEXT)
+            + f" background-color: {chrome.GOOD};"
+            f" border: 1px solid {skin.glass_border}; border-radius: 3px;"
         )
 
     def cell_width(self) -> int:
@@ -230,10 +278,7 @@ class _ChainLane(QFrame):
         # Pin the chip to exactly one second-marker cell (EQTool: chip width =
         # ActualWidth / 10) so each cell stays exactly 1 s of chip travel.
         chip.setFixedSize(self.cell_width(), CH_LANE_HEIGHT - 6)
-        chip.setStyleSheet(
-            "background-color: forestgreen; color: white; font-weight: bold;"
-            " border: 1px solid black; border-radius: 3px;"
-        )
+        self._style_chip(chip)
         return chip
 
     def add_chip(self, position: str) -> QLabel:
@@ -281,6 +326,7 @@ class EventOverlayWindow(QWidget):
         state: WindowState | None = None,
         on_save: Callable[[], None] | None = None,
         text_shadow: bool = True,
+        font_size: int = DEFAULT_FONT_SIZE,
         text_size: int = DEFAULT_TEXT_SIZE,
         emphasis: str = DEFAULT_EMPHASIS,
         parent: QWidget | None = None,
@@ -293,6 +339,7 @@ class EventOverlayWindow(QWidget):
         # The blur effect is re-evaluated per repaint of this translucent
         # always-on-top surface — expensive on macOS; setting-gated.
         self._text_shadow = text_shadow
+        self._font_size = max(6, int(font_size))
         self._text_size = max(10, int(text_size))
         self._emphasis = emphasis if emphasis in ("plain", "pulse", "glow") else DEFAULT_EMPHASIS
         self._skin = skins.skin()
@@ -302,6 +349,10 @@ class EventOverlayWindow(QWidget):
         self._edit_mode = False
         self._drag_offset: QPoint | None = None
         self.setObjectName("EventOverlayWindow")
+        # Child labels with role-specific sizes/weights inherit the same
+        # bundled family too; this covers utility lines, CH lanes and timer
+        # bars without turning their data text into tracked display caps.
+        self.setStyleSheet(f'font-family: "{skins.NOTO_SANS}";')
         self.setWindowTitle("Event Overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -392,10 +443,7 @@ class EventOverlayWindow(QWidget):
         self._utility_header = QLabel("Utility", self)
         self._utility_header.setObjectName("OverlayUtilityHeader")
         self._utility_header.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._utility_header.setStyleSheet(
-            "color: #dddddd; background-color: rgba(30, 60, 120, 200);"
-            " font-size: 12px; font-weight: bold; padding: 1px 6px; border-radius: 3px;"
-        )
+        set_caps(self._utility_header)
         self._utility_header.hide()
         self._utility_layout.addWidget(self._utility_header, 0, Qt.AlignmentFlag.AlignHCenter)
         self._utility_host = QWidget(self)
@@ -423,10 +471,7 @@ class EventOverlayWindow(QWidget):
             ("bars", "Timer bars"),
         ):
             chip = QLabel(text, self)
-            chip.setStyleSheet(
-                "color: white; background-color: rgba(30, 60, 120, 220);"
-                " font-size: 11px; font-weight: bold; padding: 1px 4px;"
-            )
+            set_caps(chip)
             chip.hide()
             self._region_titles[key] = chip
 
@@ -451,10 +496,7 @@ class EventOverlayWindow(QWidget):
             self,
         )
         self._edit_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._edit_hint.setStyleSheet(
-            "color: white; font-size: 16px; font-weight: bold;"
-            " background-color: rgba(30, 60, 120, 120);"
-        )
+        self._edit_hint.setObjectName("OverlayEditHint")
         self._edit_hint.hide()
         self._size_grip = QSizeGrip(self)
         self._size_grip.setFixedSize(24, 24)
@@ -475,17 +517,23 @@ class EventOverlayWindow(QWidget):
     # -- skin --------------------------------------------------------------------
 
     def apply_skin(
-        self, text_size: int | None = None, emphasis: str | None = None, shadow: bool | None = None
+        self,
+        font_size: int | None = None,
+        text_size: int | None = None,
+        emphasis: str | None = None,
+        shadow: bool | None = None,
     ) -> None:
         """Re-dress the on-game surface from the active skin — live.
 
         The overlay is the one surface that sits directly on EverQuest, so it
         follows the skin like every other window but never follows the *theme*
         (a pale panel over the game is a flashbang; ``ui/theme.py`` says the
-        same). Optional arguments let Settings push a changed text size,
-        emphasis or shadow through in the same call.
+        same). Optional arguments let Settings push changed base typography,
+        headline size, emphasis or shadow through in the same call.
         """
         self._skin = skins.skin()
+        if font_size is not None:
+            self._font_size = max(6, int(font_size))
         if text_size is not None:
             self._text_size = max(10, int(text_size))
         if emphasis is not None and emphasis in ("plain", "pulse", "glow"):
@@ -494,23 +542,48 @@ class EventOverlayWindow(QWidget):
             self._text_shadow = shadow
             self._center_text.setGraphicsEffect(None)
             self._apply_text_shadow(self._center_text)
-
         skin = self._skin
-        align = (
-            Qt.AlignmentFlag.AlignLeft
-            if skin.alert_align == "left"
-            else Qt.AlignmentFlag.AlignHCenter
-        )
+        align = Qt.AlignmentFlag.AlignHCenter
         for widget in (self._alert_kicker, self._center_text):
             widget.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
         for widget in (self._alert_kicker, self._center_text, self._alert_rule):
             self._alert_layout.setAlignment(widget, align)
-        kicker_size = max(8, round(self._text_size * skin.alert_kicker_scale * 0.34))
-        self._alert_kicker.setStyleSheet(
-            f"color: {skin.alert_kicker_color}; font-size: {kicker_size}px;"
-            " font-weight: bold; background: transparent;"
-            f" letter-spacing: {kicker_size * skin.alert_kicker_tracking:.2f}px;"
+        kicker_role = skins.TypographyRole(
+            skin.alert_kicker_scale, "bold", skin.alert_kicker_tracking
         )
+        self._alert_kicker.setStyleSheet(
+            skins.typography_style(self._font_size, kicker_role, color=skin.alert_kicker_color)
+            + " background: transparent;"
+        )
+        display_style = skins.typography_style(
+            self._font_size, skins.SMALL_DISPLAY, color=skin.overlay_chip_text
+        )
+        self._utility_header.setStyleSheet(
+            display_style + f" background-color: {skin.overlay_chip_fill};"
+            " padding: 1px 6px; border-radius: 3px;"
+        )
+        for chip in self._region_titles.values():
+            chip.setStyleSheet(
+                display_style + f" background-color: {skin.overlay_chip_fill}; padding: 1px 4px;"
+            )
+        self._edit_hint.setStyleSheet(
+            skins.typography_style(
+                self._font_size, skins.TypographyRole(1.3, "bold"), color=skin.overlay_chip_text
+            )
+            + f" background-color: {skins.rgba(skins.base_color((skin.overlay_chip_fill,)), 0.55)};"
+        )
+        for lane in self._chain_lanes.values():
+            lane.apply_skin(skin)
+            if lane.row is not None:
+                for label in lane.row.findChildren(QLabel):
+                    if label.objectName() == "ChLaneName":
+                        label.setStyleSheet(
+                            skins.typography_style(
+                                self._font_size, skins.SMALL_DISPLAY, color=skin.name_color
+                            )
+                        )
+        for label in self._utility_lines.values():
+            label.setStyleSheet(self._utility_line_style(label.property("line_color")))
         self._alert_rule.apply_skin(skin)
         self._restyle_alert()
         for entry in self._bars.values():
@@ -518,7 +591,22 @@ class EventOverlayWindow(QWidget):
         for widget in self._preview_widgets:
             if isinstance(widget, QProgressBar):
                 self._style_bar(widget)
+            elif widget.objectName() == "EventOverlayPreviewAlert":
+                self._style_preview_alert(widget)
         self._sync_pulse()
+
+    def _utility_line_style(self, color: str) -> str:
+        """One line in the Utility section.
+
+        ``color`` is the caller's: for a live line it comes from the trigger's
+        own config through ``resolve_color`` and is the user's choice, so it is
+        deliberately NOT a skin token. Only the size and weight are ours.
+        """
+        role = skins.TypographyRole(1.0, "bold")
+        return (
+            skins.typography_style(max(12, round(self._text_size * 0.62)), role, color=color)
+            + " background: transparent;"
+        )
 
     def _sync_pulse(self) -> None:
         """Run the pulse timer only while an alert is up and asking for it."""
@@ -718,7 +806,8 @@ class EventOverlayWindow(QWidget):
             title = self._region_titles[key]
             if on:
                 host.setStyleSheet(
-                    f"#{host.objectName()} {{ border: 1px dashed rgba(255, 255, 255, 170); }}"
+                    f"#{host.objectName()} {{ border: 1px dashed"
+                    f" {skins.rgba(self._skin.chrome_accent, 0.66)}; }}"
                 )
                 title.show()
                 title.raise_()
@@ -760,18 +849,17 @@ class EventOverlayWindow(QWidget):
         # the bard counter). Divergence from the Phase-1 note: inserted into the
         # alert host's layout (not the main layout) so it rides the alert region.
         label = QLabel("ENRAGED", self)
-        label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft
-            if self._skin.alert_align == "left"
-            else Qt.AlignmentFlag.AlignHCenter
-        )
+        label.setObjectName("EventOverlayPreviewAlert")
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         label.setWordWrap(True)
-        label.setStyleSheet(
-            f"color: yellow; font-size: {self._text_size}px; font-weight: bold;"
-            " background: transparent;"
-        )
+        self._style_preview_alert(label)
         self._apply_text_shadow(label)
-        self._alert_layout.insertWidget(self._alert_layout.indexOf(self._center_text) + 1, label)
+        self._alert_layout.insertWidget(
+            self._alert_layout.indexOf(self._center_text) + 1,
+            label,
+            0,
+            Qt.AlignmentFlag.AlignHCenter,
+        )
         label.show()
         self._preview_widgets.append(label)
 
@@ -780,7 +868,8 @@ class EventOverlayWindow(QWidget):
         util = QLabel("Rebuff: Sample — buff faded", self)
         util.setObjectName("OverlayUtilityLine")
         util.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        util.setStyleSheet("color: #ffd479; font-size: 20px; font-weight: bold;")
+        util.setProperty("line_color", self._skin.alert_kicker_color)
+        util.setStyleSheet(self._utility_line_style(self._skin.alert_kicker_color))
         self._utility_layout.addWidget(util, 0, Qt.AlignmentFlag.AlignHCenter)
         util.show()
         self._preview_widgets.append(util)
@@ -884,7 +973,12 @@ class EventOverlayWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(CH_LANE_NAME_GAP)
         name = QLabel(row)
-        name.setStyleSheet("color: #cccccc; font-size: 11px; font-weight: bold;")
+        name.setObjectName("ChLaneName")
+        name.setStyleSheet(
+            skins.typography_style(
+                self._font_size, skins.SMALL_DISPLAY, color=self._skin.name_color
+            )
+        )
         name.setFixedWidth(CH_LANE_NAME_WIDTH)
         name.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         metrics = QFontMetrics(name.font())
@@ -971,7 +1065,11 @@ class EventOverlayWindow(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             self._utility_layout.addWidget(label, 0, Qt.AlignmentFlag.AlignHCenter)
             self._utility_lines[event.text] = label
-        label.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: bold;")
+        # ``color`` comes from the trigger's own config via resolve_color — it
+        # is the user's choice and must NOT become a skin token. Only the size
+        # and weight below are ours.
+        label.setProperty("line_color", color)
+        label.setStyleSheet(self._utility_line_style(color))
         label.show()
         # Self-clearing safety net; the trigger engine also sends a reset.
         timer = self._utility_timers.get(event.text)
@@ -1093,17 +1191,55 @@ class EventOverlayWindow(QWidget):
                 self._apply_text_shadow(self._center_text)
             self._restyle_alert()
 
+    def _headline_size(self) -> int:
+        """The headline's size after shrink-to-fit.
+
+        Long alerts (a full raid-mob description pasted into a trigger) used to
+        wrap past the bottom of the region and clip mid-word.
+        """
+        text = self._center_text.text()
+        if not text:
+            return self._text_size
+        width = self._alert_host.width() or self.width()
+        width = max(80, width - 8)
+        height = max(40, round((self.height() or 600) * ALERT_HEIGHT_FRACTION))
+
+        def measure(size: int) -> QRect:
+            font = QFont(self._center_text.font())
+            font.setPixelSize(size)
+            font.setBold(True)
+            return QFontMetrics(font).boundingRect(
+                QRect(0, 0, width, 0),
+                int(Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignHCenter),
+                text,
+            )
+
+        return fit_text_size(measure, height, self._text_size)
+
     def _restyle_alert(self) -> None:
-        """Paint the headline at the current size, color and pulse phase."""
+        """Paint the headline at the fitted size, color and pulse phase."""
         color = self._text_color or DEFAULT_TEXT_COLOR
         if not self._pulse_on:
             dim = qcolor(color)
             dim.setAlpha(round(255 * PULSE_DIM))
             color = f"rgba({dim.red()}, {dim.green()}, {dim.blue()}, {dim.alpha()})"
         self._center_text.setStyleSheet(
-            f"color: {color}; font-size: {self._text_size}px; font-weight: bold;"
-            " background: transparent;"
+            skins.typography_style(
+                self._headline_size(), skins.TypographyRole(1.0, "bold"), color=color
+            )
+            + " background: transparent;"
         )
+
+    def _style_preview_alert(self, label: QLabel) -> None:
+        """Keep an existing edit-mode sample in step with live appearance."""
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        label.setStyleSheet(
+            skins.typography_style(
+                self._text_size, skins.TypographyRole(1.0, "bold"), color="yellow"
+            )
+            + " background: transparent;"
+        )
+        self._alert_layout.setAlignment(label, Qt.AlignmentFlag.AlignHCenter)
 
     def clear_text(self) -> None:
         self._clear_timer.stop()
@@ -1137,7 +1273,7 @@ class EventOverlayWindow(QWidget):
         text_size = max(8, round(skin.overlay_bar_height * 0.5))
         if name is not None:
             name.setStyleSheet(
-                f"color: #f3f5fe; font-size: {text_size}px; font-weight: bold;"
+                f"color: {skin.value_color}; font-size: {text_size}px; font-weight: bold;"
                 " background: transparent;"
             )
         if value is not None:

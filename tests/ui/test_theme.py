@@ -1,15 +1,11 @@
-"""Theme palette (eqtool #148): dark stays byte-identical to the pre-theme
-literals; light defines every field; the css siblings stay in sync."""
+"""Theme palette: one dark set of values, byte-identical to the pre-theme
+literals it replaced, plus the config-surface tokens ui/chrome.py composes."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import fields
-from pathlib import Path
 
 from nparseplus.ui import theme
-
-REPO = Path(__file__).resolve().parents[2]
 
 
 def test_dark_matches_pre_theme_literals() -> None:
@@ -24,30 +20,20 @@ def test_dark_matches_pre_theme_literals() -> None:
     assert dark.dps_live_header == "rgba(0, 40, 80, 190)"
 
 
-def test_both_palettes_define_every_field() -> None:
-    for palette in (theme.DARK, theme.LIGHT):
-        for field in fields(palette):
-            assert getattr(palette, field.name), (palette.name, field.name)
+def test_the_palette_defines_every_field() -> None:
+    for field in fields(theme.DARK):
+        assert getattr(theme.DARK, field.name), field.name
 
 
-def test_set_theme_switches_palette_and_stylesheet() -> None:
-    try:
-        theme.set_theme("light")
-        assert theme.palette() is theme.LIGHT
-        assert theme.stylesheet_filename() == "light.css"
-        theme.set_theme("nonsense")  # unknown values fall back to dark
-        assert theme.palette() is theme.DARK
-        assert theme.stylesheet_filename() == "_.css"
-    finally:
-        theme.set_theme("dark")
+def test_palette_is_the_single_source() -> None:
+    """There is one palette; ``palette()`` exists so call sites read like
+    ``skins.skin()`` rather than reaching for a module constant."""
+    assert theme.palette() is theme.DARK
 
 
-def _selectors(css: str) -> set[str]:
-    css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    return set(re.findall(r"^\s*([#A-Za-z][^{}]*?)\s*\{", css, re.MULTILINE))
-
-
-def test_light_css_covers_the_same_selectors_as_dark() -> None:
-    dark = (REPO / "data" / "ui" / "_.css").read_text()
-    light = (REPO / "data" / "ui" / "light.css").read_text()
-    assert _selectors(light) == _selectors(dark)
+def test_the_light_theme_is_gone() -> None:
+    """It bought a second set of values to keep in sync and a restart to
+    switch between them, on an app that renders over a dark game."""
+    assert not hasattr(theme, "LIGHT")
+    assert not hasattr(theme, "set_theme")
+    assert not hasattr(theme, "stylesheet_filename")

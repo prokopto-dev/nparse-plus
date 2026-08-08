@@ -625,3 +625,68 @@ def test_unsaved_changes_discard_on_close(env: Env, monkeypatch) -> None:
     win.close()
     assert len(env.settings.triggers) == EXPECTED_BUILTIN_COUNT  # edit was discarded
     assert not env.engine.set_calls
+
+
+# -- the shared window base (phase 6) -------------------------------------------
+
+
+def test_the_editor_persists_geometry_through_the_shared_base(qtbot, tmp_path) -> None:
+    from nparseplus.config.settings import Settings
+
+    saves: list[int] = []
+    settings = Settings()
+    window = TriggerEditorWindow(settings, FakeEngine(), on_save=lambda: saves.append(1))
+    qtbot.addWidget(window)
+    window.setGeometry(11, 22, 640, 480)
+    window.persist_state()
+    assert settings.windows["triggereditor"].geometry == (11, 22, 640, 480)
+    assert saves
+
+
+def test_the_windows_page_opacity_now_reaches_the_editor(qtbot) -> None:
+    """These rows existed but silently did nothing: settingswindow gates on
+    hasattr(handle, "apply_window_state"), which a raw QWidget never had."""
+    from nparseplus.config.settings import Settings
+
+    settings = Settings()
+    window = TriggerEditorWindow(settings, FakeEngine(), on_save=lambda: None)
+    qtbot.addWidget(window)
+    assert hasattr(window, "apply_window_state")
+    settings.windows["triggereditor"].opacity = 0.5
+    window.apply_window_state()
+    # Qt stores window opacity as 8-bit, so 0.5 comes back as 0.498.
+    assert window.windowOpacity() == pytest.approx(0.5, abs=0.01)
+
+
+def test_toggle_still_closes_so_the_unsaved_prompt_runs(qtbot) -> None:
+    """The base's toggle() hides. Hiding an editor mid-edit would drop the
+    change with no prompt, because closeEvent is what asks."""
+    import inspect
+
+    source = inspect.getsource(TriggerEditorWindow.toggle)
+    assert "self.close()" in source
+    assert "self.hide()" not in source
+
+
+def test_the_editor_does_not_reopen_itself_at_launch(qtbot) -> None:
+    """OverlayWindowBase only restores visibility when a subclass asks; the
+    editors deliberately never do."""
+    import inspect
+    import re
+
+    source = inspect.getsource(TriggerEditorWindow)
+    # The call, not the word — the constructor comments on why it is absent.
+    assert not re.search(r"self\.restore_visibility\(\)", source)
+
+
+def test_the_editor_keeps_plain_widget_mouse_handling(qtbot) -> None:
+    """The base drags the window by its body — in a window full of text fields
+    and a splitter that eats selection and splitter drags."""
+    from PySide6.QtWidgets import QWidget
+
+    from nparseplus.ui.overlaybase import OverlayWindowBase
+
+    for name in ("mousePressEvent", "mouseMoveEvent", "mouseReleaseEvent"):
+        own = getattr(TriggerEditorWindow, name)
+        assert own is not getattr(OverlayWindowBase, name), name
+        assert own is not getattr(QWidget, name), name
