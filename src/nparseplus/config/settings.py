@@ -81,12 +81,10 @@ class GeneralSettings(BaseModel):
     eq_log_dir: Path = Field(default_factory=_default_eq_log_dir)
     eq_install_dir: Path | None = None
     update_check: bool = True
-    # UI theme (eqtool #148); applied at startup, restart to change.
-    theme: Literal["dark", "light"] = "dark"
     font_size: int = Field(default=12, ge=6)
     # Overlay skin (ui/skins.py): the frame, type hierarchy and bar geometry
-    # of every in-fight overlay AND the on-game event text. Unlike ``theme``
-    # this applies live — the tray's UI Skin submenu switches it mid-fight.
+    # of every in-fight overlay AND the on-game event text. Applies live —
+    # the tray's UI Skin submenu switches it mid-fight.
     skin: Literal["duxa", "velious", "ledger"] = "duxa"
     # Alpha of the skin's frame plate and glass, as a percent. Text, bars and
     # icons are never dimmed by it — that is the whole point of splitting it

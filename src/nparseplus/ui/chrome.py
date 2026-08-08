@@ -32,6 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nparseplus.ui.skins import (
+    NOTO_SANS,
     SMALL_DISPLAY,
     Skin,
     TypographyRole,
@@ -375,8 +376,6 @@ def misc_rules(ch: Chrome) -> str:
         f" {{ border: 1px solid {ch.disabled}; }}"
         "QScrollArea { background: transparent; border: none; }"
         f"QSplitter::handle {{ background: {ch.rule}; }}"
-        f"QToolTip {{ background-color: {ch.surface_alt}; color: {ch.text};"
-        f" border: 1px solid {ch.accent}; padding: 3px; }}"
     )
 
 
@@ -394,6 +393,98 @@ def scrollbar_rules(ch: Chrome, width: int = 10) -> str:
         f"QScrollBar::handle:hover {{ background: {ch.accent}; }}"
         "QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }"
         "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }"
+    )
+
+
+#: Selectors ``app_stylesheet`` is allowed to carry beyond ``#Id`` ones.
+#: Menus and tooltips are top-level windows, so a window-scoped sheet never
+#: reaches them; everything else must stay window-scoped or it lands on the
+#: overlays. :func:`app_stylesheet` is tested against exactly this set.
+APP_SCOPE_ALLOWLIST = (
+    "QMenu",
+    "QMenu::item",
+    "QMenu::item:selected",
+    "QMenu::separator",
+    "QToolTip",
+)
+
+
+def menu_style(ch: Chrome, font_size: int) -> str:
+    """QSS for menus — app scope.
+
+    Worth its place in the app sheet for one rule block: the tray menu, the UI
+    Skin submenu, the Window Layouts submenu and the spell window's own
+    context menu all follow the skin from here.
+    """
+    return (
+        f"QMenu {{ background-color: {ch.surface}; color: {ch.text};"
+        f" border: 1px solid {ch.rule};"
+        f" {typography_style(font_size, CHROME_BODY)} }}"
+        "QMenu::item { padding: 4px 20px 4px 12px; }"
+        f"QMenu::item:selected {{ background: {gradient(ch.band)}; color: {ch.accent_text}; }}"
+        f"QMenu::separator {{ height: 1px; background: {ch.rule}; margin: 3px 8px; }}"
+    )
+
+
+def tooltip_style(ch: Chrome, font_size: int) -> str:
+    """QSS for tooltips — app scope, because a tooltip is its own window and a
+    window-scoped sheet never reaches one."""
+    return (
+        f"QToolTip {{ background-color: {ch.surface_alt}; color: {ch.text};"
+        f" border: 1px solid {ch.accent}; padding: 3px;"
+        f" {typography_style(font_size, CHROME_BODY)} }}"
+    )
+
+
+def legacy_parser_style(ch: Chrome, font_size: int) -> str:
+    """The ``#ParserWindow*`` rules the legacy maps/discord chrome still reads.
+
+    Replaces ``data/ui/_.css``, of which this was the only live part — every
+    other selector in that file (``#Spell*``, ``#SettingsLabel``,
+    ``#MapAreaLabel``) had zero ``setObjectName`` hits, and ``#MapCanvas`` is
+    overridden on the widget itself.
+
+    The window fill stays the literal black it has always been rather than
+    ``ch.surface``: this is a legacy compatibility rule, not a design token,
+    and the maps window paints transparent over it anyway.
+    """
+    return (
+        "#ParserWindow { background-color: #000000;"
+        f' font-family: "{NOTO_SANS}"; }}'
+        f"#ParserWindowMoveButton {{ color: {ch.accent}; background: transparent;"
+        f" border: 1px solid {ch.rule}; border-radius: 3px; padding: 1px;"
+        " height: 20px; width: 20px; }"
+        f"#ParserWindowMoveButton:hover {{ border: 1px solid {ch.accent}; }}"
+        f"#ParserWindowTitle {{ color: {ch.accent};"
+        f" {typography_style(font_size, SMALL_DISPLAY)} }}"
+        f"#ParserWindowMenu QPushButton {{ color: {ch.hint}; background: transparent;"
+        f" border: 1px solid {ch.rule}; border-radius: 3px; padding: 1px;"
+        " height: 20px; width: 20px; }"
+        f"#ParserWindowMenu QPushButton:hover {{ color: {ch.accent};"
+        f" border: 1px solid {ch.accent}; }}"
+        f"#ParserWindowMenu QPushButton:checked {{ color: {ch.accent_text};"
+        f" background: {gradient(ch.band)}; }}"
+        f"#ParserWindowMenu QLabel {{ color: {ch.text};"
+        f" {typography_style(font_size, SMALL_DISPLAY)} }}"
+        f"#ParserWindowMenu QSpinBox {{ color: {ch.field_text};"
+        f" background-color: {ch.field_bg}; border: 1px solid {ch.field_border};"
+        f" border-radius: 3px; padding: 3px;"
+        f" {typography_style(font_size, CHROME_BODY)} }}"
+    )
+
+
+def app_stylesheet(skin: Skin, colors: Palette, font_size: int) -> str:
+    """The application-wide sheet.
+
+    ``#Id`` selectors plus :data:`APP_SCOPE_ALLOWLIST` only. A bare type
+    selector here would land on the overlays over EverQuest — see
+    :func:`window_style` for why that is not merely untidy.
+    """
+    ch = chrome_for(skin, colors)
+    return (
+        legacy_parser_style(ch, font_size)
+        + menu_style(ch, font_size)
+        + tooltip_style(ch, font_size)
     )
 
 

@@ -466,16 +466,22 @@ notch, the full-row bar behind its own labels, the gem mark) live in
 tray's UI Skin submenu and the Settings picker's live preview, and every
 skinned window grows an `apply_skin()` that re-dresses in place. Sizes are
 multipliers of `general.font_size`, never px, so the user's font choice
-keeps working. `frame_opacity` fades ONLY the plate and glass — the split
-from window opacity (which fades the countdowns too) is the point.
+keeps working. Typography resolves to the bundled Noto Sans family across
+all skins; compact display roles share the tracked uppercase treatment while
+body rows and values stay plain. `frame_opacity` fades ONLY the plate and
+glass — the split from window opacity (which fades the countdowns too) is
+the point.
 
 *Appearance page.* A new Settings page between General and Character:
-three live-previewing skin cards, theme (moved off General), overlay text
-size, alert emphasis, alert text shadow (moved off Audio & Overlays),
-frame opacity. The picker previews by mutating `general.skin` and calling
-the appearance callback, so **Close reverts** and Apply re-baselines —
-`_skin_on_open` owns that, re-read on every `showEvent` because the tray
-can change the skin while the window is hidden.
+three live-previewing skin cards, theme and `general.font_size` (both moved
+off General), alert-headline size, alert emphasis, alert text shadow (moved
+off Audio & Overlays), frame opacity. The base font control is explicitly
+the UI/overlay size and applies to open overlays through
+`app._apply_appearance`; `overlay_text_size` remains only the large event-alert
+headline. The picker previews by mutating `general.skin` and calling the
+appearance callback, so **Close reverts** and Apply re-baselines —
+`_skin_on_open` owns that, re-read on every `showEvent` because the tray can
+change the skin while the window is hidden.
 
 *Event overlay.* `split_alert_text` splits "Gorenaire — ENRAGED" into a
 tracked-out kicker and the big word — presentation only: `current_text()`
@@ -484,7 +490,9 @@ and the reset match still use the whole string (`_alert_text`). Emphasis
 graphics effect, because the label already carries the shadow effect and a
 widget gets one. Bars stay `QProgressBar`s (the chunk is what drains) but
 their text is two child labels, name-left/time-right — read them via
-`bar_countdown_text`, not `format()`.
+`bar_countdown_text`, not `format()`. The alert panel (kicker, headline and
+rule) is always centered inside its configured Alerts region, regardless of
+skin; this exception does not change alignment in the other overlay windows.
 
 *Maps.* Backdrop opacity is now its own number: `MapCanvas` paints a scene
 `backgroundBrush` with its own alpha and the `#MapCanvas` opaque black went

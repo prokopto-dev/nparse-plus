@@ -390,10 +390,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     def _build_appearance(self) -> QWidget:
         """Skin, theme and the on-game alert's look, in one place.
 
-        Theme moved here off the General page: it and the skin answer the same
-        question from two sides (the skin dresses what sits on the game, the
-        theme dresses everything else), and splitting them across two pages
-        made changing "how nParse+ looks" a scavenger hunt.
+        The skin and the base font size both live here: they are the two
+        controls that answer "how does nParse+ look", and splitting them
+        across pages made that a scavenger hunt.
         """
         general = self._settings.general
         outer = QVBoxLayout()
@@ -410,16 +409,6 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._select_skin_card(general.skin)
 
         form = QFormLayout()
-        self._theme_combo = QComboBox(self)
-        self._theme_combo.addItem("Dark", "dark")
-        self._theme_combo.addItem("Light", "light")
-        self._theme_combo.setCurrentIndex(max(self._theme_combo.findData(general.theme), 0))
-        self._theme_combo.setToolTip(
-            "Window color theme (the full-screen event overlay stays dark — "
-            "it renders over the game)."
-        )
-        form.addRow("Theme", self._theme_combo)
-
         # The base size for every window and overlay. Named to separate it from
         # the alert headline below, which is the one thing it does NOT drive.
         self._font_size = QSpinBox(self)
@@ -488,7 +477,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         outer.addLayout(form)
 
         note = chromewidgets.hint(
-            "Skin and font size apply live to every overlay; theme applies after restart.",
+            "Skin and font size apply live to every window and overlay.",
             self,
         )
         outer.addWidget(note)
@@ -1712,7 +1701,6 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         install = self._install_dir.path()
         general.eq_install_dir = Path(install).expanduser() if install else None
         general.update_check = self._update_check.isChecked()
-        general.theme = self._theme_combo.currentData()
         general.font_size = self._font_size.value()
         general.skin = self.selected_skin()  # type: ignore[assignment]
         general.overlay_text_size = int(self._overlay_text_size.currentData())

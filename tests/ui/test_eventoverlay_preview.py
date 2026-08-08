@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QProgressBar
 
 from nparseplus.core.events import TimerBarEvent
+from nparseplus.ui import skins
 from nparseplus.ui.eventoverlay import CH_LANE_NAME_GAP, EventOverlayWindow
 
 pytestmark = pytest.mark.qt
@@ -96,6 +97,23 @@ def test_double_toggle_does_not_duplicate(qtbot) -> None:
     overlay.set_edit_mode(False)
     overlay.set_edit_mode(False)  # idempotent
     assert overlay._preview_widgets == []
+
+
+def test_visible_alert_preview_restyles_and_stays_centered(qtbot) -> None:
+    skins.set_skin("ledger")
+    overlay = EventOverlayWindow(text_size=32)
+    qtbot.addWidget(overlay)
+    overlay.set_edit_mode(True)
+    label = _preview_alert_label(overlay)
+    assert label is not None
+
+    overlay.apply_skin(text_size=46)
+
+    assert "font-size: 46px" in label.styleSheet()
+    assert bool(label.alignment() & Qt.AlignmentFlag.AlignHCenter)
+    assert not bool(label.alignment() & Qt.AlignmentFlag.AlignLeft)
+    item = overlay._alert_layout.itemAt(overlay._alert_layout.indexOf(label))
+    assert bool(item.alignment() & Qt.AlignmentFlag.AlignHCenter)
 
 
 def test_ch_lane_name_hugs_the_lane(qtbot) -> None:

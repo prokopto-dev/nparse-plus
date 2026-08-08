@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu
 
 from nparseplus.config.settings import Settings, load_settings, save_settings
@@ -27,6 +28,7 @@ from nparseplus.core.timers import (
 )
 from nparseplus.helpers.application import build_skin_menu
 from nparseplus.ui import skins
+from nparseplus.ui.dpswindow import _AttackerRow
 from nparseplus.ui.eventoverlay import EventOverlayWindow, split_alert_text
 from nparseplus.ui.settingswindow import UnifiedSettingsWindow
 from nparseplus.ui.spellwindow import SpellTimerWindow, header_kind
@@ -241,6 +243,26 @@ def test_switching_skin_relays_the_rows_live(qtbot) -> None:
     assert not row._bar.isVisible()
 
 
+def test_ledger_rows_grow_with_the_user_font_size_instead_of_clipping(qtbot) -> None:
+    settings = Settings()
+    settings.general.font_size = 32
+    settings.general.skin = "ledger"
+    skins.set_skin("ledger")
+    window = SpellTimerWindow(_backend(settings, [_spell("Clarity", YOU_GROUP)]))
+    qtbot.addWidget(window)
+    window.refresh()
+    row = next(iter(window._row_widgets.values()))
+    assert row.height() == skins.full_row_height(skins.LEDGER, 32)
+    assert row.height() > skins.LEDGER.row_height
+
+
+def test_ledger_dps_rows_grow_with_the_user_font_size(qtbot) -> None:
+    row = _AttackerRow(skin=skins.LEDGER, font_size=32)
+    qtbot.addWidget(row)
+    assert row.minimumHeight() == skins.full_row_height(skins.LEDGER, 32) + 2
+    assert row.maximumHeight() == row.minimumHeight()
+
+
 def test_frame_opacity_reaches_the_panel_without_touching_window_opacity(qtbot) -> None:
     settings = Settings()
     settings.general.frame_opacity = 40
@@ -363,6 +385,43 @@ def test_overlay_text_size_reaches_the_headline(qtbot) -> None:
     assert "font-size: 48px" in overlay._center_text.styleSheet()
     overlay.apply_skin(text_size=22)
     assert "font-size: 22px" in overlay._center_text.styleSheet()
+
+
+def test_overlay_base_font_size_reaches_the_kicker_not_the_headline(qtbot) -> None:
+    overlay = EventOverlayWindow(font_size=20, text_size=48)
+    qtbot.addWidget(overlay)
+    kicker_size = skins.px(20, skins.DUXA.alert_kicker_scale)
+    display_size = skins.px(20, skins.SMALL_DISPLAY.scale)
+    assert f"font-size: {kicker_size}px" in overlay._alert_kicker.styleSheet()
+    assert f'font-family: "{skins.NOTO_SANS}"' in overlay._alert_kicker.styleSheet()
+    assert f"font-size: {display_size}px" in overlay._utility_header.styleSheet()
+    assert all(
+        f"font-size: {display_size}px" in chip.styleSheet()
+        for chip in overlay._region_titles.values()
+    )
+    assert "font-size: 48px" in overlay._center_text.styleSheet()
+    assert f'font-family: "{skins.NOTO_SANS}"' in overlay._center_text.styleSheet()
+
+    overlay.apply_skin(font_size=10)
+    kicker_size = skins.px(10, skins.DUXA.alert_kicker_scale)
+    display_size = skins.px(10, skins.SMALL_DISPLAY.scale)
+    assert f"font-size: {kicker_size}px" in overlay._alert_kicker.styleSheet()
+    assert f"font-size: {display_size}px" in overlay._utility_header.styleSheet()
+    assert "font-size: 48px" in overlay._center_text.styleSheet()
+
+
+@pytest.mark.parametrize("skin_name", skins.SKIN_ORDER)
+def test_alert_content_is_centered_in_every_skin(qtbot, skin_name) -> None:
+    skins.set_skin(skin_name)
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+
+    for widget in (overlay._alert_kicker, overlay._center_text):
+        assert bool(widget.alignment() & Qt.AlignmentFlag.AlignHCenter)
+        assert not bool(widget.alignment() & Qt.AlignmentFlag.AlignLeft)
+    for widget in (overlay._alert_kicker, overlay._center_text, overlay._alert_rule):
+        item = overlay._alert_layout.itemAt(overlay._alert_layout.indexOf(widget))
+        assert bool(item.alignment() & Qt.AlignmentFlag.AlignHCenter)
 
 
 def test_an_unknown_emphasis_falls_back_instead_of_raising(qtbot) -> None:

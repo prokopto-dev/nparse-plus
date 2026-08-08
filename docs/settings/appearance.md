@@ -7,7 +7,8 @@ overlays wear, the window theme, and how hard an on-game alert pushes.
 |---|---|
 | **Overlay skin** | The frame, type hierarchy and bar geometry of every overlay — and of the on-game alert. Applies live; no restart. |
 | **Theme** | Dark or Light, for the settings and utility windows. After restart. |
-| **Overlay text size** | Height of the big alert word on the game (ENRAGED, FTE…). |
+| **UI / overlay font size** | Base size for nParse+ UI and overlay typography, including the small tracked labels shared by every skin. Applies live after **Apply & Save**; no restart. |
+| **Alert headline size** | Height of only the large alert word on the game (ENRAGED, FTE…). It is independent of the base font size. |
 | **Alert emphasis** | Plain, a slow pulse, or the pulse plus a colored halo. |
 | **Alert text shadow** | Soft shadow behind on-game alert text. Turning it off removes a per-repaint blur — try it first if the overlay stutters, especially on macOS. |
 | **Frame opacity** | Fades the skin's frame and glass only. Countdowns, bars and icons keep full contrast. |
@@ -29,7 +30,10 @@ card and the timer window and the on-game alert both follow immediately.
 Every skin keeps the row colors the rest of the app already uses —
 beneficial green, detrimental red, cooldown blue, custom-timer purple,
 roll amber — and the same numbers in the same order. What changes is the
-frame, the type hierarchy, and where your eye lands.
+frame, the type hierarchy, and where your eye lands. All three use the
+bundled Noto Sans family: compact headings and captions share the same
+tracked uppercase treatment, while rows and values stay plain for quick
+reading.
 
 !!! tip "Switching without opening Settings"
     The tray menu has a **UI Skin** submenu next to Window Layouts. Skins
@@ -48,7 +52,9 @@ These are different controls and it matters which one you reach for.
 The map has its own version of the same split — see
 [Maps → Transparency](maps.md#transparency).
 
-## Closing without applying
+## Applying appearance changes
 
 The skin picker previews live, so **Close** puts the skin back the way it
-was. **Apply & Save** is what makes a preview durable.
+was. **Apply & Save** is what makes a preview durable and applies font-size,
+alert and frame-opacity changes to open overlays without restarting. The
+window theme still takes effect after restart.

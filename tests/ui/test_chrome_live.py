@@ -29,7 +29,6 @@ def _legacy() -> dict:
 def _restore_appearance():
     yield
     skins.set_skin(skins.DEFAULT_SKIN)
-    theme.set_theme("dark")
 
 
 def _window(qtbot) -> UnifiedSettingsWindow:
@@ -128,17 +127,15 @@ def test_the_console_window_uses_a_portable_monospace_stack() -> None:
 
 
 @pytest.mark.parametrize("skin_name", sorted(skins.SKINS))
-@pytest.mark.parametrize("theme_name", ["dark", "light"])
-def test_qt_parses_the_window_sheet(qtbot, skin_name: str, theme_name: str) -> None:
+def test_qt_parses_the_window_sheet(qtbot, skin_name: str) -> None:
     """Qt reports a malformed stylesheet with a runtime warning and then
     discards the WHOLE sheet — the window renders undressed while every
     string-level assertion still passes. Nothing catches that except asking
-    Qt, so this asks Qt, for every skin and theme.
+    Qt, so this asks Qt, for every skin.
     """
     from PySide6.QtCore import qInstallMessageHandler
     from PySide6.QtWidgets import QWidget
 
-    theme.set_theme(theme_name)
     skins.set_skin(skin_name)
     widget = QWidget()
     qtbot.addWidget(widget)

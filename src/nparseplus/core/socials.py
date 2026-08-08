@@ -57,6 +57,44 @@ MAX_COLOR = 255
 
 _KEY_RE = re.compile(r"^Page(\d+)Button(\d+)(?:(Name|Color)|Line(\d+))$", re.IGNORECASE)
 
+LINK_DELIM = "\x12"
+"""The item-link delimiter (ASCII DC2), which opens and closes every link.
+
+A macro line may legitimately contain one: ``\\x12<45 hex chars><display
+text>\\x12`` is a clickable item link, and a social that fires it links the
+item in chat. The client accepts links written into the ini this way — it is
+how a macro advertises something clickable.
+"""
+
+DISPLAY_LINK_DELIM = "␒"
+"""What a delimiter is drawn as on screen: ␒, SYMBOL FOR DEVICE CONTROL TWO."""
+
+
+def for_display(text: str) -> str:
+    """Swap link delimiters for a printable stand-in, for showing a line.
+
+    DC2 draws as nothing, so a perfectly good link reads on screen as random
+    hex glued to an item name — which looks exactly like a corrupted macro and
+    has been reported as one. Worse, an edit that eats a delimiter is
+    invisible: the line still looks the same, and the next time the button
+    fires it sprays the link body into the channel as text.
+
+    Substituting a visible glyph costs nothing — the client's charset is
+    single-byte, so ␒ cannot reach the game and cannot already be in a line
+    that came from one.
+    """
+    return text.replace(LINK_DELIM, DISPLAY_LINK_DELIM)
+
+
+def from_display(text: str) -> str:
+    """Inverse of :func:`for_display`, for reading an edited line back.
+
+    Typing a ␒ therefore *is* how you write a delimiter by hand, which is a
+    feature: there is otherwise no way to enter one from a keyboard, and a
+    link you cannot type is a link you cannot repair.
+    """
+    return text.replace(DISPLAY_LINK_DELIM, LINK_DELIM)
+
 
 class Social(BaseModel):
     """One macro button: its grid slot, label, colour, and command lines."""

@@ -84,6 +84,17 @@ def test_window_title(qtbot) -> None:  # qtbot: needs a QApplication to exist
     )
 
 
+def test_font_size_control_lives_on_appearance_page(qtbot) -> None:
+    window = _window(qtbot)
+
+    general_labels = {label.text() for label in window._stack.widget(0).findChildren(QLabel)}
+    appearance_labels = {label.text() for label in window._stack.widget(1).findChildren(QLabel)}
+
+    assert "UI / overlay font size" not in general_labels
+    assert "UI / overlay font size" in appearance_labels
+    assert "Alert headline size" in appearance_labels
+
+
 def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     settings = Settings()
     legacy = _legacy()

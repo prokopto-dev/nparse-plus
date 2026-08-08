@@ -105,13 +105,18 @@ class MobInfoWindow(OverlayWindowBase):
     def apply_skin(self) -> None:
         """Re-style from the active skin — live, no restart (see spellwindow)."""
         self._skin = skins.skin()
-        font_size = max(8, self._settings.general.font_size)
+        font_size = max(6, self._settings.general.font_size)
         colors = theme.palette()
         self.setStyleSheet(
             skins.overlay_window_style(self._skin, colors, font_size)
             + skins.title_bar_style(self._skin, font_size)
-            + f"#MobInfoName {{ color: {self._skin.value_color}; font-weight: bold;"
-            f" font-size: {skins.px(font_size, 1.05)}px; background: transparent; }}"
+            + "#MobInfoName {"
+            + skins.typography_style(
+                font_size,
+                skins.NUMERIC_TEXT,
+                color=self._skin.value_color,
+            )
+            + " background: transparent; }"
             f"#MobInfoContainer QPushButton {{ color: {self._skin.title_color};"
             f" background: transparent; border: 1px solid {self._skin.plate_border};"
             " padding: 3px 8px; }"

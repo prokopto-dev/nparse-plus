@@ -99,14 +99,16 @@ def build_qpalette(spec: dict[str, str]) -> QPalette:
     return result
 
 
-def apply_app_palette(app: QApplication, font_size: int) -> None:
-    """Point the application's QPalette at the active skin and theme.
+def apply_app_chrome(app: QApplication, font_size: int) -> None:
+    """Point the application's palette and sheet at the active skin.
 
-    Paired with the Fusion style in ``app.create_app``. Without this, a dark
-    chrome ground would be drawn with the platform's native (light) combo
-    boxes and spin buttons inside it.
+    Paired with the Fusion style in ``app.create_app``: without the palette, a
+    dark chrome ground gets the platform's native (light) combo boxes and spin
+    buttons drawn inside it. The sheet is deliberately the narrow one — see
+    ``chrome.app_stylesheet``.
     """
     app.setPalette(build_qpalette(chrome.qt_palette_spec(current())))
+    app.setStyleSheet(chrome.app_stylesheet(skins.skin(), theme.palette(), font_size))
 
 
 class ChromeMixin:

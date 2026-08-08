@@ -285,7 +285,7 @@ class _RowWidget(QFrame):
         full = skin.row_style == "full"
         self._bar.setVisible(not full and not self.expired)
         if full:
-            self.setFixedHeight(skin.row_height)
+            self.setFixedHeight(skins.full_row_height(skin, font_size))
             self.layout().setSpacing(0)
         else:
             self.setMinimumHeight(0)
@@ -450,7 +450,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self.setWindowOpacity(state.opacity)
 
         self._skin = skins.skin()
-        self._font_size = max(8, backend.settings.general.font_size)
+        self._font_size = max(6, backend.settings.general.font_size)
 
         # Skinned title bar: the gem mark + the window's caps.
         self._mark = GemMark(self._skin, self)
@@ -783,7 +783,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         able to re-dress itself in place.
         """
         self._skin = skins.skin()
-        self._font_size = max(8, self._backend.settings.general.font_size)
+        self._font_size = max(6, self._backend.settings.general.font_size)
         self.setStyleSheet(
             skins.overlay_window_style(self._skin, theme.palette(), self._font_size)
             + skins.title_bar_style(self._skin, self._font_size)

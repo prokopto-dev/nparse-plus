@@ -91,6 +91,11 @@ def test_regions_place_hosts_by_anchor_math(qtbot) -> None:
     assert alert.x() == cx - 30 - 200 // 2
     assert alert.y() == 800 // 2 + 10
 
+    # Child centering is local to the custom-width alert host; it must not
+    # change the region's configured placement.
+    assert alert.width() == 200
+    assert bool(overlay._center_text.alignment() & Qt.AlignmentFlag.AlignHCenter)
+
 
 def test_region_drag_updates_and_persists(qtbot) -> None:
     saves: list[int] = []

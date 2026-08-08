@@ -31,7 +31,7 @@ from nparseplus.config.settings import (
 )
 from nparseplus.core.events import WindowCommandEvent
 from nparseplus.core.player import tracking_distance
-from nparseplus.ui import skins, theme
+from nparseplus.ui import skins
 
 logger = logging.getLogger(__name__)
 
@@ -227,9 +227,8 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 
     app = NomnsParse(list(argv), backend=backend)
-    theme.set_theme(settings.general.theme)
     # Before any window is built: the overlays read the active skin in their
-    # constructors, and a skin change is live thereafter (unlike the theme).
+    # constructors, and a skin change is live thereafter.
     skins.set_skin(settings.general.skin)
     # Fusion honours QPalette fully and identically on every platform. Without
     # it, a dark chrome ground gets the host's native (light) combo boxes and
@@ -237,9 +236,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # palette below instead of ~150 lines of sub-control QSS that would look
     # subtly wrong somewhere. One line, and a one-line revert.
     app.setStyle("Fusion")
-    chromewidgets.apply_app_palette(app, settings.general.font_size)
-    with open(resource_path(os.path.join("data", "ui", theme.stylesheet_filename()))) as css:
-        app.setStyleSheet(css.read())
+    chromewidgets.apply_app_chrome(app, settings.general.font_size)
     app.setWindowIcon(QIcon(resource_path(os.path.join("data", "ui", "icon.png"))))
     app.setQuitOnLastWindowClosed(False)
     QFontDatabase.addApplicationFont(
@@ -287,7 +284,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         if skin_name is not None:
             settings.general.skin = skin_name  # type: ignore[assignment]
         skins.set_skin(settings.general.skin)
-        chromewidgets.apply_app_palette(app, settings.general.font_size)
+        chromewidgets.apply_app_chrome(app, settings.general.font_size)
         for window in (spell_window, dps_window, mob_info_window):
             window.apply_skin()
         event_overlay.apply_skin(

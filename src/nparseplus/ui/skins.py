@@ -2,9 +2,10 @@
 in-fight overlay, driven by one ``general.skin`` setting.
 
 A skin is a bigger :class:`~nparseplus.ui.theme.Palette`. Where the palette
-answers "what color is body text in this theme", a skin answers "what does
-the window's edge look like, how loud is the title, is the progress bar a
-thin rule under the row or the row's own background". Three ship:
+answers "what color is body text" — the readability floor, one set of values
+for the whole app — a skin answers "what does the window's edge look like,
+how loud is the title, is the progress bar a thin rule under the row or the
+row's own background". Three ship:
 
 ``duxa``
     Thin double-line frame over flat black glass with tan caps — what a
@@ -29,9 +30,9 @@ than px, so the user's font-size choice keeps working under every skin.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
-from nparseplus.ui.theme import Palette, palette
+from nparseplus.ui.theme import Palette
 
 # Row-kind accents, shared with ``ui.spellwindow``'s bar colors. A skin tints
 # its group headers from these so a header and the bars under it agree.
@@ -45,6 +46,34 @@ KIND_ROLL = "roll"
 #: Every group-header kind a skin must define a tint for.
 HEADER_KINDS = (KIND_YOU, KIND_PLAYER, KIND_DETRIMENTAL, KIND_TIMER, KIND_COOLDOWN, KIND_ROLL)
 
+# The app registers the bundled regular and bold faces before constructing
+# any windows (``app.create_app``). Naming the family in every role keeps an
+# overlay deterministic when the desktop's default font differs by platform.
+NOTO_SANS = "Noto Sans"
+
+
+@dataclass(frozen=True)
+class TypographyRole:
+    """A Qt-free type token resolved from ``general.font_size``.
+
+    ``tracking_em`` is stored proportionally and converted to px by
+    :func:`typography_style`, because Qt stylesheets do not understand em.
+    Capitalization deliberately is not part of the token: QSS has no
+    ``text-transform``, so display widgets use ``skinwidgets.set_caps`` while
+    keeping their model text untouched.
+    """
+
+    scale: float
+    weight: str = "normal"
+    tracking_em: float = 0.0
+
+
+# Shared roles for values that do not need a skin-specific type scale. Titles,
+# group headers and alert kickers construct a role from their Skin tokens.
+SMALL_DISPLAY = TypographyRole(scale=0.78, weight="bold", tracking_em=0.18)
+BODY_TEXT = TypographyRole(scale=0.84)
+NUMERIC_TEXT = TypographyRole(scale=1.05, weight="bold")
+
 
 @dataclass(frozen=True)
 class HeaderTint:
@@ -57,7 +86,7 @@ class HeaderTint:
 
 @dataclass(frozen=True)
 class Skin:
-    """A complete overlay chrome. All colors are literal; see ``resolved``."""
+    """A complete overlay chrome. All colors are literal."""
 
     name: str
     label: str
@@ -136,8 +165,6 @@ class Skin:
     #: The hairline under the alert, fading out at both ends.
     alert_rule_color: str
     alert_rule_width: int
-    #: Alert block alignment — Ledger's alert is flush left, the others center.
-    alert_align: str
     #: Marks flanking the kicker ("" = none).
     alert_mark: str
     #: Timer-bar chrome on the event overlay.
@@ -154,37 +181,6 @@ class Skin:
     #: black glass, not on Norrath, so these get their own pair.
     overlay_chip_fill: str
     overlay_chip_text: str
-
-    def resolved(self, colors: Palette | None = None) -> Skin:
-        """This skin adapted to the active theme.
-
-        The skins are dark by design — they sit on top of EverQuest, where a
-        pale panel is a flashbang. Under the LIGHT theme we keep the skin's
-        geometry (that is the user's choice) but lift the two glass fills and
-        the row text so the window is still readable as a light-theme window;
-        the accents, gold caps and bar colors stay as drawn.
-
-        ``chrome_accent`` is the one exception to "accents stay as drawn": it
-        lands on a pale config surface, where gold is illegible. The four
-        overlay fields below it need no branch — the event overlay is never
-        themed (see ``theme.py``).
-        """
-        colors = colors if colors is not None else palette()
-        if colors.name != "light":
-            return self
-        return replace(
-            self,
-            glass=("rgba(238, 238, 242, 235)",),
-            plate=("#d8d4c6",) if len(self.plate) == 1 else ("#d8d4c6", "#c2bcaa"),
-            plate_border="#8a7549",
-            glass_border="#a8a08a",
-            name_color=colors.text,
-            value_color=colors.heading,
-            value_shadow=False,
-            bar_track="rgba(0, 0, 0, 40)",
-            bar_track_border="rgba(0, 0, 0, 60)",
-            chrome_accent=shade(self.chrome_accent, -0.45),
-        )
 
 
 def _tints(you: str, player: str, detrimental: str, timer: str, band: bool) -> dict:
@@ -252,7 +248,6 @@ DUXA = Skin(
     alert_kicker_tracking=0.28,
     alert_rule_color="rgba(200, 169, 81, 128)",
     alert_rule_width=170,
-    alert_align="center",
     alert_mark="",
     overlay_bar_height=19,
     overlay_bar_bg="rgba(6, 7, 10, 199)",
@@ -320,7 +315,6 @@ VELIOUS = Skin(
     alert_kicker_tracking=0.32,
     alert_rule_color="rgba(226, 200, 130, 153)",
     alert_rule_width=230,
-    alert_align="center",
     alert_mark="#e2c882",
     overlay_bar_height=22,
     overlay_bar_bg="rgba(6, 7, 10, 184)",
@@ -380,7 +374,6 @@ LEDGER = Skin(
     alert_kicker_tracking=0.26,
     alert_rule_color="",
     alert_rule_width=0,
-    alert_align="left",
     alert_mark="",
     overlay_bar_height=26,
     overlay_bar_bg="transparent",
@@ -407,12 +400,11 @@ def set_skin(name: str) -> None:
 
 
 def skin() -> Skin:
-    """The active skin, already adapted to the active theme."""
-    return _current.resolved()
+    """The active skin.
 
-
-def raw_skin() -> Skin:
-    """The active skin before the theme adaptation (settings previews)."""
+    There is one palette (see ``theme.py``), so a skin needs no per-theme
+    adaptation: what is declared above is what every surface gets.
+    """
     return _current
 
 
@@ -507,17 +499,50 @@ def tracking(base_font_size: int, scale: float, em: float) -> str:
     return f"{px(base_font_size, scale) * em:.2f}px"
 
 
+def typography_style(base_font_size: int, role: TypographyRole, *, color: str | None = None) -> str:
+    """QSS declarations for one typography role.
+
+    This is intentionally a declaration body rather than a selector so every
+    overlay can compose it with its own colors/background/borders without
+    duplicating the family, scaling, weight, or tracking rules.
+    """
+    style = (
+        f'font-family: "{NOTO_SANS}";'
+        f" font-size: {px(base_font_size, role.scale)}px;"
+        f" font-weight: {role.weight};"
+    )
+    if role.tracking_em:
+        style += f" letter-spacing: {tracking(base_font_size, role.scale, role.tracking_em)};"
+    if color is not None:
+        style += f" color: {color};"
+    return style
+
+
+def full_row_height(skin_: Skin, base_font_size: int) -> int:
+    """Height for a painted full row without clipping user-scaled type.
+
+    ``Skin.row_height`` remains the default-geometry floor. Above that, the
+    largest row role gets a conservative line box plus the skin's vertical
+    padding. Stacked skins hug their layouts and therefore do not use this.
+    """
+    top, _right, bottom, _left = skin_.row_pad
+    text_height = round(px(base_font_size, max(skin_.name_scale, skin_.value_scale)) * 1.25)
+    content_height = max(text_height, skin_.icon_size) + top + bottom + 4
+    return max(skin_.row_height, content_height)
+
+
 # -- stylesheet builders --------------------------------------------------------
 
 
 def title_style(skin_: Skin, font_size: int) -> str:
     """QSS body for a window's title caps."""
     return (
-        f"color: {skin_.title_color};"
-        f" font-size: {px(font_size, skin_.title_scale)}px;"
-        " font-weight: bold;"
-        f" letter-spacing: {tracking(font_size, skin_.title_scale, skin_.title_tracking)};"
-        " background: transparent;"
+        typography_style(
+            font_size,
+            TypographyRole(skin_.title_scale, "bold", skin_.title_tracking),
+            color=skin_.title_color,
+        )
+        + " background: transparent;"
     )
 
 
@@ -536,7 +561,7 @@ def title_bar_style(skin_: Skin, font_size: int) -> str:
     rules += " }"
     rules += (
         f"#SkinTitleCount {{ color: {skin_.plate_border};"
-        f" font-size: {px(font_size, skin_.header_scale)}px;"
+        f" {typography_style(font_size, TypographyRole(skin_.header_scale))}"
         " background: transparent; }"
     )
     return rules
@@ -547,11 +572,12 @@ def header_style(skin_: Skin, font_size: int, kind: str) -> str:
     tint = skin_.header_tints.get(kind, skin_.header_tints[KIND_PLAYER])
     top, right, bottom, left = skin_.header_pad
     style = (
-        f"color: {tint.text};"
-        f" font-size: {px(font_size, skin_.header_scale)}px;"
-        " font-weight: bold;"
-        f" letter-spacing: {tracking(font_size, skin_.header_scale, skin_.header_tracking)};"
-        f" padding: {top}px {right}px {bottom}px {left}px;"
+        typography_style(
+            font_size,
+            TypographyRole(skin_.header_scale, "bold", skin_.header_tracking),
+            color=tint.text,
+        )
+        + f" padding: {top}px {right}px {bottom}px {left}px;"
     )
     if tint.band:
         style += (
@@ -594,13 +620,17 @@ def overlay_window_style(skin_: Skin, colors: Palette, font_size: int) -> str:
     One string so a window's ``apply_skin`` is a single ``setStyleSheet``;
     per-widget accents (headers, bars) are set on the widgets themselves.
     """
+    row_name = typography_style(font_size, TypographyRole(skin_.name_scale), color=skin_.name_color)
+    row_value = typography_style(
+        font_size, TypographyRole(skin_.value_scale, "bold"), color=skin_.value_color
+    )
     return (
-        f"QLabel {{ color: {colors.text}; font-size: {max(7, font_size - 2)}px;"
+        f'QWidget {{ font-family: "{NOTO_SANS}"; }}'
+        f"QLabel {{ {typography_style(font_size, BODY_TEXT, color=colors.text)}"
         " background: transparent; }"
         f"#SkinTitle {{ {title_style(skin_, font_size)} }}"
-        f"#SkinRowName {{ color: {skin_.name_color};"
-        f" font-size: {px(font_size, skin_.name_scale)}px; background: transparent; }}"
-        f"#SkinRowValue {{ color: {skin_.value_color};"
-        f" font-size: {px(font_size, skin_.value_scale)}px; font-weight: bold;"
+        f"#SkinRowName {{ {row_name}"
+        " background: transparent; }"
+        f"#SkinRowValue {{ {row_value}"
         " background: transparent; }" + scrollbar_style()
     )
