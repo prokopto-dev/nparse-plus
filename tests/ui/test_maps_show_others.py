@@ -122,3 +122,26 @@ def test_corpse_marker_draws_and_persists(maps: Maps) -> None:
     assert (drawn.location.x, drawn.location.y) == (-222.0, -111.0)
     saved = store._settings.map_markers["freportw"].user_waypoints
     assert [w.name for w in saved] == ["Tester's corpse"]
+
+
+# -- the zone-line exits toggle -------------------------------------------------
+
+
+def test_zone_lines_toggle_gates_every_exit_surface(maps: Maps) -> None:
+    """Header chips, edge tabs and the rail's ZONE LINES section are one
+    answer to "which way out" shown three ways. They all read one gate, so
+    turning it off actually clears the screen instead of leaving two of them."""
+    config.data["maps"]["show_zone_lines"] = True
+    with_lines = maps._zone_line_exits()
+    assert with_lines, "west freeport should have zone lines to gate"
+
+    config.data["maps"]["show_zone_lines"] = False
+    assert maps._zone_line_exits() == []
+
+
+def test_zone_lines_default_on(tmp_path) -> None:
+    """It was always-on before the toggle existed; a new key must not
+    silently turn a feature off for everyone who upgrades."""
+    config.load(str(tmp_path / "nparse.config.json"))
+    config.verify_settings()
+    assert config.data["maps"]["show_zone_lines"] is True

@@ -195,6 +195,7 @@ class Maps(ParserWindow):
             ("use_z_layers", "Ⓩ LAYERS", "Show Z layers"),
             ("show_grid", "# GRID", "Show the grid"),
             ("show_mouse_location", "⌖ LOC", "Show the loc under the mouse pointer"),
+            ("show_zone_lines", "⇥ EXITS", "Show zone-line exits (edge tabs, header chips)"),
         ):
             self._toolbar.add_toggle(key, text, tooltip, lambda k=key: self._toggle_map_option(k))
         self._toolbar.add_toggle(
@@ -222,6 +223,24 @@ class Maps(ParserWindow):
         self._map.viewport().installEventFilter(self)
         self._arm_idle_fade()
 
+    @property
+    def _map_colors(self):
+        """The map chrome's colours for the active skin."""
+        return chrome.map_colors()
+
+    def apply_skin(self):
+        """Re-dress the map chrome for the active skin.
+
+        ``window_handles["maps"]`` is already wired, so app._apply_appearance's
+        duck-typed loop finds this with no new plumbing — and no ParserWindow
+        or legacy-config path is touched.
+        """
+        for panel in (self._header, self._toolbar, self._rail, self._puck):
+            panel.apply_skin()
+        for tab in self._edge_tabs:
+            tab.apply_skin()
+        self._map.update_()
+
     def sync_map_chrome(self):
         """Settings-window changes reach the chrome through config_updated."""
         self._sync_toolbar()
@@ -237,6 +256,7 @@ class Maps(ParserWindow):
             "use_z_layers",
             "show_grid",
             "show_mouse_location",
+            "show_zone_lines",
         ):
             self._toolbar.set_toggle(key, bool(config.data["maps"].get(key, True)))
         self._toolbar.set_toggle("frame", not self._frameless)
@@ -251,6 +271,11 @@ class Maps(ParserWindow):
             self._show_others_changed(value)
         elif key == "auto_follow":
             self._map.center()
+        elif key == "show_zone_lines":
+            # Header chips, edge tabs and the rail's ZONE LINES section are one
+            # answer to "which way out" shown three ways; the toggle owns all
+            # three so turning it off actually clears the screen.
+            self._refresh_zone_chrome()
         elif key != "show_mouse_location":
             self._map.update_()
 
@@ -392,11 +417,21 @@ class Maps(ParserWindow):
         loc = f"{-player.location.y:.0f}, {-player.location.x:.0f}"
         return loc, f"{age}s" if age < 600 else "stale"
 
+    def _zone_lines_shown(self) -> bool:
+        return bool(config.data["maps"].get("show_zone_lines", True))
+
+    def _refresh_zone_chrome(self) -> None:
+        """Re-apply the zone-line toggle to all three surfaces at once."""
+        self._header.set_exits(self._zone_line_exits())
+        self._update_edge_tabs()
+        if self._rail_open:
+            self._rebuild_rail()
+
     def _zone_line_exits(self):
         """``[(display name, (scene x, scene y)), …]`` from the zone's own
         ``to_*`` POI labels — nothing invented."""
         data = self._map._data
-        if data is None:
+        if data is None or not self._zone_lines_shown():
             return []
         return [
             (chrome.zone_line_label(text), (x, y))
@@ -484,7 +519,7 @@ class Maps(ParserWindow):
             return
         exits = [(name, "", chrome.GREEN) for name, _location in self._zone_line_exits()]
         markers = [
-            (name, f"{-point.location.y:.0f}, {-point.location.x:.0f}", chrome.GOLD)
+            (name, f"{-point.location.y:.0f}, {-point.location.x:.0f}", self._map_colors.gold)
             for name, point in list(data.waypoints.items())[:8]
         ]
         others = [(name, "", chrome.GREEN) for name in data.players if name != "__you__"][:8]
@@ -492,7 +527,7 @@ class Maps(ParserWindow):
         self._rail.rebuild(
             data.zone or "",
             [
-                ("RESPAWN", [("default", respawn, chrome.EDGE)]),
+                ("RESPAWN", [("default", respawn, self._map_colors.edge)]),
                 ("ZONE LINES", exits),
                 ("MARKERS", markers),
                 ("SHARING", others),

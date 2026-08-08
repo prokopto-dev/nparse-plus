@@ -231,3 +231,48 @@ def test_the_wheel_band_hugs_every_edge(canvas) -> None:
     ):
         assert canvas._in_backdrop_band(point)
     assert not canvas._in_backdrop_band(QPointF(200, 150))
+
+
+# -- the map chrome follows the skin --------------------------------------------
+
+
+def test_map_colors_differ_by_skin() -> None:
+    """The map used to hardcode Duxa's palette, so it was the one surface the
+    skin picker never reached."""
+    from nparseplus.ui import skins
+
+    seen = {name: chrome.map_colors(skin) for name, skin in skins.SKINS.items()}
+    assert len({c.gold for c in seen.values()}) == len(seen)
+    assert len({c.ink_solid for c in seen.values()}) > 1
+
+
+def test_velious_gives_the_map_a_warm_stone_ground() -> None:
+    """The payoff of deriving ink from the skin's plate rather than a literal."""
+    from nparseplus.ui import skins
+
+    velious = chrome.map_colors(skins.VELIOUS)
+    duxa = chrome.map_colors(skins.DUXA)
+    assert velious.ink_solid != duxa.ink_solid
+    assert skins.base_color((velious.ink_solid,)) == skins.base_color(skins.VELIOUS.plate)
+
+
+def test_map_colors_never_returns_an_empty_string() -> None:
+    """Ledger's mark_color is "" — the derivation must go through
+    chrome_accent, or the map loses its gold entirely under that skin."""
+    from dataclasses import fields
+
+    from nparseplus.ui import skins
+
+    for name, skin in skins.SKINS.items():
+        colors = chrome.map_colors(skin)
+        for field in fields(colors):
+            assert getattr(colors, field.name), (name, field.name)
+
+
+def test_the_status_accents_stay_semantic() -> None:
+    """A reachable exit and a live recording mean a thing, not "the chrome's
+    gold" — they must not move when the skin's frame colours do."""
+    from nparseplus.ui import chrome as ui_chrome
+
+    assert chrome.GREEN == ui_chrome.GOOD
+    assert chrome.AMBER == ui_chrome.ROLL
