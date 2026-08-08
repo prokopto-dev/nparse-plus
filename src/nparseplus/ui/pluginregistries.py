@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
     QInputDialog,
-    QLabel,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from nparseplus.ui import chromewidgets
 from nparseplus.ui.pluginconsent import CONSENT_WARNING
 
 if TYPE_CHECKING:
@@ -114,9 +114,9 @@ class RegistryListWidget(QWidget):
         buttons.addWidget(self._remove_button)
         buttons.addStretch(1)
 
-        note = QLabel(f"Browse shows plugins from every ticked registry. {REGISTRY_WARNING}", self)
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #888888; font-size: 11px;")
+        note = chromewidgets.hint(
+            f"Browse shows plugins from every ticked registry. {REGISTRY_WARNING}", self
+        )
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)

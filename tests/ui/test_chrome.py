@@ -108,6 +108,54 @@ def test_the_spell_window_reads_its_bar_colors_from_the_tokens() -> None:
     assert spellwindow.COLOR_ROLL == chrome.ROLL
 
 
+# -- the regression guard -------------------------------------------------------
+
+
+def test_no_ui_module_hardcodes_a_muted_grey() -> None:
+    """The sixteen copies this layer replaced. They were literals, so they
+    stayed dark grey under the light theme; a seventeenth would too."""
+    import pathlib
+
+    ui = pathlib.Path(__file__).resolve().parents[2] / "src" / "nparseplus" / "ui"
+    allowed = {
+        "theme.py",  # defines the tokens
+        "chrome.py",  # names the old value in a docstring
+    }
+    offenders = []
+    for path in sorted(ui.glob("*.py")):
+        if path.name in allowed:
+            continue
+        text = path.read_text()
+        for literal in ("#888888", "#9aa0a6", "#777777"):
+            if literal in text:
+                offenders.append(f"{path.name}: {literal}")
+    assert offenders == [], (
+        "hardcoded muted greys found — use chromewidgets.hint()/caption() "
+        f"or a Chrome token instead: {offenders}"
+    )
+
+
+def test_the_hint_and_caption_factories_stamp_the_names_the_sheet_targets() -> None:
+    """The object-name contract between chrome.py and chromewidgets.py. If a
+    factory stops stamping, the window sheet silently misses that label."""
+    from nparseplus.ui import chromewidgets
+
+    assert chromewidgets.hint("x").objectName() == chrome.HINT
+    assert chromewidgets.caption("x").objectName() == chrome.CAPTION
+    assert chromewidgets.badge().objectName() == chrome.BADGE
+
+
+def test_set_badge_falls_back_rather_than_raising_on_an_unknown_tone() -> None:
+    from nparseplus.ui import chromewidgets
+
+    label = chromewidgets.badge()
+    chromewidgets.set_badge(label, "Up to date", "ok")
+    assert label.property(chrome.PROP_TONE) == "ok"
+    chromewidgets.set_badge(label, "?", "not-a-tone")
+    assert label.property(chrome.PROP_TONE) == ""
+    assert label.text() == "?"
+
+
 def test_the_skin_preview_paints_the_same_colors_the_real_rows_do() -> None:
     from nparseplus.ui import skinwidgets, spellwindow
 

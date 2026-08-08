@@ -66,7 +66,7 @@ from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
-from nparseplus.ui import skins
+from nparseplus.ui import chrome, chromewidgets, skins
 from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus.ui.skinwidgets import SkinPreview
 
@@ -122,6 +122,7 @@ class _SkinChoice(QFrame):
 
     def __init__(self, skin: skins.Skin, on_pick: Callable[[str], None], parent: QWidget) -> None:
         super().__init__(parent)
+        self.setObjectName(chrome.CARD)
         self.skin_name = skin.name
         self._on_pick = on_pick
         self._selected = False
@@ -139,9 +140,12 @@ class _SkinChoice(QFrame):
         self.set_selected(False)
 
     def set_selected(self, selected: bool) -> None:
+        # A property the chrome sheet keys off rather than an inline border, so
+        # the picked card's edge is the active skin's accent — the card that
+        # previews a skin now also wears it.
         self._selected = selected
-        width, color = (2, "#3277c4") if selected else (1, "#4a4f55")
-        self.setStyleSheet(f"_SkinChoice {{ border: {width}px solid {color}; }}")
+        self.setProperty(chrome.PROP_SELECTED, selected)
+        chromewidgets.repolish(self)
 
     def is_selected(self) -> bool:
         return self._selected
@@ -371,13 +375,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._update_check.setChecked(general.update_check)
         form.addRow("Check for updates", self._update_check)
         form.addRow("Version", self._build_version_indicator())
-        # Theme lives on the Appearance page now (with the skin picker).
-        self._font_size = QSpinBox(self)
-        self._font_size.setRange(6, 32)
-        self._font_size.setValue(general.font_size)
-        form.addRow("Font size", self._font_size)
-        note = QLabel("Font size, TTS, and overlay durations apply after restart.", self)
-        note.setStyleSheet("color: #888888; font-size: 11px;")
+        # Theme and font size live on the Appearance page now (with the skin
+        # picker) — they answer "how does nParse+ look", not "how is it set up".
+        note = chromewidgets.hint("TTS and overlay durations apply after restart.", self)
         form.addRow(note)
         return self._page(form)
 
@@ -416,6 +416,17 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         )
         form.addRow("Theme", self._theme_combo)
 
+        # The base size for every window and overlay. Named to separate it from
+        # the alert headline below, which is the one thing it does NOT drive.
+        self._font_size = QSpinBox(self)
+        self._font_size.setRange(6, 32)
+        self._font_size.setValue(general.font_size)
+        self._font_size.setToolTip(
+            "Base type size for the overlays and this window. Applies live to "
+            "open overlays; it does not change the big event-alert headline."
+        )
+        form.addRow("UI / overlay font size", self._font_size)
+
         self._overlay_text_size = QComboBox(self)
         for label, size in OVERLAY_TEXT_SIZES:
             self._overlay_text_size.addItem(f"{label} ({size}px)", size)
@@ -426,7 +437,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._overlay_text_size.setCurrentIndex(
             max(self._overlay_text_size.findData(general.overlay_text_size), 0)
         )
-        form.addRow("Overlay text size", self._overlay_text_size)
+        self._overlay_text_size.setToolTip(
+            "Size of the big word in an on-game event alert only — everything "
+            "else follows the UI / overlay font size above."
+        )
+        form.addRow("Alert headline size", self._overlay_text_size)
 
         self._alert_emphasis = QComboBox(self)
         for label, value in ALERT_EMPHASIS:
@@ -468,11 +483,10 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         form.addRow("Frame opacity", opacity_holder)
         outer.addLayout(form)
 
-        note = QLabel(
-            "Skin applies live to every overlay; theme and font size apply after restart.",
+        note = chromewidgets.hint(
+            "Skin and font size apply live to every overlay; theme applies after restart.",
             self,
         )
-        note.setStyleSheet("color: #888888; font-size: 11px;")
         outer.addWidget(note)
         outer.addStretch(1)
         page = QWidget(self)
@@ -489,9 +503,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self.raise_()
 
     def _section_caption(self, text: str) -> QLabel:
-        label = QLabel(text, self)
-        label.setStyleSheet("color: #9aa0a6; font-size: 11px; letter-spacing: 1px;")
-        return label
+        return chromewidgets.caption(text, self)
 
     def _select_skin_card(self, name: str) -> None:
         for card in self._skin_choices:
@@ -538,8 +550,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         layout.setSpacing(8)
         self._version_label = QLabel(f"nParse+ {nparseplus.__version__}", self)
         layout.addWidget(self._version_label)
-        self._update_badge = QLabel("", self)
-        self._update_badge.setObjectName("VersionBadge")
+        self._update_badge = chromewidgets.badge(self)
         layout.addWidget(self._update_badge)
         layout.addStretch(1)
         self._update_check_button = QPushButton("Check now", self)
@@ -549,29 +560,28 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         return row
 
     def _set_update_badge(self, release: object, *, checked: bool) -> None:
-        """Style the badge: neutral before a check, green up-to-date, amber
-        when a newer release is available."""
+        """Tone the badge: blank before a check, green up-to-date, amber when a
+        newer release is available.
+
+        The tone is a property the chrome sheet keys off, not an inline style,
+        so the pill follows a skin change and stays readable in the light
+        theme — which the old hardcoded ``color: white`` did not.
+        """
         if not checked:
-            self._update_badge.setText("")
-            self._update_badge.setStyleSheet("")
-            return
-        if release is None:
-            text, bg = "Up to date", "#2f9e6e"
+            chromewidgets.set_badge(self._update_badge, "")
+        elif release is None:
+            chromewidgets.set_badge(self._update_badge, "Up to date", "ok")
         else:
-            text, bg = f"Update available: v{release.version}", "#d99b2b"
-        self._update_badge.setText(text)
-        self._update_badge.setStyleSheet(
-            f"color: white; background-color: {bg}; border-radius: 3px;"
-            " padding: 1px 6px; font-weight: bold; font-size: 11px;"
-        )
+            chromewidgets.set_badge(
+                self._update_badge, f"Update available: v{release.version}", "warn"
+            )
 
     def _check_for_update_async(self) -> None:
         if self._update_checking:
             return
         self._update_checking = True
         self._update_check_button.setEnabled(False)
-        self._update_badge.setText("Checking…")
-        self._update_badge.setStyleSheet("color: #888888; font-size: 11px;")
+        chromewidgets.set_badge(self._update_badge, "Checking…", "busy")
 
         def work() -> None:
             try:
@@ -910,13 +920,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         buttons.addWidget(push_button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
-        self._friends_status = QLabel(
+        self._friends_status = chromewidgets.hint(
             "Merges every character's in-game friends list on the selected server; "
             "Push writes the merged list back (originals backed up to friends_backup/).",
             self,
         )
-        self._friends_status.setWordWrap(True)
-        self._friends_status.setStyleSheet("color: #888888; font-size: 11px;")
         layout.addWidget(self._friends_status)
         page = QWidget(self)
         page.setLayout(layout)
@@ -1057,8 +1065,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "How long an expired spell keeps flashing before it drops."
         )
         form.addRow("Post-expiry flash time", self._post_expiry_secs)
-        note = QLabel("Per-class spell filters live on the Character page.", self)
-        note.setStyleSheet("color: #888888; font-size: 11px;")
+        note = chromewidgets.hint("Per-class spell filters live on the Character page.", self)
         form.addRow(note)
         return self._page(form)
 
@@ -1119,13 +1126,11 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._maps_fade_seconds.setSuffix(" s")
         self._maps_fade_seconds.setValue(int(self._lc("maps", "backdrop_fade_seconds", 5)))
         backdrop_form.addRow("Idle after", self._maps_fade_seconds)
-        backdrop_note = QLabel(
+        backdrop_note = chromewidgets.hint(
             "Backdrop only fills behind the map. Lines, labels and player dots "
             "always draw at full strength.",
             self,
         )
-        backdrop_note.setWordWrap(True)
-        backdrop_note.setStyleSheet("color: #888888; font-size: 11px;")
         backdrop_form.addRow(backdrop_note)
         backdrop_box.setLayout(backdrop_form)
         form.addRow(backdrop_box)
@@ -1258,8 +1263,9 @@ class UnifiedSettingsWindow(OverlayWindowBase):
 
         outer = QVBoxLayout()
         outer.addLayout(grid)
-        note = QLabel("Opacity previews immediately; On top / Click-through apply on Save.", self)
-        note.setStyleSheet("color: #888888; font-size: 11px;")
+        note = chromewidgets.hint(
+            "Opacity previews immediately; On top / Click-through apply on Save.", self
+        )
         outer.addWidget(note)
         outer.addStretch(1)
         body = QWidget(self)
@@ -1411,8 +1417,7 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._sharing_mode.addItems(["pigparse", "nparse", "off"])
         self._sharing_mode.setCurrentText(self._settings.sharing.mode)
         form.addRow("Location sharing", self._sharing_mode)
-        note = QLabel("Sharing mode applies after restart.", self)
-        note.setStyleSheet("color: #888888; font-size: 11px;")
+        note = chromewidgets.hint("Sharing mode applies after restart.", self)
         form.addRow(note)
 
         account_box = QGroupBox("pigparse.org account", self)
@@ -1516,14 +1521,12 @@ class UnifiedSettingsWindow(OverlayWindowBase):
             "It never writes into the EQ directory."
         )
         macros_form.addRow("Sync macros when EQ exits", self._socials_autosync)
-        self._socials_sync_status = QLabel(
+        self._socials_sync_status = chromewidgets.hint(
             "Captures macros you made in game into the Macro Editor's local copy "
             "when the client closes, so they keep their history and can be restored. "
             "Read-only — nothing is written back to EverQuest.",
             self,
         )
-        self._socials_sync_status.setWordWrap(True)
-        self._socials_sync_status.setStyleSheet("color: #888888; font-size: 11px;")
         macros_form.addRow(self._socials_sync_status)
         self._socials_sync_now = QPushButton("Sync now", self)
         self._socials_sync_now.clicked.connect(self._sync_socials_now)
@@ -1537,15 +1540,13 @@ class UnifiedSettingsWindow(OverlayWindowBase):
         self._plugins_enabled_box = QCheckBox(self)
         self._plugins_enabled_box.setChecked(self._settings.plugins.enabled)
         plugins_form.addRow("Enable plugins (add-ons)", self._plugins_enabled_box)
-        plugins_note = QLabel(
+        plugins_note = chromewidgets.hint(
             "Add-ons are third-party code that runs with the same access to your "
             "computer as nParse+ itself. Off by default — nParse+ needs none of "
             "them. Turn this on and a Plugins page appears in this window, where "
             "you install add-ons and approve each one before it ever runs.",
             self,
         )
-        plugins_note.setWordWrap(True)
-        plugins_note.setStyleSheet("color: #888888; font-size: 11px;")
         plugins_form.addRow(plugins_note)
         plugins_box = QGroupBox("Add-ons (plugins)", self)
         plugins_box.setLayout(plugins_form)
