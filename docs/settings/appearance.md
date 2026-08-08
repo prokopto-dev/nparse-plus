@@ -1,12 +1,11 @@
 # Appearance
 
-Everything about how nParse+ *looks*, in one place: the skin its in-fight
-overlays wear, the window theme, and how hard an on-game alert pushes.
+Everything about how nParse+ *looks*, in one place: the skin its windows and
+in-fight overlays wear, and how hard an on-game alert pushes.
 
 | Setting | What it does |
 |---|---|
 | **Overlay skin** | The frame, type hierarchy and bar geometry of every overlay — and of the on-game alert. Applies live; no restart. |
-| **Theme** | Dark or Light, for the settings and utility windows. After restart. |
 | **UI / overlay font size** | Base size for nParse+ UI and overlay typography, including the small tracked labels shared by every skin. Applies live after **Apply & Save**; no restart. |
 | **Alert headline size** | Height of only the large alert word on the game (ENRAGED, FTE…). It is independent of the base font size. |
 | **Alert emphasis** | Plain, a slow pulse, or the pulse plus a colored halo. |
@@ -15,11 +14,12 @@ overlays wear, the window theme, and how hard an on-game alert pushes.
 
 ## Skins
 
-A skin is a bigger palette. Where the theme answers "what color is body
-text", a skin answers "what does the window's edge look like, how loud is
-the title, is the progress bar a thin rule under the row or the row's own
-background". Three ship, and the picker previews each one live — click a
-card and the timer window and the on-game alert both follow immediately.
+A skin is a bigger palette. Where the palette answers "what color is body
+text" — the readability floor, which no skin may move — a skin answers "what
+does the window's edge look like, how loud is the title, is the progress bar
+a thin rule under the row or the row's own background". Three ship, and the
+picker previews each one live: click a card and the timer window, the on-game
+alert, the settings window and the map all follow immediately.
 
 | Skin | Looks like |
 |---|---|
@@ -34,6 +34,13 @@ frame, the type hierarchy, and where your eye lands. All three use the
 bundled Noto Sans family: compact headings and captions share the same
 tracked uppercase treatment, while rows and values stay plain for quick
 reading.
+
+A skin reaches more than the overlays. Settings, the trigger and macro
+editors, the console, the tray menus and the map chrome all take their
+accent from it — selection bands, focus rings, group titles and hairlines —
+while the page background, input fields and body text stay fixed. That split
+is why picking Velious is unmistakable without ever putting gold text on a
+gold field.
 
 !!! tip "Switching without opening Settings"
     The tray menu has a **UI Skin** submenu next to Window Layouts. Skins
@@ -56,5 +63,5 @@ The map has its own version of the same split — see
 
 The skin picker previews live, so **Close** puts the skin back the way it
 was. **Apply & Save** is what makes a preview durable and applies font-size,
-alert and frame-opacity changes to open overlays without restarting. The
-window theme still takes effect after restart.
+alert and frame-opacity changes to every open window and overlay without
+restarting — nothing on this page needs a restart.

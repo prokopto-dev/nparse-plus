@@ -99,7 +99,11 @@ src/nparseplus/
                         # platformdirs user_log_dir — frozen stderr is invisible,
                         # so check these first on any crash/connection report)
   ui/                   # PySide6 windows; overlaybase.py is the shared overlay recipe
-                        #   theme.py (Palette: dark/light, restart) + skins.py
+                        #   theme.py (Palette: the one set of colour VALUES)
+                        #   + chrome.py (config-surface tokens + the window
+                        #   and app stylesheets; Qt-free) + chromewidgets.py
+                        #   (its Qt half: label factories, ChromeMixin,
+                        #   the Fusion QPalette) + skins.py
                         #   (Skin: the overlay chrome — duxa/velious/ledger —
                         #   Qt-free data + pure stylesheet builders, applies LIVE),
                         #   skinwidgets.py (what QSS can't express: the notched
@@ -509,6 +513,59 @@ zone actually has, and a Ctrl+F find palette (an empty one lists the zone's
 notables — that was the old ☰ NPCs button). The interesting parts are pure
 functions (`bearing_index`, `edge_anchor`, `zone_line_label`,
 `place_chrome`) and tested as such.
+
+**The chrome layer** (post-redesign, ~1850 tests): the skins work dressed the
+overlays and stopped; Settings, the editors, the plugin manager and every
+dialog were bare Qt defaults with sixteen copies of `color: #888888` that
+never flipped with the theme. `ui/chrome.py` is the second half of
+`ui/skins.py` for the windows you *configure* the app with — Qt-free, data
+plus pure stylesheet builders, with `ui/chromewidgets.py` as its Qt half
+(label factories, `ChromeMixin`, the Fusion `QPalette`).
+
+The rule it rests on: **the palette owns VALUE, the skin owns HUE.** Ground,
+field backgrounds and body text always come from `theme.palette()` — the
+readability floor a skin cannot move — while the skin contributes one accent
+(selection bands, focus rings, group titles, hairlines). That is why Velious
+tints Settings without ever producing gold-on-gold, and it is asserted
+directly rather than left as intent.
+
+**Two stylesheets, never one.** `chrome.window_style` is set per window and
+may carry bare type selectors; `chrome.app_stylesheet` is set on the
+QApplication and may carry ONLY `#Id` selectors plus `APP_SCOPE_ALLOWLIST`
+(QMenu/QToolTip, which are top-level windows a window sheet cannot reach). A
+bare type selector at app scope lands on the overlays over EverQuest —
+`skins.overlay_window_style` only overrides three properties on QLabel and Qt
+resolves conflicts per-property, so anything it does not name leaks through.
+`test_app_stylesheet_uses_only_id_selectors_and_the_allowlist` parses every
+selector and is the guard on that; do not weaken it.
+
+Rule ORDER inside `window_style` is load-bearing too: `QWidget` and
+`QLineEdit` match a QLineEdit with equal specificity, so the ground rule must
+come first or every text field becomes the page background.
+
+Two traps worth knowing. A stray brace makes Qt **discard the entire sheet**
+with only a runtime warning, so the window renders undressed while every
+string-level test passes — `test_qt_parses_the_window_sheet` installs a Qt
+message handler and asks Qt itself. And `app.setStyle("Fusion")` +
+`qt_palette_spec` carries most control internals but NOT checkbox indicators:
+Fusion draws those from a palette whose Base is near-black, so they must be
+styled explicitly or an unchecked box is invisible.
+
+**The light theme is gone** (`general.theme` removed; unknown keys are ignored
+so old settings.json files still load). One palette, so `Skin.resolved()` and
+`raw_skin()` are gone with it, and `data/ui/*.css` is deleted — of _.css's 217
+lines only `#ParserWindow*` was live, and that is generated now.
+
+Also landed: `skinwidgets.SkinTitleBar` (was copy-pasted in three overlays);
+the trigger and macro editors on `OverlayWindowBase`, which **fixes their
+dead Settings > Windows rows** — that page gates on `apply_window_state`,
+which a raw QWidget never had — with `toggle()`, the mouse handlers and
+`restore_visibility` deliberately overridden (see the commit); the map chrome
+deriving `MapColors` from the skin plus a `show_zone_lines` toggle; Discord's
+strip skinned; and the event overlay's alert now centered under every skin
+and shrink-to-fit rather than clipping. The three `resolve_color` utility
+lines keep their user-configured colour on purpose — only their size is the
+skin's.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

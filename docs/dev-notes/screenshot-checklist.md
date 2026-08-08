@@ -23,7 +23,7 @@ The tray menu now captures automatically — it's built via
 `NomnsParse._build_tray_menu` + `popup` (never the blocking modal `exec`), so it
 renders offscreen like the rest.
 
-Capture tips (for the manual shots): use the **dark theme**, crop tight to the
+Capture tips (for the manual shots): crop tight to the
 window (no desktop), and for overlays capture them **over the game** so readers
 see real context. Retina/2x captures are fine. PNG only.
 

@@ -8,7 +8,7 @@ sidebar pages, documented one-per-page here, mirroring the app:
 | Page | Covers |
 |---|---|
 | [General](general.md) | Log/install directories and updates |
-| [Appearance](appearance.md) | Overlay skin, UI/overlay font size, theme, and on-game alert styling |
+| [Appearance](appearance.md) | Overlay skin, UI/overlay font size, and on-game alert styling |
 | [Character](character.md) | Per-character profiles: class, level, sharing, spell filters |
 | [Friends](friends.md) | Friends-list merge and push |
 | [Spell Timers](spell-timers.md) | Timer behavior toggles and buff-fade warnings |
@@ -20,7 +20,7 @@ sidebar pages, documented one-per-page here, mirroring the app:
 | [Plugins](plugins.md) | Optional, off by default — only appears once add-ons are enabled in Advanced |
 
 **Apply & Save** writes everything to disk; **Close** discards pending
-edits. A few settings note that they apply after restart (theme, TTS engine,
+edits. A few settings note that they apply after restart (TTS engine,
 sharing mode). The overlay skin previews as soon as you pick it, and the
 UI/overlay font size applies to open overlays when you save.
 
