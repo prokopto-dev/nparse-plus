@@ -85,6 +85,21 @@ def test_reconcile_never_touches_persistent_markers(maps: Maps) -> None:
     assert "Tester's corpse" in maps._map._data.waypoints
 
 
+def test_persistent_waypoint_keys_sees_only_corpse_markers(maps: Maps) -> None:
+    """What the context menu counts. A plain waypoint is not a corpse."""
+    maps._map.add_persistent_waypoint("Tester's corpse", MapPoint(x=1.0, y=2.0, z=0.0))
+    maps._map.add_waypoint("Someone:1789.0", MapPoint(x=3.0, y=4.0, z=0.0), "waypoint")
+    assert maps._map.persistent_waypoint_keys() == ["Tester's corpse"]
+
+
+def test_clearing_corpse_markers_leaves_other_waypoints_alone(maps: Maps) -> None:
+    maps._map.add_persistent_waypoint("Tester's corpse", MapPoint(x=1.0, y=2.0, z=0.0))
+    maps._map.add_waypoint("Someone:1789.0", MapPoint(x=3.0, y=4.0, z=0.0), "waypoint")
+    maps._map.clear_persistent_waypoints()
+    assert maps._map.persistent_waypoint_keys() == []
+    assert "Someone:1789.0" in maps._map._data.waypoints
+
+
 def test_corpse_marker_draws_and_persists(maps: Maps) -> None:
     from nparseplus.config.settings import MapMarkerStore, Settings
     from nparseplus.core.events import CorpseMarkerEvent
