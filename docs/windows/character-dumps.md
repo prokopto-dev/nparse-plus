@@ -16,6 +16,8 @@ The Character Dumps window is a library of those files. Every character keeps
 its own current inventory *and* its own current spellbook, with the previous
 few versions behind each one.
 
+![The Character Dumps window](../assets/screenshots/window--character-dumps.png)
+
 Open it from the tray → **Character Dumps**, or type `toggle_dumps` in game.
 It needs the **EQ install directory** set in
 [Settings → General](../settings/general.md) — that is the only place dumps

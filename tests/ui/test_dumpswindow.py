@@ -119,6 +119,27 @@ def test_inventory_columns_differ_from_spellbook_columns(env: Env) -> None:
     assert names == ["Treant Tear", "Iksar Hide Cap"]
 
 
+def test_switching_kinds_drops_the_other_kinds_columns(env: Env) -> None:
+    """setHeaderLabels only grows the column count — Count/ID used to linger."""
+    env.store("A", DumpKind.INVENTORY, INVENTORY, T0)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.window.refresh()
+
+    inventory_ref = env.library.latest("A", DumpKind.INVENTORY)
+    spellbook_ref = env.library.latest("A", DumpKind.SPELLBOOK)
+    assert inventory_ref is not None and spellbook_ref is not None
+
+    env.window.select_snapshot(inventory_ref)
+    assert env.window._entries.columnCount() == 4
+    env.window.select_snapshot(spellbook_ref)
+    assert env.window._entries.columnCount() == 2
+    header = env.window._entries.headerItem()
+    assert [header.text(i) for i in range(header.columnCount())] == ["Level", "Spell"]
+    # ...and back again.
+    env.window.select_snapshot(inventory_ref)
+    assert env.window._entries.columnCount() == 4
+
+
 def test_filter_narrows_the_entries(env: Env) -> None:
     env.store("A", DumpKind.SPELLBOOK, SPELLBOOK_PLUS, T0)
     env.window.refresh()

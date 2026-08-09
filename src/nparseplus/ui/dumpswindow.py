@@ -154,9 +154,14 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
 
         self._tree = QTreeWidget(self)
         self._tree.setHeaderLabels(["Character", "Taken"])
-        self._tree.setColumnWidth(0, 190)
         self._tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._tree.currentItemChanged.connect(lambda *_: self._on_tree_selection())
+        tree_header = self._tree.header()
+        if tree_header is not None:
+            # The timestamp is fixed-width and the whole point of the column;
+            # give it exactly what it needs and let the names take the rest.
+            tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
 
         detail = QWidget(self)
         detail_layout = QVBoxLayout(detail)
@@ -182,6 +187,9 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         splitter.addWidget(detail)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
+        # Enough for a character name plus a full "YYYY-MM-DD HH:MM" stamp;
+        # the stretch factors take over once the user resizes.
+        splitter.setSizes([320, 580])
         root.addWidget(splitter, 1)
 
         self._status = chromewidgets.hint("", self)
@@ -368,6 +376,10 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             f"{dump.character} — {dump.kind.label} · {ref.label} · {dump.entry_count} entries"
         )
         headers = _INVENTORY_HEADERS if dump.kind is DumpKind.INVENTORY else _SPELLBOOK_HEADERS
+        # setHeaderLabels only ever GROWS the column count, so switching from
+        # an inventory to a spellbook would leave the inventory's Count and ID
+        # columns standing empty. Set the count explicitly first.
+        self._entries.setColumnCount(len(headers))
         self._entries.setHeaderLabels(list(headers))
         self._render_entries()
         self._render_change(dump, ref)

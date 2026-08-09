@@ -493,6 +493,77 @@ def cap_macro_editor(backend, settings) -> None:
         settings.general.eq_install_dir = previous
 
 
+def cap_character_dumps(backend, settings) -> None:
+    """The dump library with two characters, both kinds, and some history.
+
+    Built by storing snapshots directly rather than by running the watcher:
+    the shot wants a settled library, and the watcher's job (noticing files)
+    is not what the window shows.
+    """
+    import tempfile
+
+    from nparseplus.core.dumps import DumpKind, DumpLibrary, build_dump
+    from nparseplus.ui.dumpswindow import CharacterDumpsWindow
+
+    inventory = "\n".join(
+        ["\t".join(("Location", "Name", "ID", "Count", "Slots"))]
+        + [
+            "\t".join((location, name, str(item_id), str(count), str(slots)))
+            for location, name, item_id, count, slots in (
+                ("Charm", "Empty", 0, 0, 0),
+                ("Head", "Crown of Rile", 5310, 1, 5),
+                ("Neck", "Golden Amber Necklace", 6041, 1, 5),
+                ("Shoulders", "Obulus Death Shroud", 4315, 1, 5),
+                ("Back", "Cloak of Flames", 6360, 1, 5),
+                ("Primary", "Fist of Zek", 20527, 1, 5),
+                ("Secondary", "Shield of Rainbow Hues", 20528, 1, 5),
+                ("Fingers", "Silver Disc", 7561, 1, 5),
+                ("General1", "Large Bag", 17969, 1, 8),
+                ("General1Slot1", "Blue Diamond", 20507, 4, 0),
+                ("General1Slot2", "Words of the Suffering", 16281, 1, 0),
+                ("General2", "Bag of the Tinkerers", 17300, 1, 10),
+                ("Bank1", "Peridot", 10021, 12, 0),
+            )
+        ]
+    )
+    spellbook = "\n".join(
+        f"{level}\t{name}"
+        for level, name in (
+            (51, "Superior Healing"),
+            (49, "Shield of Thorns"),
+            (49, "Engulfing Roots"),
+            (44, "Chloroplast"),
+            (39, "Skin like Diamond"),
+            (29, "Ensnare"),
+            (19, "Superior Camouflage"),
+            (14, "Spirit of Wolf"),
+        )
+    )
+    # The newest spellbook adds one spell, so the window's change line reads
+    # as a real "+1: …" rather than "oldest snapshot".
+    spellbook_new = spellbook + "\n51\tCircle of Winter"
+
+    root = Path(tempfile.mkdtemp(prefix="nparseplus-shots-dumps-"))
+    library = DumpLibrary(root)
+    for character, kind, text, when in (
+        ("Prokopton", DumpKind.INVENTORY, inventory, NOW - timedelta(days=6, hours=3)),
+        ("Prokopton", DumpKind.SPELLBOOK, spellbook, NOW - timedelta(days=9)),
+        ("Prokopton", DumpKind.SPELLBOOK, spellbook_new, NOW - timedelta(hours=5)),
+        ("Untune", DumpKind.INVENTORY, inventory, NOW - timedelta(days=1, hours=2)),
+    ):
+        dump = build_dump(text, character=character, kind=kind, captured_at=when)
+        if dump is not None:
+            library.store(dump, now=NOW)
+
+    w = _keep(CharacterDumpsWindow(settings, library, on_save=lambda: None))
+    w._timer.stop()  # no live re-reads while we compose the shot
+    w.refresh()
+    ref = library.latest("Prokopton", DumpKind.SPELLBOOK)
+    if ref is not None:
+        w.select_snapshot(ref)
+    capture(w, "window--character-dumps", size=(900, 560))
+
+
 def cap_trigger_activity(backend, settings) -> None:
     """The Activity tab (#31) with a few representative fires."""
     from datetime import datetime
@@ -832,6 +903,7 @@ PHASE_A = {
     "window--update-available": lambda b, s: cap_update_dialog(),
     "window--trigger-editor": lambda b, s: cap_trigger_editor(b, s),
     "window--macro-editor": lambda b, s: cap_macro_editor(b, s),
+    "window--character-dumps": lambda b, s: cap_character_dumps(b, s),
     "window--trigger-activity": lambda b, s: cap_trigger_activity(b, s),
     "settings": lambda b, s: cap_settings(b, s),  # emits all settings--*.png
 }
