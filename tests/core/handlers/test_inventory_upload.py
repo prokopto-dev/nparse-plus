@@ -306,6 +306,31 @@ def test_the_claim_url_never_reaches_the_status_line(planner_env: Env) -> None:
     assert "token1" not in repr(planner_env.handler._claim)
 
 
+def test_a_pending_claim_is_describable_without_the_url(planner_env: Env) -> None:
+    """The UI needs to say "something is waiting" and offer a Review button
+    without ever receiving the secret."""
+    assert planner_env.handler.has_claim() is False
+    assert planner_env.handler.claim_summary() == ""
+
+    planner_env.handler.upload_now([planner_env.store("Xantik", DUMP, T0)])
+
+    assert planner_env.handler.has_claim() is True
+    summary = planner_env.handler.claim_summary()
+    assert "waiting for approval" in summary
+    assert "expires" in summary
+    assert "p99planner.com/import" not in summary
+    assert "token1" not in summary
+
+
+def test_an_expired_claim_stops_being_pending(planner_env: Env) -> None:
+    planner_env.handler.upload_now([planner_env.store("Xantik", DUMP, T0)])
+    planner_env.handler._claim = planner_env.handler._claim.model_copy(
+        update={"expires": datetime.now() - timedelta(seconds=1)}
+    )
+    assert planner_env.handler.has_claim() is False
+    assert planner_env.handler.claim_summary() == ""
+
+
 def test_open_and_forget_the_pending_claim(planner_env: Env) -> None:
     planner_env.handler.upload_now([planner_env.store("Xantik", DUMP, T0)])
     planner_env.opened.clear()

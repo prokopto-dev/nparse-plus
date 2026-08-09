@@ -231,7 +231,10 @@ class InventoryUploadHandler(BaseHandler):
             self._open_browser(link.url)  # type: ignore[union-attr]
         except Exception:
             logger.warning("could not open the p99planner review page in a browser")
-            self._set_status("p99planner: staged, but the browser would not open. Use Review…")
+            self._set_status(
+                "p99planner: staged, but the browser would not open — "
+                "use Review import… in Character Dumps."
+            )
             return
         self._set_status(_staged_status(link))
 
@@ -256,6 +259,28 @@ class InventoryUploadHandler(BaseHandler):
         and nothing logs it."""
         claim = self._current_claim()
         return claim.url if claim is not None else ""
+
+    def has_claim(self) -> bool:
+        """Whether a staged import is still waiting to be approved.
+
+        The predicate the UI asks, so that showing a Review button never
+        requires handing the URL to a widget that might render it.
+        """
+        return self._current_claim() is not None
+
+    def claim_summary(self) -> str:
+        """A describable form of the pending claim — never the URL itself."""
+        claim = self._current_claim()
+        if claim is None:
+            return ""
+        count = claim.files
+        what = f"{count} export{'s' if count != 1 else ''}"
+        if claim.expires is None:
+            return f"{what} waiting for approval at p99planner.com."
+        return (
+            f"{what} waiting for approval at p99planner.com "
+            f"(link expires {claim.expires:%a %H:%M})."
+        )
 
     def open_claim(self) -> bool:
         """Re-open the pending review page. False when there isn't one."""

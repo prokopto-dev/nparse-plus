@@ -62,6 +62,7 @@ snapshots: an unchanged dump is recognised by content and dropped.
 | **Import now** | Rescan the EQ folder immediately. Works regardless of the toggles. |
 | **Import file…** | Take in a dump from anywhere — a backup, another machine, a friend's. |
 | **Upload inventory** | Send inventory snapshots to the [destination you picked](#uploading-your-inventory). Works whether or not auto-import is on. |
+| **Review import…** | Only while a p99planner handoff is waiting: re-opens the review page. Right-click it to cancel the handoff instead. |
 | **Export…** | Write the selected snapshot back out in the client's own format, so other P99 tools can read it. |
 | **Delete** | Remove the selected snapshot. With a character row selected, forget that character entirely. |
 
@@ -85,9 +86,28 @@ join the *same* link — so a five-mule bank run is one review page, not five.
 
     Anyone holding that link can read those exports and import them into
     their own planner. nParse+ opens it in your browser rather than printing
-    it, and never writes it to the log. Don't paste it into chat. If it does
-    leak, the exposure is one item list for at most 24 hours, and opening
-    the link burns it.
+    it, and never writes it to the log or shows it on screen. Don't paste it
+    into chat. If it does leak, the exposure is one item list for at most 24
+    hours, and opening the link burns it.
+
+### While a handoff is waiting
+
+nParse+ opens the review page for you the first time it stages something,
+and only then — later dumps in the same session join the link silently, so
+approving is one page visit rather than one per mule.
+
+Because the link is never displayed, the window is the way back to it. While
+exports are waiting, the status line says so (with the expiry) and a
+**Review import…** button appears next to Upload inventory:
+
+- **Click it** to re-open the review page — after you closed the tab, or if
+  the browser refused to open in the first place.
+- **Right-click it** to cancel the handoff instead: the staged copy is
+  released and the link stops working. Anything you already approved is
+  unaffected.
+
+If you simply never approve, the link expires after 24 hours and p99planner
+sweeps it. Nothing reaches your planner characters either way.
 
 ### The Upload inventory button
 

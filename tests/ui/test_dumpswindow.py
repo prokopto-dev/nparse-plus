@@ -223,15 +223,33 @@ def test_import_file_hands_off_to_the_watcher_when_there_is_one(qtbot, tmp_path:
 
 
 class FakeUploader:
-    def __init__(self) -> None:
+    def __init__(self, pending: str = "") -> None:
         self.calls: list[list] = []
+        self.pending = pending  # what claim_summary() reports
+        self.opened = 0
+        self.forgotten = 0
+        self.open_succeeds = True
 
     def upload_now(self, dumps) -> str:
         self.calls.append(list(dumps))
         return f"Uploading {len(dumps)} snapshot(s)…"
 
     def status_text(self) -> str:
-        return ""
+        return "last action"
+
+    def claim_summary(self) -> str:
+        return self.pending
+
+    def has_claim(self) -> bool:
+        return bool(self.pending)
+
+    def open_claim(self) -> bool:
+        self.opened += 1
+        return self.open_succeeds
+
+    def forget_claim(self) -> None:
+        self.forgotten += 1
+        self.pending = ""
 
 
 def _with_uploader(qtbot, tmp_path: Path) -> tuple[Env, FakeUploader]:
@@ -298,6 +316,72 @@ def test_upload_says_so_when_there_is_nothing_to_send(qtbot, tmp_path: Path) -> 
     message = env.window.upload_selected()
     assert "No inventory" in message
     assert uploader.calls == []
+
+
+def test_review_button_appears_only_while_a_handoff_is_waiting(qtbot, tmp_path: Path) -> None:
+    """The claim link is deliberately never shown on screen, so this button
+    is the only way back to a review page the player closed."""
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.window._render_status()
+    assert env.window.review_button.isHidden()
+
+    uploader.pending = "2 exports waiting for approval at p99planner.com (link expires Sun 18:22)."
+    env.window._render_status()
+    assert not env.window.review_button.isHidden()
+    # A waiting handoff outranks the last action in the status line.
+    assert "waiting for approval" in env.window._status.text()
+    assert "expires Sun 18:22" in env.window._status.text()
+
+    uploader.pending = ""
+    env.window._render_status()
+    assert env.window.review_button.isHidden()
+    assert "last action" in env.window._status.text()
+
+
+def test_review_reopens_the_pending_page(qtbot, tmp_path: Path) -> None:
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    uploader.pending = "1 export waiting for approval at p99planner.com."
+    env.window._render_status()
+
+    assert env.window.open_review() is True
+    assert uploader.opened == 1
+
+
+def test_review_reports_a_browser_that_will_not_open(qtbot, tmp_path: Path) -> None:
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    uploader.pending = "1 export waiting for approval at p99planner.com."
+    uploader.open_succeeds = False
+    assert env.window.open_review() is False
+
+
+def test_cancelling_the_handoff_releases_it(qtbot, tmp_path: Path) -> None:
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.window.confirm_destructive = False
+    uploader.pending = "1 export waiting for approval at p99planner.com."
+    env.window._render_status()
+
+    env.window._prompt_cancel_review()
+    assert uploader.forgotten == 1
+    assert env.window.review_button.isHidden()
+
+
+def test_cancelling_with_nothing_pending_does_nothing(qtbot, tmp_path: Path) -> None:
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.window.confirm_destructive = False
+    env.window._prompt_cancel_review()
+    assert uploader.forgotten == 0
+
+
+def test_the_window_never_asks_for_the_claim_url(qtbot, tmp_path: Path) -> None:
+    """It asks whether a claim exists, not what it is — a widget that never
+    receives the secret cannot render it."""
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    uploader.pending = "1 export waiting for approval at p99planner.com."
+    env.window._render_status()
+
+    assert not hasattr(uploader, "claim_url")  # never needed by the window
+    assert "p99planner.com/import" not in env.window._status.text()
+    assert "p99planner.com/import" not in env.window.review_button.toolTip()
 
 
 def test_upload_without_an_uploader_is_reported_not_crashed(env: Env) -> None:

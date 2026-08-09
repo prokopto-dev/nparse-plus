@@ -254,6 +254,23 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self.upload_button.clicked.connect(self.upload_selected)
         bar.addWidget(self.upload_button)
 
+        # Only visible while a p99planner handoff is waiting to be approved.
+        # Without it, a review page the player closed (or that never opened)
+        # would be unreachable — the claim link is deliberately never shown
+        # on screen, so a button is the only way back to it.
+        self.review_button = QPushButton("Review import…", self)
+        self.review_button.setToolTip(
+            "Re-open the p99planner review page for the exports waiting to be "
+            "approved. Right-click to cancel the handoff instead."
+        )
+        self.review_button.clicked.connect(self.open_review)
+        self.review_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.review_button.customContextMenuRequested.connect(
+            lambda _pos: self._prompt_cancel_review()
+        )
+        self.review_button.hide()
+        bar.addWidget(self.review_button)
+
         self.export_button = QPushButton("Export…", self)
         self.export_button.clicked.connect(self._prompt_export)
         bar.addWidget(self.export_button)
@@ -447,9 +464,13 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         else:
             total = self.library.total_snapshots()
             scan = f"{total} snapshot{'s' if total != 1 else ''} stored."
-        # The upload line is the newer news when there is any, so it wins the
-        # tail of the line rather than being buried.
-        upload = self.uploader.status_text() if self.uploader is not None else ""
+
+        pending = self.uploader.claim_summary() if self.uploader is not None else ""
+        self.review_button.setVisible(bool(pending))
+        # A waiting handoff outranks the last action: it is the thing the user
+        # still has to do something about. Otherwise show whatever just
+        # happened, which is the newer news.
+        upload = pending or (self.uploader.status_text() if self.uploader is not None else "")
         self._status.setText(f"{scan}  {upload}".rstrip() if upload else scan)
 
     def _on_timer(self) -> None:
@@ -525,6 +546,25 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                 return str(name)
             item = item.parent()
         return ""
+
+    def open_review(self) -> bool:
+        """Re-open the pending p99planner review page."""
+        if self.uploader is None or not self.uploader.open_claim():
+            self._render_status()
+            return False
+        return True
+
+    def _prompt_cancel_review(self) -> None:
+        if self.uploader is None or not self.uploader.has_claim():
+            return
+        if not self._confirm(
+            "Cancel the p99planner handoff?\n\n"
+            "The staged exports are released and the review link stops "
+            "working. Nothing already approved is affected."
+        ):
+            return
+        self.uploader.forget_claim()
+        self._render_status()
 
     def upload_selected(self) -> str:
         """Upload per :meth:`upload_scope`; returns the status line shown."""

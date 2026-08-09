@@ -639,6 +639,14 @@ Character Dumps window's **Upload inventory** button, which resolves scope
 from the selection (snapshot → character → whole roster) and ignores the
 session-start gate, since that is what manual means.
 
+Because the link is never displayed, the window is the only way back to a
+pending one: a **Review import…** button appears while `has_claim()` (and
+the status line carries `claim_summary()`, which names the count and expiry
+but never the URL — the window asks those two predicates and never calls
+`claim_url()`, so the secret never reaches a widget that could render it).
+Right-click cancels via `forget_claim()`. Without that button, a review page
+the player closed would be unreachable.
+
 The hooks (what "expose to the SDK" means here) are two frozen bus events in
 `core/events.py` — `CharacterDumpImportedEvent` and
 `CharacterDumpUpdatedEvent` (the latter carrying an `added`/`removed`
