@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from nparseplus.helpers.application import NomnsParse
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
+    from nparseplus.ui.dumpswindow import CharacterDumpsWindow
     from nparseplus.ui.eventoverlay import EventOverlayWindow
     from nparseplus.ui.mobinfo import MobInfoWindow
     from nparseplus.ui.qtbridge import QtEventBridge
@@ -167,6 +168,7 @@ class AppContext:
     window_layouts: WindowLayoutManager
     settings: Settings
     save: Callable[[], None]
+    dumps_window: CharacterDumpsWindow | None = None
     plugin_host: PluginHost | None = None
 
 
@@ -204,13 +206,15 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtGui import QFontDatabase, QIcon
 
-    from nparseplus.config.paths import ensure_socials_dir
+    from nparseplus.config.paths import ensure_dumps_dir, ensure_socials_dir
+    from nparseplus.core.dumps import DumpLibrary
     from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
     from nparseplus.ui import chromewidgets
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
+    from nparseplus.ui.dumpswindow import CharacterDumpsWindow
     from nparseplus.ui.eventoverlay import EventOverlayWindow
     from nparseplus.ui.macroeditor import MacroEditorWindow
     from nparseplus.ui.mobinfo import MobInfoWindow
@@ -306,6 +310,12 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             save()
 
     macro_editor = MacroEditorWindow(settings, on_save=save, store_dir=ensure_socials_dir())
+    dumps_window = CharacterDumpsWindow(
+        settings,
+        backend.dumps or DumpLibrary(ensure_dumps_dir()),
+        on_save=save,
+        watcher=backend.dump_watcher,
+    )
 
     def _repaint_maps() -> None:
         if app.maps_window is not None:
@@ -320,6 +330,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         "console": console_window,
         "triggereditor": trigger_editor,
         "macroeditor": macro_editor,
+        "dumps": dumps_window,
     }
 
     # Plugins: consent for never-seen ones, then activate — the driver thread
@@ -424,6 +435,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Console": console_window,
             "Trigger Editor": trigger_editor,
             "Macro Editor": macro_editor,
+            "Character Dumps": dumps_window,
             **plugin_tray,
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
@@ -460,6 +472,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         window_layouts=window_layouts,
         settings=settings,
         save=save,
+        dumps_window=dumps_window,
         plugin_host=plugin_host,
     )
 

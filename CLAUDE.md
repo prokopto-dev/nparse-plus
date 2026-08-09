@@ -70,6 +70,13 @@ src/nparseplus/
     dps.py              #   FightTracker (12s trailing window, session stats, >20s gate)
     zones.py            #   ZoneDatabase over data/zones.json (respawn lookup order)
     ch_chain.py, death_loop.py, pets.py, npc_search.py, boats.py
+    dumps/              #   character dump library: /outputfile inventory +
+                        #   spellbook snapshots kept per (character, kind).
+                        #   models.py (CharacterDump + digest/diff), parse.py
+                        #   (the two file shapes; reuses inventory.py's
+                        #   parser), store.py (DumpLibrary), watcher.py (THE
+                        #   single EQ-dir poll — publishes CharacterDump*
+                        #   events and feeds handlers/inventory_upload.py)
     sharing.py          #   SharingCoordinator: THE sharing gate + inbound thread crossing
     visionfix.py        #   Night Vision fix apply/revert (backup-first)
     pigparse.py         #   Qt-free Protocol for the REST client + SubmitFn
@@ -108,6 +115,10 @@ src/nparseplus/
                         #   Qt-free data + pure stylesheet builders, applies LIVE),
                         #   skinwidgets.py (what QSS can't express: the notched
                         #   plate, the full-row bar, the gem mark, previews),
+                        #   dumpswindow.py (Character Dumps: the library
+                        #   browser + its auto-import/auto-update toggles;
+                        #   never imports on the GUI thread — it asks
+                        #   DumpWatcher and refreshes off a QTimer),
                         #   pluginmanager.py (Settings > Plugins + registry browser),
                         #   pluginconsent.py (the one-time approval dialog),
                         #   pluginwindow.py (the PluginWindow base plugins subclass)
@@ -566,6 +577,47 @@ strip skinned; and the event overlay's alert now centered under every skin
 and shrink-to-fit rather than clipping. The three `resolve_color` utility
 lines keep their user-configured colour on purpose — only their size is the
 skin's.
+
+**The character dump library** (post-2.0, ~1906 tests): P99's
+`/outputfile inventory` and `/outputfile spellbook` write
+`<Character>-Inventory.txt` / `<Character>-Spellbook.txt` into the EQ
+directory and **overwrite them every run** — one copy each, no history.
+`core/dumps/` keeps copies, keyed by **(character, kind)**, so every
+character holds its own current inventory AND its own current spellbook with
+the previous N behind each (`keep_per_character`, default 10). Two file
+shapes: inventory has the `Location Name ID Count Slots` header (reuses
+`core.inventory.parse_inventory_text`; the client's `Empty` slot rows are
+dropped on import), and a spellbook has **no header at all** — every line is
+`<level>\t<Spell Name>`, so `parse_spellbook_text` rejects the whole file on
+one bad line, since "every line parses" is the only discriminator. Snapshots
+are JSON under `dumps_dir()`, the filename carrying `<when>-<digest>` so
+listing is a directory scan with no reads and re-importing an unchanged dump
+lands on the path that already exists. Two toggles: `auto_import` (unseen
+character+kind; also the master switch) and `auto_update` (a tracked dump
+changed) — both default ON, unlike the pigparse uploader, because this only
+reads files the game wrote and copies them into our own data dir.
+`DumpWatcher` deliberately does NOT prime its mtimes (unlike
+`InventoryWatcher`, which did): collecting what is already there is the
+point, and the content digest stops an unchanged re-dump accumulating.
+
+That watcher is now **the one poll of the EQ directory** for dumps.
+`core/inventory.py` kept the parser and lost its poller; the upload half of
+EQTool's InventoryWatcherService became
+`core/handlers/inventory_upload.py`, a bus subscriber on the dump events.
+Three deliberate behavior changes are documented there: startup priming
+became "only dumps captured after `session_start`", an unchanged re-dump no
+longer re-uploads, and the character uploaded comes from the dump filename
+rather than whoever is logged in. Consequence: upload rides on
+`dumps.auto_import`, said out loud in both settings surfaces.
+
+The hooks (what "expose to the SDK" means here) are two frozen bus events in
+`core/events.py` — `CharacterDumpImportedEvent` and
+`CharacterDumpUpdatedEvent` (the latter carrying an `added`/`removed`
+multiset name diff). Plugins reach them today through the SDK's lazy
+`nparseplus_sdk.events` re-export with no SDK version bump; **every** import
+path publishes from the driver thread, including the window's buttons, which
+is why `ui/dumpswindow.py` calls `request_scan()`/`request_import()` instead
+of importing itself (same inbox shape as `SharingCoordinator`).
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

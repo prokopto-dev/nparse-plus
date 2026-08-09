@@ -88,6 +88,7 @@ nav:
       - Console: windows/console.md
       - Trigger Editor: windows/trigger-editor.md
       - Macro Editor: windows/macro-editor.md
+      - Character Dumps: windows/character-dumps.md
       - Discord Overlay: windows/discord-overlay.md
   - Features:
       - features/index.md

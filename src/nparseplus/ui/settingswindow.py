@@ -1430,8 +1430,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._inventory_upload = QCheckBox(self)
         self._inventory_upload.setChecked(self._settings.pigparse_account.inventory_upload)
         self._inventory_upload.setToolTip(
-            "Watch the EQ directory for /outputfile inventory dumps and upload "
-            "them to your pigparse.org character page. Needs a login."
+            "Upload /outputfile inventory dumps to your pigparse.org character "
+            "page. Needs a login, and rides on the Character Dumps window's "
+            "auto-import — that is what notices the dump."
         )
         account_form.addRow("Upload inventory dumps", self._inventory_upload)
         account_box.setLayout(account_form)

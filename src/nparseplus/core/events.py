@@ -360,3 +360,46 @@ class WindowCommandEvent(LogEvent):
 
     window: str
     action: str  # "show" | "hide" | "toggle"
+
+
+# --- character dump events ----------------------------------------------------
+
+
+class CharacterDumpEvent(RemoteEvent):
+    """nparseplus extension (not in EventModels.cs): the dump library took in
+    a ``/outputfile`` snapshot for one character.
+
+    These are the hooks the dump library exposes — they carry the identity of
+    the snapshot and what changed, not the snapshot itself, so a subscriber
+    that only wants to know "did anything happen" costs nothing. Read the
+    contents through ``nparseplus.core.dumps.DumpLibrary`` at ``path``.
+
+    Published from the log-driver thread by ``DumpWatcher.tick``, like every
+    other bus event, including for imports the user asked for from the window
+    (the window hands the request to the watcher rather than doing the work
+    itself, precisely so this stays true).
+    """
+
+    character: str
+    kind: str  # DumpKind value: "inventory" | "spellbook"
+    server: str = ""
+    captured_at: datetime
+    entry_count: int = 0
+    digest: str = ""
+    path: str = ""  # the stored snapshot, not the game's file
+    source_file: str = ""
+
+
+class CharacterDumpImportedEvent(CharacterDumpEvent):
+    """The first snapshot of this character and kind entered the library."""
+
+
+class CharacterDumpUpdatedEvent(CharacterDumpEvent):
+    """A tracked dump changed and a new snapshot was stored.
+
+    ``added``/``removed`` are entry names diffed as a multiset against the
+    previous snapshot — item names for an inventory, spell names for a book.
+    """
+
+    added: tuple[str, ...] = ()
+    removed: tuple[str, ...] = ()

@@ -23,3 +23,9 @@ network; the character settings decide what that character sends.
 
 An account is **not** required for map dots, shared timers, or feeds —
 only for inventory upload.
+
+Uploading is fed by the same scan that fills the
+[Character Dumps](../windows/character-dumps.md) library, so that window's
+**auto-import** has to be on (it is by default) for a dump to be noticed.
+Only dumps you take during the current session are uploaded; ones already
+sitting in the EQ folder at launch are collected locally but not published.

@@ -18,7 +18,16 @@ import re
 from nparseplus.core.bus import EventBus, Unsubscribe
 from nparseplus.core.events import CommsEvent, WindowCommandEvent
 
-WINDOW_NAMES = ("maps", "spells", "dps", "mobinfo", "console", "discord", "triggereditor")
+WINDOW_NAMES = (
+    "maps",
+    "spells",
+    "dps",
+    "mobinfo",
+    "console",
+    "discord",
+    "triggereditor",
+    "dumps",
+)
 
 _COMMAND_RE = re.compile(
     r"^(?P<action>show|hide|toggle)_(?P<window>" + "|".join(WINDOW_NAMES) + r")$"
