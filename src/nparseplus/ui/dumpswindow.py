@@ -25,6 +25,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -261,13 +263,11 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self.review_button = QPushButton("Review import…", self)
         self.review_button.setToolTip(
             "Re-open the p99planner review page for the exports waiting to be "
-            "approved. Right-click to cancel the handoff instead."
+            "approved. Right-click to copy the link or cancel the handoff."
         )
         self.review_button.clicked.connect(self.open_review)
         self.review_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.review_button.customContextMenuRequested.connect(
-            lambda _pos: self._prompt_cancel_review()
-        )
+        self.review_button.customContextMenuRequested.connect(self._review_menu)
         self.review_button.hide()
         bar.addWidget(self.review_button)
 
@@ -552,6 +552,43 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         if self.uploader is None or not self.uploader.open_claim():
             self._render_status()
             return False
+        return True
+
+    def _review_menu(self, pos) -> None:
+        if self.uploader is None or not self.uploader.has_claim():
+            return
+        menu = QMenu(self)
+        menu.addAction("Open review page", self.open_review)
+        menu.addAction("Copy review link", self.copy_review_link)
+        menu.addSeparator()
+        menu.addAction("Cancel handoff…", self._prompt_cancel_review)
+        menu.exec(self.review_button.mapToGlobal(pos))
+
+    def copy_review_link(self) -> bool:
+        """Put the claim URL on the clipboard.
+
+        The escape hatch for a machine where opening a browser does not work
+        (no default browser, a sandbox, EQ under Wine on a bare desktop) —
+        without it, a browser that refuses to open leaves no way to reach the
+        review page at all.
+
+        This is the ONE place the URL leaves the handler, and it goes to the
+        clipboard on an explicit user action, never into a label. Copying a
+        secret because the user asked is not the same as displaying it.
+        """
+        if self.uploader is None:
+            return False
+        url = self.uploader.claim_url()
+        if not url:
+            return False
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:  # pragma: no cover - defensive
+            return False
+        clipboard.setText(url)
+        self._status.setText(
+            "Review link copied — paste it into a browser to approve the import. "
+            "Treat it as private; anyone with it can read those exports."
+        )
         return True
 
     def _prompt_cancel_review(self) -> None:

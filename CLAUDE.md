@@ -644,8 +644,17 @@ pending one: a **Review import…** button appears while `has_claim()` (and
 the status line carries `claim_summary()`, which names the count and expiry
 but never the URL — the window asks those two predicates and never calls
 `claim_url()`, so the secret never reaches a widget that could render it).
-Right-click cancels via `forget_claim()`. Without that button, a review page
-the player closed would be unreachable.
+Right-clicking it offers open / **Copy review link** / cancel. Without that
+button, a review page the player closed would be unreachable; without the
+copy item, a machine where `webbrowser.open` does nothing would have no route
+at all (the failure message used to point back at Review, which is the same
+call that just failed). Copy is the ONE place the URL leaves the handler, on
+an explicit user action, straight to the clipboard and never into a label.
+The recovery hint lives on `claim_summary()` rather than in a one-shot status
+message, because the pending line is the steady state and would replace it
+within the second. The claim is **session-only** (memory, never persisted):
+restart before approving and the button is gone, the link stays valid for its
+24h, and the next upload stages a fresh one.
 
 The hooks (what "expose to the SDK" means here) are two frozen bus events in
 `core/events.py` — `CharacterDumpImportedEvent` and

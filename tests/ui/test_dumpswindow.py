@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+from PySide6.QtGui import QGuiApplication
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dumps import DumpKind, DumpLibrary, build_dump
@@ -226,6 +227,7 @@ class FakeUploader:
     def __init__(self, pending: str = "") -> None:
         self.calls: list[list] = []
         self.pending = pending  # what claim_summary() reports
+        self.url = "https://p99planner.com/import/7f3c9a2e8b1d4056"
         self.opened = 0
         self.forgotten = 0
         self.open_succeeds = True
@@ -242,6 +244,9 @@ class FakeUploader:
 
     def has_claim(self) -> bool:
         return bool(self.pending)
+
+    def claim_url(self) -> str:
+        return self.url if self.pending else ""
 
     def open_claim(self) -> bool:
         self.opened += 1
@@ -372,16 +377,38 @@ def test_cancelling_with_nothing_pending_does_nothing(qtbot, tmp_path: Path) -> 
     assert uploader.forgotten == 0
 
 
-def test_the_window_never_asks_for_the_claim_url(qtbot, tmp_path: Path) -> None:
-    """It asks whether a claim exists, not what it is — a widget that never
-    receives the secret cannot render it."""
+def test_the_claim_url_never_reaches_anything_displayed(qtbot, tmp_path: Path) -> None:
+    """Rendering the link is what we refuse; copying it on request is not."""
     env, uploader = _with_uploader(qtbot, tmp_path)
     uploader.pending = "1 export waiting for approval at p99planner.com."
     env.window._render_status()
 
-    assert not hasattr(uploader, "claim_url")  # never needed by the window
-    assert "p99planner.com/import" not in env.window._status.text()
-    assert "p99planner.com/import" not in env.window.review_button.toolTip()
+    assert "import/" not in env.window._status.text()
+    assert "import/" not in env.window.review_button.toolTip()
+    assert "import/" not in env.window.review_button.text()
+
+
+def test_copy_review_link_is_the_no_browser_escape_hatch(qtbot, tmp_path: Path) -> None:
+    """Without this, a machine where webbrowser.open does nothing has no way
+    to reach the review page at all."""
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    uploader.pending = "1 export waiting for approval at p99planner.com."
+    uploader.open_succeeds = False  # the browser refuses, as on a bare desktop
+
+    assert env.window.copy_review_link() is True
+    assert QGuiApplication.clipboard().text() == uploader.url
+    # The status confirms the copy and warns, without echoing the link.
+    status = env.window._status.text()
+    assert "copied" in status
+    assert "private" in status
+    assert uploader.url not in status
+
+
+def test_copy_review_link_does_nothing_without_a_claim(qtbot, tmp_path: Path) -> None:
+    env, _uploader = _with_uploader(qtbot, tmp_path)
+    QGuiApplication.clipboard().setText("untouched")
+    assert env.window.copy_review_link() is False
+    assert QGuiApplication.clipboard().text() == "untouched"
 
 
 def test_upload_without_an_uploader_is_reported_not_crashed(env: Env) -> None:

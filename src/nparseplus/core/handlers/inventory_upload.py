@@ -109,6 +109,9 @@ class InventoryUploadHandler(BaseHandler):
         self._lock = threading.Lock()
         self._claim: ClaimLink | None = None
         self._status = ""
+        #: False once opening a browser has failed, so the UI can keep
+        #: offering the copy-the-link route instead of a dead retry.
+        self._browser_ok = True
         bus.subscribe(CharacterDumpImportedEvent, self._on_dump)
         bus.subscribe(CharacterDumpUpdatedEvent, self._on_dump)
 
@@ -230,12 +233,17 @@ class InventoryUploadHandler(BaseHandler):
         try:
             self._open_browser(link.url)  # type: ignore[union-attr]
         except Exception:
+            self._browser_ok = False
             logger.warning("could not open the p99planner review page in a browser")
+            # Do NOT send them back to Review import…, which is the same
+            # webbrowser call that just failed. Copying the link is the path
+            # that still works on a machine with no usable default browser.
             self._set_status(
-                "p99planner: staged, but the browser would not open — "
-                "use Review import… in Character Dumps."
+                "p99planner: staged, but no browser would open — right-click "
+                "Review import… and choose Copy review link."
             )
             return
+        self._browser_ok = True  # a browser that works again clears the hint
         self._set_status(_staged_status(link))
 
     # -- claim state -------------------------------------------------------
@@ -269,18 +277,27 @@ class InventoryUploadHandler(BaseHandler):
         return self._current_claim() is not None
 
     def claim_summary(self) -> str:
-        """A describable form of the pending claim — never the URL itself."""
+        """A describable form of the pending claim — never the URL itself.
+
+        Carries the recovery hint while the browser is refusing to open,
+        because this line is the steady state the UI shows: a one-shot
+        "could not open a browser" message would be replaced by it within
+        the second, leaving the user stuck with no visible way forward.
+        """
         claim = self._current_claim()
         if claim is None:
             return ""
         count = claim.files
         what = f"{count} export{'s' if count != 1 else ''}"
-        if claim.expires is None:
-            return f"{what} waiting for approval at p99planner.com."
-        return (
-            f"{what} waiting for approval at p99planner.com "
-            f"(link expires {claim.expires:%a %H:%M})."
-        )
+        summary = f"{what} waiting for approval at p99planner.com"
+        if claim.expires is not None:
+            summary += f" (link expires {claim.expires:%a %H:%M})"
+        if not self._browser_ok:
+            return (
+                f"{summary} — no browser would open; right-click "
+                "Review import… and choose Copy review link."
+            )
+        return summary + "."
 
     def open_claim(self) -> bool:
         """Re-open the pending review page. False when there isn't one."""
@@ -290,8 +307,10 @@ class InventoryUploadHandler(BaseHandler):
         try:
             self._open_browser(url)
         except Exception:
+            self._browser_ok = False
             logger.warning("could not open the p99planner review page in a browser")
             return False
+        self._browser_ok = True
         return True
 
     def forget_claim(self) -> None:

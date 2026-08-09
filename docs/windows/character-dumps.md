@@ -100,14 +100,28 @@ Because the link is never displayed, the window is the way back to it. While
 exports are waiting, the status line says so (with the expiry) and a
 **Review import…** button appears next to Upload inventory:
 
-- **Click it** to re-open the review page — after you closed the tab, or if
-  the browser refused to open in the first place.
-- **Right-click it** to cancel the handoff instead: the staged copy is
-  released and the link stops working. Anything you already approved is
-  unaffected.
+- **Click it** to re-open the review page — after you closed the tab, for
+  instance.
+- **Right-click it** for *Open review page*, *Copy review link*, and *Cancel
+  handoff…*.
 
-If you simply never approve, the link expires after 24 hours and p99planner
-sweeps it. Nothing reaches your planner characters either way.
+**Copy review link** is the escape hatch for a machine where nParse+ can't
+launch a browser at all (no default browser, a locked-down desktop). The
+status line tells you to use it when that happens, and keeps telling you for
+as long as it's true. Paste the link into any browser to approve the import
+— but treat it like a password on the way there.
+
+Cancelling releases the staged copy and the link stops working; anything you
+already approved is unaffected. And if you simply never approve, the link
+expires after 24 hours and p99planner sweeps it. Nothing reaches your planner
+characters either way.
+
+!!! note "Restarting nParse+ forgets a pending link"
+
+    The claim is held for the session only. Restart before approving and the
+    Review button is gone — the link itself is still valid (it's in your
+    browser history, and live for its 24 hours), and your next upload simply
+    stages a fresh one. The orphan expires on its own.
 
 ### The Upload inventory button
 

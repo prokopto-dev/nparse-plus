@@ -322,6 +322,32 @@ def test_a_pending_claim_is_describable_without_the_url(planner_env: Env) -> Non
     assert "token1" not in summary
 
 
+def test_a_browser_that_will_not_open_leaves_a_visible_way_out(tmp_path: Path) -> None:
+    """The one-shot failure message is replaced by the pending line within a
+    second, so the recovery hint has to live on the pending line itself."""
+
+    def refuses(_url: str) -> None:
+        raise OSError("no browser configured")
+
+    env = Env(tmp_path, target="p99planner", open_browser=refuses)
+    env.handler.upload_now([env.store("Xantik", DUMP, T0)])
+
+    # Staged despite the browser: the exports are safe, just unreachable.
+    assert len(env.planner.staged) == 1
+    assert env.handler.has_claim() is True
+
+    summary = env.handler.claim_summary()
+    assert "Copy review link" in summary
+    assert "waiting for approval" in summary
+    assert "p99planner.com/import" not in summary  # still never the URL
+
+
+def test_the_hint_clears_once_a_browser_works(planner_env: Env) -> None:
+    planner_env.handler._browser_ok = False
+    planner_env.handler.upload_now([planner_env.store("Xantik", DUMP, T0)])
+    assert "Copy review link" not in planner_env.handler.claim_summary()
+
+
 def test_an_expired_claim_stops_being_pending(planner_env: Env) -> None:
     planner_env.handler.upload_now([planner_env.store("Xantik", DUMP, T0)])
     planner_env.handler._claim = planner_env.handler._claim.model_copy(
