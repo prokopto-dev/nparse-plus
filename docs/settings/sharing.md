@@ -19,13 +19,33 @@ network; the character settings decide what that character sends.
 |---|---|
 | **Log in with Discord…** | Opens your browser for pigparse.org's Discord OAuth login; the status line shows progress. The resulting token is stored locally in your settings. |
 | **Log out** | Clears the token. |
-| **Upload inventory dumps** | With a logged-in account: typing `/outputfile inventory` in game uploads the dump to your pigparse.org character page. Off by default. |
 
-An account is **not** required for map dots, shared timers, or feeds —
-only for inventory upload.
+An account is **not** required for map dots, shared timers, or feeds — only
+for uploading to pigparse.org's character browser (below), and not even for
+that if you send your inventory to p99planner instead.
 
-Uploading is fed by the same scan that fills the
-[Character Dumps](../windows/character-dumps.md) library, so that window's
-**auto-import** has to be on (it is by default) for a dump to be noticed.
-Only dumps you take during the current session are uploaded; ones already
-sitting in the EQ folder at launch are collected locally but not published.
+## Inventory upload
+
+One picker, **Send inventory dumps to**, because both destinations publish
+the same character to a different website:
+
+| Destination | What it needs | What happens |
+|---|---|---|
+| **Off** (default) | — | Dumps stay on this machine, in the [Character Dumps](../windows/character-dumps.md) library. |
+| **pigparse.org character page** | The Discord login above | Typing `/outputfile inventory` in game uploads the dump to your pigparse.org character page. |
+| **p99planner.com** | Nothing | The export is staged at p99planner.com and a review page opens in your browser, where you approve the import. No account, no API key, no login. |
+
+p99planner never applies anything without you approving it on that page, and
+later dumps in the same session join the *same* review link for 24 hours. The
+link is private — treat it like a password; see
+[Character Dumps](../windows/character-dumps.md#uploading-your-inventory).
+
+Whichever you pick, uploading is fed by the same scan that fills the
+Character Dumps library, so that window's **auto-import** has to be on (it is
+by default) for a dump to be noticed automatically. Only dumps you take
+during the current session upload on their own; ones already sitting in the
+EQ folder at launch are collected locally but not published. To send those —
+or a whole mule roster at once — use **Upload inventory** in the Character
+Dumps window.
+
+Changing the destination applies after a restart.

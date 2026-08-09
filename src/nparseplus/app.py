@@ -315,6 +315,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         backend.dumps or DumpLibrary(ensure_dumps_dir()),
         on_save=save,
         watcher=backend.dump_watcher,
+        uploader=backend.inventory_upload,
     )
 
     def _repaint_maps() -> None:

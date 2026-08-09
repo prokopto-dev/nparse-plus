@@ -54,6 +54,7 @@ from nparseplus.core.dumps import (
     read_dump_file,
     render_dump_text,
 )
+from nparseplus.core.handlers.inventory_upload import InventoryUploadHandler
 from nparseplus.ui import chromewidgets
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
@@ -89,6 +90,7 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         *,
         on_save: Callable[[], None],
         watcher: DumpWatcher | None = None,
+        uploader: InventoryUploadHandler | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -104,6 +106,7 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         )
         self.library = library
         self.watcher = watcher
+        self.uploader = uploader
         self._current: SnapshotRef | None = None
         self._dump: CharacterDump | None = None
         self._loading = False
@@ -242,6 +245,14 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self.import_file_button = QPushButton("Import file…", self)
         self.import_file_button.clicked.connect(self._prompt_import_file)
         bar.addWidget(self.import_file_button)
+
+        self.upload_button = QPushButton("Upload inventory", self)
+        self.upload_button.setToolTip(
+            "Send inventory snapshots to the destination picked in "
+            "Settings > Sharing. Works whether or not auto-import is on."
+        )
+        self.upload_button.clicked.connect(self.upload_selected)
+        bar.addWidget(self.upload_button)
 
         self.export_button = QPushButton("Export…", self)
         self.export_button.clicked.connect(self._prompt_export)
@@ -432,10 +443,14 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
 
     def _render_status(self) -> None:
         if self.watcher is not None:
-            self._status.setText(self.watcher.status_text())
-            return
-        total = self.library.total_snapshots()
-        self._status.setText(f"{total} snapshot{'s' if total != 1 else ''} stored.")
+            scan = self.watcher.status_text()
+        else:
+            total = self.library.total_snapshots()
+            scan = f"{total} snapshot{'s' if total != 1 else ''} stored."
+        # The upload line is the newer news when there is any, so it wins the
+        # tail of the line rather than being buried.
+        upload = self.uploader.status_text() if self.uploader is not None else ""
+        self._status.setText(f"{scan}  {upload}".rstrip() if upload else scan)
 
     def _on_timer(self) -> None:
         if self.isVisible():
@@ -481,6 +496,51 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                 "That file is not an /outputfile inventory or spellbook dump.\n\n"
                 "In game: /outputfile inventory — or /outputfile spellbook.",
             )
+
+    # -- upload ------------------------------------------------------------
+
+    def upload_scope(self) -> list[CharacterDump]:
+        """Which inventories the Upload button would send, from the selection.
+
+        Three levels, narrowest first, because that is how the tree reads:
+        an inventory snapshot uploads itself, a character row uploads that
+        character's current inventory, and no selection at all uploads every
+        character's current inventory — p99planner takes a whole mule roster
+        in one call, and that is exactly the tedious case worth having.
+        """
+        dump = self._dump
+        if dump is not None and dump.kind is DumpKind.INVENTORY:
+            return [dump]
+        item = self._tree.currentItem()
+        character = self._character_of(item)
+        characters = [character] if character else self.library.characters()
+        found = [self.library.load_latest(name, DumpKind.INVENTORY) for name in characters]
+        return [dump for dump in found if dump is not None]
+
+    def _character_of(self, item: QTreeWidgetItem | None) -> str:
+        """Walk up to whichever row carries a character name."""
+        while item is not None:
+            name = item.data(0, _ROLE_CHARACTER)
+            if name:
+                return str(name)
+            item = item.parent()
+        return ""
+
+    def upload_selected(self) -> str:
+        """Upload per :meth:`upload_scope`; returns the status line shown."""
+        if self.uploader is None:
+            message = "Inventory upload is unavailable."
+        else:
+            dumps = self.upload_scope()
+            if not dumps:
+                message = "No inventory snapshot to upload."
+            else:
+                message = self.uploader.upload_now(dumps)
+        self._status.setText(message)
+        # The send finishes on the net worker; let its outcome land in the
+        # status line without making the user click anything.
+        QTimer.singleShot(REFRESH_MS, self._render_status)
+        return message
 
     def delete_selected(self) -> None:
         """Delete the selected snapshot, or a whole character at the root."""

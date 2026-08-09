@@ -21,7 +21,7 @@ import threading
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
@@ -1427,18 +1427,53 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         account_buttons.addWidget(self._account_logout)
         account_buttons.addStretch(1)
         account_form.addRow(account_buttons)
-        self._inventory_upload = QCheckBox(self)
-        self._inventory_upload.setChecked(self._settings.pigparse_account.inventory_upload)
-        self._inventory_upload.setToolTip(
-            "Upload /outputfile inventory dumps to your pigparse.org character "
-            "page. Needs a login, and rides on the Character Dumps window's "
-            "auto-import — that is what notices the dump."
-        )
-        account_form.addRow("Upload inventory dumps", self._inventory_upload)
         account_box.setLayout(account_form)
         form.addRow(account_box)
+
+        # Inventory upload is its own box, not part of the pigparse account
+        # one: only one of its destinations needs that account at all.
+        upload_box = QGroupBox("Inventory upload", self)
+        upload_form = QFormLayout()
+        self._upload_target = QComboBox(self)
+        self._upload_target.addItem("Off", "off")
+        self._upload_target.addItem("pigparse.org character page", "pigparse")
+        self._upload_target.addItem("p99planner.com", "p99planner")
+        index = self._upload_target.findData(self._settings.dumps.upload_target)
+        self._upload_target.setCurrentIndex(max(index, 0))
+        self._upload_target.currentIndexChanged.connect(lambda _i: self._refresh_upload_note())
+        upload_form.addRow("Send inventory dumps to", self._upload_target)
+        self._upload_note = chromewidgets.hint("", self)
+        self._upload_note.setWordWrap(True)
+        upload_form.addRow(self._upload_note)
+        upload_box.setLayout(upload_form)
+        form.addRow(upload_box)
+
         self._refresh_account_status()
+        self._refresh_upload_note()
         return self._page(form)
+
+    #: What each inventory-upload destination actually does, said plainly —
+    #: they differ in what they need from the user and where the data lands.
+    UPLOAD_NOTES: ClassVar[dict[str, str]] = {
+        "off": "Dumps stay on this machine, in the Character Dumps library.",
+        "pigparse": ("Uploads to your pigparse.org character page. Needs the Discord login above."),
+        "p99planner": (
+            "Stages the export at p99planner.com and opens a review page in "
+            "your browser, where you approve the import. No account or login "
+            "— the link is the only credential, so treat it as private. "
+            "Later dumps join the same link for 24 hours."
+        ),
+    }
+
+    def _refresh_upload_note(self) -> None:
+        target = self._upload_target.currentData() or "off"
+        note = self.UPLOAD_NOTES.get(target, "")
+        if target != "off":
+            note += (
+                "\nApplies after restart, and rides on the Character Dumps "
+                "window's auto-import — that is what notices the dump."
+            )
+        self._upload_note.setText(note)
 
     def _refresh_account_status(self) -> None:
         account = self._settings.pigparse_account
@@ -1725,7 +1760,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         general.log_archive_size_mb = self._archive_mb.value()
         general.socials_autosync = self._socials_autosync.isChecked()
         self._settings.sharing.mode = self._sharing_mode.currentText()  # type: ignore[assignment]
-        self._settings.pigparse_account.inventory_upload = self._inventory_upload.isChecked()
+        self._settings.dumps.upload_target = self._upload_target.currentData()
         spellwindow = self._settings.spellwindow
         spellwindow.row_sort = self._row_sort_combo.currentData()
         spellwindow.you_only_spells = self._you_only.isChecked()

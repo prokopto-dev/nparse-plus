@@ -647,12 +647,54 @@ def test_discord_login_failure_reenables_button(qtbot) -> None:
     assert window._account_login.isEnabled()
 
 
-def test_inventory_upload_toggle_applies(qtbot) -> None:
+def test_inventory_upload_target_applies(qtbot) -> None:
     settings = Settings()
     window = _window(qtbot, settings)
-    window._inventory_upload.setChecked(True)
+    assert settings.dumps.upload_target == "off"
+
+    window._upload_target.setCurrentIndex(window._upload_target.findData("p99planner"))
     window.apply()
-    assert settings.pigparse_account.inventory_upload is True
+    assert settings.dumps.upload_target == "p99planner"
+
+    window._upload_target.setCurrentIndex(window._upload_target.findData("pigparse"))
+    window.apply()
+    assert settings.dumps.upload_target == "pigparse"
+
+
+def test_upload_note_describes_the_chosen_destination(qtbot) -> None:
+    """The two destinations differ in what they need from the user, so the
+    page has to say which is which."""
+    window = _window(qtbot, Settings())
+
+    window._upload_target.setCurrentIndex(window._upload_target.findData("off"))
+    assert "stay on this machine" in window._upload_note.text()
+
+    window._upload_target.setCurrentIndex(window._upload_target.findData("pigparse"))
+    assert "Discord login" in window._upload_note.text()
+
+    window._upload_target.setCurrentIndex(window._upload_target.findData("p99planner"))
+    note = window._upload_note.text()
+    assert "No account or login" in note
+    assert "approve" in note
+
+
+def test_legacy_inventory_upload_bool_migrates_to_the_target() -> None:
+    """A settings.json from before the dropdown must not silently stop
+    uploading."""
+    settings = Settings.model_validate(
+        {"pigparse_account": {"api_token": "tok", "inventory_upload": True}}
+    )
+    assert settings.dumps.upload_target == "pigparse"
+    assert settings.pigparse_account.inventory_upload is False  # folded and cleared
+
+    # An explicit newer choice wins over the stale legacy bool.
+    switched = Settings.model_validate(
+        {
+            "pigparse_account": {"inventory_upload": True},
+            "dumps": {"upload_target": "p99planner"},
+        }
+    )
+    assert switched.dumps.upload_target == "p99planner"
 
 
 def test_all_classes_checked_round_trips_to_none(qtbot) -> None:

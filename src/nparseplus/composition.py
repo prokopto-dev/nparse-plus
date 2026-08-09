@@ -59,6 +59,7 @@ from nparseplus.core.triggers.engine import TriggerEngine
 from nparseplus.core.triggers.window_commands import WindowChatCommands
 from nparseplus.core.zones import ZoneDatabase, load_zone_database
 from nparseplus.net.nparse_ws import NParseWsClient
+from nparseplus.net.p99planner import P99PlannerClient
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.pigparse_hub import PigParseHubClient
 from nparseplus.net.worker import NetWorker
@@ -160,6 +161,8 @@ class Backend:
     socials_sync: SocialSyncWatcher | None = None
     dumps: DumpLibrary | None = None
     dump_watcher: DumpWatcher | None = None
+    inventory_upload: InventoryUploadHandler | None = None
+    planner_api: P99PlannerClient | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -201,6 +204,8 @@ class Backend:
             self.net_worker.stop()
         if self.pigparse_api is not None:
             self.pigparse_api.close()
+        if self.planner_api is not None:
+            self.planner_api.close()
 
 
 def _spells_path(settings: Settings) -> Path:
@@ -286,6 +291,20 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             on_inbound=sharing.enqueue_inbound,
             zones=zones,
         )
+    # An inventory upload destination needs a worker thread even with sharing
+    # off: p99planner has nothing to do with location sharing, and requiring
+    # sharing to be on to upload would be a strange thing to explain.
+    planner_api: P99PlannerClient | None = None
+    if settings.dumps.upload_target == "p99planner":
+        planner_api = P99PlannerClient()
+    if settings.dumps.upload_target == "pigparse" and pigparse_api is None:
+        # Uploading to pigparse.org has nothing to do with sharing your
+        # location through it, and the destination picker offers them
+        # independently — so the REST client cannot be sharing's to own.
+        pigparse_api = PigParseApiClient(settings.sharing.pigparse_api_url)
+    if net_worker is None and settings.dumps.upload_target != "off":
+        net_worker = NetWorker(deliver=sharing.enqueue_inbound)
+
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
 
@@ -302,6 +321,19 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     # doing both; splitting it is what stops two ticks racing over the same
     # file. Consequence: the upload rides on dumps.auto_import being on.
     dumps = DumpLibrary(ensure_dumps_dir())
+    inventory_upload = InventoryUploadHandler(
+        bus,
+        player,
+        dumps,
+        get_target=lambda: settings.dumps.upload_target,
+        get_token=lambda: settings.pigparse_account.api_token,
+        # Replaces the old watcher's startup priming: a dump the player took
+        # before this session started is not news worth uploading.
+        session_start=datetime.now(),
+        api=pigparse_api,
+        planner=planner_api,
+        submit=submit,
+    )
 
     player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=submit)
     profile_handler = PlayerProfileHandler(bus, player, settings, request_save=request_save)
@@ -363,18 +395,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         ),
         DeathLoopHandler(bus, player, speaker=speaker),
         GroupLeaderHandler(bus, player),
-        InventoryUploadHandler(
-            bus,
-            player,
-            dumps,
-            is_enabled=lambda: settings.pigparse_account.inventory_upload,
-            get_token=lambda: settings.pigparse_account.api_token,
-            # Replaces the old watcher's startup priming: a dump the player
-            # took before this session started is not news worth uploading.
-            session_start=datetime.now(),
-            api=pigparse_api,
-            submit=submit,
-        ),
+        inventory_upload,
     ]
     api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=submit)
 
@@ -444,5 +465,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         socials_sync=socials_sync,
         dumps=dumps,
         dump_watcher=dump_watcher,
+        inventory_upload=inventory_upload,
+        planner_api=planner_api,
         _retained=[chat_commands, window_commands, sink, *handlers],
     )

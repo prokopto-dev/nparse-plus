@@ -9,8 +9,8 @@ is split across two modules here, because the app grew a second consumer of
 the same file. :mod:`nparseplus.core.dumps` polls the EQ directory once and
 keeps a per-character library of both dump kinds;
 :mod:`nparseplus.core.handlers.inventory_upload` subscribes to the events it
-publishes and does the pigparse.org upload (still gated by the explicit
-``inventory_upload`` opt-in, as well as the token). This module stays the one
+publishes and sends the result wherever the user pointed it (``off`` by
+default; pigparse.org or p99planner.com otherwise). This module stays the one
 place that knows the file format, and both of them call it.
 """
 

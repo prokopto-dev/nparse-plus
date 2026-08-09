@@ -222,6 +222,90 @@ def test_import_file_hands_off_to_the_watcher_when_there_is_one(qtbot, tmp_path:
     assert watcher.scans == 1
 
 
+class FakeUploader:
+    def __init__(self) -> None:
+        self.calls: list[list] = []
+
+    def upload_now(self, dumps) -> str:
+        self.calls.append(list(dumps))
+        return f"Uploading {len(dumps)} snapshot(s)…"
+
+    def status_text(self) -> str:
+        return ""
+
+
+def _with_uploader(qtbot, tmp_path: Path) -> tuple[Env, FakeUploader]:
+    env = Env(tmp_path)
+    uploader = FakeUploader()
+    env.window.uploader = uploader
+    qtbot.addWidget(env.window)
+    return env, uploader
+
+
+def test_upload_sends_the_selected_inventory_snapshot(qtbot, tmp_path: Path) -> None:
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.store("A", DumpKind.INVENTORY, INVENTORY, T0)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.window.refresh()
+    ref = env.library.latest("A", DumpKind.INVENTORY)
+    assert ref is not None
+    env.window.select_snapshot(ref)
+
+    env.window.upload_selected()
+    assert [dump.character for dump in uploader.calls[0]] == ["A"]
+    assert uploader.calls[0][0].kind is DumpKind.INVENTORY
+
+
+def test_upload_from_a_spellbook_row_falls_back_to_that_characters_inventory(
+    qtbot, tmp_path: Path
+) -> None:
+    """A spellbook has nothing to upload; the character it belongs to does."""
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.store("A", DumpKind.INVENTORY, INVENTORY, T0)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.store("B", DumpKind.INVENTORY, INVENTORY, T0)
+    env.window.refresh()
+    ref = env.library.latest("A", DumpKind.SPELLBOOK)
+    assert ref is not None
+    env.window.select_snapshot(ref)
+
+    env.window.upload_selected()
+    sent = uploader.calls[0]
+    assert [dump.character for dump in sent] == ["A"]
+    assert all(dump.kind is DumpKind.INVENTORY for dump in sent)
+
+
+def test_upload_with_nothing_selected_takes_the_whole_roster(qtbot, tmp_path: Path) -> None:
+    """The mule case p99planner explicitly supports: one call, many files."""
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    for character in ("A", "B", "C"):
+        env.store(character, DumpKind.INVENTORY, INVENTORY, T0)
+    env.window.refresh()
+    env.window._tree.setCurrentItem(None)
+    env.window._dump = None
+
+    env.window.upload_selected()
+    assert [dump.character for dump in uploader.calls[0]] == ["A", "B", "C"]
+
+
+def test_upload_says_so_when_there_is_nothing_to_send(qtbot, tmp_path: Path) -> None:
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.window.refresh()
+    env.window._tree.setCurrentItem(None)
+    env.window._dump = None
+
+    message = env.window.upload_selected()
+    assert "No inventory" in message
+    assert uploader.calls == []
+
+
+def test_upload_without_an_uploader_is_reported_not_crashed(env: Env) -> None:
+    env.store("A", DumpKind.INVENTORY, INVENTORY, T0)
+    env.window.refresh()
+    assert "unavailable" in env.window.upload_selected()
+
+
 def test_delete_removes_the_selected_snapshot(env: Env) -> None:
     env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
     env.store("A", DumpKind.SPELLBOOK, SPELLBOOK_PLUS, T0 + timedelta(days=1))

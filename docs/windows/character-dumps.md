@@ -61,8 +61,48 @@ snapshots: an unchanged dump is recognised by content and dropped.
 |---|---|
 | **Import now** | Rescan the EQ folder immediately. Works regardless of the toggles. |
 | **Import file…** | Take in a dump from anywhere — a backup, another machine, a friend's. |
+| **Upload inventory** | Send inventory snapshots to the [destination you picked](#uploading-your-inventory). Works whether or not auto-import is on. |
 | **Export…** | Write the selected snapshot back out in the client's own format, so other P99 tools can read it. |
 | **Delete** | Remove the selected snapshot. With a character row selected, forget that character entirely. |
+
+## Uploading your inventory
+
+[Settings → Sharing](../settings/sharing.md) has one **Send inventory dumps
+to** picker. It offers two destinations, and **Off**, which is the default:
+
+| Destination | What it needs | What happens |
+|---|---|---|
+| **pigparse.org character page** | A Discord login (same page) | Your items are posted to your pigparse.org character page. |
+| **p99planner.com** | Nothing at all | The export is staged and a review page opens in your browser. You see exactly what would change, and approve it. |
+
+p99planner needs no account, no API key and no login. Instead of applying
+anything, nParse+ hands the site your raw export and gets back a private
+**claim link**; nothing reaches your planner characters until you approve it
+on that page. The link lasts 24 hours, and later dumps in the same session
+join the *same* link — so a five-mule bank run is one review page, not five.
+
+!!! warning "The claim link is private"
+
+    Anyone holding that link can read those exports and import them into
+    their own planner. nParse+ opens it in your browser rather than printing
+    it, and never writes it to the log. Don't paste it into chat. If it does
+    leak, the exposure is one item list for at most 24 hours, and opening
+    the link burns it.
+
+### The Upload inventory button
+
+Uploading normally happens on its own as dumps arrive. The button is there
+for when it shouldn't have to — auto-import off, a dump taken before you
+started nParse+, or a mule roster you want to send in one go. What it sends
+follows your selection, narrowest first:
+
+| Selected | What is sent |
+|---|---|
+| An inventory snapshot | That snapshot. |
+| A character (or their spellbook) | That character's current inventory. |
+| Nothing | Every character's current inventory — the whole roster, in one call. |
+
+The status line at the bottom reports what happened.
 
 ## Where the files live
 

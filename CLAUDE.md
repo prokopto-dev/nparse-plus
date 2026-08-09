@@ -610,6 +610,35 @@ longer re-uploads, and the character uploaded comes from the dump filename
 rather than whoever is logged in. Consequence: upload rides on
 `dumps.auto_import`, said out loud in both settings surfaces.
 
+**Two upload destinations** (post-dumps): `dumps.upload_target` is one
+picker — `off` (default) / `pigparse` / `p99planner` — not a checkbox each,
+because both publish the same character to a different website. The legacy
+`pigparse_account.inventory_upload` bool folds into it via a `Settings`
+model_validator and is cleared (the `plugins.registry_url` pattern). Picking
+a destination now builds its own plumbing regardless of `sharing.mode`:
+uploading to pigparse.org is not the same decision as sharing your location
+through it, so composition builds `PigParseApiClient` and/or
+`P99PlannerClient` plus a `NetWorker` when the target asks for one.
+
+p99planner is a **handoff, not an upload**, and that shapes the code:
+`net/p99planner.py` POSTs the raw export text with **no credentials of any
+kind** and gets back a claim URL the player opens and approves; nothing is
+applied without that human step. `core/p99planner.py` is its Qt-free
+Protocol + DTOs (the `core/pigparse.py` split). Methods return an
+`UploadOutcome`, not `None`-on-failure, because **410 is not a retryable
+failure** — it means the claim was approved or swept, and the fix is a fresh
+POST. The handler holds one claim open and PUTs later exports into it, so a
+five-mule bank run is one review page rather than five; the browser opens
+once per claim. **The claim URL is a bearer secret**: `ClaimLink.__repr__`
+refuses to print the token, no log line carries the path or body, and
+`status_text()` never contains it — all three are asserted. Claim state is
+read/written only inside `submit` fetches (one net-worker thread), which is
+what serializes back-to-back dumps into POST-then-PUT instead of two
+competing POSTs. `upload_now()` is the manual entry point behind the
+Character Dumps window's **Upload inventory** button, which resolves scope
+from the selection (snapshot → character → whole roster) and ignores the
+session-start gate, since that is what manual means.
+
 The hooks (what "expose to the SDK" means here) are two frozen bus events in
 `core/events.py` — `CharacterDumpImportedEvent` and
 `CharacterDumpUpdatedEvent` (the latter carrying an `added`/`removed`
