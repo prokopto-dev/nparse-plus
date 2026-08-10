@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QFormLayout, QLabel, QScrollArea
 
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server
@@ -19,6 +19,7 @@ from nparseplus.core.events import (
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.settingswindow import (
+    MIN_SIZE,
     PLUGIN_WINDOWS_SECTION,
     UnifiedSettingsWindow,
     elide,
@@ -1009,3 +1010,55 @@ def test_plugins_toggle_persists_and_warns_about_the_restart(qtbot) -> None:
     window.apply()
     assert settings.plugins.enabled is False
     assert notices == [True, False]
+
+
+# --- how small the window is allowed to get ---------------------------------
+
+
+def test_the_window_can_be_narrowed_to_its_stated_floor(qtbot) -> None:
+    """The complaint this fixes: the window would not shrink.
+
+    A QStackedWidget's minimum is its widest page, so one wide page (Sharing,
+    whose rows are a long label beside a combo listing "pigparse.org character
+    page") used to pin the whole window at ~550px. What matters is not the
+    number but the invariant: Qt's own floor must stay under the floor we
+    state, because the larger of the two is what actually wins.
+    """
+    window = _window(qtbot)
+
+    assert window.minimumSizeHint().width() <= MIN_SIZE[0]
+    assert window.minimumSizeHint().height() <= MIN_SIZE[1]
+    assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
+
+
+def test_a_bigger_font_does_not_raise_the_floor(qtbot) -> None:
+    """Pages scroll, so a larger font makes this window scroll sooner rather
+    than refuse to shrink — which is what it did before, growing its minimum
+    with every point of font size."""
+    settings = Settings()
+    settings.general.font_size = 24
+    window = _window(qtbot, settings)
+
+    assert window.minimumSizeHint().width() <= MIN_SIZE[0]
+    assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
+
+
+def test_every_built_in_page_scrolls(qtbot) -> None:
+    """Content that no longer fits has to stay reachable."""
+    window = _window(qtbot)
+
+    for index in range(window._stack.count()):
+        page = window._stack.widget(index)
+        name = window._sidebar.item(index).text()
+        assert isinstance(page, QScrollArea), f"{name} page does not scroll"
+        assert page.widgetResizable(), f"{name} page does not fill its viewport"
+
+
+def test_every_form_row_wraps_rather_than_widening_the_window(qtbot) -> None:
+    """Swept in one place (``_let_rows_wrap``) precisely so that the forms
+    nested inside group boxes — the widest rows here — cannot be missed."""
+    window = _window(qtbot)
+
+    forms = window.findChildren(QFormLayout)
+    assert forms, "the settings pages are built out of form layouts"
+    assert all(form.rowWrapPolicy() == QFormLayout.RowWrapPolicy.WrapLongRows for form in forms)
