@@ -6,6 +6,21 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.3.1 (2026-08-10)
+
+### Bug Fixes
+
+- **maps**: Stop the map ghosting when the backdrop is below 100%
+  ([#65](https://github.com/prokopto-dev/nparse-plus/pull/65),
+  [`318916f`](https://github.com/prokopto-dev/nparse-plus/commit/318916fcd4ad152166d0935e9c5d62220f2003fa))
+
+### Testing
+
+- **plugins**: Stop the plugin manager tests segfaulting the macOS run
+  ([#64](https://github.com/prokopto-dev/nparse-plus/pull/64),
+  [`4defe25`](https://github.com/prokopto-dev/nparse-plus/commit/4defe25489611f1931fc41549f739922ccbbe955))
+
+
 ## v2.3.0 (2026-08-10)
 
 ### Bug Fixes
