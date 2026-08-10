@@ -6,6 +6,39 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.3.0 (2026-08-10)
+
+### Bug Fixes
+
+- **dps**: Keep frozen rows and session stats honest across a settings change
+  ([#62](https://github.com/prokopto-dev/nparse-plus/pull/62),
+  [`35c41cb`](https://github.com/prokopto-dev/nparse-plus/commit/35c41cb5389fcc09d6bf5c3993beeb3b040c6283))
+
+- **dps**: Never drop an attacker row while the target is still being fought
+  ([#62](https://github.com/prokopto-dev/nparse-plus/pull/62),
+  [`35c41cb`](https://github.com/prokopto-dev/nparse-plus/commit/35c41cb5389fcc09d6bf5c3993beeb3b040c6283))
+
+- **dps**: Stop dropping attacker rows mid-fight; count melee only by default
+  ([#62](https://github.com/prokopto-dev/nparse-plus/pull/62),
+  [`35c41cb`](https://github.com/prokopto-dev/nparse-plus/commit/35c41cb5389fcc09d6bf5c3993beeb3b040c6283))
+
+### Features
+
+- **dps**: Count melee only by default, with a DPS Meter settings page
+  ([#62](https://github.com/prokopto-dev/nparse-plus/pull/62),
+  [`35c41cb`](https://github.com/prokopto-dev/nparse-plus/commit/35c41cb5389fcc09d6bf5c3993beeb3b040c6283))
+
+### Testing
+
+- **dumps**: Stop the p99planner claim fixture expiring in real time
+  ([#62](https://github.com/prokopto-dev/nparse-plus/pull/62),
+  [`35c41cb`](https://github.com/prokopto-dev/nparse-plus/commit/35c41cb5389fcc09d6bf5c3993beeb3b040c6283))
+
+- **plugins**: Stop the update check reaching the live registry mid-suite
+  ([#61](https://github.com/prokopto-dev/nparse-plus/pull/61),
+  [`9dde204`](https://github.com/prokopto-dev/nparse-plus/commit/9dde204ae3862276ff40b57c06527ea5a249ed4b))
+
+
 ## v2.2.0 (2026-08-10)
 
 ### Bug Fixes
