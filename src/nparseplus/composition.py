@@ -409,6 +409,11 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         is_update_enabled=lambda: settings.dumps.auto_update,
         get_keep=lambda: settings.dumps.keep_per_character,
         bus=bus,
+        # The upload trigger, deliberately NOT the bus events the library
+        # publishes: those say "a snapshot was stored", which auto_update can
+        # veto and a hand-picked import can raise. Neither should decide what
+        # leaves the machine. See InventoryUploadHandler.on_fresh_dump.
+        on_fresh_dump=inventory_upload.on_fresh_dump,
     )
 
     socials_sync = SocialSyncWatcher(

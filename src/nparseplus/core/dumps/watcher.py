@@ -82,6 +82,7 @@ class DumpWatcher:
         is_update_enabled: Callable[[], bool],
         get_keep: Callable[[], int] = lambda: DEFAULT_KEEP,
         bus: EventBus | None = None,
+        on_fresh_dump: Callable[[CharacterDump], None] | None = None,
     ) -> None:
         self.library = library
         self._get_eq_dir = get_eq_dir
@@ -89,6 +90,7 @@ class DumpWatcher:
         self._is_update_enabled = is_update_enabled
         self._get_keep = get_keep
         self._bus = bus
+        self._on_fresh_dump = on_fresh_dump
         self._next_scan: datetime | None = None
         self._mtimes: dict[Path, float] = {}
         self._scanned_dir: Path | None = None
@@ -192,7 +194,7 @@ class DumpWatcher:
             dump = read_dump_file(path)
             if dump is None:
                 continue
-            self._ingest(dump, now, allow_updates=allow_updates, result=result)
+            self._ingest(dump, now, allow_updates=allow_updates, result=result, automatic=True)
 
         self.last_scan_at = now
         self.last_result = result
@@ -210,12 +212,19 @@ class DumpWatcher:
         ``sniff=True``: the user pointed at this file, so its contents are
         worth reading even when the name gives nothing away. The scan above
         never sniffs — it must not open every .txt in the EQ directory.
+
+        ``automatic=False``: a file the user browsed to gets filed away, never
+        published. It may be a backup, an export off another machine, or
+        another player's dump entirely — none of which anyone asked to send
+        to a website by picking it out of a file dialog.
         """
         dump = read_dump_file(Path(path), character=character, sniff=True)
         if dump is None:
             return None
         result = ScanResult()
-        self._ingest(dump, now or datetime.now(), allow_updates=True, result=result)
+        self._ingest(
+            dump, now or datetime.now(), allow_updates=True, result=result, automatic=False
+        )
         stored = result.imported + result.updated
         return stored[0] if stored else None
 
@@ -237,12 +246,27 @@ class DumpWatcher:
         *,
         allow_updates: bool,
         result: ScanResult,
+        automatic: bool,
     ) -> None:
-        """Store one parsed dump, tallying what happened into ``result``."""
+        """Store one parsed dump, tallying what happened into ``result``.
+
+        ``automatic`` says this dump came from the directory poll rather than
+        from a file the user hand-picked, which is what decides whether the
+        fresh-dump hook fires. See :meth:`_notify_fresh`.
+        """
         previous = self.library.latest(dump.character, dump.kind)
         if previous is not None and previous.digest == dump.digest:
             result.unchanged += 1
             return
+
+        # Fresh content. Tell the hook BEFORE the retention decision below:
+        # `auto_update` chooses how much local history to keep and has no
+        # business deciding what leaves the machine. Gating the hook on it
+        # meant one stale snapshot at startup could silence every upload for
+        # the rest of the session.
+        if automatic:
+            self._notify_fresh(dump)
+
         if previous is not None and not allow_updates:
             result.skipped += 1
             return
@@ -257,6 +281,28 @@ class DumpWatcher:
         else:
             result.updated.append(ref)
             self._publish_updated(dump, ref, before)
+
+    def _notify_fresh(self, dump: CharacterDump) -> None:
+        """A dump the automatic scan just saw change, whether or not it was kept.
+
+        Deliberately NOT one of the bus events. Those say "the library stored
+        a snapshot", which is a fact about local history — a plugin reading
+        them wants exactly that. The uploader needs a different fact: "the
+        game just wrote a fresh dump in the EQ directory". Routing uploads
+        through the persistence events conflated the two and broke both
+        directions — a retention setting suppressed uploads, and importing a
+        file by hand (a backup, or somebody else's dump) published it.
+
+        Never fires for a hand-picked import: the user asked to file that
+        away, not to publish it. The Upload inventory button is how you ask
+        for that, and it says so.
+        """
+        if self._on_fresh_dump is None:
+            return
+        try:
+            self._on_fresh_dump(dump)
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("the fresh-dump hook failed", exc_info=True)
 
     # -- events (the plugin-facing hooks) ---------------------------------
 

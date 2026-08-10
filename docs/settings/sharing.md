@@ -41,11 +41,23 @@ link is private — treat it like a password; see
 [Character Dumps](../windows/character-dumps.md#uploading-your-inventory).
 
 Whichever you pick, uploading is fed by the same scan that fills the
-Character Dumps library, so that window's **auto-import** has to be on (it is
-by default) for a dump to be noticed automatically. Only dumps you take
-during the current session upload on their own; ones already sitting in the
-EQ folder at launch are collected locally but not published. To send those —
-or a whole mule roster at once — use **Upload inventory** in the Character
-Dumps window.
+[Character Dumps](../windows/character-dumps.md) library, so that window's
+**auto-import** has to be on (it is by default) for a dump to be noticed
+automatically.
+
+What uploads on its own is deliberately narrow:
+
+- Only dumps taken **during the current session**. Ones already sitting in
+  the EQ folder at launch are collected locally but never published.
+- Only from the **EQ directory** — the automatic scan, and **Import now**.
+  A file chosen with **Import file…** is filed away and never uploaded: it
+  may be a backup, an export off another machine, or another player's dump,
+  and none of those were offered up for publishing by being picked in a file
+  dialog.
+- **Auto-update** does not affect it either way. That setting decides how
+  much local history to keep and has no say in what leaves your machine.
+
+For anything outside that — an older dump, a hand-imported one, or a whole
+mule roster at once — use **Upload inventory** in the Character Dumps window.
 
 Changing the destination applies after a restart.

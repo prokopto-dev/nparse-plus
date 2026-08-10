@@ -1,8 +1,10 @@
 """InventoryUploadHandler — routing inventory dumps to the chosen site.
 
-The EQ directory is polled once (by ``DumpWatcher``); this handler subscribes
-to what that publishes. These tests drive the real watcher rather than
-synthesising events, so the two halves are checked joined up.
+The EQ directory is polled once (by ``DumpWatcher``); this handler hangs off
+its ``on_fresh_dump`` hook — NOT the library's bus events, which describe
+local history and are the wrong question for "should this be published".
+These tests drive the real watcher rather than calling the hook by hand, so
+the two halves are checked joined up.
 """
 
 from __future__ import annotations
@@ -111,8 +113,10 @@ class Env:
             self.library,
             get_eq_dir=lambda: self.eq_dir,
             is_enabled=lambda: True,
-            is_update_enabled=lambda: True,
+            is_update_enabled=lambda: self.state.get("auto_update", True),
             bus=self.bus,
+            # The upload trigger is this hook, NOT the library's bus events.
+            on_fresh_dump=self.handler.on_fresh_dump,
         )
 
     def dump(self, name: str, text: str, when: datetime) -> Path:
@@ -204,6 +208,85 @@ def test_pigparse_needs_a_token(tmp_path: Path) -> None:
     env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
     env.watcher.tick(T0 + timedelta(minutes=1))
     assert env.api.uploads == []
+
+
+# --- upload provenance is independent of the local history gate --------------
+
+
+def test_auto_update_off_does_not_suppress_uploads(tmp_path: Path) -> None:
+    """Retention is a local choice; it must not decide what leaves the machine.
+
+    The bad case in full: a stale dump is imported at startup (correctly not
+    uploaded), which means a snapshot now exists — so with auto_update off,
+    every later in-session dump was "skipped" and never uploaded again.
+    """
+    env = Env(tmp_path)
+    env.state["auto_update"] = False
+    env.dump("Xantik-Inventory.txt", DUMP, T0 - timedelta(days=3))
+    env.watcher.tick(T0)
+    assert env.api.uploads == []  # stale, correctly not uploaded
+    assert env.library.snapshots("Xantik", DumpKind.INVENTORY)  # but kept
+
+    env.dump("Xantik-Inventory.txt", CHANGED_DUMP, T0 + timedelta(minutes=5))
+    env.watcher.tick(T0 + timedelta(seconds=25))
+
+    assert len(env.api.uploads) == 1, "a fresh in-session dump must still upload"
+    # ...and the retention choice is still honoured locally.
+    assert len(env.library.snapshots("Xantik", DumpKind.INVENTORY)) == 1
+
+
+def test_a_hand_picked_import_is_never_uploaded(tmp_path: Path) -> None:
+    """Import file… files a dump away; it does not publish it.
+
+    The file may be a backup, an export off another machine, or another
+    player's dump — none of which anyone asked to send to a website by
+    picking it out of a file dialog. Uploading is the Upload inventory
+    button, which says so.
+    """
+    env = Env(tmp_path)
+    someone_else = tmp_path / "SomeoneElse-Inventory.txt"
+    someone_else.write_text(DUMP, encoding="utf-8")
+    fresh = (T0 + timedelta(minutes=5)).timestamp()
+    os.utime(someone_else, (fresh, fresh))
+
+    env.watcher.request_import(someone_else)
+    env.watcher.tick(T0 + timedelta(minutes=5))
+
+    assert env.library.characters() == ["SomeoneElse"]  # filed away
+    assert env.api.uploads == []  # but never published
+    assert env.planner.staged == []
+
+
+def test_a_hand_picked_import_of_your_own_dump_is_also_not_uploaded(tmp_path: Path) -> None:
+    """No exception for a file that happens to be yours — the window cannot
+    tell, and the manual button is right there."""
+    env = Env(tmp_path)
+    mine = tmp_path / "Xantik-Inventory.txt"
+    mine.write_text(DUMP, encoding="utf-8")
+    fresh = (T0 + timedelta(minutes=5)).timestamp()
+    os.utime(mine, (fresh, fresh))
+
+    env.watcher.request_import(mine)
+    env.watcher.tick(T0 + timedelta(minutes=5))
+    assert env.api.uploads == []
+
+    # ...and asking explicitly still works.
+    stored = env.library.load_latest("Xantik", DumpKind.INVENTORY)
+    assert stored is not None
+    env.handler.upload_now([stored])
+    assert len(env.api.uploads) == 1
+
+
+def test_a_directory_rescan_does_upload(tmp_path: Path) -> None:
+    """Import now rescans the EQ directory — the same files the automatic
+    scan would take seconds later, from the same trusted source."""
+    env = Env(tmp_path)
+    env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
+
+    env.watcher.request_scan()
+    env.watcher.tick(T0 + timedelta(minutes=1))
+
+    assert len(env.api.uploads) == 1
 
 
 # --- the target gate --------------------------------------------------------

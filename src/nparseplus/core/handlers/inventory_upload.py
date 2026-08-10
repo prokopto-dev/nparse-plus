@@ -1,12 +1,17 @@
 """InventoryUploadHandler — send a fresh inventory dump to the chosen site.
 
-Descendant of EQTool's Services/InventoryWatcherService.cs, restructured
-twice. The C# service is a FileSystemWatcher that both *notices* the dump and
-*uploads* it to pigparse.org. Here noticing is somebody else's job —
+Descendant of EQTool's Services/InventoryWatcherService.cs, restructured. The
+C# service is a FileSystemWatcher that both *notices* the dump and *uploads*
+it to pigparse.org. Here noticing is somebody else's job —
 :class:`~nparseplus.core.dumps.DumpWatcher` polls the EQ directory once for
-the whole app — and this is a bus subscriber that uploads what the library
-just took in. One watcher tick over the EQ directory, one parse, and this
-module deciding where the result goes.
+the whole app — and this decides where the result goes. One watcher tick over
+the EQ directory, one parse, two consumers.
+
+The trigger is that watcher's ``on_fresh_dump`` hook, **not** the
+``CharacterDump*`` bus events. Those describe local history ("a snapshot was
+stored"), which is what a plugin wants and is the wrong question here; see
+:meth:`InventoryUploadHandler.on_fresh_dump` for the two bugs that
+conflating them caused.
 
 **One destination at a time** (``dumps.upload_target``), because both
 destinations publish the same character to a different website and picking
@@ -33,12 +38,12 @@ Three behaviors that differ from the C# on purpose:
   when the player took the dump rather than on which files happened to exist
   at launch. A manual upload ignores this entirely; that is what manual means.
 * **Re-running /outputfile with nothing changed** no longer re-uploads: the
-  library dedupes by content digest, so an identical dump raises no event.
+  watcher compares content digests, so an identical dump is not fresh.
 * **Whose inventory it is.** The C# uploads under the *active* character; the
-  event names the character the dump file belongs to, which is the same
-  character in the normal case and correct in the case where it isn't. The
-  server still comes from ActivePlayer — a P99 dump filename carries none,
-  and only pigparse needs one.
+  dump names the character its file belongs to, which is the same character
+  in the normal case and correct in the case where it isn't. The server still
+  comes from ActivePlayer — a P99 dump filename carries none, and only
+  pigparse needs one.
 
 Threading: every send runs inside a ``submit`` fetch, i.e. on the single net
 worker thread. The claim state is read and written *only* there, which is
@@ -57,11 +62,6 @@ from datetime import datetime
 
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dumps import CharacterDump, DumpKind, DumpLibrary, render_dump_text
-from nparseplus.core.events import (
-    CharacterDumpEvent,
-    CharacterDumpImportedEvent,
-    CharacterDumpUpdatedEvent,
-)
 from nparseplus.core.handlers.base import BaseHandler
 from nparseplus.core.inventory import InventoryItem
 from nparseplus.core.p99planner import ClaimLink, ImportFile, P99PlannerApi
@@ -112,22 +112,32 @@ class InventoryUploadHandler(BaseHandler):
         #: False once opening a browser has failed, so the UI can keep
         #: offering the copy-the-link route instead of a dead retry.
         self._browser_ok = True
-        bus.subscribe(CharacterDumpImportedEvent, self._on_dump)
-        bus.subscribe(CharacterDumpUpdatedEvent, self._on_dump)
 
     # -- the automatic path ------------------------------------------------
 
-    def _on_dump(self, event: CharacterDumpEvent) -> None:
-        if event.kind != str(DumpKind.INVENTORY):
+    def on_fresh_dump(self, dump: CharacterDump) -> None:
+        """The EQ directory just produced a dump with new content.
+
+        Wired to ``DumpWatcher(on_fresh_dump=...)``, deliberately NOT to the
+        ``CharacterDump*`` bus events. Those mean "the library stored a
+        snapshot" — a fact about local history — and using them as the upload
+        trigger coupled two unrelated things in both directions:
+
+        * ``auto_update`` off suppressed the event for a changed dump, so a
+          single stale snapshot imported at startup silenced every upload for
+          the rest of the session. Retention is a local choice and must not
+          decide what leaves the machine.
+        * A hand-picked ``Import file…`` published the same event, so filing
+          away a backup — or another player's dump — sent it straight to
+          pigparse or p99planner under their character's name.
+
+        Runs on the driver thread, like everything else off the watcher tick.
+        """
+        if dump.kind is not DumpKind.INVENTORY or not dump.items:
             return
-        if event.captured_at < self._session_start:
+        if dump.captured_at < self._session_start:
             return  # taken before we started; see the module docstring
-        dump = self.library.load_path(event.path)
-        if dump is None:
-            return
-        # The event names the character; the stored snapshot may not, if it
-        # was hand-imported from a file with an odd name.
-        self.upload_now([dump.model_copy(update={"character": event.character or dump.character})])
+        self.upload_now([dump])
 
     # -- the manual path ---------------------------------------------------
 

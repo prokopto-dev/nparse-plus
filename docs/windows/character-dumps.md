@@ -150,19 +150,36 @@ Snapshots are plain JSON under nParse+'s data directory:
 `%LOCALAPPDATA%\nparseplus` on Windows, and `~/.local/share/nparseplus` on
 Linux. Deleting the folder loses the history and nothing else.
 
-## Relationship to the pigparse.org inventory upload
+### What uploads by itself, and what doesn't
 
-[Settings → Sharing](../settings/sharing.md) has an **Upload inventory
-dumps** option that publishes your inventory to your pigparse.org character
-page. It is a separate, opt-in feature that needs a Discord login — but it is
-fed by the same scan, so **auto-import has to be on** for it to notice a
-dump. Only dumps you take during the current session are uploaded; ones
-already sitting in the folder at launch are collected into the library but
-not published.
+Automatic uploading is deliberately narrow — the library is local storage,
+and only some of what lands in it is something you asked to publish:
+
+| | Uploads automatically |
+|---|---|
+| A dump you take in game this session | Yes |
+| **Import now** (rescans the EQ folder) | Yes — same files, same source |
+| A dump already in the EQ folder at launch | No — collected, not published |
+| **Import file…** (a file you browse to) | **No** |
+| Anything, with **Auto-update** off | Yes — retention has no say in this |
+
+**Import file…** never uploads on your behalf. That file may be a backup, an
+export off another machine, or another player's dump, and none of those were
+offered up for publishing by being picked in a file dialog. Use **Upload
+inventory** when you do want one sent.
+
+Likewise, **Auto-update** is purely about how much local history to keep. It
+does not gate uploading in either direction — an earlier version of this let
+one stale snapshot at startup silence uploads for the rest of the session.
 
 ## For plugin authors
 
-The library publishes two bus events, so an add-on can react to a dump
+The library publishes two bus events. They mean **"a snapshot was stored"** —
+a fact about your local history, which is what an add-on watching the library
+wants. They are not an "about to be uploaded" signal; uploading is decided
+separately, by the rules above.
+
+The two events let an add-on react to a dump
 without polling anything:
 
 | Event | When |

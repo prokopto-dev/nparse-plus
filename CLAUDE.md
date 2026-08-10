@@ -606,8 +606,18 @@ point, and the content digest stops an unchanged re-dump accumulating.
 
 That watcher is now **the one poll of the EQ directory** for dumps.
 `core/inventory.py` kept the parser and lost its poller; the upload half of
-EQTool's InventoryWatcherService became
-`core/handlers/inventory_upload.py`, a bus subscriber on the dump events.
+EQTool's InventoryWatcherService became `core/handlers/inventory_upload.py`.
+
+**The upload trigger is `DumpWatcher(on_fresh_dump=...)`, NOT the bus
+events.** The events mean "the library stored a snapshot" — local history,
+which is the right question for a plugin and the wrong one for "should this
+be published". Wiring uploads to them coupled two unrelated things and broke
+it in both directions: `auto_update` off suppressed the event for a changed
+dump, so one stale snapshot imported at startup silenced every upload for the
+session; and a hand-picked `Import file…` raised the same event, so filing
+away a backup — or another player's dump — published it under their character
+name. `_ingest(automatic=)` is the seam: the hook fires from the directory
+scan only, before the retention decision, never from `import_file`.
 Three deliberate behavior changes are documented there: startup priming
 became "only dumps captured after `session_start`", an unchanged re-dump no
 longer re-uploads, and the character uploaded comes from the dump filename
