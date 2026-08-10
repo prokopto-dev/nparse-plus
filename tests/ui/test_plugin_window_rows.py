@@ -61,6 +61,13 @@ BARE_FACTORY = """        from PySide6.QtWidgets import QWidget
 def make_ui(tmp_path: Path, *, windows: str, name: str = "Demo Plugin", factory: str):
     settings = Settings()
     settings.sharing.mode = "off"
+    # build_plugin_ui arms the post-launch update check on a 12 s QTimer, which
+    # outlives this test: it fires during whatever runs a quarter-minute later
+    # and starts a thread that fetches the live registry. That crossed threads
+    # with an unrelated test's Qt teardown and segfaulted CI. This file is about
+    # window rows, so the check has no business being on. See the fetch guard in
+    # tests/conftest.py for the backstop.
+    settings.plugins.update_check = False
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir()
     (plugins_dir / "demo.py").write_text(

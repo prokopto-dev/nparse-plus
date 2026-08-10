@@ -5,6 +5,9 @@ guard in the suite: the Qt-free architecture rule (tests/test_architecture.py),
 the plugins-off-means-nothing-imported rule (tests/core/plugins/
 test_master_toggle.py), and the plugin template's standalone-mode check
 (tests/core/plugins/test_template.py).
+
+The session fixture at the bottom is the other kind of guard: no test may
+open a real connection to a plugin registry.
 """
 
 from __future__ import annotations
@@ -65,3 +68,46 @@ def run_poisoned(
 def poisoned_import():
     """`run_poisoned` as a fixture — importlib import-mode hides tests/conftest."""
     return run_poisoned
+
+
+@pytest.fixture(scope="session", autouse=True)
+def no_live_registry_fetches():
+    """Refuse any plugin fetch that would actually leave the machine.
+
+    The suite mocks registry traffic at two levels — a ``fetch=`` callable
+    passed into ``fetch_index``, or an ``httpx.MockTransport`` handed to
+    ``fetch_https_bytes`` — so a call arriving here with neither is one
+    nobody meant to make. Before this guard, one did: a test that built the
+    plugin UI armed the 12 s post-launch update check, whose QTimer fired
+    after that test had finished and started a live fetch inside an
+    unrelated one. Concurrent sockets against another test's Qt teardown
+    segfaulted the whole run in CI, which reads as "semantic release is
+    broken" rather than "a test reached the internet".
+
+    Session-scoped, because the point is to cover the gaps *between* tests
+    too: a leaked timer fires wherever it likes, and a function-scoped patch
+    would have been unwound by then.
+
+    The transport seam stays open on purpose. ``patch_default_transport``
+    and friends wrap whatever this attribute holds and re-call it with a
+    MockTransport, so they keep working — they land on the `transport is
+    not None` path and get the real implementation, offline.
+    """
+    from nparseplus.core.plugins import install
+
+    real = install.fetch_https_bytes
+
+    def guarded(url: str, *, transport=None, **kwargs):
+        if transport is None:
+            raise AssertionError(
+                f"the test suite must not fetch {url!r} for real — pass a "
+                "transport=httpx.MockTransport(...), inject fetch=, or turn "
+                "the caller off (e.g. settings.plugins.update_check = False)"
+            )
+        return real(url, transport=transport, **kwargs)
+
+    install.fetch_https_bytes = guarded
+    try:
+        yield
+    finally:
+        install.fetch_https_bytes = real
