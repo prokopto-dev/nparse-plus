@@ -8,8 +8,9 @@ with no window at all.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QPointF, QRect
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen, QRegion
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsView, QWidget
 
 from nparseplus.helpers import config
 from nparseplus.parsers.maps import chrome
@@ -23,6 +24,17 @@ def canvas(qtbot, tmp_path):
     """A MapCanvas over a scratch legacy config (never the developer's)."""
     config.load(str(tmp_path / "nparse.config.json"))
     config.verify_settings()
+    widget = MapCanvas()
+    qtbot.addWidget(widget)
+    return widget
+
+
+@pytest.fixture
+def canvas_no_antialias(qtbot, tmp_path):
+    """A MapCanvas built with the maps.antialias escape hatch off."""
+    config.load(str(tmp_path / "nparse.config.json"))
+    config.verify_settings()
+    config.data["maps"]["antialias"] = False
     widget = MapCanvas()
     qtbot.addWidget(widget)
     return widget
@@ -231,6 +243,110 @@ def test_the_wheel_band_hugs_every_edge(canvas) -> None:
     ):
         assert canvas._in_backdrop_band(point)
     assert not canvas._in_backdrop_band(QPointF(200, 150))
+
+
+# -- the backdrop erases, it does not tint --------------------------------------
+#
+# A QImage here stands in for the viewport's backing store: Qt repaints INTO
+# the pixels the last frame left, so anything the backdrop merely composites
+# onto survives as a ghost. Rendering twice into one image is that, exactly.
+
+
+def _repaint(canvas, image) -> None:
+    """One repaint of the whole viewport into ``image``, keeping its content."""
+    canvas.viewport().render(image, QPoint(), QRegion(image.rect()))
+
+
+def _frame(canvas, fill=None) -> QImage:
+    image = QImage(canvas.width(), canvas.height(), QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(fill if fill is not None else QColor(0, 0, 0, 0))
+    return image
+
+
+def test_the_backdrop_replaces_what_it_covers(canvas) -> None:
+    """The reported Windows ghosting: below 100% the fill used to composite
+    over the previous frame, so the map darkened it instead of erasing it."""
+    canvas.resize(200, 200)
+    canvas.apply_backdrop_opacity(50)
+    image = _frame(canvas, QColor(255, 0, 0, 255))  # last frame's leftovers
+
+    _repaint(canvas, image)
+
+    assert image.pixelColor(100, 100) == QColor(0, 0, 0, 128)
+    _repaint(canvas, image)  # and it is stable, not converging frame by frame
+    assert image.pixelColor(100, 100) == QColor(0, 0, 0, 128)
+
+
+def test_a_transparent_backdrop_is_glass_not_whatever_was_there(canvas) -> None:
+    canvas.resize(200, 200)
+    canvas.apply_backdrop_opacity(0)
+    image = _frame(canvas, QColor(255, 0, 0, 255))
+
+    _repaint(canvas, image)
+
+    assert image.pixelColor(100, 100).alpha() == 0
+
+
+def test_a_dot_that_moves_leaves_no_ghost_of_itself(canvas) -> None:
+    """'Multiple locs get drawn': your marker at every place it has been."""
+    canvas.resize(200, 200)
+    canvas.apply_backdrop_opacity(50)
+    canvas.setSceneRect(-100, -100, 200, 200)
+    dot = QGraphicsEllipseItem(-8, -8, 16, 16)
+    dot.setBrush(QBrush(QColor(61, 235, 52)))  # YOU_COLOR
+    dot.setPen(QPen(QColor(61, 235, 52), 2))
+    canvas._scene.addItem(dot)
+    dot.setPos(0, 0)
+    canvas.centerOn(0, 0)
+    was_at = canvas.mapFromScene(QPointF(0, 0))
+
+    image = _frame(canvas)
+    _repaint(canvas, image)
+    assert image.pixelColor(was_at).green() > 100, "the dot should be drawn to begin with"
+
+    dot.setPos(60, 0)
+    _repaint(canvas, image)
+
+    assert image.pixelColor(was_at) == QColor(0, 0, 0, 128)
+
+
+def test_the_backdrop_leaves_the_painter_as_it_found_it(canvas) -> None:
+    """DontSavePainterState means Qt does not save/restore around
+    drawBackground, so a leaked Source mode would make every item paint holes
+    in the backdrop instead of over it."""
+    image = _frame(canvas, QColor(0, 0, 0, 0))
+    painter = QPainter(image)
+    try:
+        canvas.drawBackground(painter, QRectF(0, 0, 10, 10))
+        assert painter.compositionMode() == QPainter.CompositionMode.CompositionMode_SourceOver
+    finally:
+        painter.end()
+
+
+def test_a_see_through_backdrop_gives_up_the_partial_repaint_fast_path(canvas) -> None:
+    """Minimal updates rely on the fill covering the region it repaints — and
+    on Qt's scroll blit, which smears translucent ink. Opaque keeps them."""
+    canvas.apply_backdrop_opacity(100)
+    assert canvas.viewportUpdateMode() == QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
+    canvas.apply_backdrop_opacity(60)
+    assert canvas.viewportUpdateMode() == QGraphicsView.ViewportUpdateMode.FullViewportUpdate
+    canvas.apply_backdrop_opacity(0)  # the idle fade lands here too
+    assert canvas.viewportUpdateMode() == QGraphicsView.ViewportUpdateMode.FullViewportUpdate
+
+
+def test_antialiased_items_keep_their_dirty_rect_padding(canvas) -> None:
+    """The other half of the trail: an antialiased pen inks outside its own
+    boundingRect, and DontAdjustForAntialiasing drops the padding that would
+    have repainted the fringe — Qt documents that as leaving painting traces."""
+    assert canvas.renderHints() & QPainter.RenderHint.Antialiasing
+    flags = canvas.optimizationFlags()
+    assert not (flags & QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing)
+    assert flags & QGraphicsView.OptimizationFlag.DontSavePainterState
+
+
+def test_turning_antialiasing_off_restores_the_fast_path(canvas_no_antialias) -> None:
+    flags = canvas_no_antialias.optimizationFlags()
+    assert flags & QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing
 
 
 # -- the map chrome follows the skin --------------------------------------------
