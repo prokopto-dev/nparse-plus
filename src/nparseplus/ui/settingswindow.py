@@ -83,6 +83,12 @@ DEFAULT_GEOMETRY = (240, 160, 640, 560)
 #: sidebar plus one field still reads. Deliberately a plain number rather than
 #: a multiple of the font size: the pages scroll, so a larger font makes this
 #: window scroll sooner, not refuse to shrink.
+#:
+#: Not an absolute promise — Qt takes the LARGER of this and the layout's own
+#: minimum. At a big font size the sidebar and the two buttons under the pages
+#: want more than this, since their text cannot be narrowed, and how much more
+#: depends on the platform's font. That floor is honest. The one worth
+#: guarding against is a *page* setting it, which is what the tests assert.
 MIN_SIZE = (420, 320)
 
 # The Windows-grid rows. Legacy rows live in config.data[section]; new rows

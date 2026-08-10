@@ -1026,20 +1026,35 @@ def test_the_window_can_be_narrowed_to_its_stated_floor(qtbot) -> None:
     """
     window = _window(qtbot)
 
+    # Split so a failure says which half moved: the pages, or the chrome.
+    assert window._stack.minimumSizeHint().width() <= MIN_SIZE[0] - window._sidebar.width()
     assert window.minimumSizeHint().width() <= MIN_SIZE[0]
     assert window.minimumSizeHint().height() <= MIN_SIZE[1]
     assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
 
 
-def test_a_bigger_font_does_not_raise_the_floor(qtbot) -> None:
+def test_a_bigger_font_never_lets_a_PAGE_set_the_floor(qtbot) -> None:
     """Pages scroll, so a larger font makes this window scroll sooner rather
     than refuse to shrink — which is what it did before, growing its minimum
-    with every point of font size."""
+    with every point of font size.
+
+    Asserted on the *stack* rather than on the window, deliberately. At a big
+    enough font the window does get a floor above :data:`MIN_SIZE`, set by
+    chrome whose text cannot be made narrower — the sidebar and the two
+    buttons — and how wide that is depends on the platform's font (an earlier
+    version of this test asserted a whole-window number and failed only on
+    Windows, where "Apply & Save" is wider). That floor is honest. A page
+    imposing one is the bug, and this is the assertion that catches a page
+    added later that cannot wrap or scroll.
+    """
     settings = Settings()
     settings.general.font_size = 24
     window = _window(qtbot, settings)
 
-    assert window.minimumSizeHint().width() <= MIN_SIZE[0]
+    pages = window._stack.minimumSizeHint().width()
+    assert pages <= MIN_SIZE[0] - window._sidebar.width(), (
+        f"a settings page wants {pages}px, so it — not the chrome — is the floor"
+    )
     assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
 
 
