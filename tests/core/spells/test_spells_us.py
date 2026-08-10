@@ -63,6 +63,9 @@ def test_fixups(spell_book: SpellBook) -> None:
     assert bind_sight is not None and bind_sight.buff_duration_ticks == 999
     loh = spell_book.spell_by_name("Lay on Hands")
     assert loh is not None and loh.recast_time_ms == 4_320_000
+    # Harm Touch is the same 72-minute reuse; the file claims 30 s for both.
+    harm_touch = spell_book.spell_by_name("Harm Touch")
+    assert harm_touch is not None and harm_touch.recast_time_ms == 4_320_000
     # Maniacal Strength renamed to match the (misspelled) log message
     assert spell_book.spell_by_name("Manicial Strength") is not None
     assert spell_book.spell_by_name("Maniacal Strength") is None
@@ -116,3 +119,34 @@ def test_target_types_map_to_enum(spell_book: SpellBook) -> None:
     assert spell is not None
     assert spell.spell_type is SpellType.GROUP_V2
     assert all(isinstance(s.spell_type, SpellType) for s in spell_book.spells)
+
+
+def test_discipline_double_period_messages_are_normalized(spell_book: SpellBook) -> None:
+    """The file's trailing ".." makes a discipline permanently unmatchable: the
+    parser strips a trailing ".." off the LOG line, so a ".." in the DATA can
+    never be the lookup key either. Puretone (bard 60) was the live casualty."""
+    for name in ("Defensive Discipline", "Puretone Discipline"):
+        spell = spell_book.spell_by_name(name)
+        assert spell is not None
+        assert not spell.cast_on_you.endswith("..")
+        assert [s.name for s in spell_book.cast_on_you(spell.cast_on_you)]
+
+    # Scoped to disciplines on purpose — the artifact is all over the file and
+    # normalizing the rest would move existing best-guess matches.
+    assert any(
+        s.cast_on_you.endswith("..") for s in spell_book.spells if not s.name.endswith("Discipline")
+    )
+
+
+def test_classless_duplicate_does_not_shadow_a_trainable_self_buff(
+    spell_book: SpellBook,
+) -> None:
+    """A later classless "Whirlwind" copy claimed the message key first, and the
+    C# guard then dropped Whirlwind Discipline (monk 53) entirely."""
+    disc = spell_book.spell_by_name("Whirlwind Discipline")
+    assert disc is not None
+    candidates = spell_book.cast_on_you(disc.cast_on_you)
+    assert candidates, "Whirlwind Discipline is missing from the cast-on-you table"
+    assert candidates[0].name == "Whirlwind Discipline"
+    # The duplicate is demoted, not discarded.
+    assert [s.name for s in candidates[1:]] == ["Whirlwind"]

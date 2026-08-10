@@ -102,3 +102,20 @@ def test_mend_wounds_cooldown_timer(h: Harness) -> None:
     row = h.timers.find(MEND_TIMER_NAME, YOU_GROUP)
     assert row is not None
     assert row.total_duration_s == float(MEND_COOLDOWN_SECONDS)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "You mend your wounds and heal some damage.",
+        "You magically mend your wounds and heal considerable damage.",
+        "You have failed to mend your wounds.",
+        "You have worsened your wounds!",
+    ],
+)
+def test_every_mend_outcome_starts_the_timer(line: str, h: Harness) -> None:
+    """Mend has four outcomes and burns the 6-minute reuse on each of them."""
+    h.push(line)
+    row = h.timers.find(MEND_TIMER_NAME, YOU_GROUP)
+    assert row is not None, f"{line!r} left no Mend timer"
+    assert row.total_duration_s == float(MEND_COOLDOWN_SECONDS)
