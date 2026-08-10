@@ -578,6 +578,23 @@ and shrink-to-fit rather than clipping. The three `resolve_color` utility
 lines keep their user-configured colour on purpose — only their size is the
 skin's.
 
+**The settings window shrinks** (post-2.1): a `QStackedWidget`'s minimum is
+its *widest page*, so one wide row on Sharing (a long label beside a combo
+listing "pigparse.org character page") pinned the whole window at ~550px and
+grew that floor with every point of `general.font_size`. Two halves fix it
+and both are needed: `_scrollable()` puts every page in a `QScrollArea`, and
+`_let_rows_wrap()` sets `WrapLongRows` on **every** `QFormLayout` in the
+window — swept in one place, after construction, so the forms nested inside
+group boxes (the widest rows here) cannot forget it. **`extra_pages` go
+through the wrapper too**: the widest page in the app is a contributed one
+(the Plugins manager's table, ~1800px), so leaving them out would have left
+the window pinned for exactly the users who enabled plugins. The wrapper
+goes in the stack while `_extra_pages` keeps the builder's own widget, so
+`spec.apply` never sees a `QScrollArea` it didn't make. Without the wrap a narrow window just scrolls sideways past its
+own labels. `MIN_SIZE` is the stated floor; the invariant that keeps it real
+— and what the test asserts — is that Qt's own layout minimum stays *under*
+it, because the larger of the two is what wins.
+
 **The character dump library** (post-2.0, ~1906 tests): P99's
 `/outputfile inventory` and `/outputfile spellbook` write
 `<Character>-Inventory.txt` / `<Character>-Spellbook.txt` into the EQ

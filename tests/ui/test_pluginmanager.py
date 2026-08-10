@@ -1002,3 +1002,32 @@ def test_update_all_partial_failure_reports_both_lists(qtbot, host, tmp_path, mo
     assert "demo exploded" in summary
     # The failed one keeps its offer; the successful one loses it.
     assert {u.plugin_id for u in page._check.updates} == {"demo"}
+
+
+def test_the_plugins_page_does_not_pin_the_settings_window(qtbot, host) -> None:
+    """The real page, in a real settings window, must still let it shrink.
+
+    This page is the widest in the app — a table of installed add-ons with a
+    Source column — so it is the one most able to defeat the settings
+    window's minimum size. ``test_settingswindow.py`` asserts the same rule
+    against a stand-in; this asserts it against the thing that actually
+    prompted it.
+    """
+    from nparseplus.core.zones import load_zone_database
+    from nparseplus.ui.settingswindow import MIN_SIZE, UnifiedSettingsWindow
+
+    window = UnifiedSettingsWindow(
+        Settings(),
+        on_save=lambda: None,
+        legacy_config={},
+        zones=load_zone_database(),
+        extra_pages=[plugin_manager_page_spec(host, "1.15.0")],
+    )
+    qtbot.addWidget(window)
+
+    titles = [window._sidebar.item(i).text() for i in range(window._sidebar.count())]
+    assert "Plugins" in titles
+    pages = window._stack.minimumSizeHint().width()
+    assert pages <= MIN_SIZE[0] - window._sidebar.width(), (
+        f"the Plugins page wants {pages}px and would pin the settings window"
+    )

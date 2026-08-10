@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QFormLayout, QLabel, QScrollArea
 
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server
@@ -19,6 +19,7 @@ from nparseplus.core.events import (
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.settingswindow import (
+    MIN_SIZE,
     PLUGIN_WINDOWS_SECTION,
     UnifiedSettingsWindow,
     elide,
@@ -1009,3 +1010,108 @@ def test_plugins_toggle_persists_and_warns_about_the_restart(qtbot) -> None:
     window.apply()
     assert settings.plugins.enabled is False
     assert notices == [True, False]
+
+
+# --- how small the window is allowed to get ---------------------------------
+
+
+def test_the_window_can_be_narrowed_to_its_stated_floor(qtbot) -> None:
+    """The complaint this fixes: the window would not shrink.
+
+    A QStackedWidget's minimum is its widest page, so one wide page (Sharing,
+    whose rows are a long label beside a combo listing "pigparse.org character
+    page") used to pin the whole window at ~550px. What matters is not the
+    number but the invariant: Qt's own floor must stay under the floor we
+    state, because the larger of the two is what actually wins.
+    """
+    window = _window(qtbot)
+
+    # Split so a failure says which half moved: the pages, or the chrome.
+    assert window._stack.minimumSizeHint().width() <= MIN_SIZE[0] - window._sidebar.width()
+    assert window.minimumSizeHint().width() <= MIN_SIZE[0]
+    assert window.minimumSizeHint().height() <= MIN_SIZE[1]
+    assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
+
+
+def test_a_bigger_font_never_lets_a_PAGE_set_the_floor(qtbot) -> None:
+    """Pages scroll, so a larger font makes this window scroll sooner rather
+    than refuse to shrink — which is what it did before, growing its minimum
+    with every point of font size.
+
+    Asserted on the *stack* rather than on the window, deliberately. At a big
+    enough font the window does get a floor above :data:`MIN_SIZE`, set by
+    chrome whose text cannot be made narrower — the sidebar and the two
+    buttons — and how wide that is depends on the platform's font (an earlier
+    version of this test asserted a whole-window number and failed only on
+    Windows, where "Apply & Save" is wider). That floor is honest. A page
+    imposing one is the bug, and this is the assertion that catches a page
+    added later that cannot wrap or scroll.
+    """
+    settings = Settings()
+    settings.general.font_size = 24
+    window = _window(qtbot, settings)
+
+    pages = window._stack.minimumSizeHint().width()
+    assert pages <= MIN_SIZE[0] - window._sidebar.width(), (
+        f"a settings page wants {pages}px, so it — not the chrome — is the floor"
+    )
+    assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
+
+
+def test_every_page_scrolls_including_contributed_ones(qtbot) -> None:
+    """Content that no longer fits has to stay reachable."""
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    window = _window(
+        qtbot,
+        extra_pages=[SettingsPageSpec("My Plugin", lambda parent: QLabel("page", parent))],
+    )
+
+    for index in range(window._stack.count()):
+        page = window._stack.widget(index)
+        name = window._sidebar.item(index).text()
+        assert isinstance(page, QScrollArea), f"{name} page does not scroll"
+        assert page.widgetResizable(), f"{name} page does not fill its viewport"
+
+
+def test_a_contributed_page_cannot_pin_the_window_open(qtbot) -> None:
+    """The window's minimum size is not a plugin's to raise.
+
+    Not hypothetical: the widest page in the app is a contributed one — the
+    Plugins manager's table of installed add-ons — so leaving ``extra_pages``
+    out of the scroll wrapper would have left the window pinned wide for
+    exactly the users who enabled plugins. See
+    ``tests/ui/test_pluginmanager.py`` for the same check against the real
+    page rather than this stand-in.
+    """
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    applied: list[object] = []
+
+    def build(parent):
+        page = QLabel("a very wide plugin page", parent)
+        page.setMinimumWidth(1800)
+        return page
+
+    window = _window(
+        qtbot,
+        extra_pages=[SettingsPageSpec("Greedy", build, applied.append)],
+    )
+
+    assert window._stack.minimumSizeHint().width() <= MIN_SIZE[0] - window._sidebar.width()
+
+    # ...and the wrapper stays invisible to the contributor: apply() hands
+    # back the widget the builder made, not the QScrollArea around it.
+    window.apply()
+    assert [type(page) for page in applied] == [QLabel]
+    assert applied[0].minimumWidth() == 1800  # untouched, just scrolled
+
+
+def test_every_form_row_wraps_rather_than_widening_the_window(qtbot) -> None:
+    """Swept in one place (``_let_rows_wrap``) precisely so that the forms
+    nested inside group boxes — the widest rows here — cannot be missed."""
+    window = _window(qtbot)
+
+    forms = window.findChildren(QFormLayout)
+    assert forms, "the settings pages are built out of form layouts"
+    assert all(form.rowWrapPolicy() == QFormLayout.RowWrapPolicy.WrapLongRows for form in forms)

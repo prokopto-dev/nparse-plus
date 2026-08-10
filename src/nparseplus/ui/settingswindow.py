@@ -75,6 +75,22 @@ logger = logging.getLogger(__name__)
 WINDOW_KEY = "settings"
 DEFAULT_GEOMETRY = (240, 160, 640, 560)
 
+#: How small the user is allowed to make this window.
+#:
+#: A floor on *legibility*, not on content: every page scrolls, and every form
+#: row drops its field under its label, so nothing here is unreachable at this
+#: size — it is small enough to park beside EverQuest and wide enough that the
+#: sidebar plus one field still reads. Deliberately a plain number rather than
+#: a multiple of the font size: the pages scroll, so a larger font makes this
+#: window scroll sooner, not refuse to shrink.
+#:
+#: Not an absolute promise — Qt takes the LARGER of this and the layout's own
+#: minimum. At a big font size the sidebar and the two buttons under the pages
+#: want more than this, since their text cannot be narrowed, and how much more
+#: depends on the platform's font. That floor is honest. The one worth
+#: guarding against is a *page* setting it, which is what the tests assert.
+MIN_SIZE = (420, 320)
+
 # The Windows-grid rows. Legacy rows live in config.data[section]; new rows
 # live in Settings.windows[key]. Both kinds get apply_window_state() called
 # directly on their handle when applied.
@@ -326,7 +342,16 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                 logger.exception("settings page %r failed to build", spec.title)
                 page = QLabel("This page failed to build — see nparseplus.log.", self)
             self._sidebar.addItem(spec.title)
-            self._stack.addWidget(page)
+            # Scrolled like the built-in pages: the window's minimum size is
+            # not a contributed page's to raise, and the widest page in the
+            # app is a contributed one — the Plugins manager's table of
+            # installed add-ons wants ~1800px, which would pin the window
+            # wide open for exactly the users who enabled plugins.
+            #
+            # The wrapper goes in the stack; `_extra_pages` keeps what the
+            # builder returned, so ``spec.apply`` still gets the widget it
+            # made rather than a QScrollArea it has never heard of.
+            self._stack.addWidget(self._scrollable(page))
             self._extra_pages.append((spec, page))
         self._sidebar.setCurrentRow(0)
 
@@ -351,9 +376,30 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
 
         apply_button.setObjectName(chrome.PRIMARY)
         self._sidebar.setObjectName(chrome.SIDEBAR)
+        self._let_rows_wrap()
+        self.setMinimumSize(*MIN_SIZE)
         # Last: the pages must exist before the sheet reaches them.
         self.apply_chrome()
         self.restore_visibility()
+
+    def _let_rows_wrap(self) -> None:
+        """Every form row in the window puts its field under its label when
+        the row will not fit.
+
+        The other half of :meth:`_scrollable`, and the one that actually keeps
+        the pages readable: a scroll area alone would let a narrow window
+        scroll sideways past the labels, which is a miserable way to read a
+        settings page. With this, a row's width floor is the wider of label
+        and field instead of their sum, so narrowing reflows before it scrolls.
+
+        Swept over every ``QFormLayout`` in one place rather than set on each
+        as it is built — including the ones nested inside group boxes, which
+        are the widest rows here — so a page added later cannot forget it.
+        Extra pages contributed by plugins get it too, which is the intent:
+        the window's minimum size is not theirs to raise.
+        """
+        for form in self.findChildren(QFormLayout):
+            form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
     # -- legacy dict access -----------------------------------------------------
 
@@ -484,7 +530,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         outer.addStretch(1)
         page = QWidget(self)
         page.setLayout(outer)
-        return page
+        return self._scrollable(page)
 
     def show_page(self, title: str) -> None:
         """Show the window with ``title``'s page selected (unknown = no-op
@@ -921,7 +967,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         layout.addWidget(self._friends_status)
         page = QWidget(self)
         page.setLayout(layout)
-        return page
+        return self._scrollable(page)
 
     def _friends_files(self) -> list[Path]:
         eq_dir = self._install_dir.path() or str(self._settings.general.eq_install_dir or "")
@@ -1264,12 +1310,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         body = QWidget(self)
         body.setLayout(outer)
         # Add-ons can push the row count past the window height, and the grid
-        # has no other way to reach the bottom rows.
-        page = QScrollArea(self)
-        page.setWidgetResizable(True)
-        page.setFrameShape(QFrame.Shape.NoFrame)
-        page.setWidget(body)
-        return page
+        # has no other way to reach the bottom rows. (Every page scrolls now;
+        # this one needed it first.)
+        return self._scrollable(body)
 
     @staticmethod
     def _add_grid_section(grid: QGridLayout, index: int, title: str) -> int:
@@ -1826,6 +1869,27 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         outer.addStretch(1)
         page = QWidget(self)
         page.setLayout(outer)
+        return self._scrollable(page)
+
+    def _scrollable(self, body: QWidget) -> QScrollArea:
+        """Put a page in a scroll area so the WINDOW can be small.
+
+        A QStackedWidget's minimum size is the largest of its pages, so
+        without this the single widest page set the floor for all of them and
+        the window could not be narrowed past it — Sharing did it at ~550px,
+        purely because one row is a long label beside a combo listing
+        "pigparse.org character page".
+
+        Scrolling is the right answer for a settings page specifically: the
+        content is a list of independent controls, so content that runs off
+        the edge is still reachable by moving. That is not true of, say, the
+        map, which is why this is a habit for this window and not a rule for
+        the app.
+        """
+        page = QScrollArea(self)
+        page.setWidgetResizable(True)
+        page.setFrameShape(QFrame.Shape.NoFrame)
+        page.setWidget(body)
         return page
 
     def mousePressEvent(self, event) -> None:
