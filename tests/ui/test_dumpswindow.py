@@ -388,14 +388,17 @@ def test_upload_sends_the_selected_inventory_snapshot(qtbot, tmp_path: Path) -> 
     assert uploader.calls[0][0].kind is DumpKind.INVENTORY
 
 
-def test_upload_from_a_spellbook_row_falls_back_to_that_characters_inventory(
-    qtbot, tmp_path: Path
-) -> None:
-    """A spellbook has nothing to upload; the character it belongs to does."""
+def test_upload_from_a_spellbook_row_sends_that_spellbook(qtbot, tmp_path: Path) -> None:
+    """A selected snapshot uploads itself, whichever kind it is.
+
+    It used to substitute that character's inventory, because the button only
+    knew how to send one thing. p99planner takes both, and dropping what the
+    user pointed at would now be the surprising answer — the handler decides
+    what the chosen site can use.
+    """
     env, uploader = _with_uploader(qtbot, tmp_path)
     env.store("A", DumpKind.INVENTORY, INVENTORY, T0)
     env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
-    env.store("B", DumpKind.INVENTORY, INVENTORY, T0)
     env.window.refresh()
     ref = env.library.latest("A", DumpKind.SPELLBOOK)
     assert ref is not None
@@ -404,7 +407,23 @@ def test_upload_from_a_spellbook_row_falls_back_to_that_characters_inventory(
     env.window.upload_selected()
     sent = uploader.calls[0]
     assert [dump.character for dump in sent] == ["A"]
-    assert all(dump.kind is DumpKind.INVENTORY for dump in sent)
+    assert sent[0].kind is DumpKind.SPELLBOOK
+
+
+def test_upload_from_a_character_row_sends_both_of_its_kinds(qtbot, tmp_path: Path) -> None:
+    """Inventory first: p99planner applies a spellbook only to a character it
+    already knows about."""
+    env, uploader = _with_uploader(qtbot, tmp_path)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.store("A", DumpKind.INVENTORY, INVENTORY, T0)
+    env.window.refresh()
+    env.window._tree.setCurrentItem(env.window._tree.topLevelItem(0))  # the "A" row
+
+    env.window.upload_selected()
+    assert [dump.kind for dump in uploader.calls[0]] == [
+        DumpKind.INVENTORY,
+        DumpKind.SPELLBOOK,
+    ]
 
 
 def test_upload_with_nothing_selected_takes_the_whole_roster(qtbot, tmp_path: Path) -> None:
@@ -412,23 +431,28 @@ def test_upload_with_nothing_selected_takes_the_whole_roster(qtbot, tmp_path: Pa
     env, uploader = _with_uploader(qtbot, tmp_path)
     for character in ("A", "B", "C"):
         env.store(character, DumpKind.INVENTORY, INVENTORY, T0)
+    env.store("B", DumpKind.SPELLBOOK, SPELLBOOK, T0)
     env.window.refresh()
     env.window._tree.setCurrentItem(None)
     env.window._dump = None
 
     env.window.upload_selected()
-    assert [dump.character for dump in uploader.calls[0]] == ["A", "B", "C"]
+    assert [(dump.character, dump.kind) for dump in uploader.calls[0]] == [
+        ("A", DumpKind.INVENTORY),
+        ("B", DumpKind.INVENTORY),
+        ("B", DumpKind.SPELLBOOK),
+        ("C", DumpKind.INVENTORY),
+    ]
 
 
 def test_upload_says_so_when_there_is_nothing_to_send(qtbot, tmp_path: Path) -> None:
     env, uploader = _with_uploader(qtbot, tmp_path)
-    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
     env.window.refresh()
     env.window._tree.setCurrentItem(None)
     env.window._dump = None
 
     message = env.window.upload_selected()
-    assert "No inventory" in message
+    assert "No snapshot" in message
     assert uploader.calls == []
 
 

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 import httpx
 import pytest
 
-from nparseplus.core.p99planner import MAX_FILE_BYTES, MAX_REQUEST_BYTES, ImportFile
+from nparseplus.core.p99planner import (
+    MAX_FILE_BYTES,
+    MAX_REQUEST_BYTES,
+    PER_FILE_OVERHEAD_BYTES,
+    ImportFile,
+)
 from nparseplus.net.p99planner import BASE_URL, P99PlannerClient, check_budget
 
 FILES = [ImportFile(name="Wermule-Inventory.txt", text="Location\tName\tID\tCount\tSlots\n")]
@@ -46,12 +52,37 @@ def test_stage_posts_the_files_and_returns_the_claim() -> None:
     request = seen[0]
     assert request.method == "POST"
     assert request.url.path == "/api/import"
-    import json
-
     body = json.loads(request.content)
     assert body == {"files": [{"name": FILES[0].name, "text": FILES[0].text}]}
     # No auth of any kind: that is the API's design, not an oversight.
     assert "authorization" not in {key.lower() for key in request.headers}
+
+
+def test_both_dump_kinds_go_in_one_unlabelled_files_array() -> None:
+    """No kind/type field: the server classifies each file by its contents.
+
+    Sending one would be inventing a field, and a spellbook that arrived
+    labelled "inventory" would be wrong in a way the API cannot correct.
+    """
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=OK_BODY)
+
+    files = [
+        FILES[0],
+        ImportFile(name="Wermule-Spellbook.txt", text="1\tMinor Healing\n5\tGate\n"),
+    ]
+    assert client_for(handler).stage(files).ok
+
+    body = json.loads(seen[0].content)
+    assert body == {
+        "files": [
+            {"name": "Wermule-Inventory.txt", "text": files[0].text},
+            {"name": "Wermule-Spellbook.txt", "text": files[1].text},
+        ]
+    }
 
 
 def test_add_puts_to_the_same_token() -> None:
@@ -254,6 +285,27 @@ def test_an_oversized_file_never_reaches_the_network() -> None:
 def test_the_request_budget_is_the_documented_one() -> None:
     assert MAX_FILE_BYTES == 128 * 1024
     assert MAX_REQUEST_BYTES == 1_500_000
+
+
+def test_a_files_wire_cost_counts_its_name_and_the_per_file_allowance() -> None:
+    """The API charges name + text + "a small per-file allowance", and a
+    character can now send two files, so the allowance is counted twice."""
+    file = ImportFile(name="Wermule-Spellbook.txt", text="1\tMinor Healing\n")
+    assert file.size == len(file.name) + len(file.text) + PER_FILE_OVERHEAD_BYTES
+
+
+def test_a_full_review_link_is_not_reported_as_an_oversized_export() -> None:
+    """413 on PUT is the merged total, not this batch — every file in it may
+    be small. Saying "too large" sends someone hunting the wrong file."""
+    handler = lambda _r: httpx.Response(413, json={"error": "too large"})  # noqa: E731
+    client = client_for(handler)
+
+    added = client.add("abc123", FILES)
+    assert "review link is full" in added.error
+    assert not added.gone  # a fresh POST is the fix, but the link still exists
+
+    staged = client.stage(FILES)
+    assert "too large" in staged.error
 
 
 def test_empty_upload_is_refused_without_a_call() -> None:

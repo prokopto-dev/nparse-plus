@@ -141,7 +141,7 @@ class P99PlannerClient:
                     # Deliberately no path/body/response in the log: the path
                     # carries the claim token.
                     logger.warning("p99planner %s failed (HTTP %s)", what, status)
-                    return UploadOutcome(error=_status_reason(status))
+                    return UploadOutcome(error=_status_reason(status, what))
             except httpx.RequestError:
                 if attempt == ATTEMPTS:
                     logger.warning("p99planner %s failed (network)", what)
@@ -179,9 +179,18 @@ class P99PlannerClient:
         )
 
 
-def _status_reason(status: int) -> str:
+def _status_reason(status: int, what: str = "stage") -> str:
     """A message for the user. Never includes anything token-shaped."""
     if status == 413:
+        if what == "add":
+            # The limits are checked against the MERGED contents of the link,
+            # so this is not "your export is too big" — every batch so far fit
+            # and the accumulated total no longer does. Saying "too large"
+            # here would send someone looking at a 12 KB file for the problem.
+            return (
+                "the open review link is full — approve or cancel it, "
+                "then upload again to start a new one"
+            )
         return "that export is too large for p99planner"
     if status == 400:
         return "p99planner rejected the export as malformed"

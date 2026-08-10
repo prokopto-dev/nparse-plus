@@ -1430,9 +1430,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         account_box.setLayout(account_form)
         form.addRow(account_box)
 
-        # Inventory upload is its own box, not part of the pigparse account
-        # one: only one of its destinations needs that account at all.
-        upload_box = QGroupBox("Inventory upload", self)
+        # Dump upload is its own box, not part of the pigparse account one:
+        # only one of its destinations needs that account at all.
+        upload_box = QGroupBox("Character dump upload", self)
         upload_form = QFormLayout()
         self._upload_target = QComboBox(self)
         self._upload_target.addItem("Off", "off")
@@ -1441,7 +1441,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         index = self._upload_target.findData(self._settings.dumps.upload_target)
         self._upload_target.setCurrentIndex(max(index, 0))
         self._upload_target.currentIndexChanged.connect(lambda _i: self._refresh_upload_note())
-        upload_form.addRow("Send inventory dumps to", self._upload_target)
+        upload_form.addRow("Send character dumps to", self._upload_target)
         self._upload_note = chromewidgets.hint("", self)
         self._upload_note.setWordWrap(True)
         upload_form.addRow(self._upload_note)
@@ -1452,16 +1452,22 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._refresh_upload_note()
         return self._page(form)
 
-    #: What each inventory-upload destination actually does, said plainly —
-    #: they differ in what they need from the user and where the data lands.
+    #: What each dump-upload destination actually does, said plainly — they
+    #: differ in what they need from the user, which dumps they take, and
+    #: where the data lands.
     UPLOAD_NOTES: ClassVar[dict[str, str]] = {
         "off": "Dumps stay on this machine, in the Character Dumps library.",
-        "pigparse": ("Uploads to your pigparse.org character page. Needs the Discord login above."),
+        "pigparse": (
+            "Uploads your inventory to your pigparse.org character page. "
+            "Needs the Discord login above. Spellbook dumps stay local — "
+            "pigparse.org has nowhere to put them."
+        ),
         "p99planner": (
             "Stages the export at p99planner.com and opens a review page in "
-            "your browser, where you approve the import. No account or login "
-            "— the link is the only credential, so treat it as private. "
-            "Later dumps join the same link for 24 hours."
+            "your browser, where you approve the import. Takes inventory and "
+            "spellbook dumps; a character's pair is reviewed as one entry. "
+            "No account or login — the link is the only credential, so treat "
+            "it as private. Later dumps join the same link for 24 hours."
         ),
     }
 

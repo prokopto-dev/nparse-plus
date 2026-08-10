@@ -125,8 +125,8 @@ class Env:
         os.utime(path, (when.timestamp(), when.timestamp()))
         return path
 
-    def store(self, character: str, text: str, when: datetime):
-        dump = build_dump(text, character=character, kind=DumpKind.INVENTORY, captured_at=when)
+    def store(self, character: str, text: str, when: datetime, kind: DumpKind = DumpKind.INVENTORY):
+        dump = build_dump(text, character=character, kind=kind, captured_at=when)
         assert dump is not None
         self.library.store(dump)
         return dump
@@ -185,11 +185,14 @@ def test_a_changed_dump_uploads_again(env: Env) -> None:
     assert [item.name for item in env.api.uploads[1]["items"]][-1] == "Shiny Sword"
 
 
-def test_spellbook_dumps_are_not_uploaded(env: Env) -> None:
+def test_spellbook_dumps_are_not_uploaded_to_pigparse(env: Env) -> None:
+    """pigparse.org has no spellbook endpoint, so the dump stays local."""
     env.dump("Xantik-Spellbook.txt", SPELLBOOK, T0 + timedelta(minutes=1))
     env.watcher.tick(T0 + timedelta(minutes=1))
     assert env.api.uploads == []
     assert env.planner.staged == []
+    # ...but it is still collected, which is the library's whole job.
+    assert env.library.snapshots("Xantik", DumpKind.SPELLBOOK)
 
 
 def test_the_dump_file_names_the_character(tmp_path: Path) -> None:
@@ -323,6 +326,45 @@ def test_staging_sends_the_raw_export_and_opens_the_review_page(planner_env: Env
     assert "Guise of the Deceiver" in file.text
     # Opened, not printed: the URL is a bearer secret.
     assert planner_env.opened == ["https://p99planner.com/import/token1"]
+
+
+def test_a_spellbook_stages_like_an_inventory(planner_env: Env) -> None:
+    """The kinds are not labelled on the wire — p99planner reads the contents,
+    so all we owe it is the name the game would have written."""
+    planner_env.dump("Xantik-Spellbook.txt", SPELLBOOK, T0 + timedelta(minutes=1))
+    planner_env.watcher.tick(T0 + timedelta(minutes=1))
+
+    assert len(planner_env.planner.staged) == 1
+    file = planner_env.planner.staged[0][0]
+    assert file.name == "Xantik-Spellbook.txt"
+    assert file.text.splitlines()[0] == "51\tSuperior Healing"
+    # No inventory header anywhere: this is the raw spellbook shape.
+    assert "Location\tName" not in file.text
+
+
+def test_a_batch_sends_a_characters_inventory_before_its_spellbook(planner_env: Env) -> None:
+    """A spellbook only applies to a character the planner already has, so an
+    ordering that leads with one is the arrangement that gets it skipped."""
+    dumps = [
+        planner_env.store("Xantik", SPELLBOOK, T0, kind=DumpKind.SPELLBOOK),
+        planner_env.store("Bankmule1", DUMP, T0),
+        planner_env.store("Xantik", DUMP, T0),
+    ]
+    planner_env.handler.upload_now(dumps)
+
+    assert [file.name for file in planner_env.planner.staged[0]] == [
+        "Xantik-Inventory.txt",
+        "Xantik-Spellbook.txt",
+        "Bankmule1-Inventory.txt",
+    ]
+
+
+def test_a_character_sending_both_kinds_is_named_once(planner_env: Env) -> None:
+    dumps = [
+        planner_env.store("Xantik", DUMP, T0),
+        planner_env.store("Xantik", SPELLBOOK, T0, kind=DumpKind.SPELLBOOK),
+    ]
+    assert planner_env.handler.upload_now(dumps).count("Xantik") == 1
 
 
 def test_later_dumps_join_the_same_claim_link(planner_env: Env) -> None:
@@ -473,10 +515,19 @@ def test_open_and_forget_the_pending_claim(planner_env: Env) -> None:
     assert planner_env.handler.open_claim() is False
 
 
-def test_export_filename_matches_what_the_game_writes() -> None:
-    dump = build_dump(DUMP, character="Wermule", kind=DumpKind.INVENTORY, captured_at=T0)
+@pytest.mark.parametrize(
+    ("text", "kind", "expected"),
+    [
+        (DUMP, DumpKind.INVENTORY, "Wermule-Inventory.txt"),
+        (SPELLBOOK, DumpKind.SPELLBOOK, "Wermule-Spellbook.txt"),
+    ],
+)
+def test_export_filename_matches_what_the_game_writes(
+    text: str, kind: DumpKind, expected: str
+) -> None:
+    dump = build_dump(text, character="Wermule", kind=kind, captured_at=T0)
     assert dump is not None
-    assert export_filename(dump) == "Wermule-Inventory.txt"
+    assert export_filename(dump) == expected
 
 
 # --- the manual path --------------------------------------------------------
@@ -505,6 +556,18 @@ def test_manual_upload_takes_a_whole_roster_in_one_call(planner_env: Env) -> Non
     ]
 
 
+def test_manual_upload_takes_a_whole_roster_of_both_kinds(planner_env: Env) -> None:
+    dumps = [
+        planner_env.store("Xantik", DUMP, T0),
+        planner_env.store("Xantik", SPELLBOOK, T0, kind=DumpKind.SPELLBOOK),
+        planner_env.store("Bankmule1", DUMP, T0),
+    ]
+    planner_env.handler.upload_now(dumps)
+
+    assert len(planner_env.planner.staged) == 1  # still one POST
+    assert len(planner_env.planner.staged[0]) == 3
+
+
 def test_manual_upload_reports_why_it_did_nothing(tmp_path: Path) -> None:
     env = Env(tmp_path, target="off")
     dump = env.store("Xantik", DUMP, T0)
@@ -514,9 +577,32 @@ def test_manual_upload_reports_why_it_did_nothing(tmp_path: Path) -> None:
     env.state["token"] = ""
     assert "Log in" in env.handler.upload_now([dump])
 
-    book = build_dump(SPELLBOOK, character="Xantik", kind=DumpKind.SPELLBOOK, captured_at=T0)
-    assert book is not None
-    assert "No inventory" in env.handler.upload_now([book])
+
+def test_a_spellbook_offered_to_pigparse_says_which_site_takes_one(tmp_path: Path) -> None:
+    """ "Nothing to send" and "this site does not do spellbooks" are different
+    problems, and only one of them has a fix the user can act on."""
+    env = Env(tmp_path)
+    book = env.store("Xantik", SPELLBOOK, T0, kind=DumpKind.SPELLBOOK)
+
+    message = env.handler.upload_now([book])
+    assert "p99planner" in message
+    assert env.api.uploads == []
+    assert env.planner.staged == []
+
+
+def test_a_mixed_selection_sends_pigparse_only_the_inventory(tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    dumps = [
+        env.store("Xantik", DUMP, T0),
+        env.store("Xantik", SPELLBOOK, T0, kind=DumpKind.SPELLBOOK),
+    ]
+    env.handler.upload_now(dumps)
+
+    assert len(env.api.uploads) == 1
+    assert [item.name for item in env.api.uploads[0]["items"]] == [
+        "Guise of the Deceiver",
+        "Rusty Sword",
+    ]
 
 
 def test_no_api_or_no_server_is_a_no_op(tmp_path: Path) -> None:

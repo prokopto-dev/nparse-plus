@@ -24,21 +24,27 @@ An account is **not** required for map dots, shared timers, or feeds — only
 for uploading to pigparse.org's character browser (below), and not even for
 that if you send your inventory to p99planner instead.
 
-## Inventory upload
+## Character dump upload
 
-One picker, **Send inventory dumps to**, because both destinations publish
+One picker, **Send character dumps to**, because both destinations publish
 the same character to a different website:
 
-| Destination | What it needs | What happens |
-|---|---|---|
-| **Off** (default) | — | Dumps stay on this machine, in the [Character Dumps](../windows/character-dumps.md) library. |
-| **pigparse.org character page** | The Discord login above | Typing `/outputfile inventory` in game uploads the dump to your pigparse.org character page. |
-| **p99planner.com** | Nothing | The export is staged at p99planner.com and a review page opens in your browser, where you approve the import. No account, no API key, no login. |
+| Destination | What it needs | Takes | What happens |
+|---|---|---|---|
+| **Off** (default) | — | — | Dumps stay on this machine, in the [Character Dumps](../windows/character-dumps.md) library. |
+| **pigparse.org character page** | The Discord login above | Inventory | Typing `/outputfile inventory` in game uploads the dump to your pigparse.org character page. |
+| **p99planner.com** | Nothing | Inventory and spellbook | The export is staged at p99planner.com and a review page opens in your browser, where you approve the import. No account, no API key, no login. |
+
+`/outputfile spellbook` only has somewhere to go with **p99planner.com**
+picked — pigparse.org's character browser has no spellbook page. With
+pigparse picked, a spellbook is still collected into the library; it just
+isn't published.
 
 p99planner never applies anything without you approving it on that page, and
-later dumps in the same session join the *same* review link for 24 hours. The
-link is private — treat it like a password; see
-[Character Dumps](../windows/character-dumps.md#uploading-your-inventory).
+later dumps in the same session join the *same* review link for 24 hours — a
+character's inventory and spellbook show up there as one entry. The link is
+private — treat it like a password; see
+[Character Dumps](../windows/character-dumps.md#uploading-your-dumps).
 
 Whichever you pick, uploading is fed by the same scan that fills the
 [Character Dumps](../windows/character-dumps.md) library, so that window's
@@ -58,6 +64,6 @@ What uploads on its own is deliberately narrow:
   much local history to keep and has no say in what leaves your machine.
 
 For anything outside that — an older dump, a hand-imported one, or a whole
-mule roster at once — use **Upload inventory** in the Character Dumps window.
+mule roster at once — use **Upload dumps** in the Character Dumps window.
 
 Changing the destination applies after a restart.

@@ -241,14 +241,16 @@ class DumpsSettings(BaseModel):
     # How many snapshots to keep per character per kind; older ones are
     # pruned as new ones land.
     keep_per_character: int = Field(default=10, ge=1, le=100)
-    # Where a fresh inventory dump gets sent, if anywhere. Deliberately one
-    # choice rather than a checkbox each: both destinations publish the same
+    # Where a fresh dump gets sent, if anywhere. Deliberately one choice
+    # rather than a checkbox each: both destinations publish the same
     # character to a different website, and "off" has to be the obvious
     # default. Migrated from the old pigparse_account.inventory_upload bool.
-    #   pigparse   - pigparse.org character browser (needs a Discord login)
+    #   pigparse   - pigparse.org character browser (needs a Discord login).
+    #                Inventory only; it has no spellbook endpoint.
     #   p99planner - p99planner.com, which needs no credentials at all: it
     #                stages the export and hands back a claim link the player
-    #                approves in their own browser.
+    #                approves in their own browser. Takes both dump kinds.
+    # The kinds each one accepts live in handlers.inventory_upload.UPLOAD_KINDS.
     upload_target: Literal["off", "pigparse", "p99planner"] = "off"
 
 

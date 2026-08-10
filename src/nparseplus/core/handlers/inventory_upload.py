@@ -1,4 +1,4 @@
-"""InventoryUploadHandler — send a fresh inventory dump to the chosen site.
+"""InventoryUploadHandler — send a fresh character dump to the chosen site.
 
 Descendant of EQTool's Services/InventoryWatcherService.cs, restructured. The
 C# service is a FileSystemWatcher that both *notices* the dump and *uploads*
@@ -19,14 +19,22 @@ is a decision the user should make once, in one control:
 
 ``pigparse``
     The EQTool behavior: POST the parsed items to pigparse.org's character
-    browser under a Bearer token from the Discord login.
+    browser under a Bearer token from the Discord login. **Inventory only** —
+    pigparse.org has no spellbook endpoint, so a spellbook dump stays in the
+    local library.
 
 ``p99planner``
     A handoff, not an upload. POST the *raw export text* — no credentials of
     any kind — and get back a claim URL the player opens and approves. We
     hold that claim open and PUT later exports into it, so a five-mule
-    session is one link, not five. See ``core.p99planner`` for why the URL is
-    treated as a secret.
+    session is one link, not five. Takes **both** dump kinds; a character's
+    inventory and spellbook are reviewed as one entry. See ``core.p99planner``
+    for why the URL is treated as a secret.
+
+Which kinds each destination accepts is :data:`UPLOAD_KINDS`, and it is the
+one place that asymmetry is written down — the window and the automatic path
+both route through it rather than each carrying their own copy of "pigparse
+means inventory".
 
 Three behaviors that differ from the C# on purpose:
 
@@ -71,15 +79,37 @@ from nparseplus.core.player import ActivePlayer
 logger = logging.getLogger(__name__)
 
 
+#: What each destination can actually take. pigparse.org's character browser
+#: has an inventory endpoint and nothing for spellbooks; p99planner classifies
+#: a file by its contents and accepts either.
+#:
+#: Kept as data, and looked up rather than branched on, so that adding a
+#: destination (or a third dump kind) does not mean hunting for every
+#: ``is DumpKind.INVENTORY`` in the app.
+UPLOAD_KINDS: dict[str, frozenset[DumpKind]] = {
+    "pigparse": frozenset({DumpKind.INVENTORY}),
+    "p99planner": frozenset({DumpKind.INVENTORY, DumpKind.SPELLBOOK}),
+}
+
+
+def accepts(target: str, kind: DumpKind) -> bool:
+    """Whether ``target`` takes dumps of this kind (False for "off"/unknown)."""
+    return kind in UPLOAD_KINDS.get(target, frozenset())
+
+
 def export_filename(dump: CharacterDump) -> str:
     """The name the game would have written, which is what p99planner reads
     the character out of — an export named anything else creates a duplicate
-    character instead of updating the one the player already has."""
-    return f"{dump.character}-Inventory.txt"
+    character instead of updating the one the player already has.
+
+    ``DumpKind.label`` is "Inventory"/"Spellbook", which is exactly the
+    client's own spelling, so this stays one line for both kinds.
+    """
+    return f"{dump.character}-{dump.kind.label}.txt"
 
 
 class InventoryUploadHandler(BaseHandler):
-    """Routes inventory snapshots to whichever site the user picked."""
+    """Routes dump snapshots to whichever site the user picked."""
 
     def __init__(
         self,
@@ -133,7 +163,10 @@ class InventoryUploadHandler(BaseHandler):
 
         Runs on the driver thread, like everything else off the watcher tick.
         """
-        if dump.kind is not DumpKind.INVENTORY or not dump.items:
+        if not dump.entry_count:
+            return
+        if not accepts(self._get_target(), dump.kind):
+            # A spellbook with pigparse.org picked: kept locally, sent nowhere.
             return
         if dump.captured_at < self._session_start:
             return  # taken before we started; see the module docstring
@@ -144,24 +177,29 @@ class InventoryUploadHandler(BaseHandler):
     def upload_now(self, dumps: list[CharacterDump]) -> str:
         """Send these snapshots to the configured site.
 
+        Takes a mixed list and filters it against :data:`UPLOAD_KINDS`, so the
+        caller never has to know that pigparse.org does not do spellbooks —
+        the window hands over what the selection means and gets back a line
+        saying what happened to it.
+
         Safe from any thread: the work happens inside a ``submit`` fetch.
         Returns a one-line description of what was *started*, for a status
         label — the outcome lands in :meth:`status_text` when it completes.
         """
         target = self._get_target()
-        usable = [dump for dump in dumps if dump.kind is DumpKind.INVENTORY and dump.items]
         if target == "off":
-            return "Inventory upload is off — pick a destination in Settings > Sharing."
+            return "Dump upload is off — pick a destination in Settings > Sharing."
+        if target not in UPLOAD_KINDS:
+            return f"Unknown upload destination {target!r}."
+        usable = [dump for dump in dumps if accepts(target, dump.kind) and dump.entry_count]
         if not usable:
-            return "No inventory snapshot to upload."
+            return _nothing_to_send(target, dumps)
         if self.submit is None:
             return "The network worker is not running."
 
         if target == "pigparse":
             return self._start_pigparse(usable)
-        if target == "p99planner":
-            return self._start_planner(usable)
-        return f"Unknown upload destination {target!r}."
+        return self._start_planner(usable)
 
     # -- pigparse ----------------------------------------------------------
 
@@ -174,7 +212,7 @@ class InventoryUploadHandler(BaseHandler):
         if server is None:
             return "Waiting to see which server you are on."
         server_int = int(server)
-        names = ", ".join(dump.character for dump in dumps)
+        names = ", ".join(_characters(dumps))
         # Set before submitting, not after: the send can complete (and post
         # its own outcome) before this function returns, and a "starting"
         # line must never overwrite the answer.
@@ -198,10 +236,8 @@ class InventoryUploadHandler(BaseHandler):
     def _start_planner(self, dumps: list[CharacterDump]) -> str:
         if self.planner is None:
             return "p99planner.com is unavailable."
-        files = [
-            ImportFile(name=export_filename(dump), text=render_dump_text(dump)) for dump in dumps
-        ]
-        names = ", ".join(dump.character for dump in dumps)
+        files = _planner_files(dumps)
+        names = ", ".join(_characters(dumps))
         # Set before submitting — see _start_pigparse.
         self._set_status(f"Staging {names} for p99planner.com…")
         self.submit(lambda: self._send_to_planner(files), None)  # type: ignore[misc]
@@ -366,6 +402,52 @@ class InventoryUploadHandler(BaseHandler):
         """One line for the Character Dumps window. Never contains the URL."""
         with self._lock:
             return self._status
+
+
+def _planner_files(dumps: list[CharacterDump]) -> list[ImportFile]:
+    """The batch to hand p99planner, **inventory before spellbook** per character.
+
+    A spellbook only applies to a character the planner already has, so an
+    ordering that puts one ahead of the inventory that would create that
+    character is the one arrangement that can turn a good batch into a
+    half-skipped one. Grouping by character in the order they arrived keeps
+    the review page reading like the roster the user selected.
+    """
+    order = {DumpKind.INVENTORY: 0, DumpKind.SPELLBOOK: 1}
+    seen: dict[str, int] = {}
+    for dump in dumps:
+        seen.setdefault(dump.character, len(seen))
+    ranked = sorted(dumps, key=lambda dump: (seen[dump.character], order.get(dump.kind, 9)))
+    return [ImportFile(name=export_filename(dump), text=render_dump_text(dump)) for dump in ranked]
+
+
+def _characters(dumps: list[CharacterDump]) -> list[str]:
+    """The character names in these dumps, deduped, in order.
+
+    A character sending both an inventory and a spellbook is two dumps and
+    one name; the status line should not say "Xantik, Xantik".
+    """
+    names: list[str] = []
+    for dump in dumps:
+        if dump.character and dump.character not in names:
+            names.append(dump.character)
+    return names
+
+
+def _nothing_to_send(target: str, dumps: list[CharacterDump]) -> str:
+    """Why the selection produced nothing this destination could take.
+
+    Worth distinguishing: "you have no snapshots" and "this site does not do
+    spellbooks" are different problems with different fixes, and the second
+    one is new — before spellbook support, every dump the button could reach
+    was one pigparse would take.
+    """
+    if target == "pigparse" and any(dump.kind is DumpKind.SPELLBOOK for dump in dumps):
+        return (
+            "pigparse.org takes inventory dumps only — switch to p99planner.com "
+            "in Settings > Sharing to upload a spellbook."
+        )
+    return "No snapshot to upload."
 
 
 def _staged_status(link: ClaimLink | None) -> str:

@@ -273,10 +273,11 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self.import_file_button.clicked.connect(self._prompt_import_file)
         bar.addWidget(self.import_file_button)
 
-        self.upload_button = QPushButton("Upload inventory", self)
+        self.upload_button = QPushButton("Upload dumps", self)
         self.upload_button.setToolTip(
-            "Send inventory snapshots to the destination picked in "
-            "Settings > Sharing. Works whether or not auto-import is on."
+            "Send snapshots to the destination picked in Settings > Sharing. "
+            "p99planner.com takes inventories and spellbooks; pigparse.org "
+            "takes inventories. Works whether or not auto-import is on."
         )
         self.upload_button.clicked.connect(self.upload_selected)
         bar.addWidget(self.upload_button)
@@ -630,21 +631,35 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     # -- upload ------------------------------------------------------------
 
     def upload_scope(self) -> list[CharacterDump]:
-        """Which inventories the Upload button would send, from the selection.
+        """Which snapshots the Upload button would send, from the selection.
 
-        Three levels, narrowest first, because that is how the tree reads:
-        an inventory snapshot uploads itself, a character row uploads that
-        character's current inventory, and no selection at all uploads every
-        character's current inventory — p99planner takes a whole mule roster
-        in one call, and that is exactly the tedious case worth having.
+        Three levels, narrowest first, because that is how the tree reads: a
+        selected snapshot uploads *itself*, a character row uploads that
+        character's current inventory and spellbook, and no selection at all
+        uploads the current pair for every character — p99planner takes a
+        whole mule roster in one call, and that is exactly the tedious case
+        worth having.
+
+        Deliberately site-agnostic: this answers "what did the user point
+        at", and the handler drops what the chosen destination cannot take
+        (:data:`~nparseplus.core.handlers.inventory_upload.UPLOAD_KINDS`).
+        Selecting a spellbook therefore uploads the spellbook — it no longer
+        silently substitutes that character's inventory, which was only ever
+        a way to make a button that said "inventory" do something.
         """
         dump = self._dump
-        if dump is not None and dump.kind is DumpKind.INVENTORY:
+        if dump is not None:
             return [dump]
         item = self._tree.currentItem()
         character = self._character_of(item)
         characters = [character] if character else self.library.characters()
-        found = [self.library.load_latest(name, DumpKind.INVENTORY) for name in characters]
+        found = [
+            self.library.load_latest(name, kind)
+            for name in characters
+            # Inventory first: p99planner applies a spellbook only to a
+            # character it already knows. The handler keeps this ordering.
+            for kind in (DumpKind.INVENTORY, DumpKind.SPELLBOOK)
+        ]
         return [dump for dump in found if dump is not None]
 
     def _character_of(self, item: QTreeWidgetItem | None) -> str:
@@ -713,13 +728,10 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     def upload_selected(self) -> str:
         """Upload per :meth:`upload_scope`; returns the status line shown."""
         if self.uploader is None:
-            message = "Inventory upload is unavailable."
+            message = "Dump upload is unavailable."
         else:
             dumps = self.upload_scope()
-            if not dumps:
-                message = "No inventory snapshot to upload."
-            else:
-                message = self.uploader.upload_now(dumps)
+            message = self.uploader.upload_now(dumps) if dumps else "No snapshot to upload."
         self._status.setText(message)
         # The send finishes on the net worker; let its outcome land in the
         # status line without making the user click anything.
