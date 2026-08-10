@@ -9,7 +9,9 @@ session Best/Current/Last PlayerDamage stats maintained in UpdateDPS.
 
 Deviations from EQTool are noted inline; the main one is that the first hit
 of an entity is appended to its damage list (EQTool only seeded the totals),
-so trailing damage decays correctly for one-hit entities.
+so trailing damage decays correctly for one-hit entities. The second is that
+staleness retires a *fight*, never an individual attacker — see
+``FIGHT_RETENTION_SECONDS``.
 """
 
 from __future__ import annotations
@@ -26,8 +28,18 @@ YOU = "You"
 # The trailing-DPS window (EntittyDPS.UpdateDps).
 TRAILING_WINDOW = timedelta(seconds=12)
 
-# Rows are pruned this long after their last damage (DPSWindowViewModel.ShouldRemove).
-STALE_AFTER_SECONDS = 40.0
+# A fight is retired this long after the last damage against its target, from
+# ANY attacker.
+#
+# DEVIATION from EQTool (DPSWindowViewModel.ShouldRemove), deliberate: the C#
+# aged out each EntittyDPS on its own last hit, so an attacker who opened with
+# a stun and then went to healing vanished from the list 40s later while the
+# mob was still up — the meter dropped rows mid-fight and under-reported who
+# was actually on the target. Attackers are never pruned individually here;
+# everything that has landed on a target stays in that target's group for as
+# long as the group exists, and the group ages out as a unit once the target
+# stops taking damage.
+FIGHT_RETENTION_SECONDS = 40.0
 
 # Session stats only consider your entity once the fight ran this long
 # (DPSWindowViewModel.UpdateDPS: ``TotalSeconds > 20``).
@@ -142,13 +154,6 @@ class FightEntity:
             return int(self.trailing_damage / TRAILING_WINDOW.total_seconds())
         return 0
 
-    def is_stale(self, now: datetime) -> bool:
-        """DPSWindowViewModel.ShouldRemove — 40s with no damage."""
-        last = self.last_damage_time
-        if last is None or last <= self.start_time:
-            last = self.start_time
-        return abs((now - last).total_seconds()) > STALE_AFTER_SECONDS
-
 
 @dataclass
 class Fight:
@@ -167,6 +172,16 @@ class Fight:
     def target_total_damage(self) -> int:
         """Sum over the target's group (UpdateDPS group totals)."""
         return sum(e.total_damage for e in self.entities.values())
+
+    @property
+    def last_damage_time(self) -> datetime | None:
+        """The most recent hit on this target from any attacker."""
+        times = [
+            entity.last_damage_time
+            for entity in self.entities.values()
+            if entity.last_damage_time is not None
+        ]
+        return max(times) if times else None
 
     def add_damage(
         self,
@@ -195,12 +210,18 @@ class Fight:
             if entity.death_time is None:
                 entity.death_time = when
 
-    def prune_stale(self, now: datetime) -> int:
-        """Drop entities with no damage for 40s. Returns count removed."""
-        stale = [key for key, entity in self.entities.items() if entity.is_stale(now)]
-        for key in stale:
-            del self.entities[key]
-        return len(stale)
+    def is_stale(self, now: datetime) -> bool:
+        """No damage against this target for the retention window.
+
+        Keyed on the whole group's last hit, so one attacker still swinging
+        keeps every other attacker's row on screen. Unlike the per-entity
+        check this replaces, a last-damage time in the *future* (a log line
+        stamped ahead of the wall clock) is not treated as stale.
+        """
+        last = self.last_damage_time
+        if last is None or last <= self.start_time:
+            last = self.start_time
+        return (now - last).total_seconds() > FIGHT_RETENTION_SECONDS
 
 
 @dataclass(frozen=True)
@@ -328,15 +349,17 @@ class FightTracker:
     # -- periodic update (DPSWindowViewModel.UpdateDPS) -----------------------------
 
     def tick(self, now: datetime) -> None:
-        """Prune stale rows, refresh trailing windows, roll session stats."""
-        removed = 0
+        """Retire stale fights, refresh trailing windows, roll session stats."""
         for fight in self._fights:
-            removed += fight.prune_stale(now)
             for entity in fight.entities.values():
                 entity.update_trailing(now)
         before = len(self._fights)
-        self._fights = [fight for fight in self._fights if fight.entities]
-        removed += before - len(self._fights)
+        # Whole groups only — an attacker is never dropped out from under a
+        # fight that is still being fought (see FIGHT_RETENTION_SECONDS).
+        self._fights = [
+            fight for fight in self._fights if fight.entities and not fight.is_stale(now)
+        ]
+        removed = before - len(self._fights)
         self._update_session_stats(now)
         if self._fights or removed:
             self._notify()

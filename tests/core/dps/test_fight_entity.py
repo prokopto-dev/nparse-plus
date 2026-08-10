@@ -81,11 +81,10 @@ def test_total_dps_uses_whole_fight_duration() -> None:
     assert fresh.total_dps(T0) == 0
 
 
-def test_is_stale_after_40_seconds_without_damage() -> None:
-    entity = make_entity()
-    entity.add_damage(T0, 10)
-    assert not entity.is_stale(T0 + timedelta(seconds=40))
-    assert entity.is_stale(T0 + timedelta(seconds=41))
+def test_entities_have_no_staleness_of_their_own() -> None:
+    # Staleness is a property of the fight, not the attacker: an entity is
+    # never dropped out from under a group that is still taking damage.
+    assert not hasattr(make_entity(), "is_stale")
 
 
 def test_tick_recompute_is_stable_without_new_hits() -> None:
