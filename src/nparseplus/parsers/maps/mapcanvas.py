@@ -74,15 +74,22 @@ class MapCanvas(QGraphicsView):
         # Antialiased map lines are the single largest per-repaint cost on a
         # 10k+-segment zone; the maps.antialias escape hatch trades edge
         # smoothness for repaint speed.
-        if config.data["maps"].get("antialias", True):
+        antialias = config.data["maps"].get("antialias", True)
+        if antialias:
             self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Items here are well-behaved (no painter-state leakage), and skipping
-        # the per-item save/restore + antialias dirty-rect padding is a
-        # documented QGraphicsView fast path.
-        self.setOptimizationFlags(
-            QGraphicsView.OptimizationFlag.DontSavePainterState
-            | QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing
-        )
+        # Items here are well-behaved (no painter-state leakage), so skipping
+        # the per-item save/restore is a free documented fast path.
+        # DontAdjustForAntialiasing is NOT free when antialiasing is on: it
+        # drops the 2px padding QGraphicsView adds to every exposed region, and
+        # an antialiased pen inks up to a pixel outside its own boundingRect —
+        # the fringe lands outside the rect that gets repainted when the item
+        # moves, so nothing ever erases it. Qt documents that side effect as
+        # "items ... can leave painting traces behind on the scene as they are
+        # moved", which over a translucent backdrop is a trail of ghost dots.
+        flags = QGraphicsView.OptimizationFlag.DontSavePainterState
+        if not antialias:
+            flags |= QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing
+        self.setOptimizationFlags(flags)
         self._scene = QGraphicsScene()
         self.setScene(self._scene)
         self._scale = config.data["maps"]["scale"]
@@ -142,6 +149,18 @@ class MapCanvas(QGraphicsView):
         percent = max(0, min(100, int(percent)))
         self._backdrop_opacity = percent
         self.setBackgroundBrush(QColor(0, 0, 0, round(percent * 255 / 100)))
+        # A see-through backdrop cannot cover what the last frame left behind,
+        # so the cheap partial-repaint path stops being safe: Qt's accelerated
+        # scroll blits old pixels and only repaints the strip it exposes, which
+        # over translucent ink smears instead of replacing. An opaque backdrop
+        # hides all of that (it paints over everything inside the repainted
+        # region), so it keeps the fast minimal updates — which is also the
+        # escape hatch for a huge zone: set the backdrop to 100.
+        self.setViewportUpdateMode(
+            QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
+            if percent >= 100
+            else QGraphicsView.ViewportUpdateMode.FullViewportUpdate
+        )
         self.viewport().update()
 
     def set_backdrop_opacity(self, percent, persist=False):
@@ -153,6 +172,29 @@ class MapCanvas(QGraphicsView):
 
     def backdrop_opacity(self):
         return self._backdrop_opacity
+
+    def drawBackground(self, painter, rect):
+        """Paint the backdrop as a REPLACEMENT for what was in the viewport.
+
+        QGraphicsView's own implementation is ``fillRect(rect, brush)`` — a
+        source-over composite. That is correct for the opaque brush it assumes
+        and wrong for ours: below 100% every repaint blends the new frame into
+        the previous one instead of erasing it, so the dot you were at, the
+        lines that scrolled past and the fringes of both stay on screen,
+        darkening a little per frame and never leaving. (Nothing else clears
+        the region for us: the viewport is deliberately not auto-filled, and
+        the top-level's translucent-window clear is a platform courtesy this
+        cannot rest on — the ghosting reports are Windows.)
+
+        Source composition writes colour AND alpha, so alpha 0 really is glass
+        rather than "whatever was there, undisturbed". The mode is restored by
+        hand because DontSavePainterState means Qt does not save/restore around
+        this call, and leaving Source set would make every item paint holes.
+        """
+        mode = painter.compositionMode()
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(rect, self.backgroundBrush())
+        painter.setCompositionMode(mode)
 
     def _in_backdrop_band(self, position):
         """True when ``position`` (widget-local) is in the edge band the
