@@ -16,10 +16,18 @@ place that knows the file format, and both of them call it.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import IntEnum
 
 _HEADER = ("Location", "Name", "ID")
+
+#: The client writes bag slots as ``General1-Slot1``; the C# enum this port
+#: mirrors spells them ``General1Slot1`` because a dash cannot be an
+#: identifier. Only the ordinal is the enum's business — the label belongs to
+#: the file, and p99planner will not place an item whose slot is spelled the
+#: enum's way.
+_SLOT_DASH = re.compile(r"(?<=\d)Slot(?=\d)")
 
 
 def _inventory_location_names() -> list[str]:
@@ -44,6 +52,16 @@ InventoryLocation = IntEnum(
 _LOCATION_BY_KEY = {name.lower(): member for name, member in InventoryLocation.__members__.items()}
 
 
+def canonical_location_name(name: str) -> str:
+    """A location label in the spelling the client itself writes.
+
+    ``General1Slot1`` -> ``General1-Slot1``; anything already dashed, and
+    every slotless location, is returned untouched. Used for labels that came
+    from the enum rather than from a file — see :data:`_SLOT_DASH`.
+    """
+    return _SLOT_DASH.sub("-Slot", name)
+
+
 @dataclass(frozen=True)
 class InventoryItem:
     location: int  # InventoryLocation wire ordinal
@@ -51,6 +69,11 @@ class InventoryItem:
     item_id: int
     count: int
     slots: int
+    #: The Location cell verbatim, because the ordinal cannot round-trip it:
+    #: the dash is lost on the way in, and locations the C# enum never had
+    #: (shared-bank slots) would come back out as ``Unknown``. The wire
+    #: (pigparse) still speaks ordinals; text exports use this.
+    location_label: str = ""
 
 
 def parse_inventory_text(text: str) -> list[InventoryItem] | None:
@@ -70,11 +93,16 @@ def parse_inventory_text(text: str) -> list[InventoryItem] | None:
             item_id, count, slots = int(parts[2]), int(parts[3]), int(parts[4])
         except ValueError:
             continue
-        location_key = parts[0].replace("-", "").lower()
-        location = _LOCATION_BY_KEY.get(location_key, InventoryLocation.Unknown)
+        label = parts[0].strip()
+        location = _LOCATION_BY_KEY.get(label.replace("-", "").lower(), InventoryLocation.Unknown)
         items.append(
             InventoryItem(
-                location=int(location), name=parts[1], item_id=item_id, count=count, slots=slots
+                location=int(location),
+                name=parts[1],
+                item_id=item_id,
+                count=count,
+                slots=slots,
+                location_label=label,
             )
         )
     return items or None

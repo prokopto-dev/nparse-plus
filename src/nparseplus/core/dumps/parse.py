@@ -36,7 +36,11 @@ from nparseplus.core.dumps.models import (
     SpellbookEntry,
     content_digest,
 )
-from nparseplus.core.inventory import InventoryLocation, parse_inventory_text
+from nparseplus.core.inventory import (
+    InventoryLocation,
+    canonical_location_name,
+    parse_inventory_text,
+)
 
 #: Filename suffixes the client uses, lower-cased.
 KIND_SUFFIXES: dict[str, DumpKind] = {
@@ -85,6 +89,12 @@ def inventory_entries(text: str) -> list[InventoryEntry] | None:
     """Parse an inventory dump into storable entries; None if it isn't one.
 
     Empty slots are dropped — see :data:`EMPTY_ITEM_NAME`.
+
+    The stored ``location_name`` is the file's own label, not the enum's:
+    ``General1-Slot1`` keeps its dash, and a location the C# enum never had
+    keeps its name instead of flattening to ``Unknown``. The enum name (dashed
+    back into the client's spelling) is only the fallback for an item that
+    came from somewhere other than a file.
     """
     items = parse_inventory_text(text)
     if items is None:
@@ -92,7 +102,8 @@ def inventory_entries(text: str) -> list[InventoryEntry] | None:
     entries = [
         InventoryEntry(
             location=item.location,
-            location_name=InventoryLocation(item.location).name,
+            location_name=item.location_label
+            or canonical_location_name(InventoryLocation(item.location).name),
             name=item.name,
             item_id=item.item_id,
             count=item.count,
@@ -233,13 +244,19 @@ def render_dump_text(dump: CharacterDump) -> str:
 
     Not byte-identical to the original: the empty slots the client emits were
     dropped on import and are not invented back.
+
+    Locations go out through :func:`canonical_location_name` rather than
+    verbatim, which is what repairs snapshots stored before the label was
+    kept — those hold the enum's dashless ``General1Slot1``, and a reader
+    placing items by slot (p99planner) silently drops every bag row spelled
+    that way.
     """
     if dump.kind is DumpKind.INVENTORY:
         lines = ["\t".join(("Location", "Name", "ID", "Count", "Slots"))]
         lines += [
             "\t".join(
                 (
-                    item.location_name,
+                    canonical_location_name(item.location_name),
                     item.name,
                     str(item.item_id),
                     str(item.count),
