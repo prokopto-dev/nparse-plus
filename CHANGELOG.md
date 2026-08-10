@@ -6,6 +6,52 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.2.0 (2026-08-10)
+
+### Bug Fixes
+
+- **spells**: Unbreak the two disciplines that could never match a log line
+  ([#60](https://github.com/prokopto-dev/nparse-plus/pull/60),
+  [`3abb5bc`](https://github.com/prokopto-dev/nparse-plus/commit/3abb5bcf5a6e2b1e25dadfbcca2dddbed1cde317))
+
+- **timers**: Start the Mend timer on all four mend outcomes
+  ([#60](https://github.com/prokopto-dev/nparse-plus/pull/60),
+  [`3abb5bc`](https://github.com/prokopto-dev/nparse-plus/commit/3abb5bcf5a6e2b1e25dadfbcca2dddbed1cde317))
+
+- **timers**: Stop a mob-named player faking a Harm Touch cooldown
+  ([#60](https://github.com/prokopto-dev/nparse-plus/pull/60),
+  [`3abb5bc`](https://github.com/prokopto-dev/nparse-plus/commit/3abb5bcf5a6e2b1e25dadfbcca2dddbed1cde317))
+
+- **ui**: Assert the pages, not the window, stop setting the floor
+  ([`400e333`](https://github.com/prokopto-dev/nparse-plus/commit/400e333bb4fec7cddbada2859cc5981aff2c50d5))
+
+- **ui**: Let the settings window be narrow
+  ([`2aae72d`](https://github.com/prokopto-dev/nparse-plus/commit/2aae72d3a41443fe2d5652b7a1e67f7dd08070bc))
+
+- **ui**: Scroll externally contributed settings pages too
+  ([`7ce8420`](https://github.com/prokopto-dev/nparse-plus/commit/7ce8420e6172d926ebe3b1fbde48c85b64803c67))
+
+### Documentation
+
+- **claude**: Record how spellbook uploads route
+  ([#58](https://github.com/prokopto-dev/nparse-plus/pull/58),
+  [`462afcf`](https://github.com/prokopto-dev/nparse-plus/commit/462afcf2dbbf40e2bd7acf8d87700ed40644c838))
+
+### Features
+
+- **dumps**: Upload spellbook dumps to p99planner
+  ([#58](https://github.com/prokopto-dev/nparse-plus/pull/58),
+  [`462afcf`](https://github.com/prokopto-dev/nparse-plus/commit/462afcf2dbbf40e2bd7acf8d87700ed40644c838))
+
+- **timers**: Ability reuse timers — Mend outcomes, Lay on Hands/Harm Touch, and two dead
+  disciplines ([#60](https://github.com/prokopto-dev/nparse-plus/pull/60),
+  [`3abb5bc`](https://github.com/prokopto-dev/nparse-plus/commit/3abb5bcf5a6e2b1e25dadfbcca2dddbed1cde317))
+
+- **timers**: Add Lay on Hands and Harm Touch reuse timers
+  ([#60](https://github.com/prokopto-dev/nparse-plus/pull/60),
+  [`3abb5bc`](https://github.com/prokopto-dev/nparse-plus/commit/3abb5bcf5a6e2b1e25dadfbcca2dddbed1cde317))
+
+
 ## v2.1.0 (2026-08-10)
 
 ### Bug Fixes
