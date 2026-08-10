@@ -11,11 +11,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from nparseplus.config.paths import ensure_socials_dir
+from nparseplus.config.paths import ensure_dumps_dir, ensure_socials_dir
 from nparseplus.config.settings import Settings, find_player
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.driver import LogDriver
+from nparseplus.core.dumps import DumpLibrary, DumpWatcher
 from nparseplus.core.handlers.api_timers import ApiTimersService
 from nparseplus.core.handlers.bard_count import BardCountHandler
 from nparseplus.core.handlers.boat import BoatHandler
@@ -28,6 +29,7 @@ from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandl
 from nparseplus.core.handlers.dps import DpsHandler
 from nparseplus.core.handlers.fte import FTEHandler
 from nparseplus.core.handlers.group_leader import GroupLeaderHandler
+from nparseplus.core.handlers.inventory_upload import InventoryUploadHandler
 from nparseplus.core.handlers.mend_wounds import MendWoundsHandler
 from nparseplus.core.handlers.pet import PetHandler
 from nparseplus.core.handlers.player_profile import PlayerProfileHandler
@@ -41,7 +43,6 @@ from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.handlers.timer_persistence import TimerPersistenceHandler
 from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
-from nparseplus.core.inventory import InventoryWatcher
 from nparseplus.core.logarchive import LogArchiveService
 from nparseplus.core.parsers.base import ParseContext
 from nparseplus.core.parsers.registry import build_parser_chain
@@ -58,6 +59,7 @@ from nparseplus.core.triggers.engine import TriggerEngine
 from nparseplus.core.triggers.window_commands import WindowChatCommands
 from nparseplus.core.zones import ZoneDatabase, load_zone_database
 from nparseplus.net.nparse_ws import NParseWsClient
+from nparseplus.net.p99planner import P99PlannerClient
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.pigparse_hub import PigParseHubClient
 from nparseplus.net.worker import NetWorker
@@ -157,6 +159,10 @@ class Backend:
     player_tracker: PlayerTrackerHandler | None = None
     timer_persistence: TimerPersistenceHandler | None = None
     socials_sync: SocialSyncWatcher | None = None
+    dumps: DumpLibrary | None = None
+    dump_watcher: DumpWatcher | None = None
+    inventory_upload: InventoryUploadHandler | None = None
+    planner_api: P99PlannerClient | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -198,6 +204,8 @@ class Backend:
             self.net_worker.stop()
         if self.pigparse_api is not None:
             self.pigparse_api.close()
+        if self.planner_api is not None:
+            self.planner_api.close()
 
 
 def _spells_path(settings: Settings) -> Path:
@@ -283,6 +291,20 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             on_inbound=sharing.enqueue_inbound,
             zones=zones,
         )
+    # An inventory upload destination needs a worker thread even with sharing
+    # off: p99planner has nothing to do with location sharing, and requiring
+    # sharing to be on to upload would be a strange thing to explain.
+    planner_api: P99PlannerClient | None = None
+    if settings.dumps.upload_target == "p99planner":
+        planner_api = P99PlannerClient()
+    if settings.dumps.upload_target == "pigparse" and pigparse_api is None:
+        # Uploading to pigparse.org has nothing to do with sharing your
+        # location through it, and the destination picker offers them
+        # independently — so the REST client cannot be sharing's to own.
+        pigparse_api = PigParseApiClient(settings.sharing.pigparse_api_url)
+    if net_worker is None and settings.dumps.upload_target != "off":
+        net_worker = NetWorker(deliver=sharing.enqueue_inbound)
+
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
 
@@ -291,6 +313,27 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         server_key = player.server_key
         info = find_player(settings, player.name, server_key) if server_key else None
         return info.timer_recast if info is not None else "RestartCurrentTimer"
+
+    # ONE poll of the EQ directory for /outputfile dumps, with two consumers:
+    # this library keeps per-character history of both dump kinds, and
+    # InventoryUploadHandler below subscribes to the events its watcher
+    # publishes to do the pigparse.org upload. EQTool has a single service
+    # doing both; splitting it is what stops two ticks racing over the same
+    # file. Consequence: the upload rides on dumps.auto_import being on.
+    dumps = DumpLibrary(ensure_dumps_dir())
+    inventory_upload = InventoryUploadHandler(
+        bus,
+        player,
+        dumps,
+        get_target=lambda: settings.dumps.upload_target,
+        get_token=lambda: settings.pigparse_account.api_token,
+        # Replaces the old watcher's startup priming: a dump the player took
+        # before this session started is not news worth uploading.
+        session_start=datetime.now(),
+        api=pigparse_api,
+        planner=planner_api,
+        submit=submit,
+    )
 
     player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=submit)
     profile_handler = PlayerProfileHandler(bus, player, settings, request_save=request_save)
@@ -352,17 +395,25 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         ),
         DeathLoopHandler(bus, player, speaker=speaker),
         GroupLeaderHandler(bus, player),
+        inventory_upload,
     ]
     api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=submit)
-    inventory_watcher = InventoryWatcher(
-        player,
+
+    # The poll itself (see the library above for why there is only one).
+    dump_watcher = DumpWatcher(
+        dumps,
         get_eq_dir=lambda: (
             Path(settings.general.eq_install_dir) if settings.general.eq_install_dir else None
         ),
-        is_enabled=lambda: settings.pigparse_account.inventory_upload,
-        get_token=lambda: settings.pigparse_account.api_token,
-        api=pigparse_api,
-        submit=submit,
+        is_enabled=lambda: settings.dumps.auto_import,
+        is_update_enabled=lambda: settings.dumps.auto_update,
+        get_keep=lambda: settings.dumps.keep_per_character,
+        bus=bus,
+        # The upload trigger, deliberately NOT the bus events the library
+        # publishes: those say "a snapshot was stored", which auto_update can
+        # veto and a hand-picked import can raise. Neither should decide what
+        # leaves the machine. See InventoryUploadHandler.on_fresh_dump.
+        on_fresh_dump=inventory_upload.on_fresh_dump,
     )
 
     socials_sync = SocialSyncWatcher(
@@ -388,8 +439,8 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     driver.on_tick.append(sharing.tick)
     driver.on_tick.append(api_timers.tick)
     driver.on_tick.append(player_tracker.tick)
-    driver.on_tick.append(inventory_watcher.tick)
     driver.on_tick.append(socials_sync.tick)
+    driver.on_tick.append(dump_watcher.tick)
 
     return Backend(
         settings=settings,
@@ -412,5 +463,9 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         player_tracker=player_tracker,
         timer_persistence=timer_persistence,
         socials_sync=socials_sync,
+        dumps=dumps,
+        dump_watcher=dump_watcher,
+        inventory_upload=inventory_upload,
+        planner_api=planner_api,
         _retained=[chat_commands, window_commands, sink, *handlers],
     )

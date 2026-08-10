@@ -70,6 +70,13 @@ src/nparseplus/
     dps.py              #   FightTracker (12s trailing window, session stats, >20s gate)
     zones.py            #   ZoneDatabase over data/zones.json (respawn lookup order)
     ch_chain.py, death_loop.py, pets.py, npc_search.py, boats.py
+    dumps/              #   character dump library: /outputfile inventory +
+                        #   spellbook snapshots kept per (character, kind).
+                        #   models.py (CharacterDump + digest/diff), parse.py
+                        #   (the two file shapes; reuses inventory.py's
+                        #   parser), store.py (DumpLibrary), watcher.py (THE
+                        #   single EQ-dir poll — publishes CharacterDump*
+                        #   events and feeds handlers/inventory_upload.py)
     sharing.py          #   SharingCoordinator: THE sharing gate + inbound thread crossing
     visionfix.py        #   Night Vision fix apply/revert (backup-first)
     pigparse.py         #   Qt-free Protocol for the REST client + SubmitFn
@@ -108,6 +115,10 @@ src/nparseplus/
                         #   Qt-free data + pure stylesheet builders, applies LIVE),
                         #   skinwidgets.py (what QSS can't express: the notched
                         #   plate, the full-row bar, the gem mark, previews),
+                        #   dumpswindow.py (Character Dumps: the library
+                        #   browser + its auto-import/auto-update toggles;
+                        #   never imports on the GUI thread — it asks
+                        #   DumpWatcher and refreshes off a QTimer),
                         #   pluginmanager.py (Settings > Plugins + registry browser),
                         #   pluginconsent.py (the one-time approval dialog),
                         #   pluginwindow.py (the PluginWindow base plugins subclass)
@@ -566,6 +577,107 @@ strip skinned; and the event overlay's alert now centered under every skin
 and shrink-to-fit rather than clipping. The three `resolve_color` utility
 lines keep their user-configured colour on purpose — only their size is the
 skin's.
+
+**The character dump library** (post-2.0, ~1906 tests): P99's
+`/outputfile inventory` and `/outputfile spellbook` write
+`<Character>-Inventory.txt` / `<Character>-Spellbook.txt` into the EQ
+directory and **overwrite them every run** — one copy each, no history.
+`core/dumps/` keeps copies, keyed by **(character, kind)**, so every
+character holds its own current inventory AND its own current spellbook with
+the previous N behind each (`keep_per_character`, default 10). Two file
+shapes: inventory has the `Location Name ID Count Slots` header (reuses
+`core.inventory.parse_inventory_text`; the client's `Empty` slot rows are
+dropped on import), and a spellbook has **no header at all** — every line is
+`<level>\t<Spell Name>`, so `parse_spellbook_text` rejects the whole file on
+one bad line, since "every line parses" is the only discriminator. Snapshots
+are JSON under `dumps_dir()`, the filename carrying `<when>-<digest>` so
+listing is a directory scan with no reads and re-importing an unchanged dump
+lands on the path that already exists. `read_dump_file` gates on the filename
+by default (the scan must not open every `.txt` in the EQ directory) and only
+sniffs content under `sniff=True`, which is the hand-picked-file path — the
+window then confirms the guessed character, since that is the library's key
+AND what p99planner creates its planner character from. Two toggles: `auto_import` (unseen
+character+kind; also the master switch) and `auto_update` (a tracked dump
+changed) — both default ON, unlike the pigparse uploader, because this only
+reads files the game wrote and copies them into our own data dir.
+`DumpWatcher` deliberately does NOT prime its mtimes (unlike
+`InventoryWatcher`, which did): collecting what is already there is the
+point, and the content digest stops an unchanged re-dump accumulating.
+
+That watcher is now **the one poll of the EQ directory** for dumps.
+`core/inventory.py` kept the parser and lost its poller; the upload half of
+EQTool's InventoryWatcherService became `core/handlers/inventory_upload.py`.
+
+**The upload trigger is `DumpWatcher(on_fresh_dump=...)`, NOT the bus
+events.** The events mean "the library stored a snapshot" — local history,
+which is the right question for a plugin and the wrong one for "should this
+be published". Wiring uploads to them coupled two unrelated things and broke
+it in both directions: `auto_update` off suppressed the event for a changed
+dump, so one stale snapshot imported at startup silenced every upload for the
+session; and a hand-picked `Import file…` raised the same event, so filing
+away a backup — or another player's dump — published it under their character
+name. `_ingest(automatic=)` is the seam: the hook fires from the directory
+scan only, before the retention decision, never from `import_file`.
+Three deliberate behavior changes are documented there: startup priming
+became "only dumps captured after `session_start`", an unchanged re-dump no
+longer re-uploads, and the character uploaded comes from the dump filename
+rather than whoever is logged in. Consequence: upload rides on
+`dumps.auto_import`, said out loud in both settings surfaces.
+
+**Two upload destinations** (post-dumps): `dumps.upload_target` is one
+picker — `off` (default) / `pigparse` / `p99planner` — not a checkbox each,
+because both publish the same character to a different website. The legacy
+`pigparse_account.inventory_upload` bool folds into it via a `Settings`
+model_validator and is cleared (the `plugins.registry_url` pattern). Picking
+a destination now builds its own plumbing regardless of `sharing.mode`:
+uploading to pigparse.org is not the same decision as sharing your location
+through it, so composition builds `PigParseApiClient` and/or
+`P99PlannerClient` plus a `NetWorker` when the target asks for one.
+
+p99planner is a **handoff, not an upload**, and that shapes the code:
+`net/p99planner.py` POSTs the raw export text with **no credentials of any
+kind** and gets back a claim URL the player opens and approves; nothing is
+applied without that human step. `core/p99planner.py` is its Qt-free
+Protocol + DTOs (the `core/pigparse.py` split). Methods return an
+`UploadOutcome`, not `None`-on-failure, because **410 is not a retryable
+failure** — it means the claim was approved or swept, and the fix is a fresh
+POST. The handler holds one claim open and PUTs later exports into it, so a
+five-mule bank run is one review page rather than five; the browser opens
+once per claim. **The claim URL is a bearer secret**: `ClaimLink.__repr__`
+refuses to print the token, no log line carries the path or body, and
+`status_text()` never contains it — all three are asserted. Claim state is
+read/written only inside `submit` fetches (one net-worker thread), which is
+what serializes back-to-back dumps into POST-then-PUT instead of two
+competing POSTs. `upload_now()` is the manual entry point behind the
+Character Dumps window's **Upload inventory** button, which resolves scope
+from the selection (snapshot → character → whole roster) and ignores the
+session-start gate, since that is what manual means.
+
+Because the link is never displayed, the window is the only way back to a
+pending one: a **Review import…** button appears while `has_claim()` (and
+the status line carries `claim_summary()`, which names the count and expiry
+but never the URL — the window asks those two predicates and never calls
+`claim_url()`, so the secret never reaches a widget that could render it).
+Right-clicking it offers open / **Copy review link** / cancel. Without that
+button, a review page the player closed would be unreachable; without the
+copy item, a machine where `webbrowser.open` does nothing would have no route
+at all (the failure message used to point back at Review, which is the same
+call that just failed). Copy is the ONE place the URL leaves the handler, on
+an explicit user action, straight to the clipboard and never into a label.
+The recovery hint lives on `claim_summary()` rather than in a one-shot status
+message, because the pending line is the steady state and would replace it
+within the second. The claim is **session-only** (memory, never persisted):
+restart before approving and the button is gone, the link stays valid for its
+24h, and the next upload stages a fresh one.
+
+The hooks (what "expose to the SDK" means here) are two frozen bus events in
+`core/events.py` — `CharacterDumpImportedEvent` and
+`CharacterDumpUpdatedEvent` (the latter carrying an `added`/`removed`
+multiset name diff). Plugins reach them today through the SDK's lazy
+`nparseplus_sdk.events` re-export with no SDK version bump; **every** import
+path publishes from the driver thread, including the window's buttons, which
+is why `ui/dumpswindow.py` calls `request_scan()`/`request_import()` instead
+of importing itself (same inbox shape as `SharingCoordinator`).
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

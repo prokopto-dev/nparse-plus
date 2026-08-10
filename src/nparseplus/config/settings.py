@@ -221,6 +221,37 @@ class SpellWindowSettings(BaseModel):
     post_expiry_flash_spells: list[str] = Field(default_factory=list)
 
 
+class DumpsSettings(BaseModel):
+    """Character dump library (``/outputfile`` inventory + spellbook).
+
+    Unlike the pigparse inventory uploader — which is off until you opt in,
+    because it sends your character to a website — this only reads files the
+    game already wrote and copies them into nParse+'s own data directory, so
+    it defaults on. It still does nothing at all until ``eq_install_dir`` is
+    set, since that is the only place dumps live.
+    """
+
+    # Pick up dumps for a character+kind the library has not seen before.
+    # Also the master switch: off means no scanning happens at all.
+    auto_import: bool = True
+    # Store a new snapshot when a dump the library already tracks changes.
+    # Off keeps the first import of each character+kind and ignores later
+    # /outputfile runs — deliberate snapshots stay put.
+    auto_update: bool = True
+    # How many snapshots to keep per character per kind; older ones are
+    # pruned as new ones land.
+    keep_per_character: int = Field(default=10, ge=1, le=100)
+    # Where a fresh inventory dump gets sent, if anywhere. Deliberately one
+    # choice rather than a checkbox each: both destinations publish the same
+    # character to a different website, and "off" has to be the obvious
+    # default. Migrated from the old pigparse_account.inventory_upload bool.
+    #   pigparse   - pigparse.org character browser (needs a Discord login)
+    #   p99planner - p99planner.com, which needs no credentials at all: it
+    #                stages the export and hands back a claim link the player
+    #                approves in their own browser.
+    upload_target: Literal["off", "pigparse", "p99planner"] = "off"
+
+
 class DiscordSettings(BaseModel):
     """Discord relay config carried by migration but not yet read at runtime.
 
@@ -243,7 +274,11 @@ class PigParseAccountSettings(BaseModel):
     username: str = ""
     discord_id: str = ""
     api_token: str = ""
-    inventory_upload: bool = False  # gate for the inventory watcher
+    # DEPRECATED and migration-only: the old single-provider inventory upload
+    # gate. A Settings validator folds a True into `dumps.upload_target` and
+    # clears this, so it is False in every document this version writes — the
+    # field exists purely to read one written before the destination picker.
+    inventory_upload: bool = False
 
 
 class YouSpell(BaseModel):
@@ -471,6 +506,7 @@ class Settings(BaseModel):
     maps: MapSettings = Field(default_factory=MapSettings)
     spellwindow: SpellWindowSettings = Field(default_factory=SpellWindowSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
+    dumps: DumpsSettings = Field(default_factory=DumpsSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
     plugins: PluginsSettings = Field(default_factory=PluginsSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)
@@ -484,6 +520,24 @@ class Settings(BaseModel):
     # Raw legacy custom timers ([name, matchtext, "hh:mm:ss"]) kept verbatim so a
     # legacy import is lossless even after conversion to Trigger entries.
     custom_timers: list[list[str]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _fold_in_legacy_upload_toggle(self) -> Settings:
+        """Migrate ``pigparse_account.inventory_upload`` -> ``dumps.upload_target``.
+
+        Only when the new field is still at its default: a document that has
+        already been written by this version wins, so a stale legacy bool
+        cannot resurrect a provider the user has since switched away from.
+
+        Like ``PluginsSettings``, this never raises — ``load_settings`` reads
+        a ValueError as a corrupt document and falls back to defaults, which
+        would throw away everything else the user has configured.
+        """
+        if self.pigparse_account.inventory_upload:
+            if self.dumps.upload_target == "off":
+                self.dumps.upload_target = "pigparse"
+            self.pigparse_account.inventory_upload = False
+        return self
 
 
 def plugins_enabled(settings: Settings, environ: Mapping[str, str] | None = None) -> bool:

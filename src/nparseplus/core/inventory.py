@@ -1,28 +1,24 @@
-"""Inventory dump watcher (Qt-free).
+"""Inventory dump parsing (Qt-free).
 
-Port of EQTool's Services/InventoryWatcherService.cs: the game's
-``/outputfile inventory`` command writes a TSV (``Location Name ID Count
-Slots``) into the EQ directory; when one appears or changes it is parsed
-and uploaded (Bearer ``api_token``) to pigparse.org's character browser.
+The ``/outputfile inventory`` half of EQTool's
+Services/InventoryWatcherService.cs: the game writes a TSV (``Location Name
+ID Count Slots``) into the EQ directory, and this reads it.
 
-Divergences from the C#:
-- Polling (the LogDriver idiom) instead of a FileSystemWatcher; existing
-  files are primed at startup so only fresh dumps upload.
-- Gated by an explicit ``inventory_upload`` opt-in as well as the token.
+The service's other half — noticing that a dump appeared and uploading it —
+is split across two modules here, because the app grew a second consumer of
+the same file. :mod:`nparseplus.core.dumps` polls the EQ directory once and
+keeps a per-character library of both dump kinds;
+:mod:`nparseplus.core.handlers.inventory_upload` subscribes to the events it
+publishes and sends the result wherever the user pointed it (``off`` by
+default; pigparse.org or p99planner.com otherwise). This module stays the one
+place that knows the file format, and both of them call it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from enum import IntEnum
-from pathlib import Path
 
-from nparseplus.core.pigparse import PigParseApi, SubmitFn
-from nparseplus.core.player import ActivePlayer
-
-SCAN_INTERVAL_SECONDS = 2.0
 _HEADER = ("Location", "Name", "ID")
 
 
@@ -82,93 +78,3 @@ def parse_inventory_text(text: str) -> list[InventoryItem] | None:
             )
         )
     return items or None
-
-
-class InventoryWatcher:
-    """Driver-tick poller: fresh inventory dumps -> pigparse upload."""
-
-    def __init__(
-        self,
-        player: ActivePlayer,
-        *,
-        get_eq_dir: Callable[[], Path | None],
-        is_enabled: Callable[[], bool],
-        get_token: Callable[[], str],
-        api: PigParseApi | None = None,
-        submit: SubmitFn | None = None,
-    ) -> None:
-        self.player = player
-        self._get_eq_dir = get_eq_dir
-        self._is_enabled = is_enabled
-        self._get_token = get_token
-        self.api = api
-        self.submit = submit
-        self._mtimes: dict[Path, float] = {}
-        self._primed = False
-        self._last_scan: datetime | None = None
-
-    def _scan(self, eq_dir: Path) -> list[Path]:
-        changed: list[Path] = []
-        try:
-            candidates = list(eq_dir.glob("*.txt"))
-        except OSError:
-            return changed
-        for path in candidates:
-            try:
-                mtime = path.stat().st_mtime
-            except OSError:
-                continue
-            if self._mtimes.get(path) != mtime:
-                self._mtimes[path] = mtime
-                changed.append(path)
-        return changed
-
-    def tick(self, now: datetime) -> None:
-        if (
-            self._last_scan is not None
-            and (now - self._last_scan).total_seconds() < SCAN_INTERVAL_SECONDS
-        ):
-            return
-        self._last_scan = now
-
-        eq_dir = self._get_eq_dir()
-        if eq_dir is None or not eq_dir.is_dir():
-            return
-        changed = self._scan(eq_dir)
-        if not self._primed:
-            # First pass just records what already exists — a dump from a
-            # previous session must not upload at startup.
-            self._primed = True
-            return
-
-        api, submit, token = self.api, self.submit, self._get_token()
-        character, server = self.player.name, self.player.server
-        if (
-            not changed
-            or api is None
-            or submit is None
-            or not self._is_enabled()
-            or not token
-            or not character
-            or server is None
-        ):
-            return
-
-        server_int = int(server)
-        for path in changed:
-            try:
-                items = parse_inventory_text(path.read_text(encoding="utf-8", errors="replace"))
-            except OSError:
-                continue
-            if not items:
-                continue
-
-            def fetch(_items: list[InventoryItem] = items) -> None:
-                api.upload_inventory(
-                    character_name=character,
-                    server=server_int,
-                    items=_items,
-                    api_token=token,
-                )
-
-            submit(fetch, None)

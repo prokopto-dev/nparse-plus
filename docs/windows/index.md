@@ -16,7 +16,7 @@ Click the tray icon to open the menu. Top to bottom:
 | **Check for updates** | Checks GitHub for a newer release on demand and reports back either way — the update dialog if one is found, or a "you're on the latest version" notification. |
 | **Sharing: …** | A read-only line showing your current [location-sharing](../features/sharing.md) state (`off` until you enable it). |
 | **Select EQ Logs Directory** | Point nParse+ at the folder EQ writes logs to (same as [Settings → General](../settings/general.md)). |
-| **Maps · Discord · Spell Timers · Settings · DPS Meter · Mob Info · Console · Trigger Editor · Macro Editor** | One checkable toggle per window — a check means the window is shown. These are the windows detailed below. |
+| **Maps · Discord · Spell Timers · Settings · DPS Meter · Mob Info · Console · Trigger Editor · Macro Editor · Character Dumps** | One checkable toggle per window — a check means the window is shown. These are the windows detailed below. |
 | **Position Event Overlay** | Enters the [Event Overlay](event-overlay.md)'s drag-and-resize [positioning mode](event-overlay.md#positioning-it) so you can line it up over the game. |
 | **Window Layouts ▸** | Save, apply, and manage named position/size [presets](#window-layout-presets) (Save Current Layout, Reset Window Positions, and per-layout Apply / Replace / Rename / Delete). |
 | **Configure Discord** | Opens the legacy [Discord overlay](discord-overlay.md) settings. |
@@ -34,6 +34,7 @@ Click the tray icon to open the menu. Top to bottom:
 | [Console](console.md) | Raw log scrollback (great for debugging triggers) |
 | [Trigger Editor](trigger-editor.md) | Browse and edit built-in and custom triggers |
 | [Macro Editor](macro-editor.md) | Edit, copy, and share a character's in-game macros |
+| [Character Dumps](character-dumps.md) | Stored `/outputfile` inventory and spellbook snapshots, per character |
 | [Discord Overlay](discord-overlay.md) | Discord voice channel over the game (legacy) |
 
 ## Working with frameless overlays

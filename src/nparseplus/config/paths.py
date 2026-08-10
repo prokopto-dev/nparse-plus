@@ -50,6 +50,18 @@ def ensure_socials_dir() -> Path:
     return path
 
 
+def dumps_dir() -> Path:
+    """Where the character dump library keeps its imported snapshots."""
+    return data_dir() / "dumps"
+
+
+def ensure_dumps_dir() -> Path:
+    """Create the dump library directory (and parents) if needed; return it."""
+    path = dumps_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def plugins_dir() -> Path:
     """Directory scanned for user-installed plugins (files or packages)."""
     return config_dir() / "plugins"
