@@ -165,3 +165,100 @@ def test_configure_ignores_omitted_knobs(tracker: FightTracker) -> None:
     tracker.configure(melee_only=False)
     assert tracker.fight_retention_s == 40.0
     assert tracker.trailing_window_s == 12.0
+
+
+# -- frozen rows stay frozen across a settings change -------------------------
+
+
+def _slain_fight(tracker: FightTracker, t0: datetime) -> None:
+    for offset in range(6):
+        tracker.add_damage(_damage("You", "a gnoll", 100, "slash", t0 + timedelta(seconds=offset)))
+    tracker.end_fight("a gnoll", t0 + timedelta(seconds=6))
+
+
+def test_a_slain_row_keeps_the_window_it_died_under(t0: datetime) -> None:
+    """A finished fight's numbers are frozen — including the divisor.
+
+    The freeze forbids recomputing `trailing_damage`, so adopting a new
+    window would divide the OLD numerator by the NEW denominator and a
+    settled row's dps would jump the instant anyone touched the setting.
+    """
+    tracker = FightTracker(trailing_window_s=12.0)
+    _slain_fight(tracker, t0)
+    frozen = tracker.snapshot(t0 + timedelta(seconds=6))[0].dps
+    assert frozen == 50
+
+    tracker.configure(trailing_window_s=4.0)
+    tracker.tick(t0 + timedelta(seconds=7))
+    assert tracker.snapshot(t0 + timedelta(seconds=7))[0].dps == frozen
+
+
+def test_a_live_row_still_follows_the_new_window(t0: datetime) -> None:
+    # The freeze above must not also freeze fights that are still running.
+    tracker = FightTracker(trailing_window_s=12.0)
+    tracker.add_damage(_damage("You", "a gnoll", 120, "slash", t0))
+    assert tracker.snapshot(t0)[0].dps == 10
+    tracker.configure(trailing_window_s=4.0)
+    tracker.tick(t0)
+    assert tracker.snapshot(t0)[0].dps == 30
+
+
+# -- session aggregates vs. changed rules -------------------------------------
+
+
+def _session_with_stats(**kwargs) -> FightTracker:
+    t0 = datetime(2026, 7, 8, 21, 0, 0)
+    tracker = FightTracker(**kwargs)
+    for offset in range(0, 31):
+        tracker.add_damage(_damage("You", "a gnoll", 100, "slash", t0 + timedelta(seconds=offset)))
+    tracker.tick(t0 + timedelta(seconds=30))
+    assert tracker.session_summary().best.highest_dps > 0  # guard the fixture
+    return tracker
+
+
+def test_changing_a_measurement_rule_clears_the_footer() -> None:
+    for knob, value in (
+        ("trailing_window_s", 4.0),
+        ("session_min_fight_s", 60.0),
+        ("melee_only", False),
+    ):
+        tracker = _session_with_stats()
+        tracker.configure(**{knob: value})
+        summary = tracker.session_summary()
+        assert summary.best.highest_dps == 0, knob
+        assert summary.current_session.highest_dps == 0, knob
+
+
+def test_changing_the_dropoff_timer_keeps_the_footer() -> None:
+    # Retention decides how long a row is DISPLAYED, never what a reading
+    # measured, so it must not cost the user their session stats.
+    tracker = _session_with_stats()
+    before = tracker.session_summary().best.highest_dps
+    tracker.configure(fight_retention_s=300.0)
+    assert tracker.session_summary().best.highest_dps == before
+
+
+def test_applying_the_same_values_keeps_the_footer() -> None:
+    # The settings window fires on every Apply, changed or not; a no-op
+    # Apply must not wipe the session.
+    tracker = _session_with_stats()
+    before = tracker.session_summary().best.highest_dps
+    tracker.configure(
+        melee_only=tracker.melee_only,
+        fight_retention_s=tracker.fight_retention_s,
+        trailing_window_s=tracker.trailing_window_s,
+        session_min_fight_s=tracker.session_min_fight_s,
+    )
+    assert tracker.session_summary().best.highest_dps == before
+
+
+def test_a_completed_session_record_survives_a_rule_change() -> None:
+    # last_session was moved aside deliberately (end_session): it is a
+    # record of a finished session, not a live measurement.
+    tracker = _session_with_stats()
+    tracker.end_session()
+    kept = tracker.session_summary().last_session
+    assert kept is not None and kept.highest_dps > 0
+    tracker.configure(trailing_window_s=4.0)
+    after = tracker.session_summary().last_session
+    assert after is not None and after.highest_dps == kept.highest_dps

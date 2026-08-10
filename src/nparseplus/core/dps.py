@@ -106,10 +106,15 @@ class FightEntity:
 
         Frozen once the entity's target is dead, exactly like the C#.
         """
+        if self.death_time is not None:
+            # A slain row is frozen, and that has to include its DIVISOR.
+            # Adopting a new window here without recomputing `trailing_damage`
+            # (which the freeze forbids) would divide the old numerator by the
+            # new denominator, so a finished fight's dps would jump the moment
+            # someone touched the setting.
+            return
         if window is not None:
             self.trailing_window = window
-        if self.death_time is not None:
-            return
         if not self.hits:
             return
         cutoff = now - self.trailing_window
@@ -233,7 +238,10 @@ class Fight:
                 trailing_window=trailing_window,
             )
             self.entities[attacker_name.casefold()] = entity
-        entity.update_trailing(timestamp, trailing_window)
+        elif entity.death_time is None:
+            # Live rows follow the configured window; a slain one keeps the
+            # window it froze under (see FightEntity.update_trailing).
+            entity.trailing_window = trailing_window
         entity.add_damage(timestamp, damage)
         entity.update_level(level_guess)
         return entity
@@ -356,7 +364,11 @@ class FightTracker:
         mid-fight stops counting new spell damage but does not retroactively
         subtract what is already in a row, because the hit list does not keep
         the damage type. Rows age out within the retention window anyway.
+
+        Changing a rule that decides what the session footer MEASURED clears
+        the session aggregates — see ``_MEASUREMENT_KNOBS``.
         """
+        before = self._measurement_rules()
         if melee_only is not None:
             self.melee_only = melee_only
         if fight_retention_s is not None:
@@ -365,7 +377,36 @@ class FightTracker:
             self.trailing_window_s = trailing_window_s
         if session_min_fight_s is not None:
             self.session_min_fight_s = session_min_fight_s
+        if self._measurement_rules() != before:
+            self.reset_session_stats()
         self._notify()
+
+    def _measurement_rules(self) -> tuple[object, ...]:
+        """The knobs that change what a session reading MEANS.
+
+        ``fight_retention_s`` is deliberately absent: it decides how long a
+        row is displayed, never the value of any reading.
+        """
+        return (self.melee_only, self.trailing_window_s, self.session_min_fight_s)
+
+    def reset_session_stats(self) -> None:
+        """Drop Best/Now, keeping ``last_session``.
+
+        The footer aggregates are max-merged, so nothing can be recomputed
+        from them — the readings they were built from are gone, and pruned
+        fights with them. Once the measuring rules move, the retained maxima
+        describe an experiment no longer being run: a best-dps taken over a
+        12s window is not comparable to one over 4s (the same reason
+        ``best_window_damage`` is invalidated), a best taken while spell
+        damage counted is unreachable once melee-only is on, and a best from
+        a 6s fight should not survive raising the minimum fight length past
+        it. Resetting is the only honest option.
+
+        ``last_session`` is untouched: the user moved it aside deliberately
+        with ``end_session()``, so it is a record, not a live measurement.
+        """
+        self.best = PlayerDamage()
+        self.current_session = PlayerDamage()
 
     @property
     def trailing_window(self) -> timedelta:
