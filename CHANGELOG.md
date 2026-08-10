@@ -6,6 +6,47 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.1.0 (2026-08-10)
+
+### Bug Fixes
+
+- **dumps**: Address review — browser False, refresh churn, unreachable sniff
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+- **dumps**: Decouple upload provenance from the local history gate
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+- **dumps**: Give the pending p99planner handoff a way back
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+- **dumps**: Give the review link a route out when no browser opens
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+### Documentation
+
+- **dumps**: Generate the Character Dumps screenshot
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+### Features
+
+- **dumps**: Add p99planner.com as an inventory upload destination
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+- **dumps**: Character dump library, with p99planner and pigparse upload
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+- **dumps**: Store and organize P99 inventory and spellbook dumps
+  ([#57](https://github.com/prokopto-dev/nparse-plus/pull/57),
+  [`44e48ee`](https://github.com/prokopto-dev/nparse-plus/commit/44e48ee5ae8679e7640964b8bc2a94e772f1a606))
+
+
 ## v2.0.0 (2026-08-08)
 
 ### Bug Fixes
