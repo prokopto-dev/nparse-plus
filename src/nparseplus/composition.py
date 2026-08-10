@@ -291,7 +291,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             on_inbound=sharing.enqueue_inbound,
             zones=zones,
         )
-    # An inventory upload destination needs a worker thread even with sharing
+    # A dump upload destination needs a worker thread even with sharing
     # off: p99planner has nothing to do with location sharing, and requiring
     # sharing to be on to upload would be a strange thing to explain.
     planner_api: P99PlannerClient | None = None
@@ -316,8 +316,8 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
 
     # ONE poll of the EQ directory for /outputfile dumps, with two consumers:
     # this library keeps per-character history of both dump kinds, and
-    # InventoryUploadHandler below subscribes to the events its watcher
-    # publishes to do the pigparse.org upload. EQTool has a single service
+    # InventoryUploadHandler below hangs off its on_fresh_dump hook to do the
+    # upload to whichever site is picked. EQTool has a single service
     # doing both; splitting it is what stops two ticks racing over the same
     # file. Consequence: the upload rides on dumps.auto_import being on.
     dumps = DumpLibrary(ensure_dumps_dir())

@@ -61,26 +61,40 @@ snapshots: an unchanged dump is recognised by content and dropped.
 |---|---|
 | **Import now** | Rescan the EQ folder immediately. Works regardless of the toggles. |
 | **Import file…** | Take in a dump from anywhere — a backup, another machine, a friend's. A file whose name doesn't say who it belongs to still works; nParse+ reads it and asks which character it is. |
-| **Upload inventory** | Send inventory snapshots to the [destination you picked](#uploading-your-inventory). Works whether or not auto-import is on. |
+| **Upload dumps** | Send snapshots to the [destination you picked](#uploading-your-dumps). Works whether or not auto-import is on. |
 | **Review import…** | Only while a p99planner handoff is waiting: re-opens the review page. Right-click it to cancel the handoff instead. |
 | **Export…** | Write the selected snapshot back out in the client's own format, so other P99 tools can read it. |
 | **Delete** | Remove the selected snapshot. With a character row selected, forget that character entirely. |
 
-## Uploading your inventory
+## Uploading your dumps
 
-[Settings → Sharing](../settings/sharing.md) has one **Send inventory dumps
+[Settings → Sharing](../settings/sharing.md) has one **Send character dumps
 to** picker. It offers two destinations, and **Off**, which is the default:
 
-| Destination | What it needs | What happens |
-|---|---|---|
-| **pigparse.org character page** | A Discord login (same page) | Your items are posted to your pigparse.org character page. |
-| **p99planner.com** | Nothing at all | The export is staged and a review page opens in your browser. You see exactly what would change, and approve it. |
+| Destination | What it needs | Takes | What happens |
+|---|---|---|---|
+| **pigparse.org character page** | A Discord login (same page) | Inventory | Your items are posted to your pigparse.org character page. |
+| **p99planner.com** | Nothing at all | Inventory **and spellbook** | The export is staged and a review page opens in your browser. You see exactly what would change, and approve it. |
+
+Spellbooks only go to p99planner — pigparse.org's character browser has
+nowhere to put one, so with pigparse picked a spellbook dump is collected
+into the library and sent nowhere.
 
 p99planner needs no account, no API key and no login. Instead of applying
 anything, nParse+ hands the site your raw export and gets back a private
 **claim link**; nothing reaches your planner characters until you approve it
 on that page. The link lasts 24 hours, and later dumps in the same session
 join the *same* link — so a five-mule bank run is one review page, not five.
+
+A character's inventory and spellbook are reviewed as **one entry**, and
+approving replaces that character's gear, bags and bank and — if a spellbook
+came with it — that class's scribed spell list. Either one on its own leaves
+the other alone. One ordering rule falls out of that, and nParse+ handles it
+for you: a spellbook only applies to a character the planner already has, so
+inventories are always sent ahead of spellbooks in the same batch. A
+spellbook for a character p99planner has never seen (or for a Warrior) is
+listed on the review page as skipped, with the reason, and the rest of the
+batch imports normally.
 
 !!! warning "The claim link is private"
 
@@ -98,7 +112,7 @@ approving is one page visit rather than one per mule.
 
 Because the link is never displayed, the window is the way back to it. While
 exports are waiting, the status line says so (with the expiry) and a
-**Review import…** button appears next to Upload inventory:
+**Review import…** button appears next to Upload dumps:
 
 - **Click it** to re-open the review page — after you closed the tab, for
   instance.
@@ -123,7 +137,7 @@ characters either way.
     browser history, and live for its 24 hours), and your next upload simply
     stages a fresh one. The orphan expires on its own.
 
-### The Upload inventory button
+### The Upload dumps button
 
 Uploading normally happens on its own as dumps arrive. The button is there
 for when it shouldn't have to — auto-import off, a dump taken before you
@@ -132,11 +146,14 @@ follows your selection, narrowest first:
 
 | Selected | What is sent |
 |---|---|
-| An inventory snapshot | That snapshot. |
-| A character (or their spellbook) | That character's current inventory. |
-| Nothing | Every character's current inventory — the whole roster, in one call. |
+| A snapshot | That snapshot, whichever kind it is. |
+| A character | That character's current inventory *and* spellbook. |
+| Nothing | Every character's current pair — the whole roster, in one call. |
 
-The status line at the bottom reports what happened.
+Anything the destination can't take is dropped rather than refused: send a
+spellbook while pigparse.org is picked and the status line names the site
+that does take one. The status line at the bottom reports what happened
+either way.
 
 ## Where the files live
 
@@ -166,7 +183,7 @@ and only some of what lands in it is something you asked to publish:
 **Import file…** never uploads on your behalf. That file may be a backup, an
 export off another machine, or another player's dump, and none of those were
 offered up for publishing by being picked in a file dialog. Use **Upload
-inventory** when you do want one sent.
+dumps** when you do want one sent.
 
 Likewise, **Auto-update** is purely about how much local history to keep. It
 does not gate uploading in either direction — an earlier version of this let

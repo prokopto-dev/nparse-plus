@@ -47,9 +47,11 @@ Logging in with Discord ([Settings → Sharing](../settings/sharing.md) →
 **Log in with Discord**) links your parser to your
 [pigparse.org](https://www.pigparse.org) account:
 
-- **Inventory upload** — with the toggle on, typing
+- **Inventory upload** — with pigparse.org picked as the [dump upload
+  destination](../settings/sharing.md#character-dump-upload), typing
   `/outputfile inventory` in game uploads the dump to your pigparse.org
-  character browser page, so your gear is inspectable there.
+  character browser page, so your gear is inspectable there. Inventories
+  only; a spellbook dump needs the p99planner destination.
 
 The login token is stored locally in your settings and only ever sent to
 pigparse.org. Everything else on this page works without an account.

@@ -294,8 +294,8 @@ class DumpWatcher:
         file by hand (a backup, or somebody else's dump) published it.
 
         Never fires for a hand-picked import: the user asked to file that
-        away, not to publish it. The Upload inventory button is how you ask
-        for that, and it says so.
+        away, not to publish it. The Upload dumps button is how you ask for
+        that, and it says so.
         """
         if self._on_fresh_dump is None:
             return

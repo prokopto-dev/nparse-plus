@@ -634,6 +634,20 @@ uploading to pigparse.org is not the same decision as sharing your location
 through it, so composition builds `PigParseApiClient` and/or
 `P99PlannerClient` plus a `NetWorker` when the target asks for one.
 
+**The destinations take different kinds**, and `UPLOAD_KINDS` in
+`handlers/inventory_upload.py` is the ONE place that says so: pigparse takes
+inventories (its character browser has no spellbook page), p99planner takes
+both. Spellbooks ride the same unlabelled `files[]` array — there is no
+`kind` field and the review page classifies by content, grouping a
+character's pair into one entry — so all the wire owes it is
+`export_filename`'s `<Character>-<Inventory|Spellbook>.txt`. One ordering
+rule follows: a spellbook only applies to a character p99planner already
+has, so `_planner_files` sorts inventory-before-spellbook per character.
+The window's `upload_scope` stays site-agnostic (a selected snapshot uploads
+*itself*, whatever kind; a character row or an empty selection sends each
+character's current pair) and the handler drops what the target cannot take,
+answering with the site that can rather than a bare refusal.
+
 p99planner is a **handoff, not an upload**, and that shapes the code:
 `net/p99planner.py` POSTs the raw export text with **no credentials of any
 kind** and gets back a claim URL the player opens and approves; nothing is

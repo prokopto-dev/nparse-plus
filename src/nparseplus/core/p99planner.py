@@ -10,11 +10,25 @@ exactly what would change, and approves. Nothing is applied without that.
 Which is why there are no credentials here — the endpoint is anonymous, and
 the token IS the capability.
 
-That last part matters: a claim URL is a bearer secret for one player's item
-list. **Never log it, never put it in an error message, never publish it to
-chat.** Prefer opening it in the player's browser over showing it. The
-exposure if it leaks is bounded (one item list, 24 hours, and opening the
-link burns it), but it is still theirs, not ours.
+That last part matters: a claim URL is a bearer secret for one player's
+character data. **Never log it, never put it in an error message, never
+publish it to chat.** Prefer opening it in the player's browser over showing
+it. The exposure if it leaks is bounded (one export batch, 24 hours, and
+opening the link burns it), but it is still theirs, not ours.
+
+**Both dump kinds ride in the same ``files`` array.** An inventory export and
+a spellbook export are not labelled and there is no ``kind`` field — the
+review page classifies each file by its *contents*, and groups a character's
+inventory and spellbook into one row. Two consequences for callers:
+
+* A spellbook only applies to a character the planner already has, and only
+  for a casting class; one for an unknown character is listed as skipped
+  while the rest of the batch imports. So send a character's inventory
+  first — see ``handlers.inventory_upload._planner_files``, which orders
+  every batch that way.
+* Nothing here needs to know which kind a file is. The name is what the
+  server derives the *character* from, which is the only thing we have to
+  get right.
 """
 
 from __future__ import annotations
@@ -29,13 +43,24 @@ from pydantic import BaseModel, ConfigDict
 MAX_FILE_BYTES = 128 * 1024
 MAX_REQUEST_BYTES = 1_500_000
 
+#: The API counts "a small per-file allowance" on top of name + text, without
+#: saying how small. Estimated high enough to keep our budget check on the
+#: conservative side of the server's — being told locally that a batch is too
+#: big is a better failure than a 413 — and small enough to be noise next to
+#: the 1.5 MB request budget. It matters more now that a character can send
+#: two files (inventory *and* spellbook) instead of one.
+PER_FILE_OVERHEAD_BYTES = 64
+
 
 class ImportFile(BaseModel):
     """One ``/outputfile`` export, as the API wants it.
 
     ``name`` is optional to the API but we always send it: the character is
     derived from the filename, and that is what makes an export *update* a
-    character the player already has instead of creating a duplicate.
+    character the player already has instead of creating a duplicate. It is
+    NOT how the server decides whether a file is an inventory or a spellbook
+    — that is read out of the contents — so a misnamed file imports under the
+    wrong character rather than being rejected.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -46,7 +71,11 @@ class ImportFile(BaseModel):
     @property
     def size(self) -> int:
         """Rough wire cost of this file, for the request budget."""
-        return len(self.name.encode("utf-8")) + len(self.text.encode("utf-8"))
+        return (
+            len(self.name.encode("utf-8"))
+            + len(self.text.encode("utf-8"))
+            + PER_FILE_OVERHEAD_BYTES
+        )
 
 
 class ClaimLink(BaseModel):
@@ -100,6 +129,12 @@ class P99PlannerApi(Protocol):
 
         A file whose name matches one already staged replaces it, so
         re-sending a character whose export changed again is safe.
+
+        The size limits apply to the **merged** result, not to what this call
+        sends, so a long session can fill a link that every individual batch
+        fits inside. We do not track the staged total to predict it (the
+        server owns that arithmetic); a 413 here is reported as the link
+        being full, and approving or cancelling it starts a fresh one.
         """
         ...
 
