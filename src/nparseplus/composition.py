@@ -17,6 +17,7 @@ from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.driver import LogDriver
 from nparseplus.core.dumps import DumpLibrary, DumpWatcher
+from nparseplus.core.handlers.ability_cooldowns import AbilityCooldownHandler
 from nparseplus.core.handlers.api_timers import ApiTimersService
 from nparseplus.core.handlers.bard_count import BardCountHandler
 from nparseplus.core.handlers.boat import BoatHandler
@@ -377,6 +378,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         ZoneActivityHandler(bus, player, zones, api=pigparse_api, submit=submit),
         DisciplineCooldownHandler(bus, player, timers),
         MendWoundsHandler(bus, player, timers),
+        AbilityCooldownHandler(bus, player, spells, timers),
         CompleteHealCommsHandler(
             bus,
             player,
