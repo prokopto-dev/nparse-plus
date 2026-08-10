@@ -25,6 +25,20 @@ from nparseplus.net.worker import ImmediateWorker
 
 T0 = datetime(2026, 8, 9, 12, 0, 0)
 
+
+# A claim's expiry is the ONE value here compared against the real wall clock
+# (InventoryUploadHandler._current_claim reads datetime.now()), so it has to be
+# anchored to the real clock too. Deriving it from T0 made the whole fake
+# expire for good once actual time passed T0+24h — the suite then failed on
+# any machine whose local clock was past 2026-08-10 12:00, which is exactly
+# how it went red in CI while still passing four timezones west.
+#
+# T0 stays right for everything else: dump timestamps are log-clock values,
+# only ever compared to each other.
+def _claim_expiry() -> datetime:
+    return datetime.now() + timedelta(hours=24)
+
+
 DUMP = (
     "Location\tName\tID\tCount\tSlots\n"
     "Charm\tGuise of the Deceiver\t1234\t1\t0\n"
@@ -62,7 +76,7 @@ class FakePlanner:
             link=ClaimLink(
                 token=f"token{self._n}",
                 url=f"https://p99planner.com/import/token{self._n}",
-                expires=T0 + timedelta(hours=24),
+                expires=_claim_expiry(),
                 files=len(files),
             )
         )
@@ -77,7 +91,7 @@ class FakePlanner:
             link=ClaimLink(
                 token=token,
                 url=f"https://p99planner.com/import/{token}",
-                expires=T0 + timedelta(hours=24),
+                expires=_claim_expiry(),
                 files=len(files),
             )
         )
