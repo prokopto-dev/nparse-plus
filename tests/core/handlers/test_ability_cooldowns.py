@@ -16,7 +16,8 @@ from nparseplus.core.handlers.ability_cooldowns import (
     HARM_TOUCH,
     LAY_ON_HANDS,
     AbilityCooldownHandler,
-    looks_like_npc,
+    certainly_npc,
+    possibly_npc,
 )
 from nparseplus.core.timers import YOU_GROUP
 
@@ -107,6 +108,28 @@ def test_npc_harm_touching_a_player_is_not_yours(h: Harness) -> None:
     assert _row(h, HARM_TOUCH) is None
 
 
+@pytest.mark.parametrize("player_name", ["Bob", "Fang", "Raven"])
+def test_player_named_after_a_mob_is_not_your_harm_touch(
+    player_name: str, h: Harness, spell_book
+) -> None:
+    """The master NPC list is every NPC name in the game and 1676 of them are
+    single words, so it collides with ordinary player names. Trusting it on
+    this branch turns an NPC harm-touching player Bob into a false 72-minute
+    row — the one failure mode this module is supposed to refuse."""
+    assert spell_book.is_npc(player_name), f"{player_name!r} no longer collides; pick another"
+    h.player.player_class = PlayerClass.SHADOW_KNIGHT
+    h.push(f"{player_name} writhes in the grip of agony.")
+    assert _row(h, HARM_TOUCH) is None
+
+
+def test_lay_on_hands_still_declines_on_master_list_names(h: Harness) -> None:
+    """The opposite bias: on this branch a wrong "NPC" only costs a timer, so
+    the ambiguous master-list match is enough to decline."""
+    h.player.player_class = PlayerClass.PALADIN
+    h.push("Bob feels a healing touch.")
+    assert _row(h, LAY_ON_HANDS) is None
+
+
 @pytest.mark.parametrize("player_class", [PlayerClass.WARRIOR, PlayerClass.PALADIN])
 def test_only_shadow_knights_get_a_harm_touch_timer(player_class: PlayerClass, h: Harness) -> None:
     h.player.player_class = player_class
@@ -124,7 +147,7 @@ def test_no_class_yet_claims_nothing(h: Harness) -> None:
     assert _row(h, HARM_TOUCH) is None
 
 
-# -- the NPC heuristic --------------------------------------------------------
+# -- the two NPC predicates ---------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -134,10 +157,33 @@ def test_no_class_yet_claims_nothing(h: Harness) -> None:
         ("an ice giant", True),
         ("the Ghoul Lord", True),
         (" a froglok tad", True),  # cast-on-other targets carry a leading space
-        ("Lord Nagafen", True),  # named mob, via the master NPC list
+        ("Lord Nagafen", False),  # a real mob, but nothing here proves it
+        ("Bob", False),  # in the master list AND a plausible player
         ("Grimwald", False),
         ("", False),
     ],
 )
-def test_looks_like_npc(name: str, expected: bool, spell_book) -> None:
-    assert looks_like_npc(name, spell_book) is expected
+def test_certainly_npc_accepts_only_unambiguous_evidence(name: str, expected: bool) -> None:
+    assert certainly_npc(name) is expected
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("a froglok knight", True),
+        ("an ice giant", True),
+        ("Lord Nagafen", True),  # named mob, via the master NPC list
+        ("Bob", True),  # ambiguous, and that is enough to decline
+        ("Grimwald", False),
+        ("", False),
+    ],
+)
+def test_possibly_npc_accepts_any_suspicion(name: str, expected: bool, spell_book) -> None:
+    assert possibly_npc(name, spell_book) is expected
+
+
+def test_the_two_predicates_disagree_exactly_where_it_matters(spell_book) -> None:
+    """certainly_npc must be strictly weaker, or the Harm Touch branch inherits
+    the master list's player-name collisions again."""
+    for name in ("Bob", "Fang", "Raven", "Lord Nagafen"):
+        assert possibly_npc(name, spell_book) and not certainly_npc(name)

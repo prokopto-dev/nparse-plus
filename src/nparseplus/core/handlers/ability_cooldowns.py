@@ -21,11 +21,25 @@ over-detect:
   Harm Touch row. Everyone else sees these lines constantly and never has the
   ability.
 * **Direction.** You harm-touch mobs and lay hands on people, so a Harm Touch
-  row needs an NPC-looking target and a Lay on Hands row needs a non-NPC one.
-  That is what discards the two common impostors: NPC shadow knights harm-touch
-  the tank on aggro, and NPC paladins lay hands on themselves at low health.
-  The self-target form of Harm Touch ("You writhe in the grip of agony.") is
-  never yours for the same reason — it means something harm-touched *you*.
+  row needs an NPC target and a Lay on Hands row needs a non-NPC one. That is
+  what discards the two common impostors: NPC shadow knights harm-touch the
+  tank on aggro, and NPC paladins lay hands on themselves at low health. The
+  self-target form of Harm Touch ("You writhe in the grip of agony.") is never
+  yours for the same reason — it means something harm-touched *you*.
+
+The two directions need OPPOSITE biases, which is why there are two NPC
+predicates rather than one. Each resolves its own ambiguity towards NOT
+creating a row:
+
+* Harm Touch asks ``certainly_npc`` — the article convention alone. Master-list
+  membership is evidence, not proof: 1676 of its names are single words and it
+  contains plenty that are also ordinary player names ("Bob", "Fang", "Raven"),
+  so trusting it here would turn an NPC harm-touching *player* Bob into a false
+  72-minute row. The cost is that a named raid mob ("Lord Nagafen") does not
+  start one — a miss, which is the side of the trade this module takes.
+* Lay on Hands asks ``possibly_npc`` — article OR master list. Here a false NPC
+  only costs a missed timer, while a false player invents one, so any suspicion
+  is enough to decline.
 
 What survives: another paladin or shadow knight in view using theirs on the
 same kind of target. Nothing in the line distinguishes that case, so the row
@@ -61,18 +75,31 @@ _ABILITY_CLASS = {
 _NPC_ARTICLES = ("a ", "an ", "the ")
 
 
-def looks_like_npc(name: str, book: SpellBook) -> bool:
-    """Best-effort NPC test for a cast-message target name.
+def certainly_npc(name: str) -> bool:
+    """True only on evidence a player name cannot produce.
 
-    Deliberately biased towards "yes": a false NPC only costs a missed timer,
-    while a false player invents one. ``is_npc`` alone is not enough in either
-    direction — it misses unnamed mobs and it matches plenty of ordinary player
-    names, since the master list is every NPC name in the game.
+    The article convention is the one unambiguous signal in these messages: a
+    character called "a froglok knight" cannot exist. Use this where a wrong
+    "yes" would INVENT a timer.
     """
     stripped = name.strip()
     if not stripped:
         return False
-    return stripped.casefold().startswith(_NPC_ARTICLES) or book.is_npc(stripped)
+    return stripped.casefold().startswith(_NPC_ARTICLES)
+
+
+def possibly_npc(name: str, book: SpellBook) -> bool:
+    """True on any suspicion the target is an NPC.
+
+    Adds master-list membership, which is evidence rather than proof — the list
+    is every NPC name in the game and 1676 of them are single words, so it
+    matches ordinary player names too. Use this where a wrong "yes" only costs
+    a MISSED timer.
+    """
+    stripped = name.strip()
+    if not stripped:
+        return False
+    return certainly_npc(stripped) or book.is_npc(stripped)
 
 
 class AbilityCooldownHandler(BaseHandler):
@@ -92,12 +119,15 @@ class AbilityCooldownHandler(BaseHandler):
             self._start(event.spell, event.timestamp)
 
     def _on_cast_on_other(self, event: SpellCastOnOtherEvent) -> None:
-        target_is_npc = looks_like_npc(event.target_name, self.spells)
+        target = event.target_name
         for spell in event.spells:
-            if spell.name == LAY_ON_HANDS and not target_is_npc:
+            # Opposite biases on purpose — see the module docstring. Claiming a
+            # Harm Touch needs proof the target is a mob; declining a Lay on
+            # Hands only needs a suspicion.
+            if spell.name == LAY_ON_HANDS and not possibly_npc(target, self.spells):
                 self._start(spell, event.timestamp)
                 return
-            if spell.name == HARM_TOUCH and target_is_npc:
+            if spell.name == HARM_TOUCH and certainly_npc(target):
                 self._start(spell, event.timestamp)
                 return
 
