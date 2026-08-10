@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -961,6 +963,15 @@ def test_update_all_counts_only_same_source_offers(qtbot, host, tmp_path: Path) 
 
 
 def test_update_all_updates_every_same_source_plugin(qtbot, host, tmp_path, monkeypatch) -> None:
+    """A batch waits on `_batch_active`, never on `_install_finished` (#63).
+
+    The batch installs serially — one worker thread per plugin — so that signal
+    is emitted once per add-on. A `waitSignal` blocker is torn down after the
+    first, and the second emit arriving from another thread lands in the dead
+    blocker: `SystemError: bad argument to internal function`, then a segfault
+    at the next GC, in whatever test was unlucky enough to be running. That
+    crashed ~30% of runs of this test alone.
+    """
     _two_updatable(host, tmp_path)
     shown: list[str] = []
     monkeypatch.setattr(
@@ -971,8 +982,7 @@ def test_update_all_updates_every_same_source_plugin(qtbot, host, tmp_path, monk
     page._set_listings(_result((DEFAULT, _both_index())))
     assert page._update_all_button.text() == "Update all (2)"
 
-    with qtbot.waitSignal(page._install_finished, timeout=5000):
-        page._update_all_button.click()
+    page._update_all_button.click()
     qtbot.waitUntil(lambda: not page._batch_active, timeout=5000)
 
     assert {call["replace"].plugin_id for call in calls} == {"demo", "extra"}
@@ -981,6 +991,7 @@ def test_update_all_updates_every_same_source_plugin(qtbot, host, tmp_path, monk
 
 
 def test_update_all_partial_failure_reports_both_lists(qtbot, host, tmp_path, monkeypatch) -> None:
+    """Also `_batch_active` only — same two-emit race as the test above."""
     _two_updatable(host, tmp_path)
     shown: list[str] = []
     monkeypatch.setattr(
@@ -990,8 +1001,7 @@ def test_update_all_partial_failure_reports_both_lists(qtbot, host, tmp_path, mo
     page = make_page(qtbot, host)
     page._set_listings(_result((DEFAULT, _both_index())))
 
-    with qtbot.waitSignal(page._install_finished, timeout=5000):
-        page._update_all_button.click()
+    page._update_all_button.click()
     qtbot.waitUntil(lambda: not page._batch_active, timeout=5000)
 
     # One failure never stops the rest: both were attempted.
@@ -1031,3 +1041,45 @@ def test_the_plugins_page_does_not_pin_the_settings_window(qtbot, host) -> None:
     assert pages <= MIN_SIZE[0] - window._sidebar.width(), (
         f"the Plugins page wants {pages}px and would pin the settings window"
     )
+
+
+# --- the leaked-worker regression (#63) ---------------------------------------
+#
+# These two run as a pair, in this order. The first reproduces what a loaded CI
+# runner does to every install test above: the wait expires while the worker is
+# still going. The second asserts the teardown guard in tests/conftest.py caught
+# the worker it left behind.
+#
+# Without that guard the pair does not merely fail — the run aborts. The leaked
+# worker's queued `_install_finished` is delivered by pytest-qt's event pump,
+# which runs from a teardown hookwrapper *after* the page and the test's
+# monkeypatches are gone. Verified: 3 of 3 runs abort with the guard disabled.
+
+
+def test_a_timed_out_install_leaves_its_worker_running(qtbot, host) -> None:
+    """Reproduce the CI condition: the wait expires, the worker does not stop.
+
+    No `waitSignal` here on purpose — a blocker whose signal arrives after the
+    `with` block is the other half of this bug (see the update-all tests).
+    """
+    from nparseplus.core.plugins.install import InstallResult
+
+    page = make_page(qtbot, host)
+
+    def slow_install() -> InstallResult:
+        time.sleep(0.4)
+        return InstallResult(ok=False, errors=["slower than the wait allowed"])
+
+    page._start_install(slow_install)
+    qtbot.wait(50)  # what a 5 s wait amounts to on a runner too loaded to make it
+
+    assert any(t.name == "plugin-install" and t.is_alive() for t in threading.enumerate())
+
+
+def test_the_teardown_guard_joined_the_leaked_installer(ui_worker_threads) -> None:
+    """The worker the test above leaked was joined before this test started."""
+    assert ui_worker_threads.last_joined() == ["plugin-install"], (
+        "the teardown guard in tests/conftest.py did not join the worker leaked "
+        "by the previous test — this run is one emit away from a segfault"
+    )
+    assert not [t for t in threading.enumerate() if t.name in ui_worker_threads.names]
