@@ -259,3 +259,30 @@ def test_post_expiry_flag_only_for_listed_spells(ctx: ParseContext) -> None:
     handler.handle_spell(clarity, SPACE_YOU, 0, T0)
     row = handler.timers.rows_of(SpellRow)[0]
     assert isinstance(row, SpellRow) and row.post_expiry_persist_s == 0.0
+
+
+@pytest.mark.parametrize(
+    "name, player_class, level, cooldown_s",
+    [
+        # Its cast message carried the file's ".." artifact, so the bard's only
+        # discipline never matched a log line at all.
+        ("Puretone Discipline", PlayerClass.BARD, 60, 4320),
+        # A classless duplicate spell claimed its message key in the lookup
+        # table, so the monk's level-53 discipline was dropped from it.
+        ("Whirlwind Discipline", PlayerClass.MONK, 60, 3600),
+    ],
+)
+def test_previously_unmatchable_disciplines_get_a_cooldown_row(
+    name: str, player_class: PlayerClass, level: int, cooldown_s: int, harness: Harness
+) -> None:
+    harness.ctx.player.player_class = player_class
+    harness.ctx.player.level = level
+    assert harness.ctx.spells is not None
+    spell = harness.ctx.spells.spell_by_name(name)
+    assert spell is not None
+
+    harness.push(spell.cast_on_you, T0)
+
+    cooldowns = [r for r in harness.spell_rows() if r.is_cooldown]
+    assert [r.name for r in cooldowns] == [f"{name} Cooldown"]
+    assert cooldowns[0].total_duration_s == cooldown_s

@@ -278,6 +278,14 @@ class SpellBook:
                     self._cast_on_you_spells[you_key] = [spell]
                 elif not (spell.class_levels and spell.spell_type is SpellType.SELF):
                     existing.append(spell)
+                elif not existing[0].class_levels:
+                    # Deliberate divergence: the C# guard above drops a classed
+                    # self-buff whenever ANY earlier row claimed its message,
+                    # including a classless duplicate nobody can cast (a later
+                    # "Whirlwind" copy shadowed Whirlwind Discipline, monk 53).
+                    # Seat the trainable spell at the head instead of dropping
+                    # it; the duplicate stays as a lower-priority candidate.
+                    existing.insert(0, spell)
 
             if spell.spell_fades:
                 self._worn_off_spells.setdefault(spell.spell_fades.casefold(), []).append(spell)
@@ -357,8 +365,16 @@ def _should_skip(raw: _RawSpell) -> bool:
 
 def _apply_fixups(raw: _RawSpell) -> None:
     """The per-spell data corrections in GetSpells."""
-    if raw.name == "Defensive Discipline" and raw.cast_on_you.endswith(".."):
-        raw.cast_on_you = raw.cast_on_you.replace("..", ".")
+    # Deliberate divergence: C# only de-duplicates the trailing ".." for
+    # Defensive Discipline. The artifact is in the file for several more
+    # disciplines and it makes them permanently unmatchable — the parser
+    # strips a trailing ".." off the LOG line, so a ".." in the DATA can
+    # never be the lookup key either way. Puretone (bard 60) was the live
+    # casualty. Kept to disciplines on purpose: ~80 spells carry the same
+    # artifact, but 17 of those normalize onto a message another spell
+    # already owns, which would change existing best-guess matches.
+    if raw.name.endswith("Discipline") and raw.cast_on_you.endswith(".."):
+        raw.cast_on_you = raw.cast_on_you[:-1]
     if raw.name.startswith("Primal Essence"):
         raw.classes.setdefault(PlayerClass.SHAMAN, 35)
     if raw.name == "Pacify":
@@ -378,6 +394,11 @@ def _apply_fixups(raw: _RawSpell) -> None:
         raw.name = "Manicial Strength"
     if raw.name == "Lay on Hands":
         raw.recast_time = 4320000  # 72 minutes in milliseconds
+    # Deliberate addition: the file says 30 s for both knight abilities and
+    # C# only corrects Lay on Hands. Harm Touch is the same 72-minute reuse
+    # on P99, and AbilityCooldownHandler reads the recast off the spell.
+    if raw.name == "Harm Touch":
+        raw.recast_time = 4320000
 
 
 def _to_spell(raw: _RawSpell) -> Spell:
