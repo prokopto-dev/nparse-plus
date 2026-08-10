@@ -267,6 +267,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         on_log_dir_changed: Callable[[Path], None] | None = None,
         on_audio_changed: Callable[[], None] | None = None,
         on_appearance_changed: Callable[[], None] | None = None,
+        on_dps_changed: Callable[[], None] | None = None,
         legacy_config: dict[str, Any] | None = None,
         on_legacy_save: Callable[[], None] | None = None,
         notify_legacy: Callable[[], None] | None = None,
@@ -292,6 +293,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._on_log_dir_changed = on_log_dir_changed
         self._on_audio_changed = on_audio_changed
         self._on_appearance_changed = on_appearance_changed
+        self._on_dps_changed = on_dps_changed
         # The skin the window opened with, so Close can undo a live preview.
         self._skin_on_open = settings.general.skin
         self._legacy = legacy_config if legacy_config is not None else {}
@@ -323,6 +325,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             ("Character", self._build_character),
             ("Friends", self._build_friends),
             ("Spell Timers", self._build_spell_timers),
+            ("DPS Meter", self._build_dps),
             ("Maps", self._build_maps),
             ("Windows", self._build_windows_grid),
             ("Audio && Overlays", self._build_audio_overlays),
@@ -1108,6 +1111,85 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         form.addRow(note)
         return self._page(form)
 
+    # -- DPS meter (core.dps.FightTracker tunables; all apply live) ----------------------
+
+    def _build_dps(self) -> QWidget:
+        dps = self._settings.dps
+        form = QFormLayout()
+
+        self._dps_melee_only = QCheckBox(self)
+        self._dps_melee_only.setChecked(dps.melee_only)
+        self._dps_melee_only.setToolTip(
+            "Count weapon and fist damage only — slashes, crushes, pierces, "
+            "kicks, punches, backstabs and the rest.\n\n"
+            'On (default) ignores "was hit by non-melee", which is how spells, '
+            "procs and damage-over-time are logged. That line names no "
+            "attacker, so it can only ever be credited to you — including "
+            "other players' nukes — which inflates your row and can invent a "
+            "fight on a mob you never swung at.\n\n"
+            "Off counts every hit the parser can attribute, that caveat "
+            "included."
+        )
+        form.addRow("Melee damage only", self._dps_melee_only)
+
+        self._dps_retention = QDoubleSpinBox(self)
+        self._dps_retention.setRange(0.0, 3600.0)
+        self._dps_retention.setDecimals(0)
+        self._dps_retention.setSingleStep(10.0)
+        self._dps_retention.setSuffix(" s")
+        self._dps_retention.setSpecialValueText("never")
+        self._dps_retention.setValue(dps.fight_retention_seconds)
+        self._dps_retention.setToolTip(
+            "How long a target's group stays on screen after the last hit "
+            "against it from anyone.\n\n"
+            "Individual attackers are never dropped: whoever has landed "
+            "anything on a target stays listed for as long as that target's "
+            "group is up, so an opener who stops swinging does not vanish "
+            "mid-fight. The whole group retires together.\n\n"
+            '"never" keeps groups until you zone, camp, or die.'
+        )
+        form.addRow("Attacker dropoff", self._dps_retention)
+
+        self._dps_window = QDoubleSpinBox(self)
+        self._dps_window.setRange(1.0, 300.0)
+        self._dps_window.setDecimals(0)
+        self._dps_window.setSuffix(" s")
+        self._dps_window.setValue(dps.trailing_window_seconds)
+        self._dps_window.setToolTip(
+            'The span each row\'s "dps" number is averaged over (EQTool used '
+            "12 s).\n\n"
+            "Damage is always divided by the full window, never by how long "
+            "the fight has actually run, so a burst reads low until the "
+            "window fills: 400 damage two seconds in shows 33 dps at a 12 s "
+            "window. Shorter reacts faster and swings harder; longer is "
+            "steadier."
+        )
+        form.addRow("DPS averaging window", self._dps_window)
+
+        self._dps_session_min = QDoubleSpinBox(self)
+        self._dps_session_min.setRange(0.0, 600.0)
+        self._dps_session_min.setDecimals(0)
+        self._dps_session_min.setSuffix(" s")
+        self._dps_session_min.setSpecialValueText("no minimum")
+        self._dps_session_min.setValue(dps.session_min_fight_seconds)
+        self._dps_session_min.setToolTip(
+            "A fight must run longer than this before your row counts toward "
+            "the Best / Now / Last footer (EQTool required 20 s).\n\n"
+            "Most trash dies faster than 20 s, which is why that footer can "
+            "sit at zero all session. Lower it to have short fights count."
+        )
+        form.addRow("Session stat minimum fight", self._dps_session_min)
+
+        form.addRow(
+            chromewidgets.hint(
+                "These apply as soon as you hit Apply — no restart. Damage "
+                "already counted is not recounted, so a change to the melee "
+                "filter takes effect on the next hit.",
+                self,
+            )
+        )
+        return self._page(form)
+
     # -- Maps (legacy config keys until the maps window is rebuilt) ----------------------
 
     def _build_maps(self) -> QWidget:
@@ -1826,6 +1908,11 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         spellwindow.buff_fade_warning_audio = self._buff_fade_audio.isChecked()
         spellwindow.post_expiry_flash_enabled = self._post_expiry_flash.isChecked()
         spellwindow.post_expiry_flash_seconds = self._post_expiry_secs.value()
+        dps = self._settings.dps
+        dps.melee_only = self._dps_melee_only.isChecked()
+        dps.fight_retention_seconds = self._dps_retention.value()
+        dps.trailing_window_seconds = self._dps_window.value()
+        dps.session_min_fight_seconds = self._dps_session_min.value()
         plugins = self._settings.plugins
         plugins_was_enabled = plugins.enabled
         plugins.enabled = self._plugins_enabled_box.isChecked()
@@ -1856,6 +1943,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             general.tts_voice != old_voice or general.global_audio_volume != old_volume
         ):
             self._on_audio_changed()  # live-swap the shared TTS speaker
+        if self._on_dps_changed is not None:
+            self._on_dps_changed()  # push the counting rules onto the tracker
         # Skin, frame opacity, alert size/emphasis/shadow all apply live.
         self._skin_on_open = general.skin
         if self._on_appearance_changed is not None:

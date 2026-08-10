@@ -578,6 +578,42 @@ and shrink-to-fit rather than clipping. The three `resolve_color` utility
 lines keep their user-configured colour on purpose — only their size is the
 skin's.
 
+**The DPS meter counts differently** (post-2.2): three changes, one page.
+
+*Rows stopped vanishing.* Staleness now belongs to `Fight`, not
+`FightEntity` — EQTool's `ShouldRemove` aged out each `EntittyDPS` on its
+own last hit, so an opener who stunned and switched to healing dropped off
+the list 40s later while the mob was still up. A group is keyed on the most
+recent hit from ANY attacker and retires as a unit; nothing is pruned out
+from under a live fight. `Fight.is_stale(now, retention_s)` also lost the
+old `abs()`, which read a log line stamped ahead of the wall clock as stale.
+
+*Melee only, by default.* `"<target> was hit by non-melee"` names no
+attacker, so `DamageParser` can only credit **You** — including other
+players' nukes, which inflated your row and opened fights on mobs you never
+swung at. `FightTracker.melee_only` (default on) drops non-melee before it
+can open a fight. The filter lives in the TRACKER, not the parser: the
+parser stays the record of what the log said, so triggers and plugins
+subscribed to `DamageEvent` still see spell damage. `core/damagetypes.py` is
+the shared vocabulary — its own module because `core/parsers/damage.py`
+builds its four regexes from the verb list and `core.dps` filters by it, and
+importing the parser to reach a frozenset costs ~100 ms (it loads the master
+NPC list) on a module the UI imports. `is_melee` reads UNKNOWN types as not
+melee on purpose, so a damage line the parser learns later (DoT ticks are
+still unparsed) can't silently join a melee-only meter.
+
+*Settings > DPS Meter.* The four tunables are plain attributes on the
+tracker, not constructor-only, because the app builds one tracker per launch
+and it outlives every settings window: `Backend.apply_dps_settings()` →
+`FightTracker.configure()` on Apply, no restart. `trailing_window` is the
+one that needs more than an assignment — it is carried per entity and
+re-stamped by `tick()`, which is what reaches fights already running, and
+changing it zeroes `best_window_damage` since a best-in-6s is not comparable
+to a best-in-12s and the max-merge would otherwise keep the stale larger
+number forever. Damage already counted is never re-filtered (the hit list
+does not keep damage types). The >20s session-footer gate stayed, now as a
+knob: it is why Best/Now/Last reads 0 all session on trash that dies faster.
+
 **The settings window shrinks** (post-2.1): a `QStackedWidget`'s minimum is
 its *widest page*, so one wide row on Sharing (a long label beside a combo
 listing "pigparse.org character page") pinned the whole window at ~550px and

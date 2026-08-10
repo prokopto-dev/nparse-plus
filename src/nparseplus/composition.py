@@ -193,6 +193,18 @@ class Backend:
             )
         )
 
+    def apply_dps_settings(self) -> None:
+        """Push the DPS settings page onto the live tracker — the seam the
+        settings window calls on Apply so the counting rules change without a
+        restart (the tracker outlives every settings window)."""
+        dps = self.settings.dps
+        self.fights.configure(
+            melee_only=dps.melee_only,
+            fight_retention_s=dps.fight_retention_seconds,
+            trailing_window_s=dps.trailing_window_seconds,
+            session_min_fight_s=dps.session_min_fight_seconds,
+        )
+
     def stop(self) -> None:
         self.driver.stop()
         if self.timer_persistence is not None:
@@ -257,7 +269,12 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     chat_commands = CustomTimerChatCommands(bus, sink)
     window_commands = WindowChatCommands(bus)
 
-    fights = FightTracker()
+    fights = FightTracker(
+        melee_only=settings.dps.melee_only,
+        fight_retention_s=settings.dps.fight_retention_seconds,
+        trailing_window_s=settings.dps.trailing_window_seconds,
+        session_min_fight_s=settings.dps.session_min_fight_seconds,
+    )
     mob_info = MobInfoState()
     pets = load_pets()
     player_pet = PlayerPet()

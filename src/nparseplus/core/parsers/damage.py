@@ -10,28 +10,30 @@ from __future__ import annotations
 import re
 from importlib import resources
 
+from nparseplus.core.damagetypes import (
+    MELEE_PLURAL,
+    MELEE_SINGULAR,
+    NON_MELEE_DAMAGE_TYPE,
+)
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import ClassDetectedEvent, DamageEvent
 from nparseplus.core.lineinfo import LineInfo
 from nparseplus.core.parsers.base import ParseContext
 
 _YOU_HIT_RE = re.compile(
-    r"^You (?P<dmg_type>hit|slash|pierce|crush|claw|bite|sting|maul|gore|punch|kick"
-    r"|backstab|bash|slice|strike) (?P<target_name>[\w` ]+) for (?P<damage>[\d]+)"
+    rf"^You (?P<dmg_type>{MELEE_SINGULAR}) (?P<target_name>[\w` ]+) for (?P<damage>[\d]+)"
     r" point(s)? of damage"
 )
 _YOU_MISS_RE = re.compile(
-    r"^You try to (?P<dmg_type>hit|slash|pierce|crush|claw|bite|sting|maul|gore|punch|kick"
-    r"|backstab|bash|slice|strike) (?P<target_name>[\w` ]+), but"
+    rf"^You try to (?P<dmg_type>{MELEE_SINGULAR}) (?P<target_name>[\w` ]+), but"
 )
 _OTHER_HIT_RE = re.compile(
-    r"^(?P<attacker_name>[\w`'-. ]+?) (?P<dmg_type>hits|slashes|pierces|crushes|claws|bites"
-    r"|stings|mauls|gores|punches|kicks|backstabs|bashes|slices|strikes)"
+    rf"^(?P<attacker_name>[\w`'-. ]+?) (?P<dmg_type>{MELEE_PLURAL})"
     r" (?P<target_name>[\w` ]+) for (?P<damage>[\d]+) point(s)? of damage"
 )
 _OTHERS_MISS_RE = re.compile(
-    r"^(?P<attacker_name>[\w` ]+?) tries to (?P<dmg_type>hit|slash|pierce|crush|claw|bite"
-    r"|sting|maul|gore|punch|kick|backstab|bash|slice|strike) (?P<target_name>[\w` ]+), but"
+    rf"^(?P<attacker_name>[\w` ]+?) tries to (?P<dmg_type>{MELEE_SINGULAR})"
+    r" (?P<target_name>[\w` ]+), but"
 )
 _NON_MELEE_RE = re.compile(
     r"^(?P<target_name>[\w` ]+) was hit by non-melee for (?P<damage>[\d]+) point(s)? of damage"
@@ -164,7 +166,7 @@ class DamageParser:
                     target_name=match.group("target_name"),
                     attacker_name="You",
                     damage_done=int(match.group("damage")),
-                    damage_type="non-melee",
+                    damage_type=NON_MELEE_DAMAGE_TYPE,
                     level_guess=None,
                 )
             )
