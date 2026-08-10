@@ -6,7 +6,11 @@ EQ directory is polled once, by the dump library's watcher.
 
 from __future__ import annotations
 
-from nparseplus.core.inventory import InventoryLocation, parse_inventory_text
+from nparseplus.core.inventory import (
+    InventoryLocation,
+    canonical_location_name,
+    parse_inventory_text,
+)
 
 DUMP = (
     "Location\tName\tID\tCount\tSlots\n"
@@ -42,6 +46,24 @@ def test_parse_inventory_text() -> None:
     assert items[1].location == int(InventoryLocation.General1Slot1)  # dash stripped
     assert items[2].location == int(InventoryLocation.Unknown)
     assert items[3].slots == 8
+
+
+def test_parse_keeps_the_clients_own_location_spelling() -> None:
+    items = parse_inventory_text(DUMP)
+    assert items is not None
+    # The ordinal is the enum's; the label is the file's, dash and all.
+    assert items[1].location_label == "General1-Slot1"
+    # A location the C# enum never had still says what it was.
+    assert items[2].location == int(InventoryLocation.Unknown)
+    assert items[2].location_label == "Mystery-Spot"
+
+
+def test_canonical_location_name_restores_the_dash() -> None:
+    assert canonical_location_name("General1Slot1") == "General1-Slot1"
+    assert canonical_location_name("Bank16Slot10") == "Bank16-Slot10"
+    assert canonical_location_name("General1-Slot1") == "General1-Slot1"
+    assert canonical_location_name("Charm") == "Charm"
+    assert canonical_location_name("Unknown") == "Unknown"
 
 
 def test_parse_rejects_non_inventory_text() -> None:

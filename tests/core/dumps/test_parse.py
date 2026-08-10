@@ -17,6 +17,8 @@ from nparseplus.core.dumps import (
     render_dump_text,
     sniff_kind,
 )
+from nparseplus.core.dumps.models import InventoryEntry
+from nparseplus.core.inventory import InventoryLocation
 
 from .conftest import INVENTORY_TEXT, SPELLBOOK_TEXT, T0, write_dump
 
@@ -61,8 +63,19 @@ def test_inventory_entries_drop_empty_slots() -> None:
     assert "Empty" not in [entry.name for entry in entries]
     assert entries[0].name == "Treant Tear"
     assert entries[0].location_name == "Ear"
-    # The dash form the client writes resolves to the enum name.
-    assert entries[-1].location_name == "General1Slot1"
+    # The client's own spelling is kept — the enum drops the dash because a
+    # dash cannot be an identifier, and p99planner needs the dashed form.
+    assert entries[-1].location_name == "General1-Slot1"
+    assert entries[-1].location == int(InventoryLocation.General1Slot1)
+
+
+def test_inventory_entries_keep_a_location_the_enum_never_had() -> None:
+    text = INVENTORY_TEXT + "SharedBank1-Slot3\tBone Chips\t13073\t20\t0\n"
+    entries = inventory_entries(text)
+    assert entries is not None
+    # Unknown ordinal, but the label still says where the item was.
+    assert entries[-1].location == int(InventoryLocation.Unknown)
+    assert entries[-1].location_name == "SharedBank1-Slot3"
 
 
 def test_dump_target_from_filename() -> None:
@@ -185,3 +198,25 @@ def test_render_round_trips_through_the_parsers() -> None:
         assert again is not None
         assert again.names() == dump.names()
         assert content_digest(again) == content_digest(dump)
+
+
+def test_render_writes_bag_slots_the_way_the_client_does() -> None:
+    dump = build_dump(INVENTORY_TEXT, character="A", kind=DumpKind.INVENTORY, captured_at=T0)
+    assert dump is not None
+    assert "General1-Slot1\tRusty Sword" in render_dump_text(dump)
+
+
+def test_render_repairs_a_snapshot_stored_before_the_dash_was_kept() -> None:
+    # Snapshots written by earlier versions hold the enum's dashless spelling;
+    # exporting one has to produce a file the client could have written.
+    dump = build_dump(INVENTORY_TEXT, character="A", kind=DumpKind.INVENTORY, captured_at=T0)
+    assert dump is not None
+    dump.items = [
+        InventoryEntry(
+            location=int(InventoryLocation.General1Slot1),
+            location_name="General1Slot1",
+            name="Rusty Sword",
+            item_id=5678,
+        )
+    ]
+    assert "General1-Slot1\tRusty Sword" in render_dump_text(dump)
