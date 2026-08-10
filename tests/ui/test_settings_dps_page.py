@@ -1,0 +1,115 @@
+"""Settings > DPS Meter — the page, its apply path, and the live seam."""
+
+import pytest
+
+from nparseplus.config.settings import Settings
+from nparseplus.core.dps import FightTracker
+from nparseplus.ui.settingswindow import UnifiedSettingsWindow
+
+pytestmark = pytest.mark.qt
+
+
+def _legacy() -> dict:
+    return {
+        "maps": {"line_width": 1, "grid_line_width": 1, "opacity": 80},
+        "discord": {"opacity": 80, "bg_opacity": 25},
+    }
+
+
+def _window(qtbot, settings: Settings, **kwargs) -> UnifiedSettingsWindow:
+    window = UnifiedSettingsWindow(
+        settings,
+        on_save=lambda: None,
+        legacy_config=_legacy(),
+        **kwargs,
+    )
+    qtbot.addWidget(window)
+    return window
+
+
+def test_the_page_is_in_the_sidebar(qtbot) -> None:
+    window = _window(qtbot, Settings())
+    titles = [window._sidebar.item(i).text() for i in range(window._sidebar.count())]
+    assert "DPS Meter" in titles
+
+
+def test_the_page_shows_the_current_settings(qtbot) -> None:
+    settings = Settings()
+    settings.dps.melee_only = False
+    settings.dps.fight_retention_seconds = 90.0
+    settings.dps.trailing_window_seconds = 6.0
+    settings.dps.session_min_fight_seconds = 5.0
+    window = _window(qtbot, settings)
+    assert window._dps_melee_only.isChecked() is False
+    assert window._dps_retention.value() == 90.0
+    assert window._dps_window.value() == 6.0
+    assert window._dps_session_min.value() == 5.0
+
+
+def test_melee_only_is_checked_by_default(qtbot) -> None:
+    assert _window(qtbot, Settings())._dps_melee_only.isChecked() is True
+
+
+def test_apply_writes_every_knob_back(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    window._dps_melee_only.setChecked(False)
+    window._dps_retention.setValue(120.0)
+    window._dps_window.setValue(8.0)
+    window._dps_session_min.setValue(0.0)
+    window.apply()
+    assert settings.dps.melee_only is False
+    assert settings.dps.fight_retention_seconds == 120.0
+    assert settings.dps.trailing_window_seconds == 8.0
+    assert settings.dps.session_min_fight_seconds == 0.0
+
+
+def test_apply_fires_the_live_callback(qtbot) -> None:
+    calls: list[int] = []
+    window = _window(qtbot, Settings(), on_dps_changed=lambda: calls.append(1))
+    window.apply()
+    assert calls == [1]
+
+
+def test_apply_reaches_a_running_tracker_end_to_end(qtbot) -> None:
+    """The seam the app wires: Apply -> Backend.apply_dps_settings -> tracker.
+
+    Stands in for composition's wiring so the page cannot drift from the
+    thing it configures without a test noticing.
+    """
+    settings = Settings()
+    tracker = FightTracker(
+        melee_only=settings.dps.melee_only,
+        fight_retention_s=settings.dps.fight_retention_seconds,
+        trailing_window_s=settings.dps.trailing_window_seconds,
+        session_min_fight_s=settings.dps.session_min_fight_seconds,
+    )
+
+    def push() -> None:
+        tracker.configure(
+            melee_only=settings.dps.melee_only,
+            fight_retention_s=settings.dps.fight_retention_seconds,
+            trailing_window_s=settings.dps.trailing_window_seconds,
+            session_min_fight_s=settings.dps.session_min_fight_seconds,
+        )
+
+    window = _window(qtbot, settings, on_dps_changed=push)
+    assert tracker.melee_only is True
+    window._dps_melee_only.setChecked(False)
+    window._dps_retention.setValue(300.0)
+    window._dps_window.setValue(4.0)
+    window.apply()
+    assert tracker.melee_only is False
+    assert tracker.fight_retention_s == 300.0
+    assert tracker.trailing_window_s == 4.0
+
+
+def test_the_page_does_not_widen_the_window(qtbot) -> None:
+    # The settings window's floor is its widest page; a new page must not
+    # raise it (see MIN_SIZE and _scrollable).
+    window = _window(qtbot, Settings())
+    dps_index = next(
+        i for i in range(window._sidebar.count()) if window._sidebar.item(i).text() == "DPS Meter"
+    )
+    page = window._stack.widget(dps_index)
+    assert page.minimumSizeHint().width() <= window.minimumSizeHint().width()

@@ -221,6 +221,36 @@ class SpellWindowSettings(BaseModel):
     post_expiry_flash_spells: list[str] = Field(default_factory=list)
 
 
+class DpsSettings(BaseModel):
+    """The DPS meter's counting rules (``core.dps.FightTracker``).
+
+    Every field here is a knob the tracker reads live — the settings page
+    calls ``FightTracker.configure()`` on Apply, so none of these need a
+    restart. The defaults reproduce the shipped behavior except for
+    ``melee_only``, which is the one deliberate change of default.
+    """
+
+    # Count weapon and fist damage only, ignoring "was hit by non-melee"
+    # (spells, procs, DoTs). Default ON because the non-melee line names no
+    # attacker, so the parser has to credit *you* for every one it sees —
+    # including other players' nukes — which inflates your row and invents
+    # damage on mobs you never swung at. Off counts everything the parser
+    # attributes, that caveat included.
+    melee_only: bool = True
+    # Seconds a target's group stays on screen after the last hit against it
+    # from ANY attacker. 0 means never retire (zone/camp/clear only).
+    # Attackers are never dropped individually — see core.dps.
+    fight_retention_seconds: float = Field(default=40.0, ge=0.0, le=3600.0)
+    # The trailing window the per-row "dps" number is averaged over. Always
+    # divided by the full window, so short fights read low; shrink it for a
+    # more responsive number, widen it for a steadier one.
+    trailing_window_seconds: float = Field(default=12.0, gt=0.0, le=300.0)
+    # A fight must run longer than this before your row feeds the session
+    # Best/Now/Last footer (EQTool's TotalSeconds > 20). Most trash dies
+    # faster, which is why that footer often sits at zero.
+    session_min_fight_seconds: float = Field(default=20.0, ge=0.0, le=600.0)
+
+
 class DumpsSettings(BaseModel):
     """Character dump library (``/outputfile`` inventory + spellbook).
 
@@ -508,6 +538,7 @@ class Settings(BaseModel):
     maps: MapSettings = Field(default_factory=MapSettings)
     spellwindow: SpellWindowSettings = Field(default_factory=SpellWindowSettings)
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
+    dps: DpsSettings = Field(default_factory=DpsSettings)
     dumps: DumpsSettings = Field(default_factory=DumpsSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
     plugins: PluginsSettings = Field(default_factory=PluginsSettings)

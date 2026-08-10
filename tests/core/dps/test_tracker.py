@@ -88,16 +88,44 @@ def test_misses_keep_the_fight_alive_without_damage(
     assert row.highest_hit == 20
 
 
-def test_tick_prunes_rows_stale_for_over_40_seconds(
+def test_an_attacker_is_never_pruned_while_the_target_is_still_taking_damage(
+    tracker: FightTracker, hit: Callable[..., DamageEvent], t0: datetime
+) -> None:
+    # You open the fight and stop; Vebanab keeps swinging. Your row must stay
+    # listed — the old per-entity prune dropped it at t+40 mid-fight.
+    tracker.add_damage(hit("You", "a gnoll", 10))
+    for offset in range(10, 300, 10):
+        tracker.add_damage(hit("Vebanab", "a gnoll", 10, offset_s=offset))
+        tracker.tick(t0 + timedelta(seconds=offset))
+    rows = tracker.snapshot(t0 + timedelta(seconds=290))
+    assert sorted(r.attacker_name for r in rows) == ["Vebanab", "You"]
+    assert next(r for r in rows if r.attacker_name == "You").total_damage == 10
+
+
+def test_tick_retires_the_whole_fight_once_the_target_stops_taking_damage(
     tracker: FightTracker, hit: Callable[..., DamageEvent], t0: datetime
 ) -> None:
     tracker.add_damage(hit("You", "a gnoll", 10))
     tracker.add_damage(hit("Vebanab", "a gnoll", 10, offset_s=30))
-    tracker.tick(t0 + timedelta(seconds=45))
-    # Your row (last damage t+0) aged out; Vebanab's (t+30) survived.
-    rows = tracker.snapshot(t0 + timedelta(seconds=45))
-    assert [r.attacker_name for r in rows] == ["Vebanab"]
-    tracker.tick(t0 + timedelta(seconds=90))
+    # 40s after the group's last hit (t+30) both rows are still up...
+    tracker.tick(t0 + timedelta(seconds=70))
+    assert sorted(r.attacker_name for r in tracker.snapshot(t0 + timedelta(seconds=70))) == [
+        "Vebanab",
+        "You",
+    ]
+    # ...and one second later the group goes as a unit, never row by row.
+    tracker.tick(t0 + timedelta(seconds=71))
+    assert tracker.fights == []
+
+
+def test_a_dead_fight_still_retires(
+    tracker: FightTracker, hit: Callable[..., DamageEvent], t0: datetime
+) -> None:
+    tracker.add_damage(hit("You", "a gnoll", 10))
+    tracker.end_fight("a gnoll", t0 + timedelta(seconds=5))
+    tracker.tick(t0 + timedelta(seconds=40))
+    assert len(tracker.fights) == 1
+    tracker.tick(t0 + timedelta(seconds=41))
     assert tracker.fights == []
 
 
