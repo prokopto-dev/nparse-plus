@@ -585,8 +585,12 @@ grew that floor with every point of `general.font_size`. Two halves fix it
 and both are needed: `_scrollable()` puts every page in a `QScrollArea`, and
 `_let_rows_wrap()` sets `WrapLongRows` on **every** `QFormLayout` in the
 window — swept in one place, after construction, so the forms nested inside
-group boxes (the widest rows here) and any page a plugin contributes cannot
-forget it. Without the wrap a narrow window just scrolls sideways past its
+group boxes (the widest rows here) cannot forget it. **`extra_pages` go
+through the wrapper too**: the widest page in the app is a contributed one
+(the Plugins manager's table, ~1800px), so leaving them out would have left
+the window pinned for exactly the users who enabled plugins. The wrapper
+goes in the stack while `_extra_pages` keeps the builder's own widget, so
+`spec.apply` never sees a `QScrollArea` it didn't make. Without the wrap a narrow window just scrolls sideways past its
 own labels. `MIN_SIZE` is the stated floor; the invariant that keeps it real
 — and what the test asserts — is that Qt's own layout minimum stays *under*
 it, because the larger of the two is what wins.

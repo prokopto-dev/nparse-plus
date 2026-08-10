@@ -1058,15 +1058,53 @@ def test_a_bigger_font_never_lets_a_PAGE_set_the_floor(qtbot) -> None:
     assert (window.minimumWidth(), window.minimumHeight()) == MIN_SIZE
 
 
-def test_every_built_in_page_scrolls(qtbot) -> None:
+def test_every_page_scrolls_including_contributed_ones(qtbot) -> None:
     """Content that no longer fits has to stay reachable."""
-    window = _window(qtbot)
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    window = _window(
+        qtbot,
+        extra_pages=[SettingsPageSpec("My Plugin", lambda parent: QLabel("page", parent))],
+    )
 
     for index in range(window._stack.count()):
         page = window._stack.widget(index)
         name = window._sidebar.item(index).text()
         assert isinstance(page, QScrollArea), f"{name} page does not scroll"
         assert page.widgetResizable(), f"{name} page does not fill its viewport"
+
+
+def test_a_contributed_page_cannot_pin_the_window_open(qtbot) -> None:
+    """The window's minimum size is not a plugin's to raise.
+
+    Not hypothetical: the widest page in the app is a contributed one — the
+    Plugins manager's table of installed add-ons — so leaving ``extra_pages``
+    out of the scroll wrapper would have left the window pinned wide for
+    exactly the users who enabled plugins. See
+    ``tests/ui/test_pluginmanager.py`` for the same check against the real
+    page rather than this stand-in.
+    """
+    from nparseplus.ui.settingswindow import SettingsPageSpec
+
+    applied: list[object] = []
+
+    def build(parent):
+        page = QLabel("a very wide plugin page", parent)
+        page.setMinimumWidth(1800)
+        return page
+
+    window = _window(
+        qtbot,
+        extra_pages=[SettingsPageSpec("Greedy", build, applied.append)],
+    )
+
+    assert window._stack.minimumSizeHint().width() <= MIN_SIZE[0] - window._sidebar.width()
+
+    # ...and the wrapper stays invisible to the contributor: apply() hands
+    # back the widget the builder made, not the QScrollArea around it.
+    window.apply()
+    assert [type(page) for page in applied] == [QLabel]
+    assert applied[0].minimumWidth() == 1800  # untouched, just scrolled
 
 
 def test_every_form_row_wraps_rather_than_widening_the_window(qtbot) -> None:

@@ -342,7 +342,16 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                 logger.exception("settings page %r failed to build", spec.title)
                 page = QLabel("This page failed to build — see nparseplus.log.", self)
             self._sidebar.addItem(spec.title)
-            self._stack.addWidget(page)
+            # Scrolled like the built-in pages: the window's minimum size is
+            # not a contributed page's to raise, and the widest page in the
+            # app is a contributed one — the Plugins manager's table of
+            # installed add-ons wants ~1800px, which would pin the window
+            # wide open for exactly the users who enabled plugins.
+            #
+            # The wrapper goes in the stack; `_extra_pages` keeps what the
+            # builder returned, so ``spec.apply`` still gets the widget it
+            # made rather than a QScrollArea it has never heard of.
+            self._stack.addWidget(self._scrollable(page))
             self._extra_pages.append((spec, page))
         self._sidebar.setCurrentRow(0)
 
