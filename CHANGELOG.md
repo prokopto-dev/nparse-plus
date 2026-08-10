@@ -6,6 +6,15 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.3.2 (2026-08-10)
+
+### Bug Fixes
+
+- **dumps**: Keep the client's dash in inventory bag-slot locations
+  ([#66](https://github.com/prokopto-dev/nparse-plus/pull/66),
+  [`d33ae0e`](https://github.com/prokopto-dev/nparse-plus/commit/d33ae0e47174e7834b6eb5bbe1f446c54eec9aae))
+
+
 ## v2.3.1 (2026-08-10)
 
 ### Bug Fixes
