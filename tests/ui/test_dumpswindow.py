@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from PySide6.QtGui import QGuiApplication
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dumps import DumpKind, DumpLibrary, build_dump
@@ -31,13 +30,24 @@ class Env:
         self.settings = Settings()
         self.library = DumpLibrary(tmp_path / "library")
         self.saves = 0
+        #: What copy_review_link would have put on the clipboard. Injected so
+        #: no test touches the machine's real one — see system_clipboard_copy.
+        self.clipboard: list[str] = []
         self.window = CharacterDumpsWindow(
-            self.settings, self.library, on_save=self._save, watcher=None
+            self.settings,
+            self.library,
+            on_save=self._save,
+            watcher=None,
+            copy_to_clipboard=self._copy,
         )
         self.window.confirm_destructive = False
 
     def _save(self) -> None:
         self.saves += 1
+
+    def _copy(self, text: str) -> bool:
+        self.clipboard.append(text)
+        return True
 
     def store(self, character: str, kind: DumpKind, text: str, when: datetime) -> None:
         dump = build_dump(text, character=character, kind=kind, captured_at=when)
@@ -141,6 +151,53 @@ def test_switching_kinds_drops_the_other_kinds_columns(env: Env) -> None:
     assert env.window._entries.columnCount() == 4
 
 
+def test_the_poll_leaves_an_unchanged_tree_alone(env: Env) -> None:
+    """The 2s refresh used to rebuild unconditionally, snapping expanded
+    history shut and fighting the selection every two seconds."""
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK_PLUS, T0 + timedelta(days=1))
+    env.window.refresh()
+    kind_item = env.window._tree.topLevelItem(0).child(0)
+    kind_item.setExpanded(True)
+    env.window._filter.setText("wolf")
+
+    env.window.show()
+    try:
+        env.window._on_timer()
+    finally:
+        env.window.hide()
+
+    assert kind_item is env.window._tree.topLevelItem(0).child(0)  # not rebuilt
+    assert kind_item.isExpanded()
+    assert env.window._filter.text() == "wolf"
+
+
+def test_the_poll_rebuilds_when_the_library_changes(env: Env) -> None:
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.window.refresh()
+    assert _top_level(env.window) == ["A"]
+
+    env.store("B", DumpKind.INVENTORY, INVENTORY, T0)
+    env.window.show()
+    try:
+        env.window._on_timer()
+    finally:
+        env.window.hide()
+    assert _top_level(env.window) == ["A", "B"]
+
+
+def test_expansion_survives_a_rebuild(env: Env) -> None:
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK, T0)
+    env.store("A", DumpKind.SPELLBOOK, SPELLBOOK_PLUS, T0 + timedelta(days=1))
+    env.window.refresh()
+    env.window._tree.topLevelItem(0).child(0).setExpanded(True)
+
+    env.store("B", DumpKind.INVENTORY, INVENTORY, T0)
+    env.window.refresh()  # a real rebuild, not a skipped poll
+
+    assert env.window._tree.topLevelItem(0).child(0).isExpanded()
+
+
 def test_filter_narrows_the_entries(env: Env) -> None:
     env.store("A", DumpKind.SPELLBOOK, SPELLBOOK_PLUS, T0)
     env.window.refresh()
@@ -190,6 +247,58 @@ def test_import_file_accepts_a_dump_and_refuses_anything_else(env: Env, tmp_path
     assert not env.window.import_file(bad)
 
 
+def test_import_file_accepts_a_dump_whose_name_says_nothing(env: Env, tmp_path: Path) -> None:
+    """A backup or an export off another machine is still a dump. The scan
+    refuses these on purpose; a file the user pointed at is different."""
+    backup = tmp_path / "bankmule-backup.txt"
+    backup.write_text(INVENTORY, encoding="utf-8")
+
+    assert env.window.import_file(backup, "Bankmule")
+    assert env.library.characters() == ["Bankmule"]
+    stored = env.library.load_latest("Bankmule", DumpKind.INVENTORY)
+    assert stored is not None and stored.entry_count == 2
+
+
+def test_the_prompt_asks_who_a_nameless_dump_belongs_to(qtbot, tmp_path: Path) -> None:
+    """The character is the library's key and what p99planner creates its
+    planner character from — too important to guess silently."""
+    asked: list[str] = []
+    env = Env(tmp_path)
+    env.window._ask_character = lambda suggestion: (asked.append(suggestion), "Bankmule")[1]
+    qtbot.addWidget(env.window)
+
+    backup = tmp_path / "bankmule-backup.txt"
+    backup.write_text(INVENTORY, encoding="utf-8")
+    env.window._import_chosen_file(backup)
+
+    assert asked == ["bankmule"]  # the guess, offered for correction
+    assert env.library.characters() == ["Bankmule"]
+
+
+def test_declining_the_character_prompt_imports_nothing(qtbot, tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    env.window._ask_character = lambda _suggestion: ""  # cancelled
+    qtbot.addWidget(env.window)
+
+    backup = tmp_path / "bankmule-backup.txt"
+    backup.write_text(INVENTORY, encoding="utf-8")
+    env.window._import_chosen_file(backup)
+
+    assert env.library.characters() == []
+
+
+def test_a_properly_named_dump_is_never_asked_about(qtbot, tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    env.window._ask_character = lambda _s: pytest.fail("should not prompt")
+    qtbot.addWidget(env.window)
+
+    named = tmp_path / "Beeta-Inventory.txt"
+    named.write_text(INVENTORY, encoding="utf-8")
+    env.window._import_chosen_file(named)
+
+    assert env.library.characters() == ["Beeta"]
+
+
 def test_import_file_hands_off_to_the_watcher_when_there_is_one(qtbot, tmp_path: Path) -> None:
     """The window must not import on the GUI thread — the watcher publishes."""
 
@@ -201,8 +310,8 @@ def test_import_file_hands_off_to_the_watcher_when_there_is_one(qtbot, tmp_path:
         def request_scan(self) -> None:
             self.scans += 1
 
-        def request_import(self, path: Path) -> None:
-            self.files.append(Path(path))
+        def request_import(self, path: Path, character: str = "") -> None:
+            self.files.append((Path(path), character))
 
         def status_text(self) -> str:
             return "fake status"
@@ -216,7 +325,7 @@ def test_import_file_hands_off_to_the_watcher_when_there_is_one(qtbot, tmp_path:
     path = tmp_path / "Beeta-Spellbook.txt"
     path.write_text(SPELLBOOK, encoding="utf-8")
     assert window.import_file(path)
-    assert watcher.files == [path]
+    assert watcher.files == [(path, "")]
     assert library.characters() == []  # nothing written here; the tick does it
 
     window.import_now()
@@ -396,7 +505,7 @@ def test_copy_review_link_is_the_no_browser_escape_hatch(qtbot, tmp_path: Path) 
     uploader.open_succeeds = False  # the browser refuses, as on a bare desktop
 
     assert env.window.copy_review_link() is True
-    assert QGuiApplication.clipboard().text() == uploader.url
+    assert env.clipboard == [uploader.url]
     # The status confirms the copy and warns, without echoing the link.
     status = env.window._status.text()
     assert "copied" in status
@@ -406,9 +515,18 @@ def test_copy_review_link_is_the_no_browser_escape_hatch(qtbot, tmp_path: Path) 
 
 def test_copy_review_link_does_nothing_without_a_claim(qtbot, tmp_path: Path) -> None:
     env, _uploader = _with_uploader(qtbot, tmp_path)
-    QGuiApplication.clipboard().setText("untouched")
     assert env.window.copy_review_link() is False
-    assert QGuiApplication.clipboard().text() == "untouched"
+    assert env.clipboard == []
+
+
+def test_copy_review_link_reports_a_machine_with_no_clipboard(qtbot, tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    env.window._copy_to_clipboard = lambda _text: False
+    uploader = FakeUploader(pending="1 export waiting for approval at p99planner.com.")
+    env.window.uploader = uploader
+    qtbot.addWidget(env.window)
+
+    assert env.window.copy_review_link() is False
 
 
 def test_upload_without_an_uploader_is_reported_not_crashed(env: Env) -> None:

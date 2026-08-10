@@ -170,20 +170,27 @@ def build_dump(
 
 
 def read_dump_file(
-    path: Path, *, character: str = "", kind: DumpKind | None = None
+    path: Path,
+    *,
+    character: str = "",
+    kind: DumpKind | None = None,
+    sniff: bool = False,
 ) -> CharacterDump | None:
     """Read one file into a :class:`CharacterDump`; None if it isn't a dump.
 
-    With no overrides this is the watcher's path: the filename decides who
-    and what, and a name that says nothing costs one ``stat`` and no read.
-    Passing ``character``/``kind`` is the import-a-file-by-hand path, which
-    falls back to sniffing the content.
+    With no arguments this is the watcher's path: the filename decides who
+    and what, and a name that says nothing costs one ``stat`` and no read —
+    the EQ directory holds hundreds of unrelated ``.txt`` files and reading
+    them all every poll would be silly.
+
+    ``sniff=True`` is the import-a-file-by-hand path: the user has already
+    said this particular file is a dump, so look inside it even when the name
+    gives nothing away (a backup saved as ``bankmule-backup.txt``, an export
+    off another machine). ``character``/``kind`` override whatever is found.
     """
     path = Path(path)
     target = dump_target(path)
-    # Only sniff content when the caller has already decided this file is
-    # worth opening; the EQ directory is full of unrelated .txt files.
-    if target is None and kind is None and not character:
+    if target is None and kind is None and not character and not sniff:
         return None
     try:
         stat = path.stat()

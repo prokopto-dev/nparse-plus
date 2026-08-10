@@ -75,7 +75,14 @@ class P99PlannerClient:
         self._owns_client = client is None
         self._client = client or httpx.Client(
             timeout=TIMEOUT,
-            follow_redirects=True,
+            # NOT follow_redirects. The claim token rides in the URL path and
+            # there is no auth, so a redirect is a hop that could carry the
+            # capability somewhere else — an http:// target would put it, and
+            # the export, on the wire in clear. The endpoint is a fixed host
+            # that does not redirect; if it ever starts, failing loudly is the
+            # right answer, not following along. (Same instinct as the plugin
+            # installer re-asserting https on every hop.)
+            follow_redirects=False,
             headers={"Accept": "application/json", "User-Agent": "nparseplus"},
         )
         self._sleep = sleep
@@ -154,10 +161,18 @@ class P99PlannerClient:
         if not isinstance(data, dict) or not data.get("url") or not data.get("token"):
             logger.warning("p99planner %s reply was missing url/token", what)
             return UploadOutcome(error="p99planner sent an unreadable reply")
+        url = str(data["url"])
+        if not url.startswith(f"{self._base}/"):
+            # This URL is handed to a browser. Anything the server returns
+            # that is not on the host we asked does not get opened — a
+            # file://, javascript: or third-party link here would be a nasty
+            # way to turn a dump upload into something else.
+            logger.warning("p99planner %s returned a claim url off the expected host", what)
+            return UploadOutcome(error="p99planner returned an unexpected review link")
         return UploadOutcome(
             link=ClaimLink(
                 token=str(data["token"]),
-                url=str(data["url"]),
+                url=url,
                 expires=_parse_expires(data.get("expires")),
                 files=int(data.get("files") or 0),
             )

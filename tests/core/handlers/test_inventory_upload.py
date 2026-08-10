@@ -322,6 +322,26 @@ def test_a_pending_claim_is_describable_without_the_url(planner_env: Env) -> Non
     assert "token1" not in summary
 
 
+def test_a_browser_that_returns_false_counts_as_failure(tmp_path: Path) -> None:
+    """webbrowser.open RETURNS False when it has nowhere to go — it does not
+    raise. That is the normal headless outcome, so it is the case the
+    recovery hint most needs to cover."""
+    env = Env(tmp_path, target="p99planner", open_browser=lambda _url: False)
+    env.handler.upload_now([env.store("Xantik", DUMP, T0)])
+
+    assert len(env.planner.staged) == 1  # staged fine; only the opening failed
+    assert "Copy review link" in env.handler.claim_summary()
+    assert env.handler.open_claim() is False
+
+
+def test_an_opener_returning_none_is_not_a_failure(planner_env: Env) -> None:
+    """The injected doubles (and plenty of real callables) return None. Only
+    an explicit False means "no browser took it"."""
+    planner_env.handler.upload_now([planner_env.store("Xantik", DUMP, T0)])
+    assert "Copy review link" not in planner_env.handler.claim_summary()
+    assert planner_env.handler.open_claim() is True
+
+
 def test_a_browser_that_will_not_open_leaves_a_visible_way_out(tmp_path: Path) -> None:
     """The one-shot failure message is replaced by the pending line within a
     second, so the recovery hint has to live on the pending line itself."""

@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -53,6 +54,7 @@ from nparseplus.core.dumps import (
     DumpWatcher,
     SnapshotRef,
     diff_dumps,
+    dump_target,
     read_dump_file,
     render_dump_text,
 )
@@ -77,6 +79,23 @@ _INVENTORY_HEADERS = ("Location", "Item", "Count", "ID")
 _SPELLBOOK_HEADERS = ("Level", "Spell")
 
 
+def system_clipboard_copy(text: str) -> bool:
+    """Put ``text`` on the system clipboard. False if there isn't one.
+
+    Injected into the window rather than called inline so tests never touch
+    the real clipboard — on Windows that goes through OLE and hands data to
+    the OS, which outlives the test and crashed a CI run when the GC later
+    reaped it under the offscreen platform. Same reason ``open_browser`` is
+    injected into the upload handler: global machine state does not belong in
+    a unit test.
+    """
+    clipboard = QGuiApplication.clipboard()
+    if clipboard is None:  # pragma: no cover - no platform clipboard
+        return False
+    clipboard.setText(text)
+    return True
+
+
 class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     """The dump library's browser.
 
@@ -93,6 +112,8 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         on_save: Callable[[], None],
         watcher: DumpWatcher | None = None,
         uploader: InventoryUploadHandler | None = None,
+        copy_to_clipboard: Callable[[str], bool] = system_clipboard_copy,
+        ask_character: Callable[[str], str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -109,9 +130,13 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self.library = library
         self.watcher = watcher
         self.uploader = uploader
+        self._copy_to_clipboard = copy_to_clipboard
+        self._ask_character = ask_character or self._default_ask_character
         self._current: SnapshotRef | None = None
         self._dump: CharacterDump | None = None
         self._loading = False
+        #: The library state the tree was last built from (see _on_timer).
+        self._signature: tuple[str, ...] = ()
         #: Set False in tests to skip confirmation dialogs.
         self.confirm_destructive = True
 
@@ -300,9 +325,25 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
 
     # -- the tree ---------------------------------------------------------
 
+    def library_signature(self) -> tuple[str, ...]:
+        """Everything the tree draws, as a comparable value.
+
+        Cheap: ``snapshots()`` is a directory scan that reads no files. The
+        poll uses this to leave the tree completely alone when nothing has
+        changed, which is what stops a rebuild every two seconds.
+        """
+        return tuple(
+            f"{character}/{kind}/{ref.path.name}"
+            for character in self.library.characters()
+            for kind in DumpKind
+            for ref in self.library.snapshots(character, kind)
+        )
+
     def refresh(self) -> None:
-        """Rebuild the tree from the library, keeping the selection."""
+        """Rebuild the tree from the library, keeping selection and expansion."""
         wanted = self._current
+        expanded = self._expanded_keys()
+        self._signature = self.library_signature()
         self._loading = True
         try:
             self._tree.clear()
@@ -328,11 +369,32 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                         snapshot_item = QTreeWidgetItem(["", ref.label])
                         snapshot_item.setData(0, _ROLE_REF, ref.model_dump(mode="json"))
                         kind_item.addChild(snapshot_item)
-                character_item.setExpanded(True)
+                    # An expanded history stays expanded across a rebuild —
+                    # otherwise looking at one snapshot's siblings was a race
+                    # against the next poll.
+                    kind_item.setExpanded(f"{character}/{kind}" in expanded)
+                character_item.setExpanded(character in expanded or not expanded)
         finally:
             self._loading = False
         self._restore_selection(wanted)
         self._render_status()
+
+    def _expanded_keys(self) -> set[str]:
+        """Which character and character/kind rows are currently open."""
+        keys: set[str] = set()
+        for index in range(self._tree.topLevelItemCount()):
+            character_item = self._tree.topLevelItem(index)
+            if character_item is None:
+                continue
+            character = str(character_item.data(0, _ROLE_CHARACTER) or "")
+            if character_item.isExpanded():
+                keys.add(character)
+            for child_index in range(character_item.childCount()):
+                kind_item = character_item.child(child_index)
+                kind = kind_item.data(0, _ROLE_KIND)
+                if kind and kind_item.isExpanded():
+                    keys.add(f"{character}/{kind}")
+        return keys
 
     def _restore_selection(self, wanted: SnapshotRef | None) -> None:
         if wanted is not None and self.select_snapshot(wanted):
@@ -474,8 +536,21 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._status.setText(f"{scan}  {upload}".rstrip() if upload else scan)
 
     def _on_timer(self) -> None:
-        if self.isVisible():
+        """Poll for library changes without disturbing what the user is doing.
+
+        Rebuilding unconditionally collapsed the tree, dropped the entries
+        scroll position and fought the selection every two seconds. The tree
+        is only rebuilt when the library actually changed; otherwise just the
+        status line ticks (it carries scan progress and the pending-handoff
+        line, which do move on their own).
+        """
+        if not self.isVisible():
+            return
+        signature = self.library_signature()
+        if signature != self._signature:
             self.refresh()
+        else:
+            self._render_status()
 
     # -- actions ----------------------------------------------------------
 
@@ -485,18 +560,24 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             self.watcher.request_scan()
             self._status.setText("Scanning the EverQuest directory…")
             # The driver tick does the work; the refresh timer shows it.
-            QTimer.singleShot(REFRESH_MS, self.refresh)
+            QTimer.singleShot(REFRESH_MS, self, self.refresh)
             return
         self._render_status()
 
-    def import_file(self, path: Path) -> bool:
-        """Import one hand-picked file. False if it is not a dump we read."""
-        dump = read_dump_file(Path(path))
+    def import_file(self, path: Path, character: str = "") -> bool:
+        """Import one hand-picked file. False if it is not a dump we read.
+
+        ``sniff=True``: the user pointed at this file, so a name that says
+        nothing (``bankmule-backup.txt``, an export off another machine) is
+        no reason to refuse it. The scan never sniffs — see ``core.dumps``.
+        """
+        path = Path(path)
+        dump = read_dump_file(path, character=character, sniff=True)
         if dump is None:
             return False
         if self.watcher is not None:
-            self.watcher.request_import(Path(path))
-            QTimer.singleShot(REFRESH_MS, self.refresh)
+            self.watcher.request_import(path, character)
+            QTimer.singleShot(REFRESH_MS, self, self.refresh)
             return True
         # No watcher (tests): store directly. Nothing is published, which is
         # the honest outcome — there is no driver thread to publish from.
@@ -508,15 +589,43 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         path, _ = QFileDialog.getOpenFileName(
             self, "Import a dump file", "", "Dump files (*.txt);;All files (*)"
         )
-        if not path:
-            return
-        if not self.import_file(Path(path)):
+        if path:
+            self._import_chosen_file(Path(path))
+
+    def _import_chosen_file(self, chosen: Path) -> bool:
+        """Everything Import file… does once a file has been picked.
+
+        Split from the dialog so it can be tested without one.
+        """
+        dump = read_dump_file(chosen, sniff=True)
+        if dump is None:
             QMessageBox.warning(
                 self,
                 "Not a dump",
                 "That file is not an /outputfile inventory or spellbook dump.\n\n"
                 "In game: /outputfile inventory — or /outputfile spellbook.",
             )
+            return False
+
+        character = ""
+        if dump_target(chosen) is None:
+            # The filename told us nothing, so the character was guessed from
+            # the stem. Confirm it rather than import under a wrong name: it
+            # is the library's key, and p99planner derives the planner
+            # character from it — a bad guess creates a duplicate there.
+            character = self._ask_character(dump.character)
+            if not character:
+                return False
+        return self.import_file(chosen, character)
+
+    def _default_ask_character(self, suggestion: str) -> str:
+        name, ok = QInputDialog.getText(
+            self,
+            "Which character?",
+            "This file's name doesn't say who it belongs to.\nCharacter name:",
+            text=suggestion,
+        )
+        return name.strip() if ok else ""
 
     # -- upload ------------------------------------------------------------
 
@@ -581,10 +690,8 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         url = self.uploader.claim_url()
         if not url:
             return False
-        clipboard = QGuiApplication.clipboard()
-        if clipboard is None:  # pragma: no cover - defensive
+        if not self._copy_to_clipboard(url):
             return False
-        clipboard.setText(url)
         self._status.setText(
             "Review link copied — paste it into a browser to approve the import. "
             "Treat it as private; anyone with it can read those exports."
@@ -616,7 +723,7 @@ class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._status.setText(message)
         # The send finishes on the net worker; let its outcome land in the
         # status line without making the user click anything.
-        QTimer.singleShot(REFRESH_MS, self._render_status)
+        QTimer.singleShot(REFRESH_MS, self, self._render_status)
         return message
 
     def delete_selected(self) -> None:

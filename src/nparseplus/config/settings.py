@@ -274,9 +274,10 @@ class PigParseAccountSettings(BaseModel):
     username: str = ""
     discord_id: str = ""
     api_token: str = ""
-    # DEPRECATED: the old single-provider inventory upload gate, folded into
-    # `dumps.upload_target` by a Settings validator and cleared. Kept for one
-    # release so a downgrade then upgrade doesn't silently turn upload off.
+    # DEPRECATED and migration-only: the old single-provider inventory upload
+    # gate. A Settings validator folds a True into `dumps.upload_target` and
+    # clears this, so it is False in every document this version writes — the
+    # field exists purely to read one written before the destination picker.
     inventory_upload: bool = False
 
 

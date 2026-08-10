@@ -230,31 +230,59 @@ class InventoryUploadHandler(BaseHandler):
         self._store_claim(link)
         # Open it rather than print it: the URL is a bearer secret, and the
         # player has to visit it anyway to approve the import.
-        try:
-            self._open_browser(link.url)  # type: ignore[union-attr]
-        except Exception:
-            self._browser_ok = False
-            logger.warning("could not open the p99planner review page in a browser")
+        if not self._try_open(link.url):  # type: ignore[union-attr]
             # Do NOT send them back to Review import…, which is the same
-            # webbrowser call that just failed. Copying the link is the path
+            # browser call that just failed. Copying the link is the path
             # that still works on a machine with no usable default browser.
             self._set_status(
                 "p99planner: staged, but no browser would open — right-click "
                 "Review import… and choose Copy review link."
             )
             return
-        self._browser_ok = True  # a browser that works again clears the hint
         self._set_status(_staged_status(link))
+
+    def _try_open(self, url: str) -> bool:
+        """Hand ``url`` to a browser; True only if one actually took it.
+
+        ``webbrowser.open`` **returns False** when it has nowhere to go — it
+        does not raise. That is the normal outcome on a headless box, a
+        locked-down desktop, or EQ under Wine with no browser registered,
+        which is precisely the situation Copy review link exists for. Treating
+        only the raising case as failure left the recovery hint unreachable in
+        the common case.
+
+        ``is False`` rather than falsiness on purpose: an injected opener that
+        returns None is not reporting a failure.
+        """
+        try:
+            opened = self._open_browser(url)
+        except Exception:
+            logger.warning("could not open the p99planner review page in a browser")
+            self._browser_ok = False
+            return False
+        if opened is False:
+            logger.warning("no browser was available for the p99planner review page")
+            self._browser_ok = False
+            return False
+        self._browser_ok = True  # a browser that works again clears the hint
+        return True
 
     # -- claim state -------------------------------------------------------
 
     def _current_claim(self) -> ClaimLink | None:
+        """The live claim, or None when there is none or it has expired.
+
+        Deliberately a pure read: the GUI thread calls this (via
+        ``claim_summary`` / ``has_claim``) on every status repaint, and the
+        module contract is that claim state moves only on the net worker.
+        An expired claim is simply reported as absent — the next send
+        overwrites it, so nothing has to clear it here.
+        """
         with self._lock:
             claim = self._claim
         if claim is None:
             return None
         if claim.expires is not None and datetime.now() >= claim.expires:
-            self._store_claim(None)
             return None
         return claim
 
@@ -300,18 +328,15 @@ class InventoryUploadHandler(BaseHandler):
         return summary + "."
 
     def open_claim(self) -> bool:
-        """Re-open the pending review page. False when there isn't one."""
+        """Re-open the pending review page.
+
+        False when there is no claim, or when no browser took the URL — see
+        :meth:`_try_open` for why the latter is not just the raising case.
+        """
         url = self.claim_url()
         if not url:
             return False
-        try:
-            self._open_browser(url)
-        except Exception:
-            self._browser_ok = False
-            logger.warning("could not open the p99planner review page in a browser")
-            return False
-        self._browser_ok = True
-        return True
+        return self._try_open(url)
 
     def forget_claim(self) -> None:
         """Release the staged copy and drop the link (the user cancelling)."""

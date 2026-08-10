@@ -592,7 +592,11 @@ dropped on import), and a spellbook has **no header at all** — every line is
 one bad line, since "every line parses" is the only discriminator. Snapshots
 are JSON under `dumps_dir()`, the filename carrying `<when>-<digest>` so
 listing is a directory scan with no reads and re-importing an unchanged dump
-lands on the path that already exists. Two toggles: `auto_import` (unseen
+lands on the path that already exists. `read_dump_file` gates on the filename
+by default (the scan must not open every `.txt` in the EQ directory) and only
+sniffs content under `sniff=True`, which is the hand-picked-file path — the
+window then confirms the guessed character, since that is the library's key
+AND what p99planner creates its planner character from. Two toggles: `auto_import` (unseen
 character+kind; also the master switch) and `auto_update` (a tracked dump
 changed) — both default ON, unlike the pigparse uploader, because this only
 reads files the game wrote and copies them into our own data dir.

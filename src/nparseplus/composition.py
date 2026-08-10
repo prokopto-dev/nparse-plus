@@ -399,12 +399,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     ]
     api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=submit)
 
-    # ONE poll of the EQ directory for /outputfile dumps, with two consumers:
-    # the library below keeps per-character history of both dump kinds, and
-    # InventoryUploadHandler (in `handlers`) subscribes to the events it
-    # publishes to do the pigparse.org upload. EQTool has a single service
-    # doing both; splitting it is what stops two ticks racing over the same
-    # file. Consequence: the upload rides on dumps.auto_import being on.
+    # The poll itself (see the library above for why there is only one).
     dump_watcher = DumpWatcher(
         dumps,
         get_eq_dir=lambda: (

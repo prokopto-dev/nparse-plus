@@ -60,7 +60,7 @@ snapshots: an unchanged dump is recognised by content and dropped.
 | Button | What it does |
 |---|---|
 | **Import now** | Rescan the EQ folder immediately. Works regardless of the toggles. |
-| **Import file…** | Take in a dump from anywhere — a backup, another machine, a friend's. |
+| **Import file…** | Take in a dump from anywhere — a backup, another machine, a friend's. A file whose name doesn't say who it belongs to still works; nParse+ reads it and asks which character it is. |
 | **Upload inventory** | Send inventory snapshots to the [destination you picked](#uploading-your-inventory). Works whether or not auto-import is on. |
 | **Review import…** | Only while a p99planner handoff is waiting: re-opens the review page. Right-click it to cancel the handoff instead. |
 | **Export…** | Write the selected snapshot back out in the client's own format, so other P99 tools can read it. |

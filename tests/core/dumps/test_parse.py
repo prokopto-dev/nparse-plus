@@ -108,6 +108,27 @@ def test_read_dump_file_ignores_files_that_are_not_dumps(tmp_path: Path) -> None
     assert read_dump_file(wrong) is None
 
 
+def test_sniff_is_reachable_for_a_hand_picked_file(tmp_path: Path) -> None:
+    """A backup named anything is still a dump once the user points at it.
+
+    Without ``sniff``, the filename gate ran first and ``sniff_kind`` could
+    never be reached from the running app at all.
+    """
+    backup = write_dump(tmp_path, "bankmule-backup.txt", INVENTORY_TEXT, when=T0)
+
+    assert read_dump_file(backup) is None  # the scan still refuses it
+    dump = read_dump_file(backup, sniff=True)
+    assert dump is not None
+    assert dump.kind is DumpKind.INVENTORY
+    assert dump.character == "bankmule"  # guessed from the stem, for the user to confirm
+    assert read_dump_file(backup, character="Bankmule", sniff=True).character == "Bankmule"
+
+
+def test_sniffing_still_refuses_a_file_that_is_not_a_dump(tmp_path: Path) -> None:
+    junk = write_dump(tmp_path, "notes.txt", "shopping list\nmilk\n")
+    assert read_dump_file(junk, sniff=True) is None
+
+
 def test_digest_ignores_provenance_but_not_content() -> None:
     first = build_dump(
         SPELLBOOK_TEXT, character="A", kind=DumpKind.SPELLBOOK, captured_at=T0, source_file="a.txt"

@@ -156,6 +156,40 @@ def test_expires_becomes_a_naive_local_datetime() -> None:
     assert expires.tzinfo is None
 
 
+def test_redirects_are_not_followed() -> None:
+    """The claim token rides in the URL path with no auth, so a redirect is a
+    hop that could carry the capability (and the export) elsewhere."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(302, headers={"location": "http://evil.example/api/import"})
+
+    outcome = P99PlannerClient(
+        client=httpx.Client(transport=httpx.MockTransport(handler), base_url=BASE_URL),
+        sleep=lambda _s: None,
+    ).stage(FILES)
+
+    assert len(seen) == 1  # the redirect was never taken
+    assert not outcome.ok
+    assert not any("evil.example" in str(request.url) for request in seen)
+
+
+def test_a_claim_url_off_the_expected_host_is_refused() -> None:
+    """This URL is handed to a browser — anything that is not the host we
+    asked does not get opened."""
+    for bad in (
+        "https://evil.example/import/abc",
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "https://p99planner.com.evil.example/import/abc",
+    ):
+        body = dict(OK_BODY, url=bad)
+        outcome = client_for(lambda _r, b=body: httpx.Response(200, json=b)).stage(FILES)
+        assert not outcome.ok, bad
+        assert "unexpected review link" in outcome.error
+
+
 def test_a_bad_expires_is_dropped_not_fatal() -> None:
     body = dict(OK_BODY, expires="whenever")
     outcome = client_for(lambda _r: httpx.Response(200, json=body)).stage(FILES)

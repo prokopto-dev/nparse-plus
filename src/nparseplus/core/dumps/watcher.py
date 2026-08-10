@@ -96,7 +96,7 @@ class DumpWatcher:
         # GUI -> driver inbox (see the module docstring).
         self._lock = threading.Lock()
         self._scan_requested = False
-        self._pending_files: list[Path] = []
+        self._pending_files: list[tuple[Path, str]] = []
         #: Last scan's outcome, for the window to render.
         self.last_scan_at: datetime | None = None
         self.last_result: ScanResult | None = None
@@ -112,12 +112,17 @@ class DumpWatcher:
         with self._lock:
             self._scan_requested = True
 
-    def request_import(self, path: Path) -> None:
-        """Ask for one hand-picked file to be imported on the next tick."""
-        with self._lock:
-            self._pending_files.append(Path(path))
+    def request_import(self, path: Path, character: str = "") -> None:
+        """Ask for one hand-picked file to be imported on the next tick.
 
-    def _take_requests(self) -> tuple[bool, list[Path]]:
+        ``character`` overrides whatever the filename implies — the GUI asks
+        the user when a hand-picked file's name says nothing, and that answer
+        has to survive the trip to the driver thread.
+        """
+        with self._lock:
+            self._pending_files.append((Path(path), character))
+
+    def _take_requests(self) -> tuple[bool, list[tuple[Path, str]]]:
         with self._lock:
             requested, files = self._scan_requested, self._pending_files
             self._scan_requested, self._pending_files = False, []
@@ -134,8 +139,8 @@ class DumpWatcher:
 
     def _tick(self, now: datetime) -> None:
         requested, files = self._take_requests()
-        for path in files:
-            self.import_file(path, now)
+        for path, character in files:
+            self.import_file(path, now, character=character)
 
         if requested:
             self._mtimes.clear()  # a manual rescan re-reads everything
@@ -179,15 +184,15 @@ class DumpWatcher:
             if self._mtimes.get(path) == mtime:
                 continue
             result.examined += 1
+            # Remember it either way. A change held back by auto_update does
+            # get reconsidered — _tick clears the whole cache when that toggle
+            # comes back on, as does request_scan — so leaving it uncached
+            # only bought a stat-read-parse of the same file every 20s forever.
+            self._mtimes[path] = mtime
             dump = read_dump_file(path)
             if dump is None:
-                self._mtimes[path] = mtime
                 continue
-            outcome = self._ingest(dump, now, allow_updates=allow_updates, result=result)
-            if outcome:
-                # Only remember files we actually finished with: a change held
-                # back by auto_update must be reconsidered once it comes on.
-                self._mtimes[path] = mtime
+            self._ingest(dump, now, allow_updates=allow_updates, result=result)
 
         self.last_scan_at = now
         self.last_result = result
@@ -197,9 +202,16 @@ class DumpWatcher:
             )
         return result
 
-    def import_file(self, path: Path, now: datetime | None = None) -> SnapshotRef | None:
-        """Import one file regardless of the toggles (the hand-picked path)."""
-        dump = read_dump_file(Path(path))
+    def import_file(
+        self, path: Path, now: datetime | None = None, *, character: str = ""
+    ) -> SnapshotRef | None:
+        """Import one file regardless of the toggles (the hand-picked path).
+
+        ``sniff=True``: the user pointed at this file, so its contents are
+        worth reading even when the name gives nothing away. The scan above
+        never sniffs — it must not open every .txt in the EQ directory.
+        """
+        dump = read_dump_file(Path(path), character=character, sniff=True)
         if dump is None:
             return None
         result = ScanResult()
@@ -225,28 +237,26 @@ class DumpWatcher:
         *,
         allow_updates: bool,
         result: ScanResult,
-    ) -> bool:
-        """Store one parsed dump. Returns False only when a toggle held it
-        back, which is the one case the caller must not mark as seen."""
+    ) -> None:
+        """Store one parsed dump, tallying what happened into ``result``."""
         previous = self.library.latest(dump.character, dump.kind)
         if previous is not None and previous.digest == dump.digest:
             result.unchanged += 1
-            return True
+            return
         if previous is not None and not allow_updates:
             result.skipped += 1
-            return False
+            return
 
         before = self.library.load(previous) if previous is not None else None
         ref = self.library.store(dump, keep=self._get_keep(), now=now)
         if ref is None:
-            return True  # a write failure; retrying every tick helps nobody
+            return  # a write failure; retrying every tick helps nobody
         if previous is None:
             result.imported.append(ref)
             self._publish_imported(dump, ref)
         else:
             result.updated.append(ref)
             self._publish_updated(dump, ref, before)
-        return True
 
     # -- events (the plugin-facing hooks) ---------------------------------
 
