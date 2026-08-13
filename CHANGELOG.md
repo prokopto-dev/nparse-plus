@@ -6,6 +6,15 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.4.3 (2026-08-13)
+
+### Bug Fixes
+
+- **maps**: Create the map window with an alpha channel so the backdrop works
+  ([#100](https://github.com/prokopto-dev/nparse-plus/pull/100),
+  [`34b06e3`](https://github.com/prokopto-dev/nparse-plus/commit/34b06e384fb95e5f8eeeef5704fda0a01962e055))
+
+
 ## v2.4.2 (2026-08-13)
 
 ### Bug Fixes
