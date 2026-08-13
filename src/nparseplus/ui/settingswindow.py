@@ -268,6 +268,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         on_audio_changed: Callable[[], None] | None = None,
         on_appearance_changed: Callable[[], None] | None = None,
         on_dps_changed: Callable[[], None] | None = None,
+        on_overlay_timing_changed: Callable[[], None] | None = None,
+        on_sharing_changed: Callable[[], None] | None = None,
         legacy_config: dict[str, Any] | None = None,
         on_legacy_save: Callable[[], None] | None = None,
         notify_legacy: Callable[[], None] | None = None,
@@ -294,6 +296,11 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._on_audio_changed = on_audio_changed
         self._on_appearance_changed = on_appearance_changed
         self._on_dps_changed = on_dps_changed
+        # Overlay durations are BEHAVIOR, so they get their own callback
+        # rather than riding on _on_appearance_changed — that one is also the
+        # skin picker's preview path (#67).
+        self._on_overlay_timing_changed = on_overlay_timing_changed
+        self._on_sharing_changed = on_sharing_changed
         # The skin the window opened with, so Close can undo a live preview.
         self._skin_on_open = settings.general.skin
         self._legacy = legacy_config if legacy_config is not None else {}
@@ -430,8 +437,11 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         form.addRow("Version", self._build_version_indicator())
         # Theme and font size live on the Appearance page now (with the skin
         # picker) — they answer "how does nParse+ look", not "how is it set up".
-        note = chromewidgets.hint("TTS and overlay durations apply after restart.", self)
-        form.addRow(note)
+        # There is no hint row here any more either: "TTS and overlay durations
+        # apply after restart" was untrue for TTS from 1.9 (the shared speaker
+        # live-swaps on Apply) and is untrue for the durations now too (#67).
+        # A stale restart note is worse than none — it teaches the user to
+        # restart for nothing.
         return self._page(form)
 
     # -- Appearance ----------------------------------------------------------------
@@ -1535,7 +1545,15 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._sharing_mode.addItems(["pigparse", "nparse", "off"])
         self._sharing_mode.setCurrentText(self._settings.sharing.mode)
         form.addRow("Location sharing", self._sharing_mode)
-        note = chromewidgets.hint("Sharing mode applies after restart.", self)
+        # Each direction, said separately, because they are not the same:
+        # off stops the connection here and now; on has to build one, and the
+        # handlers that would use it took theirs at startup (#69).
+        note = chromewidgets.hint(
+            "Turning sharing off applies immediately — the connection closes, "
+            "nothing further is sent, and remote dots stop. Turning it on, or "
+            "switching networks, needs a restart.",
+            self,
+        )
         form.addRow(note)
 
         account_box = QGroupBox("pigparse.org account", self)
@@ -1945,6 +1963,12 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             self._on_audio_changed()  # live-swap the shared TTS speaker
         if self._on_dps_changed is not None:
             self._on_dps_changed()  # push the counting rules onto the tracker
+        if self._on_overlay_timing_changed is not None:
+            self._on_overlay_timing_changed()  # alert duration + CH lane retention
+        if self._on_sharing_changed is not None:
+            # Turning sharing off applies here; turning it on still needs a
+            # restart (see SharingCoordinator.apply_mode).
+            self._on_sharing_changed()
         # Skin, frame opacity, alert size/emphasis/shadow all apply live.
         self._skin_on_open = general.skin
         if self._on_appearance_changed is not None:

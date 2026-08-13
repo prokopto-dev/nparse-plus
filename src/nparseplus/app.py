@@ -309,6 +309,21 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         if skin_name is not None:
             save()
 
+    def _apply_overlay_timings() -> None:
+        """Alert duration + CH lane retention, live on Apply (#67).
+
+        Its own callback rather than a line inside ``_apply_appearance``: how
+        long a thing stays on screen is behavior, and that function is also
+        the skin picker's live preview — clicking a card must not restart the
+        alert timers. The two halves are the trigger engine (which decides
+        when an alert's reset is due) and the overlay's own timers.
+        """
+        backend.apply_overlay_timings()
+        event_overlay.apply_timings(
+            clear_after_s=settings.general.overlay_text_seconds,
+            ch_lane_retention_s=settings.general.ch_lane_retention_seconds,
+        )
+
     macro_editor = MacroEditorWindow(settings, on_save=save, store_dir=ensure_socials_dir())
     dumps_window = CharacterDumpsWindow(
         settings,
@@ -366,6 +381,8 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_log_dir_changed=backend.driver.set_log_dir,
         on_audio_changed=backend.rebuild_speaker,
         on_dps_changed=backend.apply_dps_settings,
+        on_overlay_timing_changed=_apply_overlay_timings,
+        on_sharing_changed=backend.apply_sharing_mode,
         on_appearance_changed=_apply_appearance,
         legacy_config=legacy_config.data,
         on_legacy_save=legacy_config.save,

@@ -7,7 +7,23 @@ The network switch, and the optional pigparse.org account. Background:
 
 | Setting | What it does |
 |---|---|
-| **Location sharing** | The global mode: **pigparse** (the public hub EQTool uses), **nparse** (self-hostable websocket), or **off**. Applies after restart. |
+| **Location sharing** | The global mode: **pigparse** (the public hub EQTool uses), **nparse** (self-hostable websocket), or **off**. |
+
+Each direction applies differently, and the page says so:
+
+- **Turning it off applies immediately.** Hit Apply and the connection
+  closes, and remote dots, waypoints, dragon roars and shared timers stop
+  arriving. The tray's sharing line reads `off`. Nothing further is
+  published either — the `/who` roster sync and the NPC-activity posts that
+  carry your last `/loc` stop with it, the same state as launching with
+  sharing off. (Character dump upload is *not* affected: that is its own
+  setting, below.)
+- **Turning it on — or switching between pigparse and nparse — needs a
+  restart.** The network client and the handlers that publish through it are
+  built at startup. That includes turning it *back* on after turning it off
+  in the same session: nothing resumes, neither the map dots nor the
+  publishing, until you restart. The tray's sharing line says so —
+  `pigparse — restart to connect`.
 
 Per-character everyone/guild-only/off switches and the Share timers toggle
 live on the [Character](character.md) page — the global mode picks the
@@ -34,6 +50,12 @@ the same character to a different website:
 | **Off** (default) | — | — | Dumps stay on this machine, in the [Character Dumps](../windows/character-dumps.md) library. |
 | **pigparse.org character page** | The Discord login above | Inventory | Typing `/outputfile inventory` in game uploads the dump to your pigparse.org character page. |
 | **p99planner.com** | Nothing | Inventory and spellbook | The export is staged at p99planner.com and a review page opens in your browser, where you approve the import. No account, no API key, no login. |
+
+Picking **pigparse.org** here does not turn on location sharing, and it never
+makes this client publish anything else to pigparse.org: the `/who` roster
+sync and the NPC-activity feed belong to **Location sharing** above, and stay
+off unless that is set to pigparse. Uploading a dump with the sharing mode on
+**nparse** sends the dump and nothing more.
 
 `/outputfile spellbook` only has somewhere to go with **p99planner.com**
 picked — pigparse.org's character browser has no spellbook page. With

@@ -514,6 +514,34 @@ class EventOverlayWindow(QWidget):
         self.apply_skin()
         self.hide()
 
+    # -- timings ------------------------------------------------------------------
+
+    def apply_timings(
+        self,
+        clear_after_s: float | None = None,
+        ch_lane_retention_s: float | None = None,
+    ) -> None:
+        """Re-time the on-game surface — live (#67).
+
+        How long an alert stays up and how long an idle CH lane lingers were
+        constructor-only, so the two settings that most obviously want a
+        preview needed a restart. Both land in plain attributes read at use
+        time, so an assignment is the whole fix; the alert's clear timer is
+        the one piece of state that has to be told separately.
+
+        Deliberately NOT part of ``apply_skin``: these are behavior, not
+        appearance, and that path doubles as the skin picker's live preview —
+        clicking a card must not restart the alert timers.
+        """
+        if clear_after_s is not None:
+            self._clear_after_ms = max(1000, int(clear_after_s * 1000))
+            # Qt restarts a running timer when its interval changes, so an
+            # alert already on screen is re-timed rather than left on the old
+            # clock. The utility lines read the attribute at start().
+            self._clear_timer.setInterval(self._clear_after_ms)
+        if ch_lane_retention_s is not None:
+            self._ch_lane_retention_s = max(0.0, ch_lane_retention_s)
+
     # -- skin --------------------------------------------------------------------
 
     def apply_skin(

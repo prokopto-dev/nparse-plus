@@ -49,10 +49,16 @@ from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow
 if TYPE_CHECKING:
     from nparseplus.config.settings import PlayerInfo, Settings
     from nparseplus.core.bus import EventBus
+    from nparseplus.core.pigparse import SubmitFn
     from nparseplus.core.player import ActivePlayer
     from nparseplus.core.timers import TimersService
 
 logger = logging.getLogger(__name__)
+
+#: Sentinel result for a queued sharing call the gate dropped at execution
+#: time — tells the wrapped ``apply`` there is nothing to apply. Never a real
+#: fetch result, so it cannot collide with one (including ``None``).
+_DROPPED = object()
 
 KEEPALIVE_SECONDS = 10.0
 IDLE_LIMIT_SECONDS = 300.0  # 5 min without a "You..." line stops keepalives
@@ -108,6 +114,70 @@ class SharingClient(Protocol):
     ) -> None: ...
 
 
+def sharing_gated_submit(submit: SubmitFn | None, allowed: Callable[[], bool]) -> SubmitFn | None:
+    """Wrap a ``NetWorker.submit`` so it drops work sharing is not allowed to do.
+
+    ``allowed`` is ``SharingCoordinator.pigparse_rest_allowed`` in the app —
+    the coordinator stays the one place that decides whether the network is
+    open, which is why this takes a predicate rather than reading
+    ``settings.sharing.mode`` itself.
+
+    The hub client is not the only thing that talks to pigparse.org: roughly
+    seven collaborators (player tracker, FTE, quake, boat, con, zone activity,
+    api timers) were handed ``api``+``submit`` at construction and publish or
+    query through them — ``PlayerTrackerHandler.tick`` upserts the /who
+    roster, ``ZoneActivityHandler`` posts NPC activity carrying your last
+    ``/loc``. Composition passes ``None`` for both when sharing is off at
+    launch, so "off" already meant "none of this happens"; this makes the
+    same thing true when the mode changes at runtime, which is what the
+    Sharing page now promises (#69).
+
+    Gating ``submit`` alone is sufficient BECAUSE every one of those handlers
+    calls ``api`` only from inside the closure it hands to ``submit`` — no
+    request is issued on the driver thread. ``tests/core/test_sharing_gate.py``
+    pins that; a handler that reached for ``api`` directly would escape this.
+
+    Not applied to ``InventoryUploadHandler``: uploading a character dump is
+    gated by ``dumps.upload_target``, a decision the user makes separately,
+    and composition deliberately builds its plumbing with sharing off.
+
+    The predicate is consulted THREE times, and all three are needed. At
+    submit, so nothing is queued while off. Again inside ``fetch``, on the
+    worker thread — there is one worker with a FIFO queue, so a request
+    submitted while sharing was on can sit behind a slow one and reach
+    pigparse.org seconds after the user pressed Apply; re-checking where the
+    call is actually made is what makes "nothing further is sent" true rather
+    than nearly true. And once more before ``apply``, so a result fetched
+    moments before the switch does not mutate local state after it. (The
+    coordinator's inbox cannot make that last call for us:
+    ``_dispatch_inbound`` sees an opaque callable and must run it, because
+    dump-upload deliveries arrive the same way.)
+
+    What survives, unavoidably: a request already issued on the socket. Its
+    reply is dropped rather than applied, but the bytes are gone.
+    """
+    if submit is None:
+        return None
+
+    def gated(fetch: Callable[[], object], apply: Callable[[object], None] | None = None) -> None:
+        if not allowed():
+            return
+
+        def guarded_fetch() -> object:
+            if not allowed():
+                return _DROPPED  # dequeued after the user turned sharing off
+            return fetch()
+
+        def guarded_apply(result: object) -> None:
+            if result is _DROPPED or not allowed():
+                return
+            apply(result)  # type: ignore[misc]
+
+        submit(guarded_fetch, None if apply is None else guarded_apply)
+
+    return gated
+
+
 class SharingCoordinator:
     def __init__(
         self,
@@ -124,6 +194,11 @@ class SharingCoordinator:
         self.timers = timers
         self._last_you_activity = last_you_activity
         self._client = client
+        #: The mode the app was BUILT with. Composition constructs this
+        #: coordinator before it builds any client, so this is the network the
+        #: session actually has; a later mode change can only ever take that
+        #: away (see apply_mode and pigparse_rest_allowed).
+        self._launch_mode = settings.sharing.mode
         self._inbox: SimpleQueue[object] = SimpleQueue()
         self._last_loc: Loc | None = None
         self._last_send_time: datetime | None = None
@@ -137,11 +212,88 @@ class SharingCoordinator:
     def set_client(self, client: SharingClient | None) -> None:
         self._client = client
 
+    def pigparse_rest_allowed(self) -> bool:
+        """May sharing publish to pigparse.org's REST API right now? (The gate
+        ``sharing_gated_submit`` asks on every hop.)
+
+        Named for what it guards, because the answer is not "is sharing on":
+        that API is **pigparse's**, so the /who upserts and NPC-activity posts
+        belong to pigparse mode alone. A ``PigParseApiClient`` can exist in a
+        session that is not sharing to pigparse at all — picking pigparse.org
+        as the character-dump destination builds one for the uploader, which
+        is a separate decision the user makes in a separate control, and
+        ``nparse`` mode plus that destination must not turn the self-hosted
+        websocket user into a pigparse publisher.
+
+        Three conditions, each closing a different door:
+
+        * a **live client**, which is what keeps "off" one-way for the
+          session. ``apply_mode`` drops the client and nothing rebuilds it
+          before a restart, so Apply-off then Apply-on again resumes NEITHER
+          half. Otherwise off -> on would quietly restart the upserts while
+          the map stayed dark and the page said a restart was needed — the
+          half-applied disease #69 is about, pointed the other way.
+        * the mode **is** pigparse, so a live switch to nparse (or off) stops
+          it even if something forgot to call ``apply_mode``.
+        * the app was **built** for pigparse, so a session that has no
+          pigparse hub — launched off or on nparse, with the REST client built
+          only for dump uploads — can never start publishing, whatever the
+          mode is set to later.
+        """
+        return (
+            self._client is not None
+            and self.settings.sharing.mode == "pigparse"
+            and self._launch_mode == "pigparse"
+        )
+
+    def apply_mode(self) -> bool:
+        """Push a changed ``settings.sharing.mode`` onto the running app.
+
+        What applies live is **stopping**, and that is the whole point (#69):
+        the mode was already live for outbound sends, so a half-applied "off"
+        left the socket connected — still announcing this character by
+        presence — and the map still filling with other people's dots.
+        Stopping the client and dropping it closes that; the mode gate in
+        ``_dispatch_inbound`` covers anything already sitting in the inbox.
+
+        Any move AWAY from the mode the app was built with stops the client,
+        not just "off". Switching pigparse -> nparse is a promise to stop
+        talking to pigparse, and the nparse client cannot be built without a
+        restart, so leaving the old one running would keep publishing to the
+        service the user just switched away from.
+
+        Turning sharing **on** still needs a restart: roughly ten handlers
+        captured the REST client as a constructor argument, so there is
+        nothing to hand a freshly built one to (the L half of #69). Returning
+        to the launch mode after a live stop does not resurrect anything
+        either — the client is gone for the session.
+
+        Returns True when a client was stopped and dropped, so a caller that
+        holds its own reference (``Backend.sharing_client``) can clear it too.
+        Safe from the GUI thread — ``Backend.stop`` already calls ``stop()``
+        there; nothing here touches the bus or TimersService.
+        """
+        if self.settings.sharing.mode == self._launch_mode or self._client is None:
+            return False
+        self._client.stop()
+        self.set_client(None)
+        # Keepalive state belongs to the connection that just went away.
+        self._last_loc = None
+        self._last_send_time = None
+        return True
+
     @property
     def status(self) -> str:
         mode = self.settings.sharing.mode
-        if mode == "off" or self._client is None:
+        if mode == "off":
             return "off"
+        if self._client is None:
+            # The mode asks for a network this session never built — sharing
+            # was turned off live and back on, or launched off. Saying "off"
+            # here would contradict the picker the user just set; say what is
+            # actually needed instead (the tray line is the one place this
+            # state is visible).
+            return f"{mode} — restart to connect"
         return f"{mode} — {self._client.status}"
 
     # --- inbound (any thread enqueues; only tick drains) -----------------------
@@ -184,6 +336,18 @@ class SharingCoordinator:
         if callable(item):
             # A NetWorker delivery: apply a fetched result on the driver thread.
             item()
+            return
+        if self.settings.sharing.mode == "off":
+            # Sharing off means off in BOTH directions (#69) — drop remote
+            # traffic instead of publishing it, so no dot, waypoint, roar or
+            # shared timer arrives from an inbox filled before the client
+            # stopped. Deliberately below the callable branch: a NetWorker
+            # delivery is our own fetch landing on the driver thread (dump
+            # uploads run with sharing off), not someone else's location.
+            #
+            # The gate lives here, on the driver thread, and NOT in
+            # enqueue_inbound: net threads call that one, and the bus and
+            # TimersService are not thread-safe.
             return
         if isinstance(
             item, OtherPlayerLocationReceivedRemoteEvent | PlayerDisconnectReceivedRemoteEvent

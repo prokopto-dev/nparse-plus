@@ -246,7 +246,11 @@ def test_inbound_callables_run_on_tick_and_failures_are_contained() -> None:
 def test_status_reflects_mode_and_client() -> None:
     rig = Rig()
     assert rig.coordinator.status == "pigparse — connected"
+    # A mode with no client is not "off" — that would contradict the picker
+    # the user just set. It is a session that never built this network (#69).
     rig.coordinator.set_client(None)
+    assert rig.coordinator.status == "pigparse — restart to connect"
+    rig.settings.sharing.mode = "off"
     assert rig.coordinator.status == "off"
 
 
@@ -279,3 +283,67 @@ def test_corpse_marker_respects_sharing_gate() -> None:
             )
         )
         assert rig.client.waypoints == []
+
+
+# --- apply_mode: turning sharing off, live (#69) --------------------------------
+
+
+def test_apply_mode_off_stops_and_drops_the_client() -> None:
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+
+    assert rig.coordinator.apply_mode() is True
+
+    assert rig.client.stopped == 1  # the socket closes; no more presence
+    rig.push_location()
+    assert rig.client.locations == []
+    assert rig.coordinator.status == "off"
+
+
+def test_apply_mode_is_idempotent() -> None:
+    """The settings window fires it on every Apply, not only on a change."""
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+    rig.coordinator.apply_mode()
+    assert rig.coordinator.apply_mode() is False  # nothing left to stop
+    assert rig.client.stopped == 1
+
+
+def test_apply_mode_leaves_a_running_client_alone() -> None:
+    rig = Rig()  # mode stays "pigparse"
+    assert rig.coordinator.apply_mode() is False
+    assert rig.client.stopped == 0
+    rig.push_location()
+    assert len(rig.client.locations) == 1
+
+
+def test_apply_mode_off_clears_keepalive_state() -> None:
+    rig = Rig()
+    rig.push_location(T0)
+    rig.settings.sharing.mode = "off"
+    rig.coordinator.apply_mode()
+    rig.last_you = T0 + timedelta(seconds=15)
+    rig.coordinator.tick(T0 + timedelta(seconds=10))
+    assert len(rig.client.locations) == 1  # the 10s keepalive never fires
+
+
+def test_apply_mode_stops_the_client_when_switching_networks() -> None:
+    """pigparse -> nparse is a promise to stop talking to pigparse. The nparse
+    client cannot be built without a restart, so the honest move is to stop
+    the running one rather than leave it publishing to the service the user
+    just switched away from."""
+    rig = Rig()  # launched in pigparse
+    rig.settings.sharing.mode = "nparse"
+
+    assert rig.coordinator.apply_mode() is True
+    assert rig.client.stopped == 1
+    rig.push_location()
+    assert rig.client.locations == []
+    assert rig.coordinator.status == "nparse — restart to connect"
+
+
+def test_apply_mode_leaves_the_launch_mode_alone() -> None:
+    """Apply fires on every save, so an unchanged mode must not stop anything."""
+    rig = Rig()
+    assert rig.coordinator.apply_mode() is False
+    assert rig.client.stopped == 0

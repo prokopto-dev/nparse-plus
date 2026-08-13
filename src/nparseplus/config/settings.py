@@ -139,7 +139,18 @@ class SharingSettings(BaseModel):
 
 
 class MapSettings(BaseModel):
-    """Map rendering options (ported from the legacy 'maps' section)."""
+    """Map rendering options carried by migration but not read at runtime.
+
+    **Migration-preserved; nothing reads these (#71).** The live maps window
+    is still legacy ``parsers/maps``, which reads ``config.data["maps"]`` from
+    ``nparse.config.json`` — and that is also where Settings > Maps writes, so
+    these fields validate and round-trip through settings.json without ever
+    reaching a renderer. They are ballast held for the maps rebuild on the new
+    stack, which is why they are kept rather than deleted: dropping them loses
+    the migrated values silently on the next save (same call as
+    ``DiscordSettings``). ``tests/config/test_unread_settings.py`` pins the
+    claim in both directions.
+    """
 
     line_width: int = Field(default=1, ge=1, le=10)
     grid_line_width: int = Field(default=1, ge=1, le=10)
@@ -156,8 +167,18 @@ class MapSettings(BaseModel):
 
 
 class SpellWindowSettings(BaseModel):
-    """Spell timer window options (ported from the legacy 'spells' section)."""
+    """Spell timer window options (ported from the legacy 'spells' section).
 
+    The block below is the legacy half; everything from "New (EQTool parity)"
+    down is live and read by the window, the handlers, or both.
+    """
+
+    # Migration-preserved; not read at runtime (#71). These came across from
+    # legacy nparse, whose spell window is gone — the new one has no casting
+    # window, no per-window sound file and takes the character level from
+    # ActivePlayer. Kept so a migrated settings.json is not rewritten lossily
+    # on the next save; unlike MapSettings, no rebuild is waiting for them.
+    # Pinned by tests/config/test_unread_settings.py.
     casting_window_buffer: int = Field(default=1000, ge=1, le=4000)
     delay_self_buffs_on_zone: bool = True
     level: int = Field(default=1, ge=1, le=65)

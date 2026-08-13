@@ -188,3 +188,56 @@ def test_inbound_drain_never_reparses_wire_dtos(monkeypatch) -> None:
     assert parsed == []  # drain dispatched typed events with no wire parse
     # the drain actually ran (custom-timer row landed), so the guard is real
     assert rig.timers.find("Kael Faction Pull In Progress", TRIGGER_TIMER_GROUP) is not None
+
+
+# --- sharing off: the inbound half of the gate (#69) ---------------------------
+
+
+def test_mode_off_drops_a_remote_location() -> None:
+    """The acceptance criterion: off means no new dots, not "no new sends"."""
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+    rig.deliver(OtherPlayerLocationReceivedRemoteEvent(player=remote()))
+    assert rig.published == []
+
+
+def test_mode_off_drops_every_remote_kind() -> None:
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+    rig.deliver(PlayerDisconnectReceivedRemoteEvent(player=remote()))
+    rig.deliver(DragonRoarRemoteEvent(spell_name="Dragon Roar", server=0))
+    rig.deliver(
+        WaypointsReceivedRemoteEvent(
+            zone="gfaydark",
+            waypoints=(RemoteWaypoint(key="Soandso:1789000000", x=1.0, y=2.0, z=0.0),),
+        )
+    )
+    rig.deliver(
+        CustomTimerReceivedRemoteEvent(
+            name="Kael Faction Pull In Progress", duration_in_seconds=90, server=0
+        )
+    )
+    assert rig.published == []
+    # ...and a shared timer must not reach TimersService either.
+    assert rig.timers.find("Kael Faction Pull In Progress", TRIGGER_TIMER_GROUP) is None
+
+
+def test_mode_off_still_applies_our_own_net_worker_deliveries() -> None:
+    """A callable is OUR fetch landing on the driver thread (a dump upload
+    result, an API timer), not someone else's location — dump uploads are
+    offered independently of sharing, so the gate must sit below it."""
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+    ran: list[int] = []
+    rig.deliver(lambda: ran.append(1))
+    assert ran == [1]
+
+
+def test_turning_off_drops_traffic_already_in_the_inbox() -> None:
+    """Net threads keep enqueueing until the socket actually closes, so the
+    gate is on the drain (driver thread), not on enqueue_inbound."""
+    rig = Rig()
+    rig.coordinator.enqueue_inbound(OtherPlayerLocationReceivedRemoteEvent(player=remote()))
+    rig.settings.sharing.mode = "off"
+    rig.coordinator.tick(T0)
+    assert rig.published == []
