@@ -41,6 +41,24 @@ def test_the_master_is_the_only_source_art():
     assert not (REPO_ROOT / "data" / "assets" / "icon.xcf").exists()
 
 
+def test_the_master_starts_with_the_svg_tag():
+    """The Flatpak build fails if this file does not open with ``<svg``.
+
+    It is installed into ``hicolor/scalable/``, and ``appstreamcli compose``
+    (run by flatpak-builder over the export) reads it through gdk-pixbuf,
+    whose SVG loader sniffs the format from the first bytes and knows exactly
+    two signatures: ``<svg`` and ``<!DOCTYPE svg``. Anything else — a leading
+    comment, and an ``<?xml?>`` declaration too — is "Unrecognized image file
+    format", which is a fatal compose error, not a warning. Qt renders the
+    file either way, so nothing else here would notice: v2.9.0 was tagged and
+    never shipped because of exactly this.
+    """
+    head = gen_icons.MASTER.read_text().lstrip()
+    assert head.startswith(("<svg", "<!DOCTYPE svg")), (
+        "icon.svg must open with the <svg> tag — see the comment inside it"
+    )
+
+
 def test_committed_pngs_are_the_sizes_they_claim():
     assert png_size(UI_DIR / "icon.png") == (gen_icons.BASE_SIZE, gen_icons.BASE_SIZE)
     for size in gen_icons.ICON_SIZES:

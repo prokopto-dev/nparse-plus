@@ -1,4 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
 <!--
+  THIS FILE MUST BEGIN WITH THE <svg> TAG, which is why this comment reads
+  out of order — it sits INSIDE the element rather than above it.
+
+  gdk-pixbuf sniffs an image's format from the first bytes of the file, and
+  librsvg's loader registers exactly two signatures: "<svg" and "<!DOCTYPE
+  svg". A leading comment matches neither, so the file comes back as
+  "Unrecognized image file format" even though it is perfectly valid SVG that
+  Qt, every browser and every editor render fine. An XML declaration first
+  fails the same way, so moving <?xml?> to the top is NOT the escape hatch.
+
+  That matters because the Flatpak manifest installs this file into
+  hicolor/scalable/, and flatpak-builder runs `appstreamcli compose` over the
+  export — which reads the scalable icon and treats a read error as fatal.
+  With the comment on top it killed the whole build-linux job, and with it
+  the release: v2.9.0 was tagged and never shipped.
+
   nParse+ application mark — the source of truth for every shipped icon.
 
   Replaces data/assets/icon.xcf, which was 64x64 raster art inherited from the
@@ -49,7 +66,6 @@
     at 16px, and breaking the ring to seat it costs more than it adds. The
     "+" lives in the wordmark lockup instead, where it has room.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <title>nParse+</title>
   <defs>
     <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
