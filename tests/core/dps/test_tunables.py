@@ -22,10 +22,6 @@ def _damage(attacker: str, target: str, amount: int, dmg_type: str, when: dateti
 # -- melee-only ---------------------------------------------------------------
 
 
-def test_melee_only_is_the_default(tracker: FightTracker) -> None:
-    assert tracker.melee_only is True
-
-
 def test_every_verb_the_parser_emits_reads_as_melee() -> None:
     # Both conjugations: "You slash" and "Soandso slashes".
     for verb in ("slash", "slashes", "kick", "kicks", "punch", "backstabs", "crush", "bashes"):
@@ -37,7 +33,8 @@ def test_every_verb_the_parser_emits_reads_as_melee() -> None:
     assert NON_MELEE_DAMAGE_TYPE not in MELEE_DAMAGE_TYPES
 
 
-def test_melee_only_drops_non_melee_damage(tracker: FightTracker, t0: datetime) -> None:
+def test_melee_mode_drops_non_melee_damage(t0: datetime) -> None:
+    tracker = FightTracker(damage_sources="melee")
     tracker.add_damage(_damage("You", "a gnoll", 100, "slash", t0))
     tracker.add_damage(_damage("You", "a gnoll", 900, NON_MELEE_DAMAGE_TYPE, t0))
     rows = tracker.snapshot(t0)
@@ -45,18 +42,33 @@ def test_melee_only_drops_non_melee_damage(tracker: FightTracker, t0: datetime) 
     assert rows[0].total_damage == 100  # the nuke never landed in the row
 
 
-def test_melee_only_does_not_open_a_fight_for_a_lone_nuke(
-    tracker: FightTracker, t0: datetime
-) -> None:
+def test_melee_mode_does_not_open_a_fight_for_a_lone_nuke(t0: datetime) -> None:
+    tracker = FightTracker(damage_sources="melee")
     tracker.add_damage(_damage("You", "a gnoll", 900, NON_MELEE_DAMAGE_TYPE, t0))
     assert tracker.fights == []
 
 
-def test_melee_only_off_counts_non_melee(t0: datetime) -> None:
-    tracker = FightTracker(melee_only=False)
+def test_the_default_mode_still_drops_an_unattributed_nuke(
+    tracker: FightTracker, t0: datetime
+) -> None:
+    # "melee + mine" is the default, and for a player who never casts it is
+    # exactly the old melee-only behaviour: nothing arms the credit window.
     tracker.add_damage(_damage("You", "a gnoll", 100, "slash", t0))
     tracker.add_damage(_damage("You", "a gnoll", 900, NON_MELEE_DAMAGE_TYPE, t0))
-    assert tracker.snapshot(t0)[0].total_damage == 1000
+    rows = tracker.snapshot(t0)
+    assert len(rows) == 1
+    assert rows[0].total_damage == 100
+
+
+def test_all_counts_non_melee(t0: datetime) -> None:
+    tracker = FightTracker(damage_sources="all")
+    tracker.add_damage(_damage("You", "a gnoll", 100, "slash", t0))
+    tracker.add_damage(_damage("You", "a gnoll", 900, NON_MELEE_DAMAGE_TYPE, t0))
+    # Same group total as the old melee_only=False, but the nuke nobody can
+    # claim is no longer parked on your row.
+    rows = tracker.snapshot(t0)
+    assert sum(row.total_damage for row in rows) == 1000
+    assert {row.attacker_name: row.total_damage for row in rows}["You"] == 100
 
 
 def test_misses_still_count_as_melee(tracker: FightTracker, t0: datetime) -> None:
@@ -139,13 +151,16 @@ def test_configure_moves_the_knobs_and_notifies(tracker: FightTracker) -> None:
     calls: list[int] = []
     tracker.on_change.append(lambda: calls.append(1))
     tracker.configure(
-        melee_only=False,
+        damage_sources="all",
         fight_retention_s=90.0,
         trailing_window_s=6.0,
         session_min_fight_s=0.0,
+        spell_credit_window_s=5.0,
+        count_pet_damage=False,
     )
-    assert (tracker.melee_only, tracker.fight_retention_s) == (False, 90.0)
+    assert (tracker.damage_sources, tracker.fight_retention_s) == ("all", 90.0)
     assert (tracker.trailing_window_s, tracker.session_min_fight_s) == (6.0, 0.0)
+    assert (tracker.spell_credit_window_s, tracker.count_pet_damage) == (5.0, False)
     assert tracker.trailing_window == timedelta(seconds=6)
     assert calls == [1]
 
@@ -162,7 +177,7 @@ def test_configure_reaches_fights_already_running(
 
 
 def test_configure_ignores_omitted_knobs(tracker: FightTracker) -> None:
-    tracker.configure(melee_only=False)
+    tracker.configure(damage_sources="all")
     assert tracker.fight_retention_s == 40.0
     assert tracker.trailing_window_s == 12.0
 
@@ -220,7 +235,9 @@ def test_changing_a_measurement_rule_clears_the_footer() -> None:
     for knob, value in (
         ("trailing_window_s", 4.0),
         ("session_min_fight_s", 60.0),
-        ("melee_only", False),
+        ("damage_sources", "melee"),
+        ("spell_credit_window_s", 8.0),
+        ("count_pet_damage", True),  # off is the default, so on is the change
     ):
         tracker = _session_with_stats()
         tracker.configure(**{knob: value})
@@ -244,10 +261,12 @@ def test_applying_the_same_values_keeps_the_footer() -> None:
     tracker = _session_with_stats()
     before = tracker.session_summary().best.highest_dps
     tracker.configure(
-        melee_only=tracker.melee_only,
+        damage_sources=tracker.damage_sources,
         fight_retention_s=tracker.fight_retention_s,
         trailing_window_s=tracker.trailing_window_s,
         session_min_fight_s=tracker.session_min_fight_s,
+        spell_credit_window_s=tracker.spell_credit_window_s,
+        count_pet_damage=tracker.count_pet_damage,
     )
     assert tracker.session_summary().best.highest_dps == before
 

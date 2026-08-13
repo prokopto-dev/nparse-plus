@@ -414,3 +414,72 @@ class TestNormalizeRegistryUrl:
     def test_rejects_unusable(self, url: str) -> None:
         with pytest.raises(ValueError):
             normalize_registry_url(url)
+
+
+class TestDpsSettings:
+    """The DPS meter's counting rules and the melee_only migration (#80/#81)."""
+
+    def test_defaults(self) -> None:
+        dps = Settings().dps
+        assert dps.damage_sources == "melee+mine"
+        # Opt-in: how to count a pet is an opinion, not a defect to fix on
+        # the user's behalf, so it must not change on upgrade.
+        assert dps.count_pet_damage is False
+        assert dps.spell_credit_window_seconds == 2.0
+        # The legacy bool is gone from a fresh document.
+        assert dps.melee_only is None
+
+    def test_legacy_melee_only_true_folds_in_and_clears(self, tmp_path: Path) -> None:
+        """Upgrading never changes what someone's number means.
+
+        The mapping is literal even though ``melee+mine`` is the fresh-install
+        default and arguably carries the old intent: a meter must not start
+        counting differently because the user updated the app.
+        """
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"dps": {"melee_only": True}}))
+        loaded = load_settings(path)
+        assert loaded.dps.damage_sources == "melee"
+        assert loaded.dps.melee_only is None
+
+        # Idempotent: saving and reloading must not move it again.
+        save_settings(loaded, path)
+        assert load_settings(path).dps.damage_sources == "melee"
+
+    def test_a_fresh_install_gets_the_caster_default(self) -> None:
+        # The split from the migration above is the point: a new user gets
+        # the mode that actually works for a caster.
+        assert Settings().dps.damage_sources == "melee+mine"
+
+    def test_legacy_melee_only_false_asked_for_everything(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"dps": {"melee_only": False}}))
+        loaded = load_settings(path)
+        assert loaded.dps.damage_sources == "all"
+        assert loaded.dps.melee_only is None
+
+    def test_an_explicit_mode_wins_over_the_legacy_bool(self) -> None:
+        # A document written by this version must not be re-migrated. Keyed
+        # on whether the field was actually written, not on whether it still
+        # equals the default, so an explicit "melee+mine" survives a stale
+        # melee_only: true sitting beside it.
+        dps = Settings(dps={"melee_only": False, "damage_sources": "melee"}).dps
+        assert dps.damage_sources == "melee"
+        assert dps.melee_only is None
+
+        kept = Settings(dps={"melee_only": True, "damage_sources": "melee+mine"}).dps
+        assert kept.damage_sources == "melee+mine"
+
+    def test_the_rest_of_the_document_survives_a_migration(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "general": {"eq_log_dir": "/keep/me"},
+                    "dps": {"melee_only": True, "trailing_window_seconds": 6.0},
+                }
+            )
+        )
+        loaded = load_settings(path)
+        assert loaded.general.eq_log_dir == Path("/keep/me")
+        assert loaded.dps.trailing_window_seconds == 6.0

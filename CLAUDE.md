@@ -689,6 +689,99 @@ number forever. Damage already counted is never re-filtered (the hit list
 does not keep damage types). The >20s session-footer gate stayed, now as a
 knob: it is why Best/Now/Last reads 0 all session on trash that dies faster.
 
+**The meter learned to represent a caster and a pet class** (post-2.4,
+~2250 tests): two DELIBERATE DIVERGENCES from EQTool, both commented as such
+at the code that implements them, because `DamageParser.cs` and `PetHandler`
+behave exactly as this repo did.
+
+*Non-melee is attributed, not blanket-credited* (#80). `<target> was hit by
+non-melee for N points` names **no attacker**, so the 1:1 port credited
+`"You"` for every one — meaning melee-only dropped a caster's whole output
+and counting it padded your row with the raid's nukes and opened fights on
+mobs you never touched. The parser is untouched (2.2 put the filter in the
+tracker so `DamageEvent` stays a faithful record for triggers and plugins);
+`FightTracker._attribute` decides. The one signal a log gives is your own
+casting, so `melee_only: bool` became
+`damage_sources: melee | melee+mine | all` (a `DpsSettings` model_validator
+folds the old bool in — the `plugins.registry_url` pattern). **The
+fresh-install default and the migration deliberately disagree**:
+`DEFAULT_DAMAGE_SOURCES` is `melee+mine` because that is the mode that works
+for a caster, while an existing document maps LITERALLY (`true` → `melee`,
+`false` → `all`), because what a headline number MEANS must not change
+under a user who only updated the app — even toward being more correct.
+Casters get a release note instead. The guard is `model_fields_set`, not
+"still equals the default", so an explicit `melee+mine` survives a stale
+`melee_only: true` beside it. Under `all` an unclaimable line lands on a
+`"(spell damage)"` pseudo-attacker so group percentages stay right without
+the meter claiming it.
+
+**The window is armed from `YouBeginCastingEvent`, not just the finish
+event.** The landing message and the damage line share a log second and the
+stamps are 1-second resolution, so their arrival order cannot be relied on;
+the begin line is the only one guaranteed to precede the damage. So
+`note_your_cast(when, cast_time_s)` arms through cast-time + the credit
+window, and the finish event extends it — union, and extending only ever
+moves the end forward, which is why a chain-caster stays armed. Only
+**detrimental** spells arm it (`Spell.is_detrimental`), or a cleric
+chain-healing would collect the raid's spell damage. `cancel_your_cast()`
+disarms and is deliberately NOT `clear()` (an interruption says nothing
+about the fights on screen): `YourSpellInterruptedEvent` reaches it, since
+arming from the begin line otherwise holds an 8s cast's window open for
+nine seconds after it was interrupted a second in, and `clear()` calls it
+because zoning/camping/dying cancel the cast too. A **resist** deliberately
+does not disarm — a partial resist prints nothing and still does damage, so
+acting on the resist event would discard real caster damage to close a
+window at most the credit window wide. Only the LANDING moment is stored —
+`credit_deadline` derives from it on every read — so moving
+`spell_credit_window_s` reaches a cast already armed; storing the deadline
+froze the window at arming time, and tightening it mid-raid (the one
+situation the setting exists for) did nothing until the next cast. Unattributable forever: damage shields and procs
+(they follow no cast), two casters inside one window, and DoT ticks — P99
+does not log them at all, which is why #80 replaced a "parse DoT ticks"
+proposal.
+
+*Pet damage counts as yours* (#81). `DpsHandler` follows the existing
+`PlayerPet.on_change` rather than re-deriving the CREATION/LEADER/DEATH
+rules, pushing `FightTracker.set_pet_name`; the tracker stays value-in/
+value-out and never imports pet state. `FightRow.is_your_pet` is separate
+from `is_your_damage` — the window styles both as yours and marks the row
+`Vexer (pet)`, but they are not the same claim. The pet keeps its **own
+row** (whether the pet is holding up is what a mage wants to see; merging
+would make `highest_hit` and per-row dps meaningless) while
+`_update_session_stats` **sums** you and the pet into one footer reading
+under `count_pet_damage` — **default OFF, diverging from #81**, which asked
+for on. How to count a pet is a genuine difference of opinion, not a defect,
+and a counting change must not silently alter what someone's headline number
+MEANS on upgrade; the row marking stays unconditional because naming whose
+pet that is is identification, not measurement. Two deliberate asymmetries
+in the merge itself:
+`highest_hit` stays yours alone (it reads as your own crit), and the
+fight-length gate takes the LONGER of the pair, so a pet that opened 25s
+before you joined carries the reading past the minimum. `_is_your_pet`
+refuses a row whose attacker equals its fight's target, so the charm-shares-
+an-NPC-name case `add_damage` already guards cannot come back through the
+flag.
+
+**The row flag and the footer ask different tenses, and that split is the
+fix for a real bug.** `FightRow.is_your_pet` is present tense — a row stops
+being "my pet" the moment the pet dies, which #81 asks for explicitly — but
+the footer keyed off the same live `pet_name` silently dropped everything a
+pet had already contributed as soon as `PetHandler` cleared it on death,
+reclaim, charm break or zone, for the rest of a fight still running. So
+ownership is stamped per hit onto `FightEntity.was_your_pet` in
+`add_damage` (the one moment the answer is certain) and the footer selects
+on that. It also makes the resummon case right — two entities qualify,
+because both pets were yours. Sticky within one fight, which bounds the one
+case it over-counts: a charm that breaks and keeps hitting the same target.
+
+Both new knobs are measurement rules (`_measurement_rules`), so changing
+them resets Best/Now like the window and the minimum-fight gate do. The DPS
+window's title bar carries the mode (`MELEE` / `MELEE + MINE` / `ALL`) read
+live off the tracker — a mode that excludes damage has to say so, or a
+caster reads a zero as a broken parser. Settings > DPS Meter grows the mode
+picker, the credit window and the pet toggle; all still live through
+`Backend.apply_dps_settings`.
+
 **The settings window shrinks** (post-2.1): a `QStackedWidget`'s minimum is
 its *widest page*, so one wide row on Sharing (a long label beside a combo
 listing "pigparse.org character page") pinned the whole window at ~550px and

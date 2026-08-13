@@ -54,3 +54,34 @@ def test_apply_sharing_mode_does_not_build_a_client_when_turned_on() -> None:
     backend.settings.sharing.mode = "pigparse"
     backend.apply_sharing_mode()
     assert backend.sharing_client is None
+
+
+def test_apply_dps_settings_pushes_the_new_knobs() -> None:
+    """The whole DPS page reaches the tracker the app built at launch.
+
+    The page is the only place these can be changed and the tracker outlives
+    every settings window, so a knob the seam forgets is a knob that silently
+    needs a restart.
+    """
+    backend = backend_for()
+    assert backend.fights.damage_sources == "melee+mine"  # the built default
+
+    backend.settings.dps.damage_sources = "all"
+    backend.settings.dps.spell_credit_window_seconds = 5.0
+    backend.settings.dps.count_pet_damage = True
+    backend.settings.dps.trailing_window_seconds = 6.0
+    backend.apply_dps_settings()
+
+    assert backend.fights.damage_sources == "all"
+    assert backend.fights.spell_credit_window_s == 5.0
+    assert backend.fights.count_pet_damage is True
+    assert backend.fights.trailing_window_s == 6.0
+
+
+def test_the_dps_handler_follows_the_pet_the_app_built() -> None:
+    """composition wires ONE PlayerPet; the DPS tracker must see that one."""
+    backend = backend_for()
+    backend.player_pet.set_name("Vexer")
+    assert backend.fights.pet_name == "Vexer"
+    backend.player_pet.reset()
+    assert backend.fights.pet_name == ""

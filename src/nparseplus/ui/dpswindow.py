@@ -17,7 +17,13 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
-from nparseplus.core.dps import FightRow, SessionSummary
+from nparseplus.core.dps import (
+    DAMAGE_SOURCE_LABELS,
+    DAMAGE_SOURCE_MARKS,
+    DEFAULT_DAMAGE_SOURCES,
+    FightRow,
+    SessionSummary,
+)
 from nparseplus.ui import skins, theme
 from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus.ui.skinwidgets import (
@@ -38,8 +44,17 @@ DEFAULT_GEOMETRY = (640, 0, 280, 400)
 #: Share-of-damage bar color for everyone who is not you.
 OTHERS_BAR = "#75798c"
 
+#: What a pet's row is called. The pet has its own name in the log and its
+#: own row here; this only says whose it is.
+PET_SUFFIX = " (pet)"
+
 
 class FightsLike(Protocol):
+    #: The live counting mode — read off the tracker rather than the settings
+    #: object so the title marker follows an Apply without the window being
+    #: told about it.
+    damage_sources: str
+
     def snapshot(self, now: datetime) -> list[FightRow]: ...
     def session_summary(self) -> SessionSummary: ...
 
@@ -121,6 +136,8 @@ class _AttackerRow(QFrame):
         name = row.attacker_name
         if row.level:
             name = f"{name} ({row.level})"
+        if row.is_your_pet:
+            name = f"{name}{PET_SUFFIX}"
         self._name.setText(name)
         self._damage.setText(str(row.total_damage))
         self._dps.setText(f"{row.dps} dps")
@@ -130,8 +147,11 @@ class _AttackerRow(QFrame):
             self._percent_fraction = fraction
             if self._skin.row_style == "full":
                 self.update()
-        if row.is_your_damage != self.is_you:
-            self.is_you = row.is_your_damage
+        # Your pet's row wears your highlight: splitting a magician into two
+        # rows is the point, treating one of them as a stranger's is not.
+        mine = row.is_your_damage or row.is_your_pet
+        if mine != self.is_you:
+            self.is_you = mine
             self._restyle()
 
 
@@ -161,7 +181,11 @@ class DpsMeterWindow(OverlayWindowBase):
         self._skin = skins.skin()
         self._font_size = max(6, backend.settings.general.font_size)
 
-        self._title_bar = SkinTitleBar(self._skin, "DPS METER", parent=self)
+        # The title bar's right-hand cell carries the counting mode. A meter
+        # that is excluding spell damage has to say so: without it a caster
+        # reads an empty row as a broken parser rather than a filter (#80).
+        self._title_bar = SkinTitleBar(self._skin, "DPS METER", count=True, parent=self)
+        self._mode_mark = ""
 
         self._rows_layout = QVBoxLayout()
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -268,10 +292,24 @@ class DpsMeterWindow(OverlayWindowBase):
         super().showEvent(event)
         self.refresh()
 
+    def _refresh_mode_mark(self) -> None:
+        """Show which damage the meter is counting, live off the tracker."""
+        mode = getattr(self._backend.fights, "damage_sources", DEFAULT_DAMAGE_SOURCES)
+        mark = DAMAGE_SOURCE_MARKS.get(mode, "")
+        if mark == self._mode_mark:
+            return
+        self._mode_mark = mark
+        self._title_bar.set_count(mark)
+        self._title_bar.setToolTip(
+            f"Counting {DAMAGE_SOURCE_LABELS.get(mode, mode)} "
+            "— Settings > DPS Meter > Count damage from"
+        )
+
     def refresh(self) -> None:
         """Re-render from ``fights.snapshot()`` (rows are never mutated)."""
         now = datetime.now()
         rows = self._backend.fights.snapshot(now)
+        self._refresh_mode_mark()
 
         # Preserve snapshot order: fights in start order, attackers by damage.
         grouped: dict[str, list[FightRow]] = {}
@@ -377,3 +415,16 @@ class DpsMeterWindow(OverlayWindowBase):
     def footer_text(self) -> str:
         """The session summary as one line (the footer renders it as cells)."""
         return self._footer_summary
+
+    def mode_text(self) -> str:
+        """The counting-mode marker in the title bar ("MELEE", "ALL", …)."""
+        return self._mode_mark
+
+    def row_names(self) -> list[str]:
+        """Attacker row labels as rendered, pet suffix included."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, _AttackerRow):
+                out.append(widget._name.text())
+        return out

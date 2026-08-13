@@ -253,17 +253,31 @@ class DpsSettings(BaseModel):
 
     Every field here is a knob the tracker reads live — the settings page
     calls ``FightTracker.configure()`` on Apply, so none of these need a
-    restart. The defaults reproduce the shipped behavior except for
-    ``melee_only``, which is the one deliberate change of default.
+    restart.
     """
 
-    # Count weapon and fist damage only, ignoring "was hit by non-melee"
-    # (spells, procs, DoTs). Default ON because the non-melee line names no
-    # attacker, so the parser has to credit *you* for every one it sees —
-    # including other players' nukes — which inflates your row and invents
-    # damage on mobs you never swung at. Off counts everything the parser
-    # attributes, that caveat included.
-    melee_only: bool = True
+    # What a row may count. Replaces the old ``melee_only`` bool (see the
+    # migration below); the modes are documented on core.dps.DAMAGE_SOURCES.
+    #   melee       - weapon and fist damage only.
+    #   melee+mine  - melee plus the non-melee damage that lands inside the
+    #                 credit window of one of your own casts (the default).
+    #   all         - melee plus every non-melee line, the unattributable
+    #                 ones parked on a "(spell damage)" pseudo-attacker
+    #                 rather than credited to you.
+    damage_sources: Literal["melee", "melee+mine", "all"] = "melee+mine"
+    # Legacy: the pre-2.5 bool, folded into damage_sources and cleared by the
+    # validator below. None means "already migrated / never written".
+    melee_only: bool | None = None
+    # How long after one of your casts a "was hit by non-melee" line still
+    # counts as yours. Wider catches slow spells whose landing message the
+    # app did not recognise; narrower is stricter about other players' nukes.
+    spell_credit_window_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
+    # Fold your pet's damage into the session Best/Now/Last footer. Off by
+    # default: the pet is an independent row, and how to count one is a
+    # difference of opinion rather than a bug to fix on the user's behalf.
+    # The pet keeps its own row and its "(pet)" marking either way; this only
+    # decides whether your headline number is you or you+pet.
+    count_pet_damage: bool = False
     # Seconds a target's group stays on screen after the last hit against it
     # from ANY attacker. 0 means never retire (zone/camp/clear only).
     # Attackers are never dropped individually — see core.dps.
@@ -276,6 +290,36 @@ class DpsSettings(BaseModel):
     # Best/Now/Last footer (EQTool's TotalSeconds > 20). Most trash dies
     # faster, which is why that footer often sits at zero.
     session_min_fight_seconds: float = Field(default=20.0, ge=0.0, le=600.0)
+
+    @model_validator(mode="after")
+    def _fold_in_legacy_melee_only(self) -> DpsSettings:
+        """Migrate ``melee_only`` -> ``damage_sources`` (the registry_url pattern).
+
+        The mapping is LITERAL — ``true`` becomes ``melee``, ``false``
+        becomes ``all`` — so nobody's meter starts counting differently
+        because they upgraded. That is a deliberate split from the default
+        above: a fresh install gets ``melee+mine`` because it is the mode
+        that actually works for a caster, while an existing document keeps
+        the behavior it already had and the user opts in when they want it.
+
+        The temptation was to map ``true`` onto ``melee+mine`` on the grounds
+        that it carries the old INTENT (``melee_only`` existed only because
+        non-melee could not be attributed, which ``core.dps._attribute`` now
+        fixes) rather than the old mechanism. Rejected: what a headline
+        number MEANS should not change under a user without them asking,
+        even in the direction of being more correct. Casters get a release
+        note instead.
+
+        Only applies when ``damage_sources`` was not written explicitly, so a
+        document already saved by this version wins. Never raises:
+        ``load_settings`` reads a ValueError as a corrupt document and falls
+        back to defaults, which would discard everything else configured.
+        """
+        if self.melee_only is not None:
+            if "damage_sources" not in self.model_fields_set:
+                self.damage_sources = "melee" if self.melee_only else "all"
+            self.melee_only = None
+        return self
 
 
 class DumpsSettings(BaseModel):
