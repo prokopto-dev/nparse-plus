@@ -21,6 +21,19 @@ finish-args:
   - --share=network # PigParse hub/REST, p99 wiki, update check
   - --socket=pulseaudio # trigger audio / TTS
   - --talk-name=org.kde.StatusNotifierWatcher # tray icon
+  # NOT here, deliberately: --talk-name=org.freedesktop.Flatpak. That bus name
+  # is flatpak-session-helper, not the portal — it exports
+  # org.freedesktop.Flatpak.Development.HostCommand, the method behind
+  # `flatpak-spawn --host`, so granting it hands anything running in-process
+  # (a third-party plugin included) arbitrary command execution on the HOST.
+  # The portal that owns CreateUpdateMonitor/Update/Spawn (issue #74) answers
+  # on org.freedesktop.portal.Flatpak — bus name and interface name are the
+  # same string there — and flatpak-run-dbus.c already grants every sandboxed
+  # app --call=org.freedesktop.portal.*=* plus broadcasts under
+  # /org/freedesktop/portal/*, which is where the UpdateMonitor object lives.
+  # So the in-app update path needs NO new permission. If a binding turns out
+  # to need more than --call (a name-owner watch, say), the arg is
+  # --talk-name=org.freedesktop.portal.Flatpak — scoped to the portal.
   # EQ logs + spells_us.txt live inside the user's WINE prefix, and the
   # Night Vision fix writes into the EQ install. home covers the common
   # ~/.wine / ~/Games layouts; installs elsewhere need a user override

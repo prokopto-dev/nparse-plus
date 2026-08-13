@@ -205,6 +205,41 @@ build — CI does it, don't try locally on macOS), built with `--repo-url` and
 publishes the OSTree repo to the single-commit `gh-pages` branch (GitHub
 Pages) so `flatpak update` works for bundle installs.
 
+**Flatpak `finish-args` are release-notes-worthy, permanently.** Flatpak
+refuses any in-app/portal update whose new version asks for a permission the
+installed version does not have — `UpdateMonitor.Update` fails with
+`org.freedesktop.DBus.Error.NotSupported` and the user has to run the host
+tools. So **every** addition to `finish-args` breaks in-app update across
+exactly that one release hop, and a new permission must ship one release
+before the code that needs it.
+
+**The portal update path (issue #74) needs no new permission, and the one
+that looks like it does is a sandbox escape.** `org.freedesktop.Flatpak` is
+NOT the portal — it is `flatpak-session-helper`, whose
+`org.freedesktop.Flatpak.Development.HostCommand` is the method behind
+`flatpak-spawn --host`, so a `--talk-name` for it grants arbitrary command
+execution on the host to anything in-process (a third-party plugin included).
+The portal that owns `CreateUpdateMonitor`/`Update`/`Spawn` answers on
+`org.freedesktop.portal.Flatpak` — bus name and interface name are the same
+string, `portal/org.freedesktop.portal.Flatpak.service.in` — and
+`common/flatpak-run-dbus.c` already grants every sandboxed app
+`--call=org.freedesktop.portal.*=*` plus broadcasts under
+`/org/freedesktop/portal/*`, where the UpdateMonitor object lives. If a
+binding ever needs more than `--call`, the correct arg is
+`--talk-name=org.freedesktop.portal.Flatpak`, scoped to the portal. The
+manifest carries this as a comment so nobody re-adds the wrong one.
+
+Update downloads are verified (issue #73): `updater.stream_https_to_file` is
+the streaming sibling of the plugin installer's `fetch_https_bytes` — same
+hop-by-hop https re-assertion, its own `MAX_ASSET_BYTES` budget (release
+artifacts are 195–255 MB; do not raise the plugin's 50 MiB in-memory cap to
+meet them), rolling sha256 to a `.part` staging file, promoted by rename only
+once it matches `assets[].digest`. That digest travels over the same TLS
+session as the release metadata, so it is a **channel** guarantee — it
+defends against a corrupted, truncated or substituted CDN object and against
+nothing that can publish a release. A signed `SHA256SUMS` (minisign, public
+key compiled in) is the only actual signature and is still to do.
+
 Since 1.18 the spec also `copy_metadata`s BOTH distributions (`nparseplus`
 and `nparseplus-sdk`) — a frozen app has no site-packages, so a plugin's
 `importlib.metadata.version(...)` would raise without it — and declares the
