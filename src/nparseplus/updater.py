@@ -203,6 +203,19 @@ def pick_asset(
     return next((a for a in release.assets if a.name.lower().endswith(suffix)), None)
 
 
+class VerificationRefused(ValueError):
+    """The artifact arrived, and is not the one the release described.
+
+    Separated from every other download failure on purpose: a 500, a timeout
+    or a dropped connection is a flaky network and the honest answer is "try
+    again", while this one means the bytes that arrived are not the bytes
+    GitHub published a digest for. Refusals are logged at ERROR (transport
+    failures stay WARNING) and carry this type so a caller can tell the two
+    apart. Surfacing the reason in the update dialog is TODO(#93) — today it
+    only reaches ``nparseplus.log``.
+    """
+
+
 _HEX_DIGITS = frozenset("0123456789abcdef")
 
 
@@ -341,7 +354,7 @@ def download_asset(
     # name carrying a separator would write outside dest_dir. Real GitHub asset
     # names are plain filenames, so this only ever rejects a hostile one.
     if Path(asset.name).name != asset.name:
-        logger.warning("refusing release asset with a path-bearing name %r", asset.name)
+        logger.error("refusing release asset with a path-bearing name %r", asset.name)
         return None
     destination = Path(dest_dir) / asset.name
     staging = destination.with_name(destination.name + _STAGING_SUFFIX)
@@ -365,8 +378,13 @@ def download_asset(
         )
         refusal = digest_error(actual, expected) or _size_error(written, asset.size)
         if refusal is not None:
-            raise ValueError(refusal)
+            raise VerificationRefused(refusal)
         staging.replace(destination)
+    except VerificationRefused as exc:
+        # Not a flaky network: the bytes arrived and are the wrong bytes.
+        logger.error("REFUSED the downloaded %s — %s", asset.name, exc)
+        staging.unlink(missing_ok=True)
+        return None
     except Exception as exc:
         logger.warning("update download failed for %s: %s", asset.name, exc, exc_info=True)
         staging.unlink(missing_ok=True)

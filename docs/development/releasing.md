@@ -70,6 +70,15 @@ in-app update across that one release hop, and belongs in the release
 notes. A permission a feature needs must ship one release *before* the
 feature.
 
+Worth knowing before reaching for one: the Flatpak portal behind in-app
+updates (`CreateUpdateMonitor`, `Update`, `Spawn`) answers on
+**`org.freedesktop.portal.Flatpak`**, which every sandboxed app may already
+call — flatpak grants `--call=org.freedesktop.portal.*=*` by default. The
+similar-looking **`org.freedesktop.Flatpak`** is a different service,
+`flatpak-session-helper`, whose `Development.HostCommand` runs commands on
+the host outside the sandbox; that one is a real privilege grant and is
+deliberately absent from the manifest.
+
 ## gh-pages layout
 
 One branch serves both consumers:

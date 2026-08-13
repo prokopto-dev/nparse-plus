@@ -215,6 +215,25 @@ def test_download_asset_refuses_a_digest_mismatch(tmp_path: Path, caplog) -> Non
     assert "a" * 64 in caplog.text and BODY_SHA256 in caplog.text
 
 
+def test_a_refusal_and_a_flaky_network_log_differently(tmp_path: Path, caplog) -> None:
+    # A 500 means "try again"; a digest mismatch means the bytes are wrong.
+    # Until the dialog says so (#93), the log level is the distinction.
+    def dead(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    with caplog.at_level("WARNING"):
+        assert download_asset(_asset(), tmp_path, client=_client(dead)) is None
+    assert "ERROR" not in [r.levelname for r in caplog.records]
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        assert (
+            download_asset(_asset(digest="sha256:" + "a" * 64), tmp_path, client=_client(_serve()))
+            is None
+        )
+    assert "ERROR" in [r.levelname for r in caplog.records]
+
+
 def test_download_asset_refuses_a_truncated_body(tmp_path: Path) -> None:
     # Truncation with a digest published is caught by the hash; this is the
     # same failure on a release from before GitHub served assets[].digest.
