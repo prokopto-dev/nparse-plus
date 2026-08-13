@@ -42,7 +42,12 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.timers import seconds_left, snap_to_second
 from nparseplus.ui import chrome, skins
-from nparseplus.ui.overlaybase import start_second_aligned
+from nparseplus.ui.overlaybase import (
+    RESIZE_MARGIN,
+    cursor_for_edges,
+    edge_at,
+    start_second_aligned,
+)
 from nparseplus.ui.skinwidgets import paint_hairline, qcolor, set_caps
 
 DEFAULT_CLEAR_AFTER_S = 4.0
@@ -56,8 +61,11 @@ DEFAULT_TEXT_SIZE = 32
 # A raid warning cut off mid-sentence is worse than a small one: the whole
 # point is that it is readable at a glance without looking away from the game.
 MIN_ALERT_TEXT_SIZE = 12
-# What a headline may occupy of the overlay's height before it shrinks.
+# What a headline may occupy of the overlay's height before it shrinks. Only
+# the default: an Alerts region resized in position mode says so itself.
 ALERT_HEIGHT_FRACTION = 0.42
+# Floor for that budget, so a region dragged to nothing still shows a line.
+MIN_ALERT_BUDGET = 40
 DEFAULT_FONT_SIZE = 12
 DEFAULT_EMPHASIS = "pulse"
 # Alert pulse cadence. Slow on purpose: fast enough to catch the eye at the
@@ -79,8 +87,32 @@ KICKER_MAX_WORDS = 4
 # opens with "<Mob> [Slowable, baneable] - ..." — brackets are the tell.
 KICKER_FORBIDDEN_CHARS = frozenset("[]{}()<>|/*")
 
+# -- alert crawl ---------------------------------------------------------------
+# A headline that does not fit even at MIN_ALERT_TEXT_SIZE is scrolled past a
+# fixed window rather than cut off. The crawl is a plain ``move()`` of the
+# label inside a clipping parent — NOT a second QGraphicsEffect, which the
+# label cannot have (it already carries the shadow/glow).
+SCROLL_TICK_MS = 33
+# Fractions of the alert's lifetime parked at the top before the crawl starts
+# and at the bottom once it arrives, so the first and last lines are readable
+# standing still rather than swinging past.
+SCROLL_HEAD_HOLD = 0.18
+SCROLL_TAIL_HOLD = 0.12
+# Readability ceiling, in text lines per second. Above roughly this the text
+# is moving faster than it can be read and the crawl is pointless.
+MAX_SCROLL_LINES_PER_S = 2.5
+# Room left around a headline that DOES fit, so the drop shadow/glow can spill
+# past the glyphs exactly as it did before the clipping parent existed.
+ALERT_SHADOW_PAD = 30
+
 # Positioning-mode chrome.
 EDIT_HINT_HEIGHT = 56
+# The empty ``Qt.Edge`` flag — a module singleton because ruff (B008)
+# rightly refuses a constructor call in an argument default.
+NO_EDGES = Qt.Edge(0)
+# Smallest a region may be dragged to in position mode.
+MIN_REGION_WIDTH = 120
+MIN_REGION_HEIGHT = 32
 # The stacked layout's outer margins (mirrors the main QVBoxLayout margins);
 # region-mode anchors measure from these lines.
 REGION_MARGIN_TOP = 40
@@ -184,6 +216,101 @@ def split_alert_text(text: str) -> tuple[str, str]:
     return head.strip(), tail.strip()
 
 
+def alert_scroll_speed(overflow_px: int, lifetime_ms: int, line_height_px: int) -> float:
+    """Pixels per second for the headline crawl. Pure; 0 means "do not crawl".
+
+    Two requirements pull against each other and both are honored in the
+    order the reporter asked for them (#102):
+
+    *Fast enough to finish.* The whole overflow is walked inside the alert's
+    own lifetime (``general.overlay_text_seconds``, live via
+    ``apply_timings``) less the dwells at each end — never a hardcoded rate,
+    so raising the alert duration slows the crawl rather than leaving it to
+    finish early and sit there.
+
+    *Slow enough to read.* Never more than ``MAX_SCROLL_LINES_PER_S`` lines a
+    second. When an alert is so long that finishing would need more than
+    that, the ceiling wins and the tail is what the reader does not reach —
+    the fix for that is a longer alert duration (or a bigger Alerts region),
+    not a crawl nobody can follow.
+    """
+    if overflow_px <= 0 or lifetime_ms <= 0:
+        return 0.0
+    travel_s = max(0.1, (lifetime_ms / 1000.0) * (1.0 - SCROLL_HEAD_HOLD - SCROLL_TAIL_HOLD))
+    ceiling = MAX_SCROLL_LINES_PER_S * max(1, line_height_px)
+    return min(overflow_px / travel_s, ceiling)
+
+
+def region_origin(
+    anchor: str, dx: int, dy: int, host_w: int, host_h: int, win_w: int, win_h: int
+) -> tuple[int, int]:
+    """Where a region host's top-left lands — THE placement rule, one copy.
+
+    Horizontally a region is centered on the window and nudged by ``dx``;
+    vertically it hangs off its anchor line. ``region_offsets`` is the exact
+    inverse, which is what makes an edge-drag resize expressible as "move
+    this rect, then ask what offsets put it there".
+    """
+    x = win_w // 2 + dx - host_w // 2
+    if anchor == "top":
+        y = REGION_MARGIN_TOP + dy
+    elif anchor == "center":
+        y = win_h // 2 + dy
+    else:  # bottom
+        y = win_h - REGION_MARGIN_BOTTOM - host_h + dy
+    return x, y
+
+
+def region_offsets(
+    anchor: str, x: int, y: int, host_w: int, host_h: int, win_w: int, win_h: int
+) -> tuple[int, int]:
+    """The ``(dx, dy)`` that puts a host of this size with its top-left at
+    ``(x, y)`` — the inverse of :func:`region_origin`."""
+    dx = x - win_w // 2 + host_w // 2
+    if anchor == "top":
+        dy = y - REGION_MARGIN_TOP
+    elif anchor == "center":
+        dy = y - win_h // 2
+    else:  # bottom
+        dy = y - (win_h - REGION_MARGIN_BOTTOM - host_h)
+    return dx, dy
+
+
+def region_resize_margin(width: int, height: int) -> int:
+    """The grab band along a region's edges, in px.
+
+    ``RESIZE_MARGIN`` is written for whole windows. A region can be 30 px
+    tall (an empty CH-lane strip), and two 7 px bands would leave almost
+    nothing to drag it *by*, so the band never eats more than a third of the
+    smaller dimension.
+    """
+    return max(1, min(RESIZE_MARGIN, min(width, height) // 3))
+
+
+def resize_rect(rect: QRect, edges: Qt.Edge, dx: int, dy: int, min_w: int, min_h: int) -> QRect:
+    """Apply an edge/corner drag to ``rect``, holding the opposite edge.
+
+    Pure so the region-resize math is testable without a window; ``edges``
+    comes from ``overlaybase.edge_at``, the same hit-test the frameless
+    windows have used since 1.8.
+    """
+    left, top = rect.left(), rect.top()
+    width, height = rect.width(), rect.height()
+    if edges & Qt.Edge.LeftEdge:
+        step = min(dx, width - min_w)
+        left += step
+        width -= step
+    elif edges & Qt.Edge.RightEdge:
+        width = max(min_w, width + dx)
+    if edges & Qt.Edge.TopEdge:
+        step = min(dy, height - min_h)
+        top += step
+        height -= step
+    elif edges & Qt.Edge.BottomEdge:
+        height = max(min_h, height + dy)
+    return QRect(left, top, width, height)
+
+
 def fit_text_size(
     measure: Callable[[int], QRect],
     max_height: int,
@@ -204,6 +331,81 @@ def fit_text_size(
         if measure(size).height() <= max_height:
             return size
     return min_size
+
+
+class _AlertViewport(QWidget):
+    """The slot the headline is read through.
+
+    A headline that still does not fit at ``MIN_ALERT_TEXT_SIZE`` used to
+    simply clip — the shrink-to-fit search bottomed out and the rest of the
+    sentence was gone (#102). Instead the label keeps its whole wrapped
+    height and this parent shows a slice of it: Qt clips a child widget to
+    its parent's rect, so the crawl is a ``move()`` and needs no painting
+    trick and no second QGraphicsEffect.
+
+    When the headline DOES fit — which is the normal case, since the size
+    search runs first — the viewport takes the label's full height plus up to
+    ``ALERT_SHADOW_PAD`` of the budget's leftover slack, so nothing clips and
+    the shadow spills as it did before this widget existed.
+    """
+
+    def __init__(self, label: QLabel, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setObjectName("EventOverlayAlertViewport")
+        self._label = label
+        label.setParent(self)
+        self._natural_height = 0
+        self._offset = 0.0
+        self._pad = 0
+
+    def apply_text_layout(self, natural_height: int, budget: int) -> int:
+        """Size to a headline ``natural_height`` px tall inside ``budget``.
+
+        Returns the overflow in px — 0 when it all fits, which is also the
+        signal that no crawl is needed.
+        """
+        budget = max(1, budget)
+        self._natural_height = max(1, natural_height)
+        overflow = max(0, self._natural_height - budget)
+        if overflow:
+            self._pad = 0
+            self.setFixedHeight(budget)
+        else:
+            # The pad is opportunistic: only ever spent out of the slack the
+            # budget already has. Taking it unconditionally would push the
+            # viewport past a configured Alerts region and reintroduce the
+            # very clipping this widget exists to stop.
+            self._pad = max(0, min(ALERT_SHADOW_PAD, (budget - self._natural_height) // 2))
+            self.setFixedHeight(self._natural_height + 2 * self._pad)
+            self._offset = 0.0
+        self._place_label()
+        return overflow
+
+    def collapse(self) -> None:
+        """No headline: take no room at all, so a cleared alert leaves none."""
+        self._natural_height = 0
+        self._offset = 0.0
+        self._pad = 0
+        self.setFixedHeight(0)
+        self._place_label()
+
+    def set_offset(self, px: float) -> None:
+        self._offset = max(0.0, px)
+        self._place_label()
+
+    def reset(self) -> None:
+        self._offset = 0.0
+        self._place_label()
+
+    def _place_label(self) -> None:
+        self._label.setGeometry(
+            0, self._pad - round(self._offset), max(1, self.width()), self._natural_height
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._place_label()
 
 
 class _Hairline(QWidget):
@@ -453,6 +655,9 @@ class EventOverlayWindow(QWidget):
         self._center_text.setObjectName("EventOverlayText")
         self._center_text.setTextFormat(Qt.TextFormat.PlainText)
         self._center_text.setWordWrap(True)
+        # The headline lives inside a clipping viewport so an alert too long
+        # for its region can crawl instead of being cut off (#102).
+        self._alert_viewport = _AlertViewport(self._center_text, self)
         self._alert_rule = _Hairline(self)
 
         # Alert emphasis (pulse/glow): a slow opacity beat on the headline.
@@ -464,6 +669,15 @@ class EventOverlayWindow(QWidget):
         self._pulse_timer = QTimer(self)
         self._pulse_timer.setInterval(PULSE_INTERVAL_MS)
         self._pulse_timer.timeout.connect(self._toggle_pulse)
+
+        # Headline crawl (#102): only runs while an alert overflows its region.
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setInterval(SCROLL_TICK_MS)
+        self._scroll_timer.timeout.connect(self._advance_scroll)
+        self._scroll_speed = 0.0  # px/s, from alert_scroll_speed
+        self._scroll_offset = 0.0
+        self._scroll_travel = 0  # px of overflow still to walk
+        self._scroll_hold_ticks = 0
 
         self._apply_text_shadow(self._center_text)
         self._set_text_color(DEFAULT_TEXT_COLOR)
@@ -493,7 +707,7 @@ class EventOverlayWindow(QWidget):
         self._alert_layout.setContentsMargins(0, 0, 0, 0)
         self._alert_layout.setSpacing(4)
         self._alert_layout.addWidget(self._alert_kicker)
-        self._alert_layout.addWidget(self._center_text)
+        self._alert_layout.addWidget(self._alert_viewport)
         self._alert_layout.addWidget(self._alert_rule)
         self._alert_host = QWidget(self)
         self._alert_host.setObjectName("OverlayAlertHost")
@@ -556,8 +770,9 @@ class EventOverlayWindow(QWidget):
 
         # Position-mode chrome (hidden unless editing).
         self._edit_hint = QLabel(
-            "Event overlay — drag to move, use the corner grip to resize,\n"
-            "double-click to lock in place",
+            "Event overlay — drag to move, use the corner grip to resize.\n"
+            "Drag a dashed region to move it, or its edge to resize it. "
+            "Double-click to lock in place.",
             self,
         )
         self._edit_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -571,6 +786,10 @@ class EventOverlayWindow(QWidget):
         self._drag_region: str | None = None
         self._region_drag_start: QPoint | None = None
         self._region_drag_base = (0, 0)
+        # Empty edges = the drag is a move; otherwise it is a resize of these
+        # edges, measured from the rect the region had when it was grabbed.
+        self._region_resize_edges: Qt.Edge = NO_EDGES
+        self._region_resize_base = QRect()
 
         # If regions were persisted, switch out of the stacked QVBoxLayout now.
         if self._region_mode():
@@ -604,6 +823,11 @@ class EventOverlayWindow(QWidget):
             # alert already on screen is re-timed rather than left on the old
             # clock. The utility lines read the attribute at start().
             self._clear_timer.setInterval(self._clear_after_ms)
+            # The crawl is paced off that same lifetime, so a crawl in flight
+            # is re-derived from the new one rather than finishing on the old
+            # clock (or never finishing on a shortened one).
+            if self._alert_text:
+                self._restyle_alert()
         if ch_lane_retention_s is not None:
             self._ch_lane_retention_s = max(0.0, ch_lane_retention_s)
 
@@ -639,7 +863,10 @@ class EventOverlayWindow(QWidget):
         align = Qt.AlignmentFlag.AlignHCenter
         for widget in (self._alert_kicker, self._center_text):
             widget.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
-        for widget in (self._alert_kicker, self._center_text, self._alert_rule):
+        # The headline is centered inside its viewport, which is itself the
+        # full-width layout item — the alert panel stays centered in its
+        # region under every skin (the deliberate exception, unchanged).
+        for widget in (self._alert_kicker, self._alert_viewport, self._alert_rule):
             self._alert_layout.setAlignment(widget, align)
         kicker_role = skins.TypographyRole(
             skin.alert_kicker_scale, "bold", skin.alert_kicker_tracking
@@ -732,6 +959,10 @@ class EventOverlayWindow(QWidget):
         if editing == self._edit_mode:
             return
         self._edit_mode = editing
+        # Hover moves only arrive with tracking on — that is what feeds the
+        # region resize cursor. Off again when locked, since the window goes
+        # transparent for input anyway.
+        self.setMouseTracking(editing)
         if editing:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
@@ -753,6 +984,7 @@ class EventOverlayWindow(QWidget):
             self._set_region_chrome(False)
             self._edit_hint.hide()
             self._size_grip.hide()
+            self.unsetCursor()
             self._apply_locked_flags()
             if self._state is not None:
                 geo = self.geometry()
@@ -768,6 +1000,10 @@ class EventOverlayWindow(QWidget):
         super().resizeEvent(event)
         if self._region_mode():
             self._layout_regions()
+        # A narrower window rewraps the headline, which changes both the size
+        # it fits at and whether it needs to crawl at all.
+        if self._alert_text:
+            self._restyle_alert()
         if self._edit_mode:
             self._edit_hint.setGeometry(0, 0, self.width(), EDIT_HINT_HEIGHT)
             self._size_grip.move(self.width() - 26, self.height() - 26)
@@ -780,13 +1016,31 @@ class EventOverlayWindow(QWidget):
                 return key
         return None
 
+    def _region_edges_at(self, key: str, pos: QPoint) -> Qt.Edge:
+        """Which edges of region ``key`` the (self-local) ``pos`` is grabbing.
+
+        Reuses ``overlaybase.edge_at`` — the same margin-band hit test the
+        frameless windows have used since 1.8 — translated into the host's
+        own coordinates.
+        """
+        rect = self._region_hosts()[key].geometry()
+        return edge_at(
+            QPoint(pos.x() - rect.x(), pos.y() - rect.y()),
+            QRect(QPoint(0, 0), rect.size()),
+            region_resize_margin(rect.width(), rect.height()),
+        )
+
     def mousePressEvent(self, event) -> None:
         if self._edit_mode and event.button() == Qt.MouseButton.LeftButton:
-            # Hit-test the three regions first; a hit drags that region alone.
+            # Hit-test the regions first; a hit near an edge resizes that
+            # region, a hit anywhere else inside it drags that region alone.
             if self._state is not None:
-                key = self._region_at(event.position().toPoint())
+                pos = event.position().toPoint()
+                key = self._region_at(pos)
                 if key is not None:
-                    self._begin_region_drag(key, event.globalPosition().toPoint())
+                    self._begin_region_edit(
+                        key, event.globalPosition().toPoint(), self._region_edges_at(key, pos)
+                    )
                     event.accept()
                     return
             # Miss: fall back to moving the whole window.
@@ -798,21 +1052,71 @@ class EventOverlayWindow(QWidget):
     def mouseMoveEvent(self, event) -> None:
         if self._edit_mode and self._drag_region is not None:
             delta = event.globalPosition().toPoint() - self._region_drag_start
-            region = self._state.overlay_regions[self._drag_region]
-            region.dx = self._region_drag_base[0] + delta.x()
-            region.dy = self._region_drag_base[1] + delta.y()
+            if self._region_resize_edges:
+                self._apply_region_resize(delta)
+            else:
+                region = self._state.overlay_regions[self._drag_region]
+                region.dx = self._region_drag_base[0] + delta.x()
+                region.dy = self._region_drag_base[1] + delta.y()
             self._layout_regions()
             self._position_region_chrome()
             event.accept()
         elif self._edit_mode and self._drag_offset is not None:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
             event.accept()
+        elif self._edit_mode and not event.buttons():
+            self._update_region_cursor(event.position().toPoint())
+            super().mouseMoveEvent(event)
         else:
             super().mouseMoveEvent(event)
+
+    def _update_region_cursor(self, pos: QPoint) -> None:
+        """Show the matching resize cursor while hovering a region's edge."""
+        key = self._region_at(pos)
+        cursor = cursor_for_edges(self._region_edges_at(key, pos)) if key is not None else None
+        if cursor is None:
+            self.unsetCursor()
+        else:
+            self.setCursor(cursor)
+
+    def _apply_region_resize(self, delta: QPoint) -> None:
+        """Turn an edge drag into the region's new size and offsets.
+
+        The rect is moved first and the offsets are then *derived* from where
+        it landed (``region_offsets`` is the exact inverse of the placement
+        rule), so every anchor comes out right without a case per edge per
+        anchor — a bottom-anchored region grows upward from its own baseline,
+        a top-anchored one downward.
+        """
+        region = self._state.overlay_regions[self._drag_region]
+        rect = resize_rect(
+            self._region_resize_base,
+            self._region_resize_edges,
+            delta.x(),
+            delta.y(),
+            MIN_REGION_WIDTH,
+            MIN_REGION_HEIGHT,
+        )
+        region.width = rect.width()
+        region.height = rect.height()
+        region.dx, region.dy = region_offsets(
+            region.anchor,
+            rect.x(),
+            rect.y(),
+            rect.width(),
+            rect.height(),
+            self.width(),
+            self.height(),
+        )
+        # The Alerts region is a text budget, so a live headline refits into
+        # the new box as it is dragged rather than at the next alert.
+        if self._drag_region == "alert" and self._alert_text:
+            self._restyle_alert()
 
     def mouseReleaseEvent(self, event) -> None:
         self._drag_offset = None
         self._drag_region = None
+        self._region_resize_edges = NO_EDGES
         super().mouseReleaseEvent(event)
 
     # -- per-region positioning --------------------------------------------------
@@ -839,8 +1143,12 @@ class EventOverlayWindow(QWidget):
     def _region_mode(self) -> bool:
         return self._state is not None and self._state.overlay_regions is not None
 
-    def _begin_region_drag(self, key: str, global_start: QPoint) -> None:
-        # First region drag initializes overlay_regions to defaults matching
+    def _begin_region_edit(
+        self, key: str, global_start: QPoint, edges: Qt.Edge | None = None
+    ) -> None:
+        """Start moving (``edges`` empty) or resizing one region."""
+        edges = edges if edges is not None else NO_EDGES
+        # First region edit initializes overlay_regions to defaults matching
         # the current stacked positions, so the untouched regions don't jump.
         if self._state.overlay_regions is None:
             self._state.overlay_regions = {
@@ -851,6 +1159,8 @@ class EventOverlayWindow(QWidget):
         self._drag_region = key
         self._region_drag_start = global_start
         self._region_drag_base = (region.dx, region.dy)
+        self._region_resize_edges = edges
+        self._region_resize_base = self._region_rect(key)
 
     def _activate_region_layout(self) -> None:
         """Take the three hosts out of the stacked QVBoxLayout so they can be
@@ -859,6 +1169,48 @@ class EventOverlayWindow(QWidget):
             self._main_layout.removeWidget(host)
         self._layout_regions()
 
+    def _region_size(self, key: str, region: OverlayRegion) -> tuple[int, int]:
+        """The (width, height) a region host is laid out at.
+
+        A configured ``height`` is a FLOOR for the content-driven regions: a
+        bars region dragged short still grows when a fifth bar lands, rather
+        than swallowing it. **Alerts is the exception and reads it exactly**,
+        because that region has a way to honor it — ``_alert_budget_height``
+        takes the same number as the headline's budget, so the text is
+        shrunk (then crawled) into the box the user drew instead of the box
+        growing to the text.
+        """
+        defaults = {
+            "lanes": max(LANES_WIDTH, self._lanes_host.sizeHint().width()),
+            "utility": max(320, self._utility_host.sizeHint().width()),
+            "alert": self.width(),
+            "bars": BAR_WIDTH,
+        }
+        host = self._region_hosts()[key]
+        host_w = region.width if region.width is not None else defaults[key]
+        if key == "alert" and region.height:
+            host_h = max(MIN_REGION_HEIGHT, region.height)
+        else:
+            host_h = max(1, host.sizeHint().height(), region.height or 0)
+        return max(MIN_REGION_WIDTH, host_w), host_h
+
+    def _region_rect(self, key: str) -> QRect:
+        """Where a region host currently sits, from its persisted placement."""
+        region = self._region_for(key)
+        host_w, host_h = self._region_size(key, region)
+        x, y = region_origin(
+            region.anchor, region.dx, region.dy, host_w, host_h, self.width(), self.height()
+        )
+        return QRect(x, y, host_w, host_h)
+
+    def _region_for(self, key: str) -> OverlayRegion:
+        """The stored region, backfilling one absent from an older layout
+        (e.g. 'utility', missing from anything saved before 1.11)."""
+        regions = self._state.overlay_regions if self._state is not None else None
+        if not regions:
+            return self._default_region(key)
+        return regions.get(key) or self._default_region(key)
+
     def _layout_regions(self) -> None:
         """Place each host at its anchor line + (dx, dy), centered horizontally
         on the window center by default. Lanes/bars grow downward from the
@@ -866,29 +1218,10 @@ class EventOverlayWindow(QWidget):
         regions = self._state.overlay_regions if self._state is not None else None
         if not regions:
             return
-        w, h = self.width(), self.height()
-        cx = w // 2
-        defaults = {
-            "lanes": max(LANES_WIDTH, self._lanes_host.sizeHint().width()),
-            "utility": max(320, self._utility_host.sizeHint().width()),
-            "alert": w,
-            "bars": BAR_WIDTH,
-        }
         for key, host in self._region_hosts().items():
-            # Backfill a region absent from a pre-1.11 saved layout (e.g.
-            # 'utility') with its default so the host isn't stranded at (0, 0).
-            region = regions.get(key) or self._default_region(key)
-            host_w = region.width if region.width is not None else defaults[key]
-            host_h = max(1, host.sizeHint().height())
-            host.resize(host_w, host_h)
-            x = cx + region.dx - host_w // 2
-            if region.anchor == "top":
-                y = REGION_MARGIN_TOP + region.dy
-            elif region.anchor == "center":
-                y = h // 2 + region.dy
-            else:  # bottom
-                y = h - REGION_MARGIN_BOTTOM - host_h + region.dy
-            host.move(x, y)
+            rect = self._region_rect(key)
+            host.resize(rect.width(), rect.height())
+            host.move(rect.x(), rect.y())
             host.show()
 
     # -- positioning-mode preview & chrome ---------------------------------------
@@ -948,7 +1281,7 @@ class EventOverlayWindow(QWidget):
         self._style_preview_alert(label)
         self._apply_text_shadow(label)
         self._alert_layout.insertWidget(
-            self._alert_layout.indexOf(self._center_text) + 1,
+            self._alert_layout.indexOf(self._alert_viewport) + 1,
             label,
             0,
             Qt.AlignmentFlag.AlignHCenter,
@@ -1290,30 +1623,62 @@ class EventOverlayWindow(QWidget):
                 self._apply_text_shadow(self._center_text)
             self._restyle_alert()
 
+    def _alert_budget_height(self) -> int:
+        """How tall the headline may be before it shrinks — and, past the size
+        floor, scrolls.
+
+        A resized Alerts region says so itself (#102); otherwise it is a
+        fraction of the overlay's own height, as it always was. The kicker
+        and the rule are inside the region too, so they come off the top of a
+        configured budget or the region would grow past what the user drew.
+        """
+        region = None
+        if self._region_mode():
+            regions = self._state.overlay_regions or {}
+            region = regions.get("alert")
+        if region is not None and region.height:
+            budget = region.height - self._alert_layout.spacing() * 2
+            # ``isHidden`` not ``isVisible``: this runs while the overlay
+            # itself is still hidden (it is shown once there is something to
+            # show), and a child of a hidden window is never "visible".
+            if not self._alert_kicker.isHidden():
+                budget -= self._alert_kicker.sizeHint().height()
+            if not self._alert_rule.isHidden():
+                budget -= self._alert_rule.sizeHint().height()
+            return max(MIN_ALERT_BUDGET, budget)
+        return max(MIN_ALERT_BUDGET, round((self.height() or 600) * ALERT_HEIGHT_FRACTION))
+
+    def _measure_headline(self, size: int) -> QRect:
+        """The rect the current headline wraps into at ``size`` px.
+
+        Measured from font metrics rather than the label's ``sizeHint``: a
+        stylesheet font size is not resolved until the widget is polished, so
+        asking the label right after ``setStyleSheet`` would read the old
+        font. This is also what makes the fit search testable.
+        """
+        # The host's width, not the viewport's: the viewport is the host's
+        # only full-width layout item, and the host is the one that has a
+        # real width before the first layout pass.
+        width = max(80, (self._alert_host.width() or self.width()) - 8)
+        font = QFont(self._center_text.font())
+        font.setPixelSize(size)
+        font.setBold(True)
+        return QFontMetrics(font).boundingRect(
+            QRect(0, 0, width, 0),
+            int(Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignHCenter),
+            self._center_text.text(),
+        )
+
     def _headline_size(self) -> int:
         """The headline's size after shrink-to-fit.
 
         Long alerts (a full raid-mob description pasted into a trigger) used to
-        wrap past the bottom of the region and clip mid-word.
+        wrap past the bottom of the region and clip mid-word. Shrinking is the
+        first answer; ``_relayout_headline`` handles what is still too long.
         """
-        text = self._center_text.text()
-        if not text:
+        if not self._center_text.text():
             return self._text_size
-        width = self._alert_host.width() or self.width()
-        width = max(80, width - 8)
-        height = max(40, round((self.height() or 600) * ALERT_HEIGHT_FRACTION))
-
-        def measure(size: int) -> QRect:
-            font = QFont(self._center_text.font())
-            font.setPixelSize(size)
-            font.setBold(True)
-            return QFontMetrics(font).boundingRect(
-                QRect(0, 0, width, 0),
-                int(Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignHCenter),
-                text,
-            )
-
-        return fit_text_size(measure, height, self._text_size)
+        return fit_text_size(self._measure_headline, self._alert_budget_height(), self._text_size)
 
     def _restyle_alert(self) -> None:
         """Paint the headline at the fitted size, color and pulse phase."""
@@ -1322,12 +1687,75 @@ class EventOverlayWindow(QWidget):
             dim = qcolor(color)
             dim.setAlpha(round(255 * PULSE_DIM))
             color = f"rgba({dim.red()}, {dim.green()}, {dim.blue()}, {dim.alpha()})"
+        size = self._headline_size()
         self._center_text.setStyleSheet(
-            skins.typography_style(
-                self._headline_size(), skins.TypographyRole(1.0, "bold"), color=color
-            )
+            skins.typography_style(size, skins.TypographyRole(1.0, "bold"), color=color)
             + " background: transparent;"
         )
+        self._relayout_headline(size)
+
+    # -- headline crawl ------------------------------------------------------------
+
+    def _relayout_headline(self, size: int) -> None:
+        """Fit the headline into its viewport, and crawl it if it overflows.
+
+        Called from every path that changes what the headline says or how big
+        its slot is (a new alert, a skin/appearance change, a window or region
+        resize). Restarting a crawl already in flight is deliberate: the text
+        it was walking is no longer the text on screen.
+        """
+        if not self._center_text.text():
+            # Also the constructor's path (``_set_text_color`` restyles before
+            # ``_alert_layout`` exists), so it must not ask for the budget.
+            self._stop_scroll()
+            self._alert_viewport.collapse()
+            return
+        measured = self._measure_headline(size)
+        overflow = self._alert_viewport.apply_text_layout(
+            measured.height(), self._alert_budget_height()
+        )
+        if not overflow:
+            self._stop_scroll()
+            return
+        font = QFont(self._center_text.font())
+        font.setPixelSize(size)
+        font.setBold(True)
+        self._start_scroll(overflow, QFontMetrics(font).lineSpacing())
+
+    def _start_scroll(self, overflow: int, line_height: int) -> None:
+        self._scroll_travel = overflow
+        self._scroll_offset = 0.0
+        self._scroll_speed = alert_scroll_speed(overflow, self._clear_after_ms, line_height)
+        self._scroll_hold_ticks = round((self._clear_after_ms * SCROLL_HEAD_HOLD) / SCROLL_TICK_MS)
+        self._alert_viewport.reset()
+        if self._scroll_speed > 0 and not self._scroll_timer.isActive():
+            self._scroll_timer.start()
+
+    def _stop_scroll(self) -> None:
+        self._scroll_timer.stop()
+        self._scroll_travel = 0
+        self._scroll_offset = 0.0
+        self._scroll_speed = 0.0
+        self._alert_viewport.reset()
+
+    def _advance_scroll(self) -> None:
+        if self._scroll_hold_ticks > 0:
+            self._scroll_hold_ticks -= 1
+            return
+        self._scroll_offset += self._scroll_speed * (SCROLL_TICK_MS / 1000.0)
+        if self._scroll_offset >= self._scroll_travel:
+            # Arrived: park on the last line for whatever the alert has left.
+            self._scroll_offset = float(self._scroll_travel)
+            self._scroll_timer.stop()
+        self._alert_viewport.set_offset(self._scroll_offset)
+
+    def is_scrolling(self) -> bool:
+        """Whether a headline crawl is in flight (test/debug hook)."""
+        return self._scroll_timer.isActive()
+
+    def scroll_offset(self) -> float:
+        """How far the headline has crawled, in px (test/debug hook)."""
+        return self._scroll_offset
 
     def _style_preview_alert(self, label: QLabel) -> None:
         """Keep an existing edit-mode sample in step with live appearance."""
@@ -1342,6 +1770,7 @@ class EventOverlayWindow(QWidget):
 
     def clear_text(self) -> None:
         self._clear_timer.stop()
+        self._stop_scroll()
         self._alert_text = ""
         self._center_text.setText("")
         self._alert_kicker.setText("")

@@ -8,8 +8,8 @@ that sits over the game and renders these kinds of content:
   charm break, …), in the trigger's color, cleared automatically. The alert
   panel is centered within its configured region in every skin; other overlay
   windows keep their normal row and column alignment. See
-  [The small gold label](#the-small-gold-label) for when part of it is drawn
-  as a compact caption.
+  [How alert text is laid out](#how-alert-text-is-laid-out) for the two rules
+  that decide how it is shown.
 - **Timer bars** — countdown bars stacked bottom-center (AOE countdowns,
   trigger timers). Re-triggering a bar restarts it; bars vanish at zero.
 - **CH chain lanes** — one lane per heal target with green chips sliding
@@ -32,7 +32,12 @@ It never intercepts clicks, has no window chrome at all, and hides itself
 when there's nothing to show — most of the time you forget it exists until
 a dragon roars.
 
-## The small gold label
+## How alert text is laid out
+
+Two rules, and both are deterministic — nothing about your display text is
+guessed at.
+
+### The small gold label
 
 An alert is shown as one headline **unless it begins with a short name
 followed by a separator**, in which case that name becomes the small gold
@@ -57,16 +62,42 @@ clause to the gold label because it happened to contain ` - ` further along:
 ```
 
 The split is presentation only. A trigger's **reset text** still matches
-against the whole string, exactly as you typed it, and display text is never
-treated as markup — tags and formatting characters show up as you typed them.
+against the whole string, exactly as you typed it.
+
+### Long text: shrink, then scroll
+
+Alert text that does not fit its Alerts region is **shrunk** until it does,
+down to a readable floor. Text still too long at that floor — a paragraph of
+mob notes — then **scrolls** slowly upward through the region instead of
+being cut off at the bottom.
+
+The scroll is paced off the **alert text duration**
+([Settings → Audio & Overlays](../settings/audio-overlays.md)): it pauses on
+the first lines, walks the rest, and is timed to arrive before the alert
+clears. It is also capped at a readable rate, so an alert long enough that
+finishing would need a blur runs at the readable rate and shows as much as it
+can — give it a longer duration, or a taller Alerts region, if you want the
+rest.
 
 ## Positioning it
 
 Tray → **Position Event Overlay** shows the overlay's outline with a size
 grip so you can drag and resize it to sit exactly over your game window.
 **Double-click to lock it in place** when you're done. The geometry
-persists. In position mode each region (CH chains, Alerts, Timer bars, and
-the Utility section) can be dragged independently to lay out the overlay.
+persists.
+
+In position mode each region (CH chains, Alerts, Timer bars, and the Utility
+section) is outlined with a dashed border and can be laid out on its own:
+
+- **drag inside a region** to move it;
+- **drag a region's edge or corner** to resize it (the cursor changes when
+  you are over one).
+
+A region's size sticks. For CH chains, Timer bars and Utility it is a
+minimum — a sixth timer bar still grows the region rather than being cut off.
+For **Alerts** it is exact, because that is the box the alert text is fitted
+into: make it taller to get more of a long alert on screen at once, or
+shorter to keep alerts compact.
 
 !!! tip
     Make the overlay match your EQ window, not your whole monitor — alert

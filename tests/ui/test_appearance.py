@@ -419,7 +419,9 @@ def test_alert_content_is_centered_in_every_skin(qtbot, skin_name) -> None:
     for widget in (overlay._alert_kicker, overlay._center_text):
         assert bool(widget.alignment() & Qt.AlignmentFlag.AlignHCenter)
         assert not bool(widget.alignment() & Qt.AlignmentFlag.AlignLeft)
-    for widget in (overlay._alert_kicker, overlay._center_text, overlay._alert_rule):
+    # The headline's layout item is its clipping viewport (#102); the label is
+    # centered inside that, so the panel is still centered in its region.
+    for widget in (overlay._alert_kicker, overlay._alert_viewport, overlay._alert_rule):
         item = overlay._alert_layout.itemAt(overlay._alert_layout.indexOf(widget))
         assert bool(item.alignment() & Qt.AlignmentFlag.AlignHCenter)
 

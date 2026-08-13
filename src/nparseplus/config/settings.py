@@ -40,12 +40,18 @@ class OverlayRegion(BaseModel):
     (top margin / vertical center / bottom margin); ``dx``/``dy`` nudge the
     region off that anchor (px, +x right / +y down). ``width`` overrides the
     region's default host width (None = the region's built-in default).
+
+    ``height`` is a FLOOR, not a cap: content taller than it still grows the
+    region rather than being cut off. The Alerts region is the one that reads
+    it as a budget as well — the headline is shrunk (and past the floor size,
+    scrolled) to fit the height you gave it (#102).
     """
 
     anchor: Literal["top", "center", "bottom"] = "top"
     dx: int = 0
     dy: int = 0
     width: int | None = None
+    height: int | None = None
 
 
 class WindowState(BaseModel):

@@ -113,10 +113,13 @@ def test_region_drag_updates_and_persists(qtbot) -> None:
     overlay._layout_regions()
 
     lanes = overlay._lanes_host
-    # Press inside the (top-anchored, deterministic) lanes host, then drag.
-    _press(overlay, lanes.x() + 10, lanes.y() + 5)
+    # Press in the INTERIOR of the (top-anchored, deterministic) lanes host —
+    # its edges are the resize band now — then drag.
+    mid_y = lanes.y() + lanes.height() // 2
+    _press(overlay, lanes.x() + lanes.width() // 2, mid_y)
     assert overlay._drag_region == "lanes"
-    _move(overlay, lanes.x() + 10 + 25, lanes.y() + 5 + 15)
+    assert not overlay._region_resize_edges  # a move, not a resize
+    _move(overlay, lanes.x() + lanes.width() // 2 + 25, mid_y + 15)
 
     region = overlay._state.overlay_regions["lanes"]
     assert region.dx == 25
@@ -162,7 +165,7 @@ def test_first_region_drag_initializes_defaults(qtbot) -> None:
     qtbot.addWidget(overlay)
     assert overlay._state.overlay_regions is None
 
-    overlay._begin_region_drag("bars", QPoint(500, 700))
+    overlay._begin_region_edit("bars", QPoint(500, 700))
     regions = overlay._state.overlay_regions
     assert regions is not None
     assert set(regions) == {"lanes", "utility", "alert", "bars"}

@@ -59,10 +59,11 @@ Each trigger can combine any of:
   (Red, Yellow, Gold, Orange, ForestGreen, SteelBlue, MediumPurple, White),
   auto-cleared after the
   [alert duration](../settings/audio-overlays.md). It is shown exactly as
-  you typed it — no markup, no formatting characters. If it starts with a
-  short name and a separator (`Gorenaire — ENRAGED`), that name is drawn as a
-  small gold label above the headline; see
-  [the small gold label](../windows/event-overlay.md#the-small-gold-label).
+  you typed it — no markup, no formatting characters — and long text is
+  shrunk, then scrolled, rather than cut off. If it starts with a short name
+  and a separator (`Gorenaire — ENRAGED`), that name is drawn as a small gold
+  label above the headline; see
+  [how alert text is laid out](../windows/event-overlay.md#how-alert-text-is-laid-out).
 - **Audio** — text-to-speech of a separate (usually shorter) phrase, with an
   optional **interrupt speech** flag that cuts off any in-progress
   announcement so this one is heard right away ([TTS](tts.md)).
