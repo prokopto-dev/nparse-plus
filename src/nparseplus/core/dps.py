@@ -11,7 +11,9 @@ Deviations from EQTool are noted inline; the main one is that the first hit
 of an entity is appended to its damage list (EQTool only seeded the totals),
 so trailing damage decays correctly for one-hit entities. The second is that
 staleness retires a *fight*, never an individual attacker — see
-``FIGHT_RETENTION_SECONDS``.
+``FIGHT_RETENTION_SECONDS``. The best window is also carried between hits
+rather than re-swept per hit as Update12SecondDmg does — the same number, at
+a cost that does not grow with the fight (see ``_update_best_window``).
 """
 
 from __future__ import annotations
@@ -67,6 +69,13 @@ class FightEntity:
     start_time: datetime
     level: int | None = None
     death_time: datetime | None = None
+    # Append-only for the life of the fight, and deliberately not pruned. Two
+    # readers need it: the trailing sum (the newest window's worth) and the
+    # rescan a window change forces, which has to re-measure the WHOLE fight
+    # under the new span — capping the list would quietly turn that number
+    # into "best since you touched the setting". Nothing else walks it, so the
+    # cost of keeping it is memory (~112 bytes a hit; ~1.4 MB for the
+    # two-hour camp in #86) rather than time.
     hits: list[tuple[datetime, int]] = field(default_factory=list)
     total_damage: int = 0
     highest_hit: int = 0
@@ -87,6 +96,13 @@ class FightEntity:
     # and the max-merge below would otherwise keep the stale larger number
     # forever.
     _best_window_span: timedelta | None = field(default=None, repr=False)
+    # The sliding window that ends at the newest hit, carried between calls:
+    # `_best_left` indexes the oldest hit still inside it and `_best_sum` is
+    # its damage. Appending a hit advances both by however many hits fell out
+    # the back, which is what makes the update amortised O(1) instead of a
+    # rescan (#86).
+    _best_left: int = field(default=0, repr=False)
+    _best_sum: int = field(default=0, repr=False)
 
     def add_damage(self, timestamp: datetime, damage: int) -> None:
         """EntittyDPS.AddDamage — record one hit (misses arrive as 0)."""
@@ -133,33 +149,73 @@ class FightEntity:
         """Port of Update12SecondDmg: the max damage in any one-window span.
 
         The result depends only on ``self.hits`` and the window width (never
-        on ``now``), and hits are append-only, so skip the O(n) rescan when
+        on ``now``), and hits are append-only, so skip the work entirely when
         neither has changed since the last run — this keeps the per-tick
-        refresh off the quadratic path while producing an identical value.
+        refresh off the recompute path while producing an identical value.
+
+        When a hit HAS been appended, only the window ending at that hit is a
+        new candidate: every earlier one was scored when its own hit arrived
+        and is already merged into ``best_window_damage``. So the sweep is
+        resumed from ``_best_left``/``_best_sum`` rather than restarted, which
+        is what makes recording a fight linear instead of quadratic (#86 — the
+        rescan-per-hit cost 93% of all per-line time in a raid corpus, on the
+        driver thread, whether or not the DPS window was ever opened).
         """
         window = self.trailing_window
-        if len(self.hits) == self._best_window_hits and window == self._best_window_span:
+        count = len(self.hits)
+        if count == self._best_window_hits and window == self._best_window_span:
             return
+        if window != self._best_window_span or count != self._best_window_hits + 1:
+            # Either the span moved (a best measured over a different one is
+            # not comparable, so the max-merge starts over) or the hit list
+            # moved by something other than one append and the carried
+            # left/sum no longer describe it. Both are rare; re-measure.
+            self._rescan_best_window()
+            return
+        timestamp, damage = self.hits[-1]
+        window_sum = self._best_sum + damage
+        left = self._best_left
+        # `left < count - 1` keeps the pointer at or behind the new hit: a
+        # zero or negative window would otherwise walk it off the end. The
+        # old rescan had no such guard and raised IndexError there.
+        while left < count - 1 and timestamp - self.hits[left][0] >= window:
+            window_sum -= self.hits[left][1]
+            left += 1
+        self._best_left = left
+        self._best_sum = window_sum
+        self._best_window_hits = count
+        if window_sum > self.best_window_damage:
+            self.best_window_damage = window_sum
+
+    def _rescan_best_window(self) -> None:
+        """Re-measure the best window over the whole hit list — O(n).
+
+        This is Update12SecondDmg as the C# writes it (and as this file did
+        until #86), kept for the paths the incremental update cannot serve.
+        Only a window change reaches it in practice — rare, and it re-measures
+        the whole fight on purpose, so the number stays "best of this fight"
+        rather than "best since the setting moved". It also re-establishes the
+        carried left/sum so the incremental updates can resume from it.
+        """
+        window = self.trailing_window
         if window != self._best_window_span:
             # A best measured over a different span is not comparable; start
             # the max-merge over rather than carry the old number forward.
             self.best_window_damage = 0
             self._best_window_span = window
         self._best_window_hits = len(self.hits)
-        span = self.hits[-1][0] - self.hits[0][0]
-        if span < window:
-            self.best_window_damage = max(self.best_window_damage, self.total_damage)
-            return
         best = self.best_window_damage
         window_sum = 0
         left = 0
-        for right, (t_right, damage) in enumerate(self.hits):
+        for right, (timestamp, damage) in enumerate(self.hits):
             window_sum += damage
-            while t_right - self.hits[left][0] >= window:
+            while left < right and timestamp - self.hits[left][0] >= window:
                 window_sum -= self.hits[left][1]
                 left += 1
-            if right >= left:
-                best = max(best, window_sum)
+            if window_sum > best:
+                best = window_sum
+        self._best_left = left
+        self._best_sum = window_sum
         self.best_window_damage = best
 
     @property
