@@ -6,6 +6,27 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.4.0 (2026-08-13)
+
+### Bug Fixes
+
+- **packaging**: Drop the wrong Flatpak talk-name, and say why
+  ([#90](https://github.com/prokopto-dev/nparse-plus/pull/90),
+  [`7eca9d8`](https://github.com/prokopto-dev/nparse-plus/commit/7eca9d89944925c5b00652bd5a7c820013070201))
+
+### Chores
+
+- **packaging**: Grant the Flatpak portal bus name a release early
+  ([#90](https://github.com/prokopto-dev/nparse-plus/pull/90),
+  [`7eca9d8`](https://github.com/prokopto-dev/nparse-plus/commit/7eca9d89944925c5b00652bd5a7c820013070201))
+
+### Features
+
+- **updater**: Verify update downloads before trusting them
+  ([#90](https://github.com/prokopto-dev/nparse-plus/pull/90),
+  [`7eca9d8`](https://github.com/prokopto-dev/nparse-plus/commit/7eca9d89944925c5b00652bd5a7c820013070201))
+
+
 ## v2.3.3 (2026-08-13)
 
 ### Performance Improvements
