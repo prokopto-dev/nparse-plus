@@ -117,6 +117,20 @@ class FightEntity:
     start_time: datetime
     level: int | None = None
     death_time: datetime | None = None
+    # This attacker was your pet at the time it was landing these hits (#81).
+    # Recorded per HIT and sticky for the life of the entity, because the
+    # live pet name cannot answer the question the session footer asks: a pet
+    # that dies, is reclaimed, or is replaced mid-fight clears
+    # ``FightTracker.pet_name``, and keying the footer off that name alone
+    # dropped everything the pet had already done from the combined reading.
+    # The row flag stays keyed to the CURRENT name (see ``_is_your_pet``) —
+    # "that row is my pet" and "that damage was mine" are different claims.
+    #
+    # Scoped to one fight, which bounds the one case it gets wrong: a charm
+    # that breaks mid-fight and keeps hitting the same target goes on
+    # counting until the group retires. A broken charm turns on you, so in
+    # practice its next hits open an entity in a different fight.
+    was_your_pet: bool = False
     # Append-only for the life of the fight, and deliberately not pruned. Two
     # readers need it: the trailing sum (the newest window's worth) and the
     # rescan a window change forces, which has to re-measure the WHOLE fight
@@ -667,7 +681,13 @@ class FightTracker:
         self._notify()
 
     def _is_your_pet(self, attacker_name: str, target_name: str) -> bool:
-        """Whether this attacker is the pet you currently own.
+        """Whether this attacker is the pet you own RIGHT NOW.
+
+        Two callers, both wanting the present tense: the row flag (a row
+        stops being "my pet" the moment the pet dies) and the ownership stamp
+        in ``add_damage``, which asks at the one moment the answer is certain.
+        What the session footer needs is the past tense, and that is
+        ``FightEntity.was_your_pet``.
 
         Casefolded, like every other name comparison in the module. A charmed
         pet can share an NPC's name, which is why ``add_damage`` refuses an
@@ -694,13 +714,17 @@ class FightTracker:
         if fight is None:
             fight = Fight(target_name=event.target_name, start_time=event.timestamp)
             self._fights.append(fight)
-        fight.add_damage(
+        entity = fight.add_damage(
             attacker,
             event.timestamp,
             event.damage_done,
             event.level_guess,
             self.trailing_window,
         )
+        # Stamp ownership as the damage lands, not when the footer is read:
+        # by then the pet may be dead, reclaimed or replaced.
+        if not entity.was_your_pet and self._is_your_pet(attacker, fight.target_name):
+            entity.was_your_pet = True
         # A level guess describes the attacker: apply it to every row where
         # that NPC is the *target* (TryAdd's trailing loop).
         if event.level_guess is not None:
@@ -780,17 +804,25 @@ class FightTracker:
         pet's biggest swing is not that. The fight-length gate takes the
         longer of the two, so a pet that opened 30s before you joined carries
         the pair past the minimum.
+
+        Pets are selected by ``FightEntity.was_your_pet`` — ownership stamped
+        when each hit landed — NOT by the current ``pet_name``. A pet that
+        dies, is reclaimed or is replaced part-way through a fight clears
+        that name, and asking it here would have thrown away everything the
+        pet had already contributed to a fight still running. More than one
+        entity can qualify, which is the resummon case and is correct: both
+        pets were yours.
         """
+        you_key = YOU.casefold()
         for fight in self._fights:
-            yours = fight.entities.get(YOU.casefold())
-            pet = None
-            if self.count_pet_damage and self.pet_name:
-                candidate = fight.entities.get(self.pet_name.casefold())
-                if candidate is not None and self._is_your_pet(
-                    candidate.attacker_name, fight.target_name
-                ):
-                    pet = candidate
-            mine = [entity for entity in (yours, pet) if entity is not None]
+            yours = fight.entities.get(you_key)
+            mine = [yours] if yours is not None else []
+            if self.count_pet_damage:
+                mine.extend(
+                    entity
+                    for key, entity in fight.entities.items()
+                    if key != you_key and entity.was_your_pet
+                )
             if not mine:
                 continue
             if max(entity.total_seconds(now) for entity in mine) <= self.session_min_fight_s:

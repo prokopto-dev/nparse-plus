@@ -250,3 +250,89 @@ def test_the_pet_handler_and_the_dps_handler_agree(
     )
     bus.publish(_swing("Vexer", "a gnoll", 26, t0))
     assert tracker.snapshot(t0)[0].is_your_pet is True
+
+
+# -- ownership outlives the pet -----------------------------------------------
+
+
+def test_a_pet_that_dies_mid_fight_keeps_its_damage_in_the_footer(t0: datetime) -> None:
+    """The footer asks the past tense, not the present.
+
+    PetHandler clears the pet name on death, reclaim, charm break and zone.
+    Selecting the pet entity by the CURRENT name meant a pet that fought for
+    25 s and then died was dropped from the combined reading for the rest of
+    a fight that was still running — the damage was recorded and then
+    silently uncounted.
+    """
+    tracker = FightTracker()
+    tracker.set_pet_name("Vexer")
+    for offset in range(0, 15):
+        tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
+    tracker.set_pet_name("")  # the pet dies, well before the 20 s gate
+    for offset in range(0, 31):
+        tracker.add_damage(_swing(YOU, "Gorenaire", 100, t0 + timedelta(seconds=offset)))
+    tracker.tick(t0 + timedelta(seconds=30))
+
+    solo = FightTracker()
+    _long_fight(solo, t0, you=100, pet=0)
+    assert (
+        tracker.session_summary().best.total_damage
+        == solo.session_summary().best.total_damage + (60 * 15)
+    )
+
+
+def test_the_row_flag_still_drops_while_the_footer_keeps_the_damage(t0: datetime) -> None:
+    """The two are deliberately different claims.
+
+    "That row is my pet" is present tense and goes false when the pet dies
+    (issue #81's first acceptance criterion); "that damage was mine" is not.
+    """
+    tracker = FightTracker()
+    tracker.set_pet_name("Vexer")
+    for offset in range(0, 31):
+        tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
+    tracker.set_pet_name("")
+    now = t0 + timedelta(seconds=30)
+    tracker.tick(now)
+
+    assert _rows(tracker, now)["Vexer"].is_your_pet is False
+    assert tracker.session_summary().best.highest_dps > 0
+
+
+def test_a_pet_replaced_mid_fight_counts_both(t0: datetime) -> None:
+    tracker = FightTracker()
+    tracker.set_pet_name("Vexer")
+    for offset in range(0, 15):
+        tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
+    tracker.set_pet_name("Gorkus")  # died and resummoned
+    for offset in range(15, 31):
+        tracker.add_damage(_swing("Gorkus", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
+    tracker.tick(t0 + timedelta(seconds=30))
+    # Both pets were yours; the whole 31 hits' worth is in the reading.
+    assert tracker.session_summary().best.total_damage == 60 * 31
+
+
+def test_ownership_is_never_stamped_on_another_players_pet(t0: datetime) -> None:
+    tracker = FightTracker()
+    tracker.set_pet_name("Vexer")
+    for offset in range(0, 31):
+        tracker.add_damage(_swing("Gorkus", "Gorenaire", 900, t0 + timedelta(seconds=offset)))
+    # Naming it later must not retroactively claim what it already did.
+    tracker.set_pet_name("Gorkus")
+    tracker.tick(t0 + timedelta(seconds=30))
+    assert tracker.session_summary().best.highest_dps == 0
+
+
+def test_the_stamp_is_scoped_to_the_fight_it_was_made_in(t0: datetime) -> None:
+    # A charm that breaks and is fought as a mob later starts a fresh entity.
+    tracker = FightTracker()
+    tracker.set_pet_name("Vexer")
+    tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0))
+    assert tracker.fights[0].entities["vexer"].was_your_pet is True
+    tracker.set_pet_name("")
+    tracker.clear()
+    for offset in range(0, 31):
+        tracker.add_damage(_swing("Vexer", "a gnoll", 900, t0 + timedelta(seconds=offset)))
+    tracker.tick(t0 + timedelta(seconds=30))
+    assert tracker.fights[0].entities["vexer"].was_your_pet is False
+    assert tracker.session_summary().best.highest_dps == 0

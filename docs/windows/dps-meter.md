@@ -72,6 +72,11 @@ The pet is recognised by name, tracked through summon, reclaim, death and
 charm break. Another player's pet is never counted as yours; a *charmed* pet
 sharing a mob's name is not either.
 
+When a pet dies part-way through a fight its row stops being marked as
+yours — you no longer have a pet — but the damage it already did stays in
+your footer for that fight. A pet you resummon mid-fight gets its own row,
+and both count.
+
 ## How fights are tracked
 
 - A fight starts when damage lands on a target and ends when the target

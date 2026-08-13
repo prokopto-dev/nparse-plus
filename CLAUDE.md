@@ -703,6 +703,18 @@ refuses a row whose attacker equals its fight's target, so the charm-shares-
 an-NPC-name case `add_damage` already guards cannot come back through the
 flag.
 
+**The row flag and the footer ask different tenses, and that split is the
+fix for a real bug.** `FightRow.is_your_pet` is present tense — a row stops
+being "my pet" the moment the pet dies, which #81 asks for explicitly — but
+the footer keyed off the same live `pet_name` silently dropped everything a
+pet had already contributed as soon as `PetHandler` cleared it on death,
+reclaim, charm break or zone, for the rest of a fight still running. So
+ownership is stamped per hit onto `FightEntity.was_your_pet` in
+`add_damage` (the one moment the answer is certain) and the footer selects
+on that. It also makes the resummon case right — two entities qualify,
+because both pets were yours. Sticky within one fight, which bounds the one
+case it over-counts: a charm that breaks and keeps hitting the same target.
+
 Both new knobs are measurement rules (`_measurement_rules`), so changing
 them resets Best/Now like the window and the minimum-fight gate do. The DPS
 window's title bar carries the mode (`MELEE` / `MELEE + MINE` / `ALL`) read
