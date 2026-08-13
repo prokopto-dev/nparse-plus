@@ -27,6 +27,7 @@ from nparseplus.core.events import (
     SlainEvent,
     YouBeginCastingEvent,
     YouFinishCastingEvent,
+    YourSpellInterruptedEvent,
     YouZonedEvent,
 )
 from nparseplus.core.handlers.base import BaseHandler
@@ -57,6 +58,7 @@ class DpsHandler(BaseHandler):
         bus.subscribe(CampEvent, self._on_camp)
         bus.subscribe(YouBeginCastingEvent, self._on_begin_casting)
         bus.subscribe(YouFinishCastingEvent, self._on_finish_casting)
+        bus.subscribe(YourSpellInterruptedEvent, self._on_cast_interrupted)
         if player_pet is not None:
             # PetHandler already owns the CREATION/LEADER/RECLAIMED/DEATH
             # rules and the resets on zone, camp, charm break and your own
@@ -81,6 +83,18 @@ class DpsHandler(BaseHandler):
     def _on_finish_casting(self, event: YouFinishCastingEvent) -> None:
         if event.spell.is_detrimental:
             self.tracker.note_your_cast(event.timestamp)
+
+    def _on_cast_interrupted(self, event: YourSpellInterruptedEvent) -> None:
+        # "Your spell is interrupted." — the cast the begin line armed the
+        # window for never landed, so nothing that follows is yours.
+        #
+        # A resist is deliberately NOT treated this way. A full resist does
+        # print "Your target resisted the <spell> spell.", but a PARTIAL one
+        # prints nothing and still does damage, so disarming on the resist
+        # event risks discarding a caster's real damage — the exact failure
+        # this whole attribution path exists to fix — to close a window that
+        # is at most the credit window wide.
+        self.tracker.cancel_your_cast()
 
     def _on_damage(self, event: DamageEvent) -> None:
         self.tracker.add_damage(event)

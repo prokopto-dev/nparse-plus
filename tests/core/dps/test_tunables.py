@@ -237,7 +237,7 @@ def test_changing_a_measurement_rule_clears_the_footer() -> None:
         ("session_min_fight_s", 60.0),
         ("damage_sources", "melee"),
         ("spell_credit_window_s", 8.0),
-        ("count_pet_damage", False),
+        ("count_pet_damage", True),  # off is the default, so on is the change
     ):
         tracker = _session_with_stats()
         tracker.configure(**{knob: value})

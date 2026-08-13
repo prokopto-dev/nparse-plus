@@ -68,13 +68,13 @@ def test_apply_dps_settings_pushes_the_new_knobs() -> None:
 
     backend.settings.dps.damage_sources = "all"
     backend.settings.dps.spell_credit_window_seconds = 5.0
-    backend.settings.dps.count_pet_damage = False
+    backend.settings.dps.count_pet_damage = True
     backend.settings.dps.trailing_window_seconds = 6.0
     backend.apply_dps_settings()
 
     assert backend.fights.damage_sources == "all"
     assert backend.fights.spell_credit_window_s == 5.0
-    assert backend.fights.count_pet_damage is False
+    assert backend.fights.count_pet_damage is True
     assert backend.fights.trailing_window_s == 6.0
 
 

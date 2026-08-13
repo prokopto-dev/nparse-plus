@@ -26,6 +26,13 @@ The title bar carries the counting mode (`MELEE`, `MELEE + MINE`, `ALL`) so
 an empty caster row reads as a filter rather than a broken parser. Change it
 in [Settings → DPS Meter](../settings/dps-meter.md).
 
+!!! tip "Upgrading and playing a caster?"
+
+    Your existing setting is carried over as-is, so a config from 2.4 or
+    earlier still counts melee only. Set **Count damage from** to
+    **melee + my spells** to have your own spell damage counted — see
+    [below](#casters-how-spell-damage-is-counted).
+
 ## Casters: how spell damage is counted
 
 EverQuest logs spell, proc and damage-over-time damage as
@@ -63,10 +70,13 @@ yours. Two rows rather than one is deliberate: whether the pet is holding up
 (and whether it is still alive) is worth seeing on its own, and merging the
 rows would make the per-row DPS and biggest hit meaningless.
 
-The session **Best / Now / Last** footer counts you *and* your pet together,
-which is your real output as a magician, necromancer, beastlord or charming
-enchanter. Turn that off with **Count pet damage as mine** if you want the
-footer to be your own hands only.
+By default the pet is counted as its own attacker, the way every other row
+is: your session **Best / Now / Last** footer is your own hands. If you read
+the pet as part of your output — a magician, necromancer, beastlord or
+charming enchanter usually does — turn on **Count pet damage as mine** in
+[Settings → DPS Meter](../settings/dps-meter.md) and the footer becomes the
+two of you together. It is off by default because that is a question about
+how *you* want to count, not something the meter should decide for you.
 
 The pet is recognised by name, tracked through summon, reclaim, death and
 charm break. Another player's pet is never counted as yours; a *charmed* pet

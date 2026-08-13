@@ -25,6 +25,7 @@ from nparseplus.core.events import (
     DamageEvent,
     YouBeginCastingEvent,
     YouFinishCastingEvent,
+    YourSpellInterruptedEvent,
     YouZonedEvent,
 )
 from nparseplus.core.handlers.dps import DpsHandler
@@ -343,3 +344,64 @@ def test_the_deadline_is_the_landing_plus_the_current_window(t0: datetime) -> No
     assert tracker.credit_deadline == t0 + timedelta(seconds=4.5)
     tracker.clear()
     assert tracker.credit_deadline is None
+
+
+# -- an interrupted cast disarms ----------------------------------------------
+
+
+def test_cancel_your_cast_disarms_without_touching_fights(t0: datetime) -> None:
+    """An interruption says nothing about the fights on screen."""
+    tracker = FightTracker()
+    tracker.add_damage(_swing(YOU, "a gnoll", 100, t0))
+    tracker.note_your_cast(t0, cast_time_s=8.0)
+    tracker.cancel_your_cast()
+    assert tracker.credit_deadline is None
+    assert len(tracker.fights) == 1  # NOT clear()
+    assert tracker.snapshot(t0)[0].total_damage == 100
+
+
+def test_an_interrupted_cast_stops_collecting_other_peoples_nukes(
+    bus: EventBus, tracker: FightTracker, t0
+) -> None:
+    """begin -> interrupted -> non-melee: the span is no longer yours.
+
+    Arming from the begin line holds the window open for the whole cast
+    time, so an 8 s cast interrupted a second in used to keep crediting you
+    for another nine seconds.
+    """
+    _handler(bus, tracker)
+    bus.publish(YouBeginCastingEvent(timestamp=t0, spell=_spell("Ice Shock", cast_ms=8000)))
+    bus.publish(YourSpellInterruptedEvent(timestamp=t0 + timedelta(seconds=1)))
+    bus.publish(_nuke("Gorenaire", 900, t0 + timedelta(seconds=5)))
+    assert tracker.fights == []
+
+
+def test_an_uninterrupted_cast_of_the_same_shape_still_credits(
+    bus: EventBus, tracker: FightTracker, t0
+) -> None:
+    # Guards the test above against passing for the wrong reason.
+    _handler(bus, tracker)
+    bus.publish(YouBeginCastingEvent(timestamp=t0, spell=_spell("Ice Shock", cast_ms=8000)))
+    bus.publish(_nuke("Gorenaire", 900, t0 + timedelta(seconds=5)))
+    assert [r.attacker_name for r in tracker.snapshot(t0)] == [YOU]
+
+
+def test_an_interruption_end_to_end() -> None:
+    """Through the real parser: the interrupt line is one nParse+ already reads."""
+    from nparseplus.audio.tts import NullSpeaker
+    from nparseplus.composition import build_backend
+    from nparseplus.config.settings import Settings
+
+    backend = build_backend(Settings(), speaker=NullSpeaker())
+    backend.pipeline.process("[Wed Jul 15 12:00:00 2026] You begin casting Ice Shock.")
+    # Asserted so this cannot start passing because nothing armed at all.
+    deadline = backend.fights.credit_deadline
+    assert deadline is not None and deadline > datetime(2026, 7, 15, 12, 0, 4)
+
+    backend.pipeline.process("[Wed Jul 15 12:00:01 2026] Your spell is interrupted.")
+    assert backend.fights.credit_deadline is None
+
+    backend.pipeline.process(
+        "[Wed Jul 15 12:00:04 2026] a gnoll was hit by non-melee for 300 points of damage."
+    )
+    assert backend.fights.fights == []

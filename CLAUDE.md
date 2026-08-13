@@ -665,10 +665,15 @@ tracker so `DamageEvent` stays a faithful record for triggers and plugins);
 `FightTracker._attribute` decides. The one signal a log gives is your own
 casting, so `melee_only: bool` became
 `damage_sources: melee | melee+mine | all` (a `DpsSettings` model_validator
-folds the old bool in — the `plugins.registry_url` pattern — mapping `true`
-to **melee+mine**, its intent rather than its mechanism, since every stored
-document says `true` and a literal mapping would leave every caster on the
-empty row this fixes). Under `all` an unclaimable line lands on a
+folds the old bool in — the `plugins.registry_url` pattern). **The
+fresh-install default and the migration deliberately disagree**:
+`DEFAULT_DAMAGE_SOURCES` is `melee+mine` because that is the mode that works
+for a caster, while an existing document maps LITERALLY (`true` → `melee`,
+`false` → `all`), because what a headline number MEANS must not change
+under a user who only updated the app — even toward being more correct.
+Casters get a release note instead. The guard is `model_fields_set`, not
+"still equals the default", so an explicit `melee+mine` survives a stale
+`melee_only: true` beside it. Under `all` an unclaimable line lands on a
 `"(spell damage)"` pseudo-attacker so group percentages stay right without
 the meter claiming it.
 
@@ -680,8 +685,15 @@ the begin line is the only one guaranteed to precede the damage. So
 window, and the finish event extends it — union, and extending only ever
 moves the end forward, which is why a chain-caster stays armed. Only
 **detrimental** spells arm it (`Spell.is_detrimental`), or a cleric
-chain-healing would collect the raid's spell damage. `clear()` disarms:
-zoning cancels the cast. Only the LANDING moment is stored —
+chain-healing would collect the raid's spell damage. `cancel_your_cast()`
+disarms and is deliberately NOT `clear()` (an interruption says nothing
+about the fights on screen): `YourSpellInterruptedEvent` reaches it, since
+arming from the begin line otherwise holds an 8s cast's window open for
+nine seconds after it was interrupted a second in, and `clear()` calls it
+because zoning/camping/dying cancel the cast too. A **resist** deliberately
+does not disarm — a partial resist prints nothing and still does damage, so
+acting on the resist event would discard real caster damage to close a
+window at most the credit window wide. Only the LANDING moment is stored —
 `credit_deadline` derives from it on every read — so moving
 `spell_credit_window_s` reaches a cast already armed; storing the deadline
 froze the window at arming time, and tightening it mid-raid (the one
@@ -699,7 +711,12 @@ from `is_your_damage` — the window styles both as yours and marks the row
 row** (whether the pet is holding up is what a mage wants to see; merging
 would make `highest_hit` and per-row dps meaningless) while
 `_update_session_stats` **sums** you and the pet into one footer reading
-under `count_pet_damage` (default on). Two deliberate asymmetries there:
+under `count_pet_damage` — **default OFF, diverging from #81**, which asked
+for on. How to count a pet is a genuine difference of opinion, not a defect,
+and a counting change must not silently alter what someone's headline number
+MEANS on upgrade; the row marking stays unconditional because naming whose
+pet that is is identification, not measurement. Two deliberate asymmetries
+in the merge itself:
 `highest_hit` stays yours alone (it reads as your own crit), and the
 fight-length gate takes the LONGER of the pair, so a pet that opened 25s
 before you joined carries the reading past the minimum. `_is_your_pet`

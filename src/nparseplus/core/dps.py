@@ -47,12 +47,16 @@ TRAILING_WINDOW = timedelta(seconds=12)
 DamageSources = Literal["melee", "melee+mine", "all"]
 DAMAGE_SOURCES: tuple[DamageSources, ...] = ("melee", "melee+mine", "all")
 
-# The default counts your own spell damage and nobody else's. Melee-only was
-# the 2.2 default for one reason — "<target> was hit by non-melee" names no
-# attacker, so counting it meant crediting YOU for every nuke in range — and
-# that reason is what ``_attribute`` removes. A player who never casts sees
-# exactly the melee-only behavior under this mode, because nothing ever arms
-# the credit window.
+# The default for a FRESH install counts your own spell damage and nobody
+# else's. Melee-only was the 2.2 default for one reason — "<target> was hit
+# by non-melee" names no attacker, so counting it meant crediting YOU for
+# every nuke in range — and that reason is what ``_attribute`` removes. A
+# player who never casts sees exactly the melee-only behavior under this
+# mode, because nothing ever arms the credit window.
+#
+# An EXISTING settings.json is deliberately NOT moved here: its `melee_only`
+# migrates literally, so upgrading never changes what someone's number means
+# (see DpsSettings._fold_in_legacy_melee_only).
 DEFAULT_DAMAGE_SOURCES: DamageSources = "melee+mine"
 
 # How long after one of your own casts a "was hit by non-melee" line still
@@ -81,10 +85,17 @@ DAMAGE_SOURCE_MARKS: dict[str, str] = {
     "all": "ALL",
 }
 
-# Your pet's damage is merged into the session Best/Now/Last footer by
-# default: for a magician or a necromancer the pet is a large share of the
-# output, and leaving it out under-reports them by that share (#81).
-COUNT_PET_DAMAGE_DEFAULT = True
+# The pet stays an INDEPENDENT row by default; merging its damage into your
+# session Best/Now/Last footer is opt-in.
+#
+# DIVERGES from #81, which asked for this on. How to count a pet is a
+# genuine difference of opinion — a magician reasonably reads the pet as
+# part of their output, and someone comparing numbers with a parse
+# reasonably does not — and a meter should not answer that question for its
+# user by changing what their headline number means on upgrade. The pet's
+# row is still MARKED as yours whatever this says: naming whose pet that is
+# is identification, not measurement.
+COUNT_PET_DAMAGE_DEFAULT = False
 
 # A fight is retired this long after the last damage against its target, from
 # ANY attacker.
@@ -621,6 +632,23 @@ class FightTracker:
         if self._cast_landed_at is None or landed > self._cast_landed_at:
             self._cast_landed_at = landed
 
+    def cancel_your_cast(self) -> None:
+        """Disarm the credit window — what it was armed for never landed.
+
+        The counterpart to ``note_your_cast``. Arming from the begin line
+        means the window is held open for the whole cast time, so a cast
+        interrupted a second in would otherwise stay armed for the rest of
+        it plus the credit window, handing every nuke that lands in that span
+        to you. Deliberately NOT ``clear()``: an interruption says nothing
+        about the fights on screen.
+
+        Unconditional, because ``YourSpellInterruptedEvent`` carries no
+        spell. It cannot cost a previous cast its tail credit: you cannot
+        begin a second cast until the first has resolved, so anything the
+        first was going to do has already been decided.
+        """
+        self._cast_landed_at = None
+
     @property
     def credit_deadline(self) -> datetime | None:
         """The last moment a non-melee line still counts as your spell.
@@ -786,7 +814,7 @@ class FightTracker:
         # Zoning, camping and dying all cancel whatever you were casting, so
         # the credit window must not survive them and hand the first nuke on
         # the other side to you.
-        self._cast_landed_at = None
+        self.cancel_your_cast()
         if self._fights:
             self._fights.clear()
             self._notify()

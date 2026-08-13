@@ -8,7 +8,7 @@ including on fights already running.
 |---|---|
 | **Count damage from** | Which damage a row may count: **melee only**, **melee + my spells** (default), or **all damage**. See below. |
 | **Spell credit window** | How long after one of your casts a non-melee hit still counts as yours (default 2 s). Only used by the two modes that count non-melee damage. |
-| **Count pet damage as mine** | On by default. Adds your pet's damage to the session **Best / Now / Last** footer. The pet keeps its own row either way. |
+| **Count pet damage as mine** | Off by default. Adds your pet's damage to the session **Best / Now / Last** footer. The pet keeps its own row, marked `(pet)` and highlighted as yours, either way — this only decides whose damage the footer is a reading of. |
 | **Attacker dropoff** | How long a target's group stays on screen after the last hit against it from anyone (default 40 s; `never` keeps groups until you zone, camp or die). Individual attackers are never dropped, so an opener who stops swinging does not vanish mid-fight. |
 | **DPS averaging window** | The span each row's `dps` number is averaged over (default 12 s, EQTool's value). Damage is always divided by the full window, so a burst reads low until the window fills: 400 damage two seconds in shows 33 dps at 12 s. Shorter reacts faster; longer is steadier. |
 | **Session stat minimum fight** | A fight must run longer than this before it counts toward the footer (default 20 s, EQTool's rule). Most trash dies faster, which is why that footer can sit at zero all session. |
@@ -52,11 +52,31 @@ deliberately.
 **Attacker dropoff** does not clear anything: it decides how long a row is
 displayed, never what a reading measured.
 
+## Counting your pet
+
+A magician reasonably reads their pet as part of their own output; someone
+comparing numbers against a raid parse reasonably does not. nParse+ does not
+pick for you — **Count pet damage as mine** is off, so your headline number
+means the same thing after upgrading as it did before, and one checkbox
+gives you the combined figure if that is what you want.
+
+The pet's row is always marked `(pet)` and highlighted as yours regardless.
+Saying whose pet that is, is identification; adding its damage to your
+number is measurement, and only the second one is a matter of taste.
+
 ## Upgrading from 2.4 or earlier
 
-The old **Melee damage only** checkbox became this page's three-way mode.
-An existing `settings.json` with it ticked (the shipped default) lands on
-**melee + my spells**, which keeps the promise that checkbox was making —
-nothing in your row that isn't yours — while letting your own spell damage
-back in. One with it unticked lands on **all damage**. Pick **melee only**
-if you want the old behaviour exactly.
+The old **Melee damage only** checkbox became this page's three-way mode,
+and your existing setting is carried over **literally**: ticked becomes
+**melee only**, unticked becomes **all damage**. Nothing about what your
+meter counts changes because you updated.
+
+**If you play a caster, this is the one setting to change.** Set **Count
+damage from** to **melee + my spells** and your nukes start counting. A
+fresh install of nParse+ 2.5 or later starts there already; existing
+configs are left alone on purpose, because a number that quietly starts
+meaning something else after an update is worse than one you had to opt
+into.
+
+Likewise **Count pet damage as mine** is off, so a pet's damage stays its
+own row until you say otherwise.

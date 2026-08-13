@@ -102,6 +102,27 @@ def test_set_pet_name_notifies_only_on_a_change(tracker: FightTracker) -> None:
 # -- the session footer -------------------------------------------------------
 
 
+def _counting_the_pet(**kwargs) -> FightTracker:
+    """A tracker with the pet toggle ON and a pet named.
+
+    Opt-in, so every footer-merging test has to say so out loud — the
+    default is an independent pet row.
+    """
+    tracker = FightTracker(count_pet_damage=True, **kwargs)
+    tracker.set_pet_name("Vexer")
+    return tracker
+
+
+def test_counting_the_pet_is_off_by_default() -> None:
+    """How to count a pet is an opinion, so it is the user's to hold.
+
+    DIVERGES from #81, which asked for this on: changing what someone's
+    headline number MEANS on upgrade is not a fix, and a magician who wants
+    the combined number is one checkbox away.
+    """
+    assert FightTracker().count_pet_damage is False
+
+
 def _long_fight(tracker: FightTracker, t0: datetime, *, you: int, pet: int) -> datetime:
     """A 30 s fight past the session minimum, both of you swinging."""
     for offset in range(0, 31):
@@ -116,7 +137,7 @@ def _long_fight(tracker: FightTracker, t0: datetime, *, you: int, pet: int) -> d
 
 
 def test_pet_damage_reaches_the_session_footer(t0: datetime) -> None:
-    tracker = FightTracker()
+    tracker = _counting_the_pet()
     tracker.set_pet_name("Vexer")
     _long_fight(tracker, t0, you=100, pet=60)
     combined = tracker.session_summary().best
@@ -130,11 +151,10 @@ def test_pet_damage_reaches_the_session_footer(t0: datetime) -> None:
 
 
 def test_the_footer_is_the_sum_not_the_larger_of_the_two(t0: datetime) -> None:
-    tracker = FightTracker()
+    tracker = _counting_the_pet()
     tracker.set_pet_name("Vexer")
     _long_fight(tracker, t0, you=100, pet=100)
-    pet_only = FightTracker()
-    pet_only.set_pet_name("Vexer")
+    pet_only = _counting_the_pet()
     _long_fight(pet_only, t0, you=0, pet=100)
     assert (
         tracker.session_summary().best.highest_dps
@@ -156,23 +176,20 @@ def test_the_toggle_off_leaves_the_footer_as_it_was(t0: datetime) -> None:
 
 def test_a_pet_only_fight_still_feeds_the_footer(t0: datetime) -> None:
     # A necromancer who let the pet tank still has a number.
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     _long_fight(tracker, t0, you=0, pet=60)
     assert tracker.session_summary().best.highest_dps > 0
 
 
 def test_the_highest_hit_stays_yours(t0: datetime) -> None:
     # It reads as your own crit; the pet's biggest swing is not that.
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     _long_fight(tracker, t0, you=100, pet=900)
     assert tracker.session_summary().best.highest_hit == 100
 
 
 def test_another_players_pet_never_reaches_your_footer(t0: datetime) -> None:
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     for offset in range(0, 31):
         tracker.add_damage(_swing("Gorkus", "Gorenaire", 900, t0 + timedelta(seconds=offset)))
     tracker.tick(t0 + timedelta(seconds=30))
@@ -185,8 +202,7 @@ def test_the_pet_carries_the_pair_past_the_fight_minimum(t0: datetime) -> None:
     The pet opened 25 s before you landed a swing; the pair has been on the
     target long enough even though your own entity has not.
     """
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     for offset in range(0, 30):
         tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
     tracker.add_damage(_swing(YOU, "Gorenaire", 100, t0 + timedelta(seconds=29)))
@@ -195,18 +211,33 @@ def test_the_pet_carries_the_pair_past_the_fight_minimum(t0: datetime) -> None:
 
 
 def test_the_toggle_applies_live(t0: datetime) -> None:
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     _long_fight(tracker, t0, you=100, pet=60)
     # It is a measurement rule, so it resets the aggregates...
     tracker.configure(count_pet_damage=False)
     assert tracker.session_summary().best.highest_dps == 0
     # ...and the next reading is yours alone.
     tracker.tick(t0 + timedelta(seconds=31))
-    with_pet = FightTracker()
-    with_pet.set_pet_name("Vexer")
+    with_pet = _counting_the_pet()
     _long_fight(with_pet, t0, you=100, pet=60)
     assert tracker.session_summary().best.highest_dps < with_pet.session_summary().best.highest_dps
+
+
+def test_turning_the_toggle_on_reaches_a_fight_already_running(t0: datetime) -> None:
+    """Opting in mid-fight counts what the pet has already done.
+
+    The pet's damage is recorded whatever the toggle says — only the footer
+    reading is gated — so switching it on does not cost the user the fight
+    they switched it on during.
+    """
+    tracker = FightTracker()  # default: pet counted independently
+    tracker.set_pet_name("Vexer")
+    _long_fight(tracker, t0, you=100, pet=60)
+    yours_alone = tracker.session_summary().best.total_damage
+
+    tracker.configure(count_pet_damage=True)
+    tracker.tick(t0 + timedelta(seconds=30))
+    assert tracker.session_summary().best.total_damage == yours_alone + (60 * 31)
 
 
 # -- the handler follows PlayerPet --------------------------------------------
@@ -264,8 +295,7 @@ def test_a_pet_that_dies_mid_fight_keeps_its_damage_in_the_footer(t0: datetime) 
     a fight that was still running — the damage was recorded and then
     silently uncounted.
     """
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     for offset in range(0, 15):
         tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
     tracker.set_pet_name("")  # the pet dies, well before the 20 s gate
@@ -287,8 +317,7 @@ def test_the_row_flag_still_drops_while_the_footer_keeps_the_damage(t0: datetime
     "That row is my pet" is present tense and goes false when the pet dies
     (issue #81's first acceptance criterion); "that damage was mine" is not.
     """
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     for offset in range(0, 31):
         tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
     tracker.set_pet_name("")
@@ -300,8 +329,7 @@ def test_the_row_flag_still_drops_while_the_footer_keeps_the_damage(t0: datetime
 
 
 def test_a_pet_replaced_mid_fight_counts_both(t0: datetime) -> None:
-    tracker = FightTracker()
-    tracker.set_pet_name("Vexer")
+    tracker = _counting_the_pet()
     for offset in range(0, 15):
         tracker.add_damage(_swing("Vexer", "Gorenaire", 60, t0 + timedelta(seconds=offset)))
     tracker.set_pet_name("Gorkus")  # died and resummoned

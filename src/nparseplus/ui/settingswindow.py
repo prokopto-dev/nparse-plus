@@ -1171,10 +1171,13 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._dps_count_pet.setChecked(dps.count_pet_damage)
         self._dps_count_pet.setToolTip(
             "Add your pet's damage to the session Best / Now / Last footer.\n\n"
-            "Your pet always gets its own row, marked (pet) and highlighted "
-            "like yours — whether the pet is holding up is worth seeing on its "
-            "own. This decides whether your headline number is you, or you and "
-            "your pet together."
+            "Off by default: your pet is counted as its own attacker, the way "
+            "every other row is. Turn this on if you read the pet as part of "
+            "your own output — a magician or necromancer usually does.\n\n"
+            "Your pet always gets its own row either way, marked (pet) and "
+            "highlighted like yours; whether the pet is holding up is worth "
+            "seeing on its own. This only decides whether your headline "
+            "number is you, or you and your pet together."
         )
         form.addRow("Count pet damage as mine", self._dps_count_pet)
 
