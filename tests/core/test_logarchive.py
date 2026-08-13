@@ -199,26 +199,41 @@ def test_service_respects_enabled_flag(tmp_path: Path) -> None:
         get_threshold_mb=lambda: 1,
         spawn=run_inline,
     )
-    enabled_service.tick(datetime.now())
+    enabled_service.tick(datetime.now())  # copies the log aside...
+    assert log.stat().st_size == 2 * 1024 * 1024
+    enabled_service.tick(datetime.now())  # ...and empties it on the next tick
     assert log.stat().st_size == 0
-    # second tick inside the hourly window is a no-op (no error, no rescan)
+    # a further tick inside the hourly window is a no-op (no error, no rescan)
     enabled_service.tick(datetime.now())
+    assert list((tmp_path / "archive").glob("*.txt")) != []
 
 
-def test_the_sweep_runs_off_the_calling_thread(tmp_path: Path) -> None:
-    # Copying a 100 MB log is not something to do on the thread that tails it.
+def test_the_copy_runs_off_the_thread_but_the_swap_does_not(tmp_path: Path) -> None:
+    """Copying a 100 MB log does not belong on the thread that tails it; the
+    truncate does, because the tail's reset has to be part of it."""
     log = tmp_path / "eqlog_A_P1999Green.txt"
     _make_log(log, 2 * 1024 * 1024)
+    copied_on: list[int] = []
+    rotated_on: list[int] = []
     service = LogArchiveService(
         get_log_dir=lambda: tmp_path,
         is_enabled=lambda: True,
         get_threshold_mb=lambda: 1,
+        on_rotated=lambda _path: rotated_on.append(threading.get_ident()),
+        spawn=lambda name, work: threading.Thread(
+            target=lambda: (copied_on.append(threading.get_ident()), work()), name=name
+        ).start(),
     )
     service.tick(datetime.now())
     assert service._job.wait(timeout=10.0)
-    assert log.stat().st_size == 0
+    assert log.stat().st_size == 2 * 1024 * 1024  # copied, not yet emptied
+    assert copied_on and copied_on[0] != threading.get_ident()
 
-    # And the tick that scheduled it did no file work itself.
+    service.tick(datetime.now())
+    assert log.stat().st_size == 0
+    assert rotated_on == [threading.get_ident()]  # emptied here, on this thread
+
+    # And the tick that scheduled the copy did no file work itself.
     idents: list[int] = []
     watched = LogArchiveService(
         get_log_dir=lambda: idents.append(threading.get_ident()) or tmp_path,
@@ -229,3 +244,38 @@ def test_the_sweep_runs_off_the_calling_thread(tmp_path: Path) -> None:
     watched.tick(datetime.now())
     assert idents == [threading.get_ident()]  # only the settings read
     assert log.stat().st_size == 0  # untouched by the tick
+
+
+def test_the_tail_is_told_even_when_the_refill_is_byte_for_byte_identical(
+    tmp_path: Path,
+) -> None:
+    """No content check can carry this on its own.
+
+    EQ writes the same line over and over — a melee round inside one
+    timestamp second is identical bytes — so a log emptied and refilled past
+    the tail's offset can match at that offset. The archiver says so instead
+    of leaving it to be inferred.
+    """
+    log = tmp_path / "eqlog_Tanky_P1999Green.txt"
+    line = b"[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n"
+    log.write_bytes(line * 21_000)
+    game = _client_handle(log)
+    try:
+        tail = LogTail.attach(log)
+        assert tail.poll() == []
+        service = LogArchiveService(
+            get_log_dir=lambda: tmp_path,
+            is_enabled=lambda: True,
+            get_threshold_mb=lambda: 1,
+            on_rotated=lambda path: tail.restart() if path == log else None,
+            spawn=run_inline,
+        )
+        service.tick(datetime.now())  # copy aside
+        service.tick(datetime.now())  # empty it, and tell the tail
+
+        game.write(line * 21_000)  # the same bytes, back past the old offset
+        lines = tail.poll()
+    finally:
+        game.close()
+
+    assert len(lines) == 21_000  # the whole refilled log, nothing skipped

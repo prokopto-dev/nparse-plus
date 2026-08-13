@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -50,6 +51,11 @@ TICK_BUDGET_S = 0.25
 # stretch a single tick. Two CONSECUTIVE breaches means it is the callback,
 # not the weather, and the tick is dropped for the rest of the session.
 TICK_BREACH_LIMIT = 2
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Same log, however each side spelled the path (Windows: same case)."""
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
 @dataclass
@@ -99,6 +105,21 @@ class LogDriver:
     def set_log_dir(self, log_dir: Path) -> None:
         self.log_dir = log_dir
         self._tail = None  # force re-discovery on next loop
+
+    def note_log_rotated(self, path: Path) -> None:
+        """Our log archiver just emptied ``path`` — read it from the top.
+
+        **Driver thread only**, which is the point: ``core.logarchive``
+        truncates from its tick so that emptying the log and this reset are
+        one step with no poll in between. Detection cannot cover this on its
+        own — an emptied log the client refills to our read offset before the
+        next poll is not smaller, and EQ's repeated identical lines are not
+        different in content either. The tail keeps those checks as the
+        backstop for rotations nobody tells us about.
+        """
+        if self._tail is not None and _same_file(self._tail.path, path):
+            self._tail.restart()
+            logger.info("%s was archived — reading it from the top", path.name)
 
     # -- tick registration ---------------------------------------------------
 

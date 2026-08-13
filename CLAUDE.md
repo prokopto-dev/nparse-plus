@@ -795,15 +795,19 @@ relinks the inode instead, EQ under Wine keeps writing to it, and no
 session with nothing logged, and restarting nParse+ did not help while the
 game held the moved file. `logarchive.py` now copies the contents out and
 **truncates in place** (what log rotators do): the client's descriptor stays
-valid and its append writes resolve to offset 0. `LogTail.poll` reads that as
-a rotation **by the byte signature at its offset**, checked on every poll and
-not only when the file shrank — the sweep runs on its own thread, so a fast
-writer can refill the log *to* that offset or past it before the next 100 ms
-poll, and a size test would then resume mid-file and eat everything written
-before it. (A same-size-and-same-mtime shortcut would have kept the idle poll
-at one syscall, but Windows stamps write times on a ~15.6 ms tick, so it
-would be exact on some platforms only; the 64-byte read costs 12 us at 10 Hz.)
-The write handle is opened FIRST so the
+valid and its append writes resolve to offset 0.
+
+**The tail is told, not left to notice.** A log emptied and refilled to the
+tail's read offset — or past it — before the next 100 ms poll is not smaller,
+and EQ repeats identical lines, so it need not differ in content there
+either; no detector settles this. So the sweep is split across the two
+threads it needs: `stage_oversized_logs` copies (100 MB = 80 ms, and it
+scales) on a `BackgroundJob`, and `finish_archive` runs from the **driver
+thread's tick**, truncating and calling `driver.note_log_rotated` in one step
+no poll can land inside. `LogTail`'s own shrink-and-signature checks stay as
+the backstop for rotations nobody tells us about (the client recreating its
+log, a user emptying it by hand) — hence the 64 bytes it keeps, re-read on
+every poll for ~12 us. The write handle is opened FIRST so the
 Windows share-mode refusal skips the file with nothing copied; the copy
 lands under a `.part` name and is fsynced before the source is emptied; and
 an emptied log **keeps its old mtime**, or a stale character's freshly

@@ -21,20 +21,22 @@ _LOG_NAME = re.compile(r"^eqlog_(?P<char>[A-Za-z]+)_(?P<server>[A-Za-z0-9]+)\.tx
 _ATTACH_BACKTRACK_BYTES = 4096
 _SESSION_MARKER = b"] Welcome to EverQuest!"
 
-# The last few bytes we read, kept so the next poll can prove it is reading
-# the same file it left off in. A shrink is the obvious rotation signal but
-# not a reliable one: log archiving empties the file from another thread, and
-# if the client refills it to our old offset — or past it — before the next
-# 100 ms poll, the size test sees nothing wrong and we resume mid-file,
-# silently skipping everything written from offset 0 up to that point.
+# The last few bytes we read, kept so the next poll can notice it is not
+# reading the same file it left off in. A shrink is the obvious rotation
+# signal but not a sufficient one: a log emptied and refilled to our offset,
+# or past it, before the next poll is not smaller, and we would resume
+# mid-file and skip everything written from offset 0 up to that point.
 #
-# The check is therefore made on every poll rather than only when the size
-# looks odd, so it does not depend on a race landing a particular way. That
-# costs one 64-byte read (~12 us) on the polls that would otherwise be a
-# bare stat — 0.01% of a core at the 100 ms cadence. A stat-based shortcut
-# (same size AND same mtime) was the alternative and was rejected: Windows
-# stamps write times on a ~15.6 ms clock tick, so it would be exact on some
-# platforms and not others, which is worse than a syscall.
+# This is a BACKSTOP, deliberately, and it is checked on every poll rather
+# than only when the size looks odd — it costs one 64-byte read (~12 us) on
+# polls that would otherwise be a bare stat, 0.01% of a core at the 100 ms
+# cadence. It cannot be the mechanism, because a finite signature can always
+# collide: EQ repeats identical lines, so a refill can match at our offset.
+# The rotation nParse+ performs itself is therefore not inferred at all —
+# `logarchive.finish_archive` truncates on the driver thread and calls
+# `driver.note_log_rotated`, which restarts the tail in the same step. What
+# is left for this check is rotations nobody tells us about: the client
+# recreating its log, or a user emptying it by hand.
 _SIGNATURE_BYTES = 64
 
 
@@ -108,7 +110,7 @@ class LogTail:
             _signature=chunk[max(0, offset - _SIGNATURE_BYTES) : offset],
         )
 
-    def _restart(self) -> None:
+    def restart(self) -> None:
         """Read the file from the top again (it is not the one we left)."""
         self.position = 0
         self._partial = b""
@@ -129,7 +131,7 @@ class LogTail:
         except OSError:
             return []
         if size < self.position:
-            self._restart()
+            self.restart()
         back = min(len(self._signature), self.position)
         if size == self.position and not back:
             return []  # nothing new and nothing yet to compare against
@@ -137,7 +139,7 @@ class LogTail:
             f.seek(self.position - back)
             data = f.read()
         if back and data[:back] != self._signature[len(self._signature) - back :]:
-            self._restart()
+            self.restart()
             with self.path.open("rb") as f:
                 data = f.read()
         else:
