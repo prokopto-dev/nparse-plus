@@ -6,6 +6,21 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.9.1 (2026-08-13)
+
+### Bug Fixes
+
+- **packaging**: Make icon.svg readable by appstreamcli so the Linux release builds
+  ([#106](https://github.com/prokopto-dev/nparse-plus/pull/106),
+  [`9434507`](https://github.com/prokopto-dev/nparse-plus/commit/9434507fd6c82fd5526e2bb2c9526c00f0f59f54))
+
+### Testing
+
+- **packaging**: Record why the icon.svg guard strips leading whitespace
+  ([#106](https://github.com/prokopto-dev/nparse-plus/pull/106),
+  [`9434507`](https://github.com/prokopto-dev/nparse-plus/commit/9434507fd6c82fd5526e2bb2c9526c00f0f59f54))
+
+
 ## v2.9.0 (2026-08-13)
 
 ### Features
