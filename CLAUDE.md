@@ -651,6 +651,66 @@ number forever. Damage already counted is never re-filtered (the hit list
 does not keep damage types). The >20s session-footer gate stayed, now as a
 knob: it is why Best/Now/Last reads 0 all session on trash that dies faster.
 
+**The meter learned to represent a caster and a pet class** (post-2.4,
+~2250 tests): two DELIBERATE DIVERGENCES from EQTool, both commented as such
+at the code that implements them, because `DamageParser.cs` and `PetHandler`
+behave exactly as this repo did.
+
+*Non-melee is attributed, not blanket-credited* (#80). `<target> was hit by
+non-melee for N points` names **no attacker**, so the 1:1 port credited
+`"You"` for every one — meaning melee-only dropped a caster's whole output
+and counting it padded your row with the raid's nukes and opened fights on
+mobs you never touched. The parser is untouched (2.2 put the filter in the
+tracker so `DamageEvent` stays a faithful record for triggers and plugins);
+`FightTracker._attribute` decides. The one signal a log gives is your own
+casting, so `melee_only: bool` became
+`damage_sources: melee | melee+mine | all` (a `DpsSettings` model_validator
+folds the old bool in — the `plugins.registry_url` pattern — mapping `true`
+to **melee+mine**, its intent rather than its mechanism, since every stored
+document says `true` and a literal mapping would leave every caster on the
+empty row this fixes). Under `all` an unclaimable line lands on a
+`"(spell damage)"` pseudo-attacker so group percentages stay right without
+the meter claiming it.
+
+**The window is armed from `YouBeginCastingEvent`, not just the finish
+event.** The landing message and the damage line share a log second and the
+stamps are 1-second resolution, so their arrival order cannot be relied on;
+the begin line is the only one guaranteed to precede the damage. So
+`note_your_cast(when, cast_time_s)` arms through cast-time + the credit
+window, and the finish event extends it — union, and extending only ever
+moves the end forward, which is why a chain-caster stays armed. Only
+**detrimental** spells arm it (`Spell.is_detrimental`), or a cleric
+chain-healing would collect the raid's spell damage. `clear()` disarms:
+zoning cancels the cast. Unattributable forever: damage shields and procs
+(they follow no cast), two casters inside one window, and DoT ticks — P99
+does not log them at all, which is why #80 replaced a "parse DoT ticks"
+proposal.
+
+*Pet damage counts as yours* (#81). `DpsHandler` follows the existing
+`PlayerPet.on_change` rather than re-deriving the CREATION/LEADER/DEATH
+rules, pushing `FightTracker.set_pet_name`; the tracker stays value-in/
+value-out and never imports pet state. `FightRow.is_your_pet` is separate
+from `is_your_damage` — the window styles both as yours and marks the row
+`Vexer (pet)`, but they are not the same claim. The pet keeps its **own
+row** (whether the pet is holding up is what a mage wants to see; merging
+would make `highest_hit` and per-row dps meaningless) while
+`_update_session_stats` **sums** you and the pet into one footer reading
+under `count_pet_damage` (default on). Two deliberate asymmetries there:
+`highest_hit` stays yours alone (it reads as your own crit), and the
+fight-length gate takes the LONGER of the pair, so a pet that opened 25s
+before you joined carries the reading past the minimum. `_is_your_pet`
+refuses a row whose attacker equals its fight's target, so the charm-shares-
+an-NPC-name case `add_damage` already guards cannot come back through the
+flag.
+
+Both new knobs are measurement rules (`_measurement_rules`), so changing
+them resets Best/Now like the window and the minimum-fight gate do. The DPS
+window's title bar carries the mode (`MELEE` / `MELEE + MINE` / `ALL`) read
+live off the tracker — a mode that excludes damage has to say so, or a
+caster reads a zero as a broken parser. Settings > DPS Meter grows the mode
+picker, the credit window and the pet toggle; all still live through
+`Backend.apply_dps_settings`.
+
 **The settings window shrinks** (post-2.1): a `QStackedWidget`'s minimum is
 its *widest page*, so one wide row on Sharing (a long label beside a combo
 listing "pigparse.org character page") pinned the whole window at ~550px and

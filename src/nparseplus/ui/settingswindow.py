@@ -52,6 +52,7 @@ import nparseplus
 from nparseplus import updater
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
+from nparseplus.core import dps as dps_engine
 from nparseplus.core import eqprocess, friends, visionfix
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import (
@@ -1127,20 +1128,55 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         dps = self._settings.dps
         form = QFormLayout()
 
-        self._dps_melee_only = QCheckBox(self)
-        self._dps_melee_only.setChecked(dps.melee_only)
-        self._dps_melee_only.setToolTip(
-            "Count weapon and fist damage only — slashes, crushes, pierces, "
-            "kicks, punches, backstabs and the rest.\n\n"
-            'On (default) ignores "was hit by non-melee", which is how spells, '
-            "procs and damage-over-time are logged. That line names no "
-            "attacker, so it can only ever be credited to you — including "
-            "other players' nukes — which inflates your row and can invent a "
-            "fight on a mob you never swung at.\n\n"
-            "Off counts every hit the parser can attribute, that caveat "
-            "included."
+        self._dps_sources = QComboBox(self)
+        for mode in dps_engine.DAMAGE_SOURCES:
+            self._dps_sources.addItem(dps_engine.DAMAGE_SOURCE_LABELS[mode], mode)
+        index = self._dps_sources.findData(dps.damage_sources)
+        self._dps_sources.setCurrentIndex(max(0, index))
+        self._dps_sources.setToolTip(
+            'EverQuest logs spell, proc and damage-over-time damage as "<target> '
+            'was hit by non-melee for N points", which names no attacker at '
+            "all.\n\n"
+            "Melee only — weapon and fist damage. A caster's row stays empty.\n\n"
+            "Melee + my spells (default) — also counts non-melee damage that "
+            "lands while you are casting or just after, which is the one "
+            "signal your log gives. Another player nuking the same target in "
+            "that moment can be miscredited to you; nothing in the line "
+            "separates them.\n\n"
+            "All damage — also counts non-melee damage that follows no cast "
+            'of yours. It is listed under "(spell damage)" rather than '
+            "credited to you, so the group percentages stay right.\n\n"
+            "No mode can show damage over time: Project 1999 does not log "
+            "DoT ticks."
         )
-        form.addRow("Melee damage only", self._dps_melee_only)
+        form.addRow("Count damage from", self._dps_sources)
+
+        self._dps_credit_window = QDoubleSpinBox(self)
+        self._dps_credit_window.setRange(0.0, 30.0)
+        self._dps_credit_window.setDecimals(1)
+        self._dps_credit_window.setSingleStep(0.5)
+        self._dps_credit_window.setSuffix(" s")
+        self._dps_credit_window.setValue(dps.spell_credit_window_seconds)
+        self._dps_credit_window.setToolTip(
+            "How long after one of your casts a non-melee hit still counts as "
+            "yours.\n\n"
+            "Widen it if your nukes are being missed (a slow spell whose "
+            "landing message nParse+ did not recognise); narrow it to be "
+            "stricter about picking up other players' spell damage. Only used "
+            "by the two modes above that count non-melee damage."
+        )
+        form.addRow("Spell credit window", self._dps_credit_window)
+
+        self._dps_count_pet = QCheckBox(self)
+        self._dps_count_pet.setChecked(dps.count_pet_damage)
+        self._dps_count_pet.setToolTip(
+            "Add your pet's damage to the session Best / Now / Last footer.\n\n"
+            "Your pet always gets its own row, marked (pet) and highlighted "
+            "like yours — whether the pet is holding up is worth seeing on its "
+            "own. This decides whether your headline number is you, or you and "
+            "your pet together."
+        )
+        form.addRow("Count pet damage as mine", self._dps_count_pet)
 
         self._dps_retention = QDoubleSpinBox(self)
         self._dps_retention.setRange(0.0, 3600.0)
@@ -1193,8 +1229,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         form.addRow(
             chromewidgets.hint(
                 "These apply as soon as you hit Apply — no restart. Damage "
-                "already counted is not recounted, so a change to the melee "
-                "filter takes effect on the next hit.",
+                "already counted is not recounted, so a change to what counts "
+                "takes effect on the next hit; changing a rule that decides "
+                "what the footer measures clears Best and Now.",
                 self,
             )
         )
@@ -1927,7 +1964,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         spellwindow.post_expiry_flash_enabled = self._post_expiry_flash.isChecked()
         spellwindow.post_expiry_flash_seconds = self._post_expiry_secs.value()
         dps = self._settings.dps
-        dps.melee_only = self._dps_melee_only.isChecked()
+        dps.damage_sources = self._dps_sources.currentData()
+        dps.spell_credit_window_seconds = self._dps_credit_window.value()
+        dps.count_pet_damage = self._dps_count_pet.isChecked()
         dps.fight_retention_seconds = self._dps_retention.value()
         dps.trailing_window_seconds = self._dps_window.value()
         dps.session_min_fight_seconds = self._dps_session_min.value()

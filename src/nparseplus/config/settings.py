@@ -247,17 +247,29 @@ class DpsSettings(BaseModel):
 
     Every field here is a knob the tracker reads live — the settings page
     calls ``FightTracker.configure()`` on Apply, so none of these need a
-    restart. The defaults reproduce the shipped behavior except for
-    ``melee_only``, which is the one deliberate change of default.
+    restart.
     """
 
-    # Count weapon and fist damage only, ignoring "was hit by non-melee"
-    # (spells, procs, DoTs). Default ON because the non-melee line names no
-    # attacker, so the parser has to credit *you* for every one it sees —
-    # including other players' nukes — which inflates your row and invents
-    # damage on mobs you never swung at. Off counts everything the parser
-    # attributes, that caveat included.
-    melee_only: bool = True
+    # What a row may count. Replaces the old ``melee_only`` bool (see the
+    # migration below); the modes are documented on core.dps.DAMAGE_SOURCES.
+    #   melee       - weapon and fist damage only.
+    #   melee+mine  - melee plus the non-melee damage that lands inside the
+    #                 credit window of one of your own casts (the default).
+    #   all         - melee plus every non-melee line, the unattributable
+    #                 ones parked on a "(spell damage)" pseudo-attacker
+    #                 rather than credited to you.
+    damage_sources: Literal["melee", "melee+mine", "all"] = "melee+mine"
+    # Legacy: the pre-2.5 bool, folded into damage_sources and cleared by the
+    # validator below. None means "already migrated / never written".
+    melee_only: bool | None = None
+    # How long after one of your casts a "was hit by non-melee" line still
+    # counts as yours. Wider catches slow spells whose landing message the
+    # app did not recognise; narrower is stricter about other players' nukes.
+    spell_credit_window_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
+    # Fold your pet's damage into the session Best/Now/Last footer. The pet
+    # keeps its own row either way; this only decides whether your headline
+    # number is you or you+pet.
+    count_pet_damage: bool = True
     # Seconds a target's group stays on screen after the last hit against it
     # from ANY attacker. 0 means never retire (zone/camp/clear only).
     # Attackers are never dropped individually — see core.dps.
@@ -270,6 +282,33 @@ class DpsSettings(BaseModel):
     # Best/Now/Last footer (EQTool's TotalSeconds > 20). Most trash dies
     # faster, which is why that footer often sits at zero.
     session_min_fight_seconds: float = Field(default=20.0, ge=0.0, le=600.0)
+
+    @model_validator(mode="after")
+    def _fold_in_legacy_melee_only(self) -> DpsSettings:
+        """Migrate ``melee_only`` -> ``damage_sources`` (the registry_url pattern).
+
+        The mapping carries the old INTENT, not the old mechanism.
+        ``melee_only`` existed for exactly one reason — the non-melee line
+        names no attacker, so counting it meant crediting you with damage
+        that was not yours — and ``core.dps._attribute`` is what removes that
+        reason. So a document that says ``true`` lands on ``melee+mine``,
+        which keeps the guarantee the user was buying (nothing in my row that
+        isn't mine) while letting their own spell damage back in; a document
+        that says ``false`` was asking for everything, which is ``all``.
+        Every stored settings.json says ``true``, since that was the shipped
+        default, so a literal mapping would leave every existing caster
+        looking at the empty row this replaced.
+
+        Only applies while ``damage_sources`` is still at its default, so a
+        document already written by this version wins. Never raises:
+        ``load_settings`` reads a ValueError as a corrupt document and falls
+        back to defaults, which would discard everything else configured.
+        """
+        if self.melee_only is not None:
+            if self.damage_sources == "melee+mine":  # untouched by this version
+                self.damage_sources = "melee+mine" if self.melee_only else "all"
+            self.melee_only = None
+        return self
 
 
 class DumpsSettings(BaseModel):

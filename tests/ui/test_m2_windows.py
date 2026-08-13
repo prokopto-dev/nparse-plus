@@ -56,6 +56,34 @@ def test_dps_window_renders_fights(qtbot, backend: _FakeBackend) -> None:
     assert "Best" in window.footer_text()
 
 
+def test_dps_window_marks_your_pet_row(qtbot, backend: _FakeBackend) -> None:
+    """A magician's two rows are both theirs, and the pet says which is which."""
+    backend.fights.set_pet_name("Vexer")
+    backend.fights.add_damage(_damage(0, "You", "a gnoll", 20))
+    backend.fights.add_damage(_damage(1, "Vexer", "a gnoll", 30))
+    backend.fights.add_damage(_damage(1, "Soandso", "a gnoll", 10))
+    window = DpsMeterWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+    assert set(window.your_rows()) == {"You", "Vexer"}
+    assert "Vexer (pet)" in window.row_names()
+    assert "Soandso" in window.row_names()
+
+
+def test_dps_window_shows_the_counting_mode(qtbot, backend: _FakeBackend) -> None:
+    """A mode that excludes spell damage has to say so, not just read zero."""
+    window = DpsMeterWindow(backend)
+    qtbot.addWidget(window)
+    window.refresh()
+    assert window.mode_text() == "MELEE + MINE"
+    backend.fights.configure(damage_sources="melee")
+    window.refresh()
+    assert window.mode_text() == "MELEE"
+    backend.fights.configure(damage_sources="all")
+    window.refresh()
+    assert window.mode_text() == "ALL"
+
+
 def test_dps_window_removes_stale_rows(qtbot, backend: _FakeBackend) -> None:
     backend.fights.add_damage(_damage(0, "You", "a gnoll", 20))
     window = DpsMeterWindow(backend)

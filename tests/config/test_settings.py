@@ -414,3 +414,59 @@ class TestNormalizeRegistryUrl:
     def test_rejects_unusable(self, url: str) -> None:
         with pytest.raises(ValueError):
             normalize_registry_url(url)
+
+
+class TestDpsSettings:
+    """The DPS meter's counting rules and the melee_only migration (#80/#81)."""
+
+    def test_defaults(self) -> None:
+        dps = Settings().dps
+        assert dps.damage_sources == "melee+mine"
+        assert dps.count_pet_damage is True
+        assert dps.spell_credit_window_seconds == 2.0
+        # The legacy bool is gone from a fresh document.
+        assert dps.melee_only is None
+
+    def test_legacy_melee_only_true_folds_in_and_clears(self, tmp_path: Path) -> None:
+        """The stored default maps to the mode that keeps the same promise.
+
+        Every settings.json ever written says ``true`` — it was the shipped
+        default — so mapping it literally to "melee" would leave every
+        existing caster looking at the empty row this replaced.
+        """
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"dps": {"melee_only": True}}))
+        loaded = load_settings(path)
+        assert loaded.dps.damage_sources == "melee+mine"
+        assert loaded.dps.melee_only is None
+
+        # Idempotent: saving and reloading must not move it again.
+        save_settings(loaded, path)
+        assert load_settings(path).dps.damage_sources == "melee+mine"
+
+    def test_legacy_melee_only_false_asked_for_everything(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"dps": {"melee_only": False}}))
+        loaded = load_settings(path)
+        assert loaded.dps.damage_sources == "all"
+        assert loaded.dps.melee_only is None
+
+    def test_an_explicit_mode_wins_over_the_legacy_bool(self) -> None:
+        # A document written by this version must not be re-migrated.
+        dps = Settings(dps={"melee_only": False, "damage_sources": "melee"}).dps
+        assert dps.damage_sources == "melee"
+        assert dps.melee_only is None
+
+    def test_the_rest_of_the_document_survives_a_migration(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "general": {"eq_log_dir": "/keep/me"},
+                    "dps": {"melee_only": True, "trailing_window_seconds": 6.0},
+                }
+            )
+        )
+        loaded = load_settings(path)
+        assert str(loaded.general.eq_log_dir) == "/keep/me"
+        assert loaded.dps.trailing_window_seconds == 6.0

@@ -199,10 +199,12 @@ class Backend:
         restart (the tracker outlives every settings window)."""
         dps = self.settings.dps
         self.fights.configure(
-            melee_only=dps.melee_only,
+            damage_sources=dps.damage_sources,
             fight_retention_s=dps.fight_retention_seconds,
             trailing_window_s=dps.trailing_window_seconds,
             session_min_fight_s=dps.session_min_fight_seconds,
+            spell_credit_window_s=dps.spell_credit_window_seconds,
+            count_pet_damage=dps.count_pet_damage,
         )
 
     def apply_overlay_timings(self) -> None:
@@ -288,10 +290,12 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     window_commands = WindowChatCommands(bus)
 
     fights = FightTracker(
-        melee_only=settings.dps.melee_only,
+        damage_sources=settings.dps.damage_sources,
         fight_retention_s=settings.dps.fight_retention_seconds,
         trailing_window_s=settings.dps.trailing_window_seconds,
         session_min_fight_s=settings.dps.session_min_fight_seconds,
+        spell_credit_window_s=settings.dps.spell_credit_window_seconds,
+        count_pet_damage=settings.dps.count_pet_damage,
     )
     mob_info = MobInfoState()
     pets = load_pets()
@@ -399,7 +403,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             spell_settings=settings.spellwindow,
             timer_recast=timer_recast,
         ),
-        DpsHandler(bus, player, fights),
+        DpsHandler(bus, player, fights, player_pet=player_pet),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
         CorpseWaypointHandler(bus, player),
