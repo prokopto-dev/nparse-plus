@@ -1549,9 +1549,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         # off stops the connection here and now; on has to build one, and the
         # handlers that would use it took theirs at startup (#69).
         note = chromewidgets.hint(
-            "Turning sharing off applies immediately — the connection closes "
-            "and remote dots stop. Turning it on, or switching networks, "
-            "needs a restart.",
+            "Turning sharing off applies immediately — the connection closes, "
+            "nothing further is sent, and remote dots stop. Turning it on, or "
+            "switching networks, needs a restart.",
             self,
         )
         form.addRow(note)

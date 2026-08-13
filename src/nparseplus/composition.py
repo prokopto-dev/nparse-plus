@@ -50,7 +50,7 @@ from nparseplus.core.parsers.registry import build_parser_chain
 from nparseplus.core.pets import PlayerPet, load_pets
 from nparseplus.core.pipeline import LogPipeline
 from nparseplus.core.player import ActivePlayer
-from nparseplus.core.sharing import SharingClient, SharingCoordinator
+from nparseplus.core.sharing import SharingClient, SharingCoordinator, sharing_gated_submit
 from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.spells.spells_us import SpellBook, load_master_npc_list, load_spell_book
 from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow, TimersService
@@ -343,6 +343,14 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
 
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
+    # Two submit handles, because two different decisions gate them. Everything
+    # that talks to pigparse.org ON SHARING'S BEHALF goes through the gated one
+    # so turning sharing off silences it live (#69) — and so does a session
+    # started with sharing off but a pigparse dump-upload target, which builds
+    # the REST client for the uploader and used to hand it to these seven too.
+    # InventoryUploadHandler keeps the raw handle: its gate is
+    # dumps.upload_target.
+    sharing_submit = sharing_gated_submit(submit, settings)
 
     def timer_recast() -> str:
         """The active character's PlayerInfo.TimerRecastSetting."""
@@ -371,7 +379,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         submit=submit,
     )
 
-    player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=submit)
+    player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=sharing_submit)
     profile_handler = PlayerProfileHandler(bus, player, settings, request_save=request_save)
     # Constructed (= subscribed) after PlayerProfileHandler: restore-on-player-
     # change needs the profile's class/level already loaded into ActivePlayer.
@@ -396,10 +404,10 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
         CorpseWaypointHandler(bus, player),
         RandomRollHandler(bus, player, timers),
-        FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=submit),
-        QuakeHandler(bus, player, speaker=speaker, api=pigparse_api, submit=submit),
+        FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=sharing_submit),
+        QuakeHandler(bus, player, speaker=speaker, api=pigparse_api, submit=sharing_submit),
         RingWarHandler(bus, player, timers),
-        BoatHandler(bus, player, timers, zones, api=pigparse_api, submit=submit),
+        BoatHandler(bus, player, timers, zones, api=pigparse_api, submit=sharing_submit),
         PetHandler(bus, player, pets, player_pet=player_pet),
         ConHandler(
             bus,
@@ -408,9 +416,9 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             player_pet=player_pet,
             mob_info=mob_info,
             api=pigparse_api,
-            submit=submit,
+            submit=sharing_submit,
         ),
-        ZoneActivityHandler(bus, player, zones, api=pigparse_api, submit=submit),
+        ZoneActivityHandler(bus, player, zones, api=pigparse_api, submit=sharing_submit),
         DisciplineCooldownHandler(bus, player, timers),
         MendWoundsHandler(bus, player, timers),
         AbilityCooldownHandler(bus, player, spells, timers),
@@ -434,7 +442,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         GroupLeaderHandler(bus, player),
         inventory_upload,
     ]
-    api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=submit)
+    api_timers = ApiTimersService(timers, zones, player, api=pigparse_api, submit=sharing_submit)
 
     # The poll itself (see the library above for why there is only one).
     dump_watcher = DumpWatcher(

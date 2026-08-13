@@ -12,8 +12,12 @@ The network switch, and the optional pigparse.org account. Background:
 Each direction applies differently, and the page says so:
 
 - **Turning it off applies immediately.** Hit Apply and the connection
-  closes, nothing more is sent, and remote dots, waypoints, dragon roars and
-  shared timers stop arriving. The tray's sharing line reads `off`.
+  closes, and remote dots, waypoints, dragon roars and shared timers stop
+  arriving. The tray's sharing line reads `off`. Nothing further is
+  published either — the `/who` roster sync and the NPC-activity posts that
+  carry your last `/loc` stop with it, the same state as launching with
+  sharing off. (Character dump upload is *not* affected: that is its own
+  setting, below.)
 - **Turning it on — or switching between pigparse and nparse — needs a
   restart.** The network client and the handlers that publish through it are
   built at startup.

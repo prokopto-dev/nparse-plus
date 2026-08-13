@@ -49,6 +49,7 @@ from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow
 if TYPE_CHECKING:
     from nparseplus.config.settings import PlayerInfo, Settings
     from nparseplus.core.bus import EventBus
+    from nparseplus.core.pigparse import SubmitFn
     from nparseplus.core.player import ActivePlayer
     from nparseplus.core.timers import TimersService
 
@@ -106,6 +107,42 @@ class SharingClient(Protocol):
         icon: str = "corpse",
         timeout_minutes: int = 60,
     ) -> None: ...
+
+
+def sharing_gated_submit(submit: SubmitFn | None, settings: Settings) -> SubmitFn | None:
+    """Wrap a ``NetWorker.submit`` so it drops work while sharing is off.
+
+    The hub client is not the only thing that talks to pigparse.org: roughly
+    seven collaborators (player tracker, FTE, quake, boat, con, zone activity,
+    api timers) were handed ``api``+``submit`` at construction and publish or
+    query through them — ``PlayerTrackerHandler.tick`` upserts the /who
+    roster, ``ZoneActivityHandler`` posts NPC activity carrying your last
+    ``/loc``. Composition passes ``None`` for both when sharing is off at
+    launch, so "off" already meant "none of this happens"; this makes the
+    same thing true when the mode changes at runtime, which is what the
+    Sharing page now promises (#69).
+
+    Gating ``submit`` alone is sufficient BECAUSE every one of those handlers
+    calls ``api`` only from inside the closure it hands to ``submit`` — no
+    request is issued on the driver thread. ``tests/core/test_sharing_gate.py``
+    pins that; a handler that reached for ``api`` directly would escape this.
+
+    Not applied to ``InventoryUploadHandler``: uploading a character dump is
+    gated by ``dumps.upload_target``, a decision the user makes separately,
+    and composition deliberately builds its plumbing with sharing off.
+
+    Work already handed to the worker may still complete — this stops new
+    work rather than cancelling a request in flight.
+    """
+    if submit is None:
+        return None
+
+    def gated(*args: object, **kwargs: object) -> None:
+        if settings.sharing.mode == "off":
+            return
+        submit(*args, **kwargs)
+
+    return gated
 
 
 class SharingCoordinator:
