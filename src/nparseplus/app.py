@@ -426,6 +426,11 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     bridge.event_received.connect(lambda event: _apply_window_command(event, window_handles))
     bridge.event_received.connect(event_overlay.handle_event)
     bridge.events_batch.connect(console_window.handle_events)
+    # Console right-click -> a prefilled trigger (#82). Both halves point at
+    # the editor: it owns creating the trigger, and its test-box character is
+    # what {c} tokenises against, so the two can never disagree.
+    console_window.player_name = trigger_editor.test_player_name
+    console_window.create_trigger_requested.connect(trigger_editor.create_trigger_from_line)
     # The editor exists from launch, so its Activity tab records every trigger
     # fire even while the window has never been opened (#31).
     bridge.events_batch.connect(trigger_editor.handle_events)

@@ -19,6 +19,12 @@ from nparseplus.core.triggers.model import (
     TriggerTimerEnded,
     TriggerTimerEnding,
 )
+from nparseplus.core.triggers.suggest import (
+    TriggerSuggestion,
+    strip_timestamp,
+    suggest_trigger_name,
+    suggest_trigger_text,
+)
 
 __all__ = [
     "CustomTimerChatCommands",
@@ -32,11 +38,15 @@ __all__ = [
     "TriggerCounter",
     "TriggerEngine",
     "TriggerOutput",
+    "TriggerSuggestion",
     "TriggerTimer",
     "TriggerTimerEnded",
     "TriggerTimerEnding",
     "effective_triggers",
     "load_builtin_triggers",
     "parse_custom_timer",
+    "strip_timestamp",
+    "suggest_trigger_name",
+    "suggest_trigger_text",
     "sync_builtin_triggers",
 ]
