@@ -681,7 +681,11 @@ window, and the finish event extends it — union, and extending only ever
 moves the end forward, which is why a chain-caster stays armed. Only
 **detrimental** spells arm it (`Spell.is_detrimental`), or a cleric
 chain-healing would collect the raid's spell damage. `clear()` disarms:
-zoning cancels the cast. Unattributable forever: damage shields and procs
+zoning cancels the cast. Only the LANDING moment is stored —
+`credit_deadline` derives from it on every read — so moving
+`spell_credit_window_s` reaches a cast already armed; storing the deadline
+froze the window at arming time, and tightening it mid-raid (the one
+situation the setting exists for) did nothing until the next cast. Unattributable forever: damage shields and procs
 (they follow no cast), two casters inside one window, and DoT ticks — P99
 does not log them at all, which is why #80 replaced a "parse DoT ticks"
 proposal.

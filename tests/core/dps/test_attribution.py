@@ -307,3 +307,39 @@ def test_a_nuke_with_no_cast_of_yours_is_not_yours_end_to_end() -> None:
         "[Wed Jul 15 12:00:03 2026] a gnoll was hit by non-melee for 300 points of damage."
     )
     assert backend.fights.fights == []
+
+
+# -- the credit window applies live -------------------------------------------
+
+
+def test_narrowing_the_window_retires_a_cast_already_armed(t0: datetime) -> None:
+    """Apply means Apply, including to the cast in flight.
+
+    The deadline used to be computed at arming time, so tightening the
+    window mid-raid — the one situation the setting exists for — changed
+    nothing until the next cast.
+    """
+    tracker = FightTracker(spell_credit_window_s=6.0)
+    tracker.note_your_cast(t0)
+    tracker.configure(spell_credit_window_s=1.0)
+    tracker.add_damage(_nuke("a gnoll", 900, t0 + timedelta(seconds=5)))
+    assert tracker.fights == []
+
+
+def test_widening_the_window_reaches_a_cast_already_armed(t0: datetime) -> None:
+    tracker = FightTracker(spell_credit_window_s=1.0)
+    tracker.note_your_cast(t0)
+    tracker.configure(spell_credit_window_s=6.0)
+    tracker.add_damage(_nuke("a gnoll", 900, t0 + timedelta(seconds=5)))
+    assert [r.attacker_name for r in tracker.snapshot(t0)] == [YOU]
+
+
+def test_the_deadline_is_the_landing_plus_the_current_window(t0: datetime) -> None:
+    tracker = FightTracker(spell_credit_window_s=2.0)
+    assert tracker.credit_deadline is None
+    tracker.note_your_cast(t0, cast_time_s=4.0)
+    assert tracker.credit_deadline == t0 + timedelta(seconds=6)
+    tracker.configure(spell_credit_window_s=0.5)
+    assert tracker.credit_deadline == t0 + timedelta(seconds=4.5)
+    tracker.clear()
+    assert tracker.credit_deadline is None

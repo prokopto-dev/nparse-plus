@@ -482,8 +482,15 @@ class FightTracker:
         self.count_pet_damage = count_pet_damage
         #: Your current pet's name, pushed by DpsHandler; "" when you have none.
         self.pet_name = ""
-        #: End of the span in which a non-melee line counts as your spell.
-        self._credit_until: datetime | None = None
+        #: When your most recent cast landed, or is expected to. The credit
+        #: DEADLINE is derived from this on every read rather than stored, so
+        #: moving ``spell_credit_window_s`` reaches a cast that is already
+        #: armed — the same reason ``tick()`` re-stamps the trailing window on
+        #: live entities rather than only on new ones. Storing the deadline
+        #: baked the window in at arming time, so tightening it mid-raid did
+        #: nothing until the next cast, which is exactly when a user reaches
+        #: for that setting.
+        self._cast_landed_at: datetime | None = None
 
     def configure(
         self,
@@ -497,8 +504,12 @@ class FightTracker:
     ) -> None:
         """Move the tunables on a running tracker (settings Apply).
 
-        Only the averaging window needs anything beyond an assignment, and
-        even that lands on the next tick, which re-stamps every live entity.
+        Every knob here is either read at the point of use or re-stamped, so
+        all of them reach work already in flight: the averaging window lands
+        on the next tick (which re-stamps every live entity) and the spell
+        credit window is derived from ``_cast_landed_at`` on every read, so
+        narrowing it retires a cast that is already armed.
+
         Damage already recorded is not re-filtered: narrowing the damage
         sources mid-fight stops counting new spell damage but does not
         retroactively subtract what is already in a row, because the hit list
@@ -601,13 +612,28 @@ class FightTracker:
           beginning was never seen (the app attached to the log mid-cast).
 
         The armed span therefore runs from the cast's start to the end of its
-        cast time plus ``spell_credit_window_s``. Extending only ever moves
-        the end forward, so a chain-caster stays armed for as long as they
-        keep casting — which is exactly when their nukes are landing.
+        cast time plus ``spell_credit_window_s``. Only the landing moment is
+        stored (see ``credit_deadline``); arming only ever moves it forward,
+        so a chain-caster stays armed for as long as they keep casting —
+        which is exactly when their nukes are landing.
         """
-        end = when + timedelta(seconds=max(0.0, cast_time_s) + self.spell_credit_window_s)
-        if self._credit_until is None or end > self._credit_until:
-            self._credit_until = end
+        landed = when + timedelta(seconds=max(0.0, cast_time_s))
+        if self._cast_landed_at is None or landed > self._cast_landed_at:
+            self._cast_landed_at = landed
+
+    @property
+    def credit_deadline(self) -> datetime | None:
+        """The last moment a non-melee line still counts as your spell.
+
+        Derived rather than stored, so ``spell_credit_window_s`` applies to a
+        cast that is ALREADY armed. Storing it froze the window at arming
+        time: tightening the setting mid-raid — the one situation it exists
+        for — changed nothing until the next cast, and widening it kept
+        dropping hits the user had just asked to include.
+        """
+        if self._cast_landed_at is None:
+            return None
+        return self._cast_landed_at + timedelta(seconds=self.spell_credit_window_s)
 
     def _within_cast_credit(self, when: datetime) -> bool:
         """Whether ``when`` falls inside the armed span (inclusive).
@@ -616,7 +642,8 @@ class FightTracker:
         damage that predates a cast has already been decided by the time that
         cast arms anything.
         """
-        return self._credit_until is not None and when <= self._credit_until
+        deadline = self.credit_deadline
+        return deadline is not None and when <= deadline
 
     # -- attribution ------------------------------------------------------------
 
@@ -759,7 +786,7 @@ class FightTracker:
         # Zoning, camping and dying all cancel whatever you were casting, so
         # the credit window must not survive them and hand the first nuke on
         # the other side to you.
-        self._credit_until = None
+        self._cast_landed_at = None
         if self._fights:
             self._fights.clear()
             self._notify()
