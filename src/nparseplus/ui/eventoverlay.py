@@ -65,9 +65,19 @@ DEFAULT_EMPHASIS = "pulse"
 PULSE_INTERVAL_MS = 700
 PULSE_DIM = 0.42
 
-# Separators an alert's "kicker — HEADLINE" is split on, longest first so
-# " - " never steals the dash out of an em-dash form.
+# Separators an alert's "kicker — HEADLINE" may be split on. Only the FIRST
+# one in the text is ever considered, and only when what precedes it reads
+# like a name (see ``looks_like_a_kicker``).
 ALERT_SEPARATORS = (" — ", " -- ", " - ", ": ")
+# What "reads like a name" means, in the three checks a user can apply to
+# their own trigger text by eye. These are deliberately tight: the kicker is
+# a label naming WHO, and every separator here also occurs mid-sentence in
+# ordinary prose, so anything longer than a label is the alert itself (#102).
+KICKER_MAX_CHARS = 28
+KICKER_MAX_WORDS = 4
+# Punctuation that marks structured text rather than a name. A mob-info dump
+# opens with "<Mob> [Slowable, baneable] - ..." — brackets are the tell.
+KICKER_FORBIDDEN_CHARS = frozenset("[]{}()<>|/*")
 
 # Positioning-mode chrome.
 EDIT_HINT_HEIGHT = 56
@@ -110,20 +120,68 @@ CH_LANE_FORCE_GRACE_S = 1.0
 CH_CHIP_FONT_SIZE = 11
 
 
+def first_alert_separator(text: str) -> tuple[int, str] | None:
+    """The earliest ``ALERT_SEPARATORS`` occurrence in ``text``, or None.
+
+    Earliest *in the text*, not first in the tuple: "FTE: Someone - and more"
+    has to kick off "FTE", and scanning the tuple in order would have taken
+    the later ` - ` instead. Ties go to the longer separator.
+    """
+    best: tuple[int, str] | None = None
+    for separator in ALERT_SEPARATORS:
+        at = text.find(separator)
+        if at < 0:
+            continue
+        if best is None or (at, -len(separator)) < (best[0], -len(best[1])):
+            best = (at, separator)
+    return best
+
+
+def looks_like_a_kicker(head: str) -> bool:
+    """Whether ``head`` reads like a NAME rather than the start of a clause.
+
+    The kicker is a label naming who the alert is about, so it is short, a
+    few words at most, and free of the punctuation that marks structured
+    text. Everything else is the alert itself and must not be shrunk into
+    gold caps — which is exactly what a mob-info dump used to get (#102):
+    ``"<Dozekar The Cursed> [Slowable, baneable] - [CH Unslowed: 2s…"`` split
+    on its first ` - ` and lost its opening 41 characters to the kicker.
+    """
+    head = head.strip()
+    if not head or len(head) > KICKER_MAX_CHARS:
+        return False
+    if len(head.split()) > KICKER_MAX_WORDS:
+        return False
+    return not KICKER_FORBIDDEN_CHARS.intersection(head)
+
+
 def split_alert_text(text: str) -> tuple[str, str]:
     """Split an alert into its kicker caps and its headline.
 
     Alerts arrive as one string ("Gorenaire — ENRAGED", "FTE: Someone"), and
     the design gives the two halves different jobs: a small tracked-out cap
-    naming *who*, and the big word saying *what*. Splitting is presentational
-    only — ``current_text`` and the reset match still use the whole string.
-    Returns ``("", text)`` when there is nothing to split on.
+    naming *who*, and the big word saying *what*. That only makes sense when
+    the text is actually shaped that way, so the rule is narrow and stated in
+    one place (docs/windows/event-overlay.md says the same in prose):
+
+        the FIRST separator in the text, and only if everything before it
+        passes ``looks_like_a_kicker`` and something is left after it.
+
+    A text that fails any part of that is one headline, at one size. Only the
+    first separator is ever tried — falling through to the next one would go
+    looking for a split the author did not write.
+
+    Splitting is presentational only — ``current_text`` and the reset match
+    still use the whole string. Returns ``("", text)`` when there is no split.
     """
-    for separator in ALERT_SEPARATORS:
-        head, found, tail = text.partition(separator)
-        if found and head.strip() and tail.strip():
-            return head.strip(), tail.strip()
-    return "", text
+    found = first_alert_separator(text)
+    if found is None:
+        return "", text
+    at, separator = found
+    head, tail = text[:at], text[at + len(separator) :]
+    if not tail.strip() or not looks_like_a_kicker(head):
+        return "", text
+    return head.strip(), tail.strip()
 
 
 def fit_text_size(
@@ -383,10 +441,17 @@ class EventOverlayWindow(QWidget):
 
         self._alert_kicker = QLabel("", self)
         self._alert_kicker.setObjectName("EventOverlayKicker")
+        # Trigger display text is user data, never markup: Qt's AutoText
+        # heuristic renders anything that opens with a known HTML tag name as
+        # rich text, which would swallow "<b>" out of an alert (and eat an
+        # "&lt;" as an escape). Same reasoning as settingswindow.py's
+        # plugin-name label. Applies to every label that shows event text.
+        self._alert_kicker.setTextFormat(Qt.TextFormat.PlainText)
         set_caps(self._alert_kicker)
         self._alert_kicker.hide()
         self._center_text = QLabel("", self)
         self._center_text.setObjectName("EventOverlayText")
+        self._center_text.setTextFormat(Qt.TextFormat.PlainText)
         self._center_text.setWordWrap(True)
         self._alert_rule = _Hairline(self)
 
@@ -1002,6 +1067,7 @@ class EventOverlayWindow(QWidget):
         layout.setSpacing(CH_LANE_NAME_GAP)
         name = QLabel(row)
         name.setObjectName("ChLaneName")
+        name.setTextFormat(Qt.TextFormat.PlainText)  # a player name, not markup
         name.setStyleSheet(
             skins.typography_style(
                 self._font_size, skins.SMALL_DISPLAY, color=self._skin.name_color
@@ -1090,6 +1156,7 @@ class EventOverlayWindow(QWidget):
         if label is None:
             label = QLabel(event.text, self)
             label.setObjectName("OverlayUtilityLine")
+            label.setTextFormat(Qt.TextFormat.PlainText)  # trigger text, not markup
             label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             self._utility_layout.addWidget(label, 0, Qt.AlignmentFlag.AlignHCenter)
             self._utility_lines[event.text] = label
@@ -1151,8 +1218,12 @@ class EventOverlayWindow(QWidget):
         row.setSpacing(6)
         name_label = QLabel(name, bar)
         name_label.setObjectName("OverlayBarName")
+        # A bar's name is the trigger's timer name — user data, same rich-text
+        # hazard as the alert labels.
+        name_label.setTextFormat(Qt.TextFormat.PlainText)
         value_label = QLabel(f"{max(0, int(remaining))}s", bar)
         value_label.setObjectName("OverlayBarValue")
+        value_label.setTextFormat(Qt.TextFormat.PlainText)
         value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(name_label, 1)
         row.addWidget(value_label, 0)

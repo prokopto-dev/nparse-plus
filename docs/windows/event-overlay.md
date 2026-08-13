@@ -7,7 +7,9 @@ that sits over the game and renders these kinds of content:
   [triggers](../features/triggers.md) (raid AOE warnings, failed feign,
   charm break, …), in the trigger's color, cleared automatically. The alert
   panel is centered within its configured region in every skin; other overlay
-  windows keep their normal row and column alignment.
+  windows keep their normal row and column alignment. See
+  [The small gold label](#the-small-gold-label) for when part of it is drawn
+  as a compact caption.
 - **Timer bars** — countdown bars stacked bottom-center (AOE countdowns,
   trigger timers). Re-triggering a bar restarts it; bars vanish at zero.
 - **CH chain lanes** — one lane per heal target with green chips sliding
@@ -29,6 +31,34 @@ The **Utility** section groups rebuff/out-of-mana alerts under their own header
 It never intercepts clicks, has no window chrome at all, and hides itself
 when there's nothing to show — most of the time you forget it exists until
 a dragon roars.
+
+## The small gold label
+
+An alert is shown as one headline **unless it begins with a short name
+followed by a separator**, in which case that name becomes the small gold
+label above it:
+
+> `Gorenaire — ENRAGED` → **GORENAIRE** / *ENRAGED*
+> `Death Touch: Soandso` → **DEATH TOUCH** / *Soandso*
+
+Precisely: the **first** ` — `, ` -- `, ` - ` or `: ` in the text splits it,
+and only if everything before that separator is
+
+- at most 28 characters,
+- at most 4 words, and
+- free of `[ ] ( ) { } < > | / *`.
+
+Anything that fails a single one of those is shown whole, at one size —
+including the common raid-mob info dump, which used to lose its opening
+clause to the gold label because it happened to contain ` - ` further along:
+
+```
+<Dozekar The Cursed> [Slowable, baneable] - [CH Unslowed: 2s, Slowed: 4s] // …
+```
+
+The split is presentation only. A trigger's **reset text** still matches
+against the whole string, exactly as you typed it, and display text is never
+treated as markup — tags and formatting characters show up as you typed them.
 
 ## Positioning it
 
