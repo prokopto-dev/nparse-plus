@@ -969,6 +969,44 @@ digits and look the month up in a dict: locale-proof, and 2.99 → 1.00
 us/line on a function that runs on every log line. The `datetime.now()`
 fallback stays for genuinely malformed lines; that tolerance is EQTool's.
 
+**Two more settings stopped needing a restart** (post-2.4.2), both by the
+`apply_dps_settings` seam: the window mutates the settings tree and calls a
+`Backend` method that pushes the change onto what launch built.
+
+*The dump upload destination* (#68). `dumps.upload_target` was already read
+live by the handler — what was not live was the plumbing that read depends
+on, decided once in `build_backend`, so picking a destination mid-session
+left `InventoryUploadHandler.planner`/`.api`/`.submit` at None and every
+upload silently no-opped. `Backend.apply_upload_target()` builds what the
+newly-picked target needs and lacks, then pushes all three onto the handler.
+It closes the Discord login case too: `pigparse_account.api_token` rides in
+a per-request header and was genuinely live, but `pigparse_api` may never
+have been built. **Nothing is ever torn down** — `stop()` closes these at
+quit, an in-flight p99planner claim or PUT would go with them, and `accepts()`
+already gates on the target before any send, so switching away stops uploads
+by itself and an idle client costs nothing. Deliberately narrow: a REST
+client built for an upload does not re-arm the seven handlers that publish
+on *sharing's* behalf (#69 owns that direction).
+
+*The EQ install directory's spell database* (#70). Every other consumer of
+`general.eq_install_dir` was already live; `_spells_path` resolved once, so
+the one setting that first-run users set alongside the log directory left
+spell durations on the bundled DB for the whole session, silently. Two
+threads, because the two halves cost wildly different amounts:
+`SpellBook.adopt(other)` is six rebinds and runs on the **driver tick** —
+same object, new contents, which is what `ParseContext`, `SpellTimerHandler`,
+`AbilityCooldownHandler` and `TimerPersistenceHandler` need since they all
+captured the book itself — while the parse behind it is **~1.1 s** (8k lines,
+measured) and rides `core/background.py` like the archive copy and the EQ
+probe. `composition._SpellBookReloader` is the inbox: `request(path)` from
+the GUI thread, one tick submits the parse, a later tick adopts it. A
+refused submit keeps the request rather than dropping it, or a fast
+double-Apply would strand the book on the first path. `SpellBook.reload(path)`
+does both halves for anyone with no driver thread to protect.
+`Backend.reload_spell_book()` returns whether it scheduled anything: an
+install with no `spells_us.txt` resolves back to the bundled copy, and
+re-parsing to arrive where we already are is pure cost.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).

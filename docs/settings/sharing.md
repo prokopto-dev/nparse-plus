@@ -88,4 +88,9 @@ What uploads on its own is deliberately narrow:
 For anything outside that — an older dump, a hand-imported one, or a whole
 mule roster at once — use **Upload dumps** in the Character Dumps window.
 
-Changing the destination applies after a restart.
+Changing the destination takes effect when you press **Apply** — no restart,
+and the same is true of logging in with Discord and picking pigparse.org in
+the same visit. Switching *away* from a destination stops uploads
+immediately; the connection it was using is simply left idle for the rest of
+the session rather than torn down under an upload that may still be in
+flight.

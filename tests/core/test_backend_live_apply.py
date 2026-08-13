@@ -2,14 +2,21 @@
 
 ``Backend.apply_dps_settings`` established the shape: the settings window
 mutates the settings tree and calls a Backend method that pushes the change
-onto whatever the app built at launch. These are the two that joined it —
-overlay durations (#67) and the sharing mode (#69).
+onto whatever the app built at launch. These are the ones that joined it —
+overlay durations (#67), the sharing mode (#69), the dump upload destination
+(#68) and the spell database behind the EQ install directory (#70).
 """
 
 from __future__ import annotations
 
+import threading
+from datetime import datetime
+from pathlib import Path
+
 from nparseplus.composition import build_backend
 from nparseplus.config.settings import Settings
+
+FIXTURE_SPELLS = Path(__file__).resolve().parents[1] / "fixtures" / "spells_us.txt"
 
 
 class StubSpeaker:
@@ -85,3 +92,213 @@ def test_the_dps_handler_follows_the_pet_the_app_built() -> None:
     assert backend.fights.pet_name == "Vexer"
     backend.player_pet.reset()
     assert backend.fights.pet_name == ""
+
+
+# --- the dump upload destination (#68) -------------------------------------------
+
+
+def upload_backend(target: str = "off", mode: str = "off"):
+    settings = Settings()
+    settings.sharing.mode = mode
+    settings.dumps.upload_target = target
+    return build_backend(settings, speaker=StubSpeaker())
+
+
+def test_picking_p99planner_brings_its_own_client_and_worker() -> None:
+    """The acceptance case: sharing off, destination off at launch, picked
+    mid-session. Before this the handler kept None and every upload no-opped."""
+    backend = upload_backend()
+    assert backend.inventory_upload is not None
+    assert backend.inventory_upload.planner is None  # nothing was built at launch
+
+    backend.settings.dumps.upload_target = "p99planner"
+    backend.apply_upload_target()
+
+    assert backend.planner_api is not None
+    assert backend.inventory_upload.planner is backend.planner_api
+    assert callable(backend.inventory_upload.submit)  # ...and it has a thread to run on
+    backend.stop()
+
+
+def test_picking_pigparse_builds_the_rest_client_for_a_fresh_login() -> None:
+    """Logging in with Discord and picking pigparse in one Apply: the token is
+    already live (it rides in a per-request header), the client was what was
+    missing."""
+    backend = upload_backend()
+    assert backend.pigparse_api is None
+
+    backend.settings.pigparse_account.api_token = "t0ken"
+    backend.settings.dumps.upload_target = "pigparse"
+    backend.apply_upload_target()
+
+    assert backend.pigparse_api is not None
+    assert backend.inventory_upload is not None
+    assert backend.inventory_upload.api is backend.pigparse_api
+    assert callable(backend.inventory_upload.submit)
+    backend.stop()
+
+
+def test_switching_destinations_never_tears_the_old_one_down() -> None:
+    """stop() closes these at quit and an in-flight claim or PUT would go with
+    them; "off" is already honoured by accepts() before any send, so an idle
+    client is the cheaper half of the trade."""
+    backend = upload_backend("p99planner")
+    planner = backend.planner_api
+    worker = backend.net_worker
+    assert planner is not None
+
+    backend.settings.dumps.upload_target = "off"
+    backend.apply_upload_target()
+
+    assert backend.planner_api is planner
+    assert backend.net_worker is worker
+    backend.stop()
+
+
+def test_reapplying_the_same_destination_does_not_build_a_second_client() -> None:
+    backend = upload_backend("pigparse")
+    api, worker = backend.pigparse_api, backend.net_worker
+    backend.apply_upload_target()
+    assert backend.pigparse_api is api
+    assert backend.net_worker is worker
+    backend.stop()
+
+
+def test_an_upload_destination_does_not_re_arm_the_sharing_handlers() -> None:
+    """The narrow half of #68: a REST client built for an upload is not
+    permission to publish a location (#69 owns that direction)."""
+    backend = upload_backend()
+    backend.settings.dumps.upload_target = "pigparse"
+    backend.apply_upload_target()
+    assert backend.pigparse_api is not None
+    assert backend.sharing_client is None
+    assert backend.sharing.status == "off"
+    backend.stop()
+
+
+# --- the spell database behind the EQ install directory (#70) --------------------
+
+
+def test_setting_the_install_directory_schedules_a_reload(tmp_path) -> None:
+    backend = upload_backend()
+    assert backend.spells.source_path == Path("data/spells/spells_us.txt")  # bundled
+
+    (tmp_path / "spells_us.txt").write_text(FIXTURE_SPELLS.read_text(), encoding="utf-8")
+    backend.settings.general.eq_install_dir = tmp_path
+
+    assert backend.reload_spell_book() is True
+    assert backend.spell_reload is not None
+    assert backend.spell_reload.pending == tmp_path / "spells_us.txt"
+
+
+def test_an_install_without_a_spell_file_stays_on_the_bundled_database(tmp_path) -> None:
+    """_spells_path falls back, so the resolved path never moved and
+    re-parsing 8k lines to arrive where we already are would stall a tick."""
+    backend = upload_backend()
+    backend.settings.general.eq_install_dir = tmp_path  # empty
+
+    assert backend.reload_spell_book() is False
+    assert backend.spell_reload is not None
+    assert backend.spell_reload.pending is None
+
+
+def one_spell_database(tmp_path: Path) -> Path:
+    """An install whose spells_us.txt holds exactly one spell."""
+    lines = FIXTURE_SPELLS.read_text(encoding="utf-8").splitlines()
+    clarity = next(line for line in lines if line.split("^")[1:2] == ["Clarity"])
+    (tmp_path / "spells_us.txt").write_text(clarity + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_the_driver_tick_is_what_performs_the_swap(tmp_path) -> None:
+    """The book is read on the driver thread on every cast line, so apply()
+    only leaves a request: one tick starts the parse off-thread, a later tick
+    adopts the result. The handlers' object identity survives both, which is
+    the whole reason adopt() exists."""
+    backend = upload_backend()
+    book = backend.spells
+    assert backend.pipeline._ctx.spells is book  # what the parsers read
+
+    backend.settings.general.eq_install_dir = one_spell_database(tmp_path)
+    backend.reload_spell_book()
+    assert len(book.spells) > 1  # not yet — nothing has run on the driver thread
+
+    assert backend.spell_reload is not None
+    backend.spell_reload.tick(datetime.now())  # starts the parse
+    assert backend.spell_reload.pending is None  # one-shot
+    assert backend.spell_reload.wait()
+    backend.spell_reload.tick(datetime.now())  # adopts it
+
+    assert backend.spells is book
+    assert backend.pipeline._ctx.spells is book
+    assert [spell.name for spell in book.spells] == ["Clarity"]
+
+
+def test_the_parse_does_not_run_on_the_driver_thread(tmp_path) -> None:
+    """~1.1 s for a full spells_us.txt — four times the budget a plugin tick
+    is evicted for, on the thread that tails the log. So the tick that starts
+    a reload must return without having done it."""
+    backend = upload_backend()
+    book = backend.spells
+    backend.settings.general.eq_install_dir = one_spell_database(tmp_path)
+    backend.reload_spell_book()
+    assert backend.spell_reload is not None
+
+    threads: list[str] = []
+    backend.spell_reload._book = _Recorder(book, threads)  # type: ignore[assignment]
+    backend.spell_reload.tick(datetime.now())
+    assert threads == []  # the starting tick adopted nothing
+
+    assert backend.spell_reload.wait()
+    backend.spell_reload.tick(datetime.now())
+    assert threads == ["MainThread"]  # ...the adopting one did, here
+
+
+class _Recorder:
+    """A SpellBook stand-in that records which thread adopt() ran on."""
+
+    def __init__(self, book, threads: list[str]) -> None:
+        self.npcs = book.npcs
+        self._threads = threads
+
+    def adopt(self, other) -> None:
+        self._threads.append(threading.current_thread().name)
+
+
+def test_a_bad_spell_path_does_not_break_the_tick(tmp_path) -> None:
+    backend = upload_backend()
+    book = backend.spells
+    before = len(book.spells)
+    assert backend.spell_reload is not None
+
+    backend.spell_reload.request(tmp_path / "gone.txt")
+    backend.spell_reload.tick(datetime.now())  # swallowed, logged
+    assert backend.spell_reload.wait()
+    backend.spell_reload.tick(datetime.now())
+
+    assert len(book.spells) == before
+    assert book.source_path == Path("data/spells/spells_us.txt")
+
+
+def test_a_second_request_waits_for_the_one_in_flight(tmp_path, monkeypatch) -> None:
+    """BackgroundJob refuses to start a second run, and the request must be
+    kept rather than dropped — otherwise a fast double-Apply loses the second
+    path and the book stays on the first one forever."""
+    backend = upload_backend()
+    assert backend.spell_reload is not None
+    started: list[str] = []
+    monkeypatch.setattr(
+        backend.spell_reload._job, "_spawn", lambda name, work: started.append(name)
+    )
+
+    backend.spell_reload.request(one_spell_database(tmp_path) / "spells_us.txt")
+    backend.spell_reload.tick(datetime.now())
+    assert started == ["spell-reload"]
+
+    other = tmp_path / "other"
+    other.mkdir()
+    backend.spell_reload.request(one_spell_database(other) / "spells_us.txt")
+    backend.spell_reload.tick(datetime.now())  # refused: the first never finished
+
+    assert started == ["spell-reload"]
+    assert backend.spell_reload.pending == other / "spells_us.txt"  # kept, not dropped
