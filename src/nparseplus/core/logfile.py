@@ -22,12 +22,19 @@ _ATTACH_BACKTRACK_BYTES = 4096
 _SESSION_MARKER = b"] Welcome to EverQuest!"
 
 # The last few bytes we read, kept so the next poll can prove it is reading
-# the same file it left off in. A shrink is the obvious rotation signal, but
-# it is not a reliable one: log archiving empties the file from another
-# thread, and if the client refills it past our old offset before the next
+# the same file it left off in. A shrink is the obvious rotation signal but
+# not a reliable one: log archiving empties the file from another thread, and
+# if the client refills it to our old offset — or past it — before the next
 # 100 ms poll, the size test sees nothing wrong and we resume mid-file,
-# silently skipping everything written from offset 0 up to that point. This
-# many bytes costs one comparison per poll and does not depend on timing.
+# silently skipping everything written from offset 0 up to that point.
+#
+# The check is therefore made on every poll rather than only when the size
+# looks odd, so it does not depend on a race landing a particular way. That
+# costs one 64-byte read (~12 us) on the polls that would otherwise be a
+# bare stat — 0.01% of a core at the 100 ms cadence. A stat-based shortcut
+# (same size AND same mtime) was the alternative and was rejected: Windows
+# stamps write times on a ~15.6 ms clock tick, so it would be exact on some
+# platforms and not others, which is worse than a syscall.
 _SIGNATURE_BYTES = 64
 
 
@@ -110,11 +117,12 @@ class LogTail:
     def poll(self) -> list[str]:
         """Return complete new lines since the last poll (may be empty).
 
-        Handles truncation/rotation two ways: a file that shrank below our
-        position, and a file whose bytes *at* our position are no longer the
-        ones we read there — which is what an emptied-and-refilled log looks
-        like when it regrows past us between polls. Either way, restart from
-        the beginning rather than resume mid-file.
+        Rotation is decided by the bytes at our read offset, not by the file
+        having got smaller. The size is only a shortcut: an emptied log that
+        the client refills *to* our offset, or past it, before the next poll
+        is the same size or larger, and resuming there would skip everything
+        written from the top. Whenever there is a signature to check we read
+        it back and compare, and start over if it does not match.
         """
         try:
             size = self.path.stat().st_size
@@ -122,9 +130,9 @@ class LogTail:
             return []
         if size < self.position:
             self._restart()
-        if size == self.position:
-            return []
         back = min(len(self._signature), self.position)
+        if size == self.position and not back:
+            return []  # nothing new and nothing yet to compare against
         with self.path.open("rb") as f:
             f.seek(self.position - back)
             data = f.read()
@@ -134,6 +142,8 @@ class LogTail:
                 data = f.read()
         else:
             data = data[back:]
+        if not data:
+            return []
         self.position += len(data)
         self._signature = (self._signature + data)[-_SIGNATURE_BYTES:]
         data = self._partial + data

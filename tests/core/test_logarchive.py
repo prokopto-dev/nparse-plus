@@ -104,6 +104,36 @@ def test_a_log_refilled_past_our_offset_still_reaches_the_tail(tmp_path: Path) -
     assert len(lines) == 30_001
 
 
+def test_a_log_refilled_to_exactly_our_offset_still_reaches_the_tail(tmp_path: Path) -> None:
+    """The boundary of the case above: the refill can land on the offset
+    exactly, where the size says nothing at all."""
+    log = tmp_path / "eqlog_Tanky_P1999Green.txt"
+    line = "[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n"
+    log.write_text(line * 21_000)
+    game = log.open("a", buffering=1)
+    try:
+        tail = LogTail.attach(log)
+        assert tail.poll() == []
+        offset = tail.position
+
+        assert len(archive_oversized_logs(tmp_path, threshold_mb=1)) == 1
+
+        refill = "[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n"
+        while len(refill) + len(line) < offset:
+            refill += line
+        refill += "x" * (offset - len(refill) - 1) + "\n"
+        assert len(refill) == offset
+        game.write(refill)
+        game.flush()
+        assert log.stat().st_size == offset  # exactly where we left off
+
+        lines = tail.poll()
+    finally:
+        game.close()
+
+    assert lines[0].endswith("Gorenaire begins to cast a spell.")
+
+
 def test_lines_written_during_the_copy_still_reach_the_archive(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
     _make_log(log, 2 * 1024 * 1024)

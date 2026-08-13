@@ -796,10 +796,14 @@ session with nothing logged, and restarting nParse+ did not help while the
 game held the moved file. `logarchive.py` now copies the contents out and
 **truncates in place** (what log rotators do): the client's descriptor stays
 valid and its append writes resolve to offset 0. `LogTail.poll` reads that as
-a rotation **by the byte signature at its offset**, not by the file having
-shrunk — the sweep runs on its own thread, so a fast writer can refill the
-log past that offset before the next 100 ms poll, and a size test would then
-resume mid-file and eat everything written before it. The write handle is opened FIRST so the
+a rotation **by the byte signature at its offset**, checked on every poll and
+not only when the file shrank — the sweep runs on its own thread, so a fast
+writer can refill the log *to* that offset or past it before the next 100 ms
+poll, and a size test would then resume mid-file and eat everything written
+before it. (A same-size-and-same-mtime shortcut would have kept the idle poll
+at one syscall, but Windows stamps write times on a ~15.6 ms tick, so it
+would be exact on some platforms only; the 64-byte read costs 12 us at 10 Hz.)
+The write handle is opened FIRST so the
 Windows share-mode refusal skips the file with nothing copied; the copy
 lands under a `.part` name and is fsynced before the source is emptied; and
 an emptied log **keeps its old mtime**, or a stale character's freshly

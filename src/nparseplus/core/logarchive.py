@@ -5,7 +5,8 @@ copied into ``<log_dir>/archive/<name>_<timestamp>.txt`` and then **truncated
 in place**, leaving an empty file behind. ``LogTail.poll`` recognizes that as
 a rotation and keeps reading — by the byte signature at its read offset, not
 by the file having got smaller: this sweep runs on its own thread, so the
-client can refill the log past that offset before the next 100 ms poll.
+client can refill the log to that offset, or past it, before the next 100 ms
+poll, and the size would then say nothing was wrong.
 
 **Not a rename** — that was the bug in #87. The C# moves the file and relies
 on Windows refusing to move one the client holds open, which is how the
