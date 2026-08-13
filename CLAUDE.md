@@ -185,6 +185,32 @@ pyproject.toml) — keep NEW code clean even when touching them.
 - Git: commit with `git -c core.hooksPath=/dev/null commit` (hook friction),
   imperative messages prefixed by milestone (`M2: ...`).
 
+## The mark (branding)
+
+`data/assets/icon.svg` is THE source for everything that identifies the app —
+window/tray icon, `.ico`, `.icns`, docs logo + favicon, README banner, social
+card. `tools/gen_icons.py` rasterizes it (PySide6's `QSvgRenderer`; **no new
+deps** — no cairosvg, no Pillow, and the multi-size `.ico` is assembled with
+stdlib `struct`), `packaging/make_icns.sh` calls it with `--iconset` and hands
+the result to `iconutil`. Outputs are committed, like `tools/convert_*.py`.
+It replaced `icon.xcf`, 64x64 GIMP art inherited from the nParse fork that
+every large representation used to be an upscale of.
+
+The glyph is an angular lowercase **n** in a ring, engraved gold on a notched
+Velious plate, every colour lifted from `ui/skins.py`. The **16px silhouette
+is the only hard requirement** — hence one PNG per size in `data/ui/` rather
+than one big one Qt downscales (`ui/appicon.py` assembles the `QIcon`; both
+`app.py` and the legacy tray go through it). There is deliberately **no
+`--check` mode**: Qt's rasterizer is not byte-stable across PySide6 versions,
+so `tests/tools/test_gen_icons.py` asserts the artifacts' *shape* instead
+(notched corners transparent, gold survives, dark field behind it). Two
+rejections are recorded in the SVG and `docs/dev-notes/branding.md` so nobody
+re-proposes them: **Nauthiz** (the real n-rune) reads as a prohibition sign —
+a diagonal through a ring — and a **"+" in the ring** is a two-pixel smudge at
+16px, so the plus lives in the wordmark. The GitHub social preview uploads
+**only through the web UI**; the card is committed at
+`docs/assets/images/social-preview.png` for a human to attach once.
+
 ## Packaging
 
 `uv run pyinstaller packaging/nparseplus.spec --noconfirm` builds the onedir

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from packaging.version import Version
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QIcon
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QSystemTrayIcon
 
 from nparseplus import updater
@@ -13,7 +13,7 @@ from nparseplus.helpers import config, resource_path
 from nparseplus.helpers.settings import SettingsSignals
 from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
-from nparseplus.ui import appquit
+from nparseplus.ui import appicon, appquit
 from nparseplus.ui.updatewindow import DownloadOutcomeDialog, UpdateAvailableDialog
 
 config.load("nparse.config.json")
@@ -108,7 +108,7 @@ class NomnsParse(QApplication):
 
         # Tray Icon
         self._system_tray = QSystemTrayIcon()
-        self._system_tray.setIcon(QIcon(resource_path("data/ui/icon.png")))
+        self._system_tray.setIcon(appicon.app_icon())
         self._system_tray.setToolTip("nParse")
         # self._system_tray.setContextMenu(self._create_menu())
         self._system_tray.activated.connect(self._menu)

@@ -204,14 +204,14 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # Legacy imports come last: helpers.application loads nparse.config.json
     # from the CWD at import time and pulls in Qt.
     from PySide6.QtCore import QCoreApplication, Qt
-    from PySide6.QtGui import QFontDatabase, QIcon
+    from PySide6.QtGui import QFontDatabase
 
     from nparseplus.config.paths import ensure_dumps_dir, ensure_socials_dir
     from nparseplus.core.dumps import DumpLibrary
     from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
-    from nparseplus.ui import chromewidgets
+    from nparseplus.ui import appicon, chromewidgets
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
     from nparseplus.ui.dumpswindow import CharacterDumpsWindow
@@ -241,7 +241,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # subtly wrong somewhere. One line, and a one-line revert.
     app.setStyle("Fusion")
     chromewidgets.apply_app_chrome(app, settings.general.font_size)
-    app.setWindowIcon(QIcon(resource_path(os.path.join("data", "ui", "icon.png"))))
+    app.setWindowIcon(appicon.app_icon())
     app.setQuitOnLastWindowClosed(False)
     QFontDatabase.addApplicationFont(
         resource_path(os.path.join("data", "fonts", "NotoSans-Regular.ttf"))

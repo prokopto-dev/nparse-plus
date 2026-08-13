@@ -1,3 +1,5 @@
+<img src="docs/assets/images/nparseplus-logo.png" alt="nParse+" width="440">
+
 # nParse+ (nparseplus)
 
 [![CI](https://github.com/prokopto-dev/nparse-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/prokopto-dev/nparse-plus/actions/workflows/ci.yml)

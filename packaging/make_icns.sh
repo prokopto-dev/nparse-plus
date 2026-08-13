@@ -1,17 +1,16 @@
 #!/bin/sh
-# Generate packaging/icon.icns from data/ui/icon.png (macOS only: sips+iconutil).
-# The source art is 64x64, so the large representations are upscales — good
-# enough for 1.0; regenerate from higher-res art when it exists.
+# Generate packaging/icon.icns from data/assets/icon.svg (macOS only: iconutil).
+#
+# Every representation in the iconset is a native render off the vector master,
+# so there are no upscales here any more — this used to `sips` a 64x64 PNG up
+# to 1024 and said so in this comment. tools/gen_icons.py --iconset does the
+# rasterizing (PySide6's QSvgRenderer); iconutil is the only macOS-only part
+# and is why this stayed a shell script.
 set -eu
 cd "$(dirname "$0")/.."
 ICONSET=packaging/icon.iconset
 rm -rf "$ICONSET"
-mkdir -p "$ICONSET"
-for size in 16 32 64 128 256 512; do
-    sips -z $size $size data/ui/icon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-    double=$((size * 2))
-    sips -z $double $double data/ui/icon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-done
+uv run python tools/gen_icons.py --iconset "$ICONSET"
 iconutil -c icns "$ICONSET" -o packaging/icon.icns
 rm -rf "$ICONSET"
 echo "wrote packaging/icon.icns"

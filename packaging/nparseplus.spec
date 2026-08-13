@@ -11,6 +11,11 @@
 #                                              visionfix.zip, ...)
 # QtWebEngine stays bundled (Discord overlay works out of the box) — that is
 # most of the bundle size; unused heavyweight Qt modules are excluded.
+#
+# Icons need nothing special here: the whole repo-root data/ is bundled, so
+# data/ui/icon*.png (which ui/appicon.py reads by name, one file per size) and
+# data/assets/icon.svg ride along, and the two this file names by path are
+# regenerated in place by tools/gen_icons.py + packaging/make_icns.sh.
 
 import re
 import sys

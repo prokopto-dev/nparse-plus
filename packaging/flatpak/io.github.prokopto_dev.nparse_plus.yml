@@ -80,8 +80,26 @@ modules:
         /app/share/applications/io.github.prokopto_dev.nparse_plus.desktop
       - install -Dm644 io.github.prokopto_dev.nparse_plus.metainfo.xml
         /app/share/metainfo/io.github.prokopto_dev.nparse_plus.metainfo.xml
-      - install -Dm644 icon.png
+      # Every raster size the vector master ships, plus the master itself in
+      # scalable/. This used to be one 64x64 PNG, which a desktop asking for
+      # 16px or 256px had to resample; there is real art at each step now
+      # (tools/gen_icons.py, from data/assets/icon.svg). hicolor has no 24px
+      # directory, so the 24px render — Windows' small-icon step — is the one
+      # generated size that does not appear here.
+      - install -Dm644 icon-16.png
+        /app/share/icons/hicolor/16x16/apps/io.github.prokopto_dev.nparse_plus.png
+      - install -Dm644 icon-32.png
+        /app/share/icons/hicolor/32x32/apps/io.github.prokopto_dev.nparse_plus.png
+      - install -Dm644 icon-48.png
+        /app/share/icons/hicolor/48x48/apps/io.github.prokopto_dev.nparse_plus.png
+      - install -Dm644 icon-64.png
         /app/share/icons/hicolor/64x64/apps/io.github.prokopto_dev.nparse_plus.png
+      - install -Dm644 icon-128.png
+        /app/share/icons/hicolor/128x128/apps/io.github.prokopto_dev.nparse_plus.png
+      - install -Dm644 icon.png
+        /app/share/icons/hicolor/256x256/apps/io.github.prokopto_dev.nparse_plus.png
+      - install -Dm644 icon.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.prokopto_dev.nparse_plus.svg
     sources:
       - type: dir
         path: ../../dist/nparseplus
@@ -94,3 +112,15 @@ modules:
         path: io.github.prokopto_dev.nparse_plus.metainfo.xml
       - type: file
         path: ../../data/ui/icon.png
+      - type: file
+        path: ../../data/ui/icon-16.png
+      - type: file
+        path: ../../data/ui/icon-32.png
+      - type: file
+        path: ../../data/ui/icon-48.png
+      - type: file
+        path: ../../data/ui/icon-64.png
+      - type: file
+        path: ../../data/ui/icon-128.png
+      - type: file
+        path: ../../data/assets/icon.svg

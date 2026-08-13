@@ -67,7 +67,7 @@ from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
-from nparseplus.ui import chrome, chromewidgets, skins
+from nparseplus.ui import appicon, chrome, chromewidgets, skins
 from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus.ui.skinwidgets import SkinPreview
 
@@ -75,6 +75,11 @@ logger = logging.getLogger(__name__)
 
 WINDOW_KEY = "settings"
 DEFAULT_GEOMETRY = (240, 160, 640, 560)
+
+#: Shown under the mark in General's header. The same sentence the Flatpak
+#: metainfo and the social card use, so the app describes itself identically
+#: everywhere it is asked.
+BRAND_TAGLINE = "EverQuest Project 1999 companion overlay"
 
 #: How small the user is allowed to make this window.
 #:
@@ -450,7 +455,36 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         # live-swaps on Apply) and is untrue for the durations now too (#67).
         # A stale restart note is worse than none — it teaches the user to
         # restart for nothing.
-        return self._page(form)
+        return self._page(form, header=self._brand_header())
+
+    def _brand_header(self) -> QWidget:
+        """The mark, the name and the tagline, above General's first field.
+
+        The one place inside the app that shows the icon at a size you can
+        actually look at — everywhere else it is 16-32px in a tray or a title
+        bar. Deliberately just three labels: this is a settings page, not a
+        splash screen.
+        """
+        mark = QLabel(self)
+        mark.setPixmap(appicon.app_pixmap(48))
+        mark.setFixedSize(48, 48)
+
+        name = QLabel("nParse+", self)
+        name.setObjectName(chrome.TITLE)
+
+        text = QVBoxLayout()
+        text.setSpacing(0)
+        text.addWidget(name)
+        text.addWidget(chromewidgets.hint(BRAND_TAGLINE, self))
+
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        row.addWidget(mark, 0, Qt.AlignmentFlag.AlignTop)
+        row.addLayout(text, 1)
+
+        header = QWidget(self)
+        header.setLayout(row)
+        return header
 
     # -- Appearance ----------------------------------------------------------------
 
@@ -2052,8 +2086,10 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
 
     # -- keep normal window mouse behavior (text fields, sliders) ------------------------------
 
-    def _page(self, form: QFormLayout) -> QWidget:
+    def _page(self, form: QFormLayout, header: QWidget | None = None) -> QWidget:
         outer = QVBoxLayout()
+        if header is not None:
+            outer.addWidget(header)
         outer.addLayout(form)
         outer.addStretch(1)
         page = QWidget(self)
