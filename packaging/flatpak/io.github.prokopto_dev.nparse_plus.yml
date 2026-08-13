@@ -21,6 +21,16 @@ finish-args:
   - --share=network # PigParse hub/REST, p99 wiki, update check
   - --socket=pulseaudio # trigger audio / TTS
   - --talk-name=org.kde.StatusNotifierWatcher # tray icon
+  # In-app "update and restart" through the Flatpak portal's UpdateMonitor
+  # (issue #74). The portal's BUS NAME is org.freedesktop.Flatpak while its
+  # INTERFACE is org.freedesktop.portal.Flatpak — the default sandbox grant
+  # (flatpak_run_add_session_dbus_args) globs only --call=org.freedesktop
+  # .portal.*, which the bus name does not match, so the talk-name is
+  # required. It ships one release AHEAD of the code that uses it: flatpak
+  # refuses any update whose new version adds a permission
+  # (org.freedesktop.DBus.Error.NotSupported), so the arg must already be
+  # installed before an in-app update can succeed. Harmless until then.
+  - --talk-name=org.freedesktop.Flatpak
   # EQ logs + spells_us.txt live inside the user's WINE prefix, and the
   # Night Vision fix writes into the EQ install. home covers the common
   # ~/.wine / ~/Games layouts; installs elsewhere need a user override

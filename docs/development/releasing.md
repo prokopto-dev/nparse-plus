@@ -42,6 +42,34 @@ versioning.
 Between releases, pushes to `master` that touch `docs/` redeploy the
 **dev** docs version automatically (`docs-dev.yml`).
 
+## What the app checks before it installs a download
+
+The in-app updater streams the release artifact to a `.part` staging file
+under a byte budget, re-asserting `https` on **every** redirect hop (a
+release URL that 302s to `http` is refused, not downloaded in plaintext),
+and pins the result to the `sha256:` digest GitHub publishes for the asset
+(`assets[].digest`). A mismatch is refused before anything opens the file
+and names both digests.
+
+That digest arrives over the same TLS session as the release metadata that
+describes it, so it is a **channel** guarantee: it proves the object the
+CDN served is the object the API described — catching a corrupted,
+truncated or substituted artifact — and proves nothing against anything
+able to publish a release. A per-release signed `SHA256SUMS` (minisign,
+public key compiled into the app) would be the actual signature; that is
+still to do.
+
+## Flatpak: adding a permission breaks in-app update once
+
+Flatpak refuses an update whose new version requests a permission the
+installed version lacks — the portal's `UpdateMonitor.Update` fails with
+`org.freedesktop.DBus.Error.NotSupported` and the user has to update with
+the host tools instead. Any addition to `finish-args` in
+`packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml` therefore breaks
+in-app update across that one release hop, and belongs in the release
+notes. A permission a feature needs must ship one release *before* the
+feature.
+
 ## gh-pages layout
 
 One branch serves both consumers:

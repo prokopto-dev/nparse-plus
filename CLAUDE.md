@@ -205,6 +205,32 @@ build — CI does it, don't try locally on macOS), built with `--repo-url` and
 publishes the OSTree repo to the single-commit `gh-pages` branch (GitHub
 Pages) so `flatpak update` works for bundle installs.
 
+**Flatpak `finish-args` are release-notes-worthy, permanently.** Flatpak
+refuses any in-app/portal update whose new version asks for a permission the
+installed version does not have — `UpdateMonitor.Update` fails with
+`org.freedesktop.DBus.Error.NotSupported` and the user has to run the host
+tools. So **every** addition to `finish-args` breaks in-app update across
+exactly that one release hop, and a new permission must ship one release
+before the code that needs it. `--talk-name=org.freedesktop.Flatpak` landed
+on exactly those terms, ahead of any portal code (issue #74): the portal's
+**bus name** is
+`org.freedesktop.Flatpak` while its **interface** is
+`org.freedesktop.portal.Flatpak`, and the default sandbox grant globs only
+the latter (`--call=org.freedesktop.portal.*`), so the bus name needs its own
+talk-name. Nothing uses it yet; `flatpak update` from the host is unaffected
+either way.
+
+Update downloads are verified (issue #73): `updater.stream_https_to_file` is
+the streaming sibling of the plugin installer's `fetch_https_bytes` — same
+hop-by-hop https re-assertion, its own `MAX_ASSET_BYTES` budget (release
+artifacts are 195–255 MB; do not raise the plugin's 50 MiB in-memory cap to
+meet them), rolling sha256 to a `.part` staging file, promoted by rename only
+once it matches `assets[].digest`. That digest travels over the same TLS
+session as the release metadata, so it is a **channel** guarantee — it
+defends against a corrupted, truncated or substituted CDN object and against
+nothing that can publish a release. A signed `SHA256SUMS` (minisign, public
+key compiled in) is the only actual signature and is still to do.
+
 Since 1.18 the spec also `copy_metadata`s BOTH distributions (`nparseplus`
 and `nparseplus-sdk`) — a frozen app has no site-packages, so a plugin's
 `importlib.metadata.version(...)` would raise without it — and declares the
