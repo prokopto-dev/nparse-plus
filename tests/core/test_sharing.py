@@ -325,3 +325,25 @@ def test_apply_mode_off_clears_keepalive_state() -> None:
     rig.last_you = T0 + timedelta(seconds=15)
     rig.coordinator.tick(T0 + timedelta(seconds=10))
     assert len(rig.client.locations) == 1  # the 10s keepalive never fires
+
+
+def test_apply_mode_stops_the_client_when_switching_networks() -> None:
+    """pigparse -> nparse is a promise to stop talking to pigparse. The nparse
+    client cannot be built without a restart, so the honest move is to stop
+    the running one rather than leave it publishing to the service the user
+    just switched away from."""
+    rig = Rig()  # launched in pigparse
+    rig.settings.sharing.mode = "nparse"
+
+    assert rig.coordinator.apply_mode() is True
+    assert rig.client.stopped == 1
+    rig.push_location()
+    assert rig.client.locations == []
+    assert rig.coordinator.status == "nparse — restart to connect"
+
+
+def test_apply_mode_leaves_the_launch_mode_alone() -> None:
+    """Apply fires on every save, so an unchanged mode must not stop anything."""
+    rig = Rig()
+    assert rig.coordinator.apply_mode() is False
+    assert rig.client.stopped == 0

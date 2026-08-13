@@ -81,7 +81,7 @@ class FakeClient:
 
 
 def _coordinator(settings: Settings, bus: EventBus | None = None) -> SharingCoordinator:
-    """A coordinator with a live client — its ``network_allowed`` is the
+    """A coordinator with a live client — its ``pigparse_rest_allowed`` is the
     predicate composition passes to the gate."""
     player = ActivePlayer()
     player.reset_for("Xantik", Server.GREEN)
@@ -102,7 +102,7 @@ def _coordinator(settings: Settings, bus: EventBus | None = None) -> SharingCoor
 def test_gate_forwards_while_sharing_is_on() -> None:
     settings = Settings()
     settings.sharing.mode = "pigparse"
-    allowed = _coordinator(settings).network_allowed
+    allowed = _coordinator(settings).pigparse_rest_allowed
     ran: list[int] = []
     gated = sharing_gated_submit(lambda fetch, apply=None: ran.append(fetch()), allowed)
     gated(lambda: 1)
@@ -112,7 +112,7 @@ def test_gate_forwards_while_sharing_is_on() -> None:
 def test_gate_drops_while_sharing_is_off() -> None:
     settings = Settings()
     settings.sharing.mode = "off"
-    allowed = _coordinator(settings).network_allowed
+    allowed = _coordinator(settings).pigparse_rest_allowed
     ran: list[int] = []
     gated = sharing_gated_submit(lambda fetch, apply=None: ran.append(fetch()), allowed)
     gated(lambda: 1)
@@ -123,7 +123,7 @@ def test_gate_reads_the_mode_per_call() -> None:
     """It is a live gate, not a snapshot — Apply changes the answer."""
     settings = Settings()
     settings.sharing.mode = "pigparse"
-    allowed = _coordinator(settings).network_allowed
+    allowed = _coordinator(settings).pigparse_rest_allowed
     ran: list[int] = []
     gated = sharing_gated_submit(lambda fetch, apply=None: ran.append(fetch()), allowed)
     gated(lambda: 1)
@@ -165,7 +165,7 @@ def test_a_queued_call_is_dropped_when_it_finally_runs() -> None:
     settings.sharing.mode = "pigparse"
     worker = DeferredWorker()
     api = RecordingApi()
-    gated = sharing_gated_submit(worker.submit, _coordinator(settings).network_allowed)
+    gated = sharing_gated_submit(worker.submit, _coordinator(settings).pigparse_rest_allowed)
 
     gated(lambda: api.upsert_players([], 0))
     assert worker.queued, "the task was queued while sharing was on"
@@ -182,7 +182,7 @@ def test_a_queued_result_is_not_applied_after_the_switch() -> None:
     settings.sharing.mode = "pigparse"
     worker = DeferredWorker()
     applied: list[object] = []
-    gated = sharing_gated_submit(worker.submit, _coordinator(settings).network_allowed)
+    gated = sharing_gated_submit(worker.submit, _coordinator(settings).pigparse_rest_allowed)
 
     gated(lambda: "roster", applied.append)
     fetch, apply = worker.queued[0]
@@ -197,7 +197,7 @@ def test_a_queued_call_still_runs_while_sharing_stays_on() -> None:
     settings.sharing.mode = "pigparse"
     worker = DeferredWorker()
     applied: list[object] = []
-    sharing_gated_submit(worker.submit, _coordinator(settings).network_allowed)(
+    sharing_gated_submit(worker.submit, _coordinator(settings).pigparse_rest_allowed)(
         lambda: "roster", applied.append
     )
     worker.run_all()
@@ -211,7 +211,7 @@ def test_a_falsy_fetch_result_still_reaches_apply() -> None:
     settings.sharing.mode = "pigparse"
     worker = DeferredWorker()
     applied: list[object] = []
-    sharing_gated_submit(worker.submit, _coordinator(settings).network_allowed)(
+    sharing_gated_submit(worker.submit, _coordinator(settings).pigparse_rest_allowed)(
         lambda: None, applied.append
     )
     worker.run_all()
@@ -238,7 +238,7 @@ def test_the_real_worker_drops_a_task_stuck_behind_a_slow_one() -> None:
     try:
         worker.submit(slow_unrelated_request)  # raw handle: an upload, say
         assert holding.wait(timeout=5.0), "the worker never picked up the first task"
-        sharing_gated_submit(worker.submit, _coordinator(settings).network_allowed)(
+        sharing_gated_submit(worker.submit, _coordinator(settings).pigparse_rest_allowed)(
             lambda: api.upsert_players([], 0)
         )
 
@@ -273,7 +273,7 @@ def test_turning_sharing_back_on_does_not_resume_the_publishers() -> None:
     coordinator = _coordinator(settings)
     worker = DeferredWorker()
     api = RecordingApi()
-    gated = sharing_gated_submit(worker.submit, coordinator.network_allowed)
+    gated = sharing_gated_submit(worker.submit, coordinator.pigparse_rest_allowed)
 
     settings.sharing.mode = "off"
     assert coordinator.apply_mode() is True  # the client is stopped and dropped
@@ -282,7 +282,7 @@ def test_turning_sharing_back_on_does_not_resume_the_publishers() -> None:
     gated(lambda: api.upsert_players([], 0))
     worker.run_all()
     assert api.calls == []
-    assert coordinator.network_allowed() is False
+    assert coordinator.pigparse_rest_allowed() is False
 
 
 def test_the_tray_says_why_rather_than_claiming_off() -> None:
@@ -316,6 +316,42 @@ def test_a_session_launched_off_cannot_start_publishing_either() -> None:
     backend.stop()
 
 
+def test_nparse_mode_never_publishes_to_pigparse() -> None:
+    """The self-hosted websocket user who also uploads dumps to pigparse.org.
+
+    Composition builds ``pigparse_api`` + a worker for that uploader, and the
+    sharing client is the nparse ws — so "there is a client and the mode is
+    not off" would hand the seven publishers a pigparse handle and start
+    posting the /who roster to a service this session is not sharing with.
+    """
+    settings = Settings()
+    settings.sharing.mode = "nparse"
+    settings.dumps.upload_target = "pigparse"
+    backend = build_backend(settings, speaker=StubSpeaker())
+
+    assert backend.sharing_client is not None  # the nparse websocket
+    assert backend.pigparse_api is not None  # built for the uploader only
+    worker = backend.net_worker
+    assert worker is not None and backend.player_tracker is not None
+    assert backend.sharing.pigparse_rest_allowed() is False
+
+    backend.player_tracker.submit(lambda: "published")
+    assert worker._queue.empty()
+
+    upload = backend.inventory_upload
+    assert upload is not None
+    upload.submit(lambda: "uploaded", None)
+    assert not worker._queue.empty()  # the uploader is untouched
+    backend.stop()
+
+
+def test_the_predicate_names_pigparse_not_merely_on() -> None:
+    settings = Settings()
+    settings.sharing.mode = "nparse"
+    coordinator = _coordinator(settings)  # a live client, just not pigparse's
+    assert coordinator.pigparse_rest_allowed() is False
+
+
 # --- the two publishers the review named --------------------------------------
 
 
@@ -331,7 +367,7 @@ def test_player_tracker_stops_upserting_the_who_roster() -> None:
         bus,
         player,
         api=api,
-        submit=sharing_gated_submit(_immediate_submit, coordinator.network_allowed),
+        submit=sharing_gated_submit(_immediate_submit, coordinator.pigparse_rest_allowed),
     )
 
     def who(name: str) -> None:
@@ -361,7 +397,7 @@ def test_zone_activity_stops_posting_npc_activity() -> None:
         player,
         load_zone_database(),
         api=api,
-        submit=sharing_gated_submit(_immediate_submit, coordinator.network_allowed),
+        submit=sharing_gated_submit(_immediate_submit, coordinator.pigparse_rest_allowed),
     )
     bus.publish(SlainEvent(timestamp=T0, victim="a Kromzek Captain", killer="Xantik"))
     assert api.calls == ["send_npc_activity"]

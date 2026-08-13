@@ -51,6 +51,12 @@ the same character to a different website:
 | **pigparse.org character page** | The Discord login above | Inventory | Typing `/outputfile inventory` in game uploads the dump to your pigparse.org character page. |
 | **p99planner.com** | Nothing | Inventory and spellbook | The export is staged at p99planner.com and a review page opens in your browser, where you approve the import. No account, no API key, no login. |
 
+Picking **pigparse.org** here does not turn on location sharing, and it never
+makes this client publish anything else to pigparse.org: the `/who` roster
+sync and the NPC-activity feed belong to **Location sharing** above, and stay
+off unless that is set to pigparse. Uploading a dump with the sharing mode on
+**nparse** sends the dump and nothing more.
+
 `/outputfile spellbook` only has somewhere to go with **p99planner.com**
 picked — pigparse.org's character browser has no spellbook page. With
 pigparse picked, a spellbook is still collected into the library; it just

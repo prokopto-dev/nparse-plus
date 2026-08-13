@@ -115,11 +115,11 @@ class SharingClient(Protocol):
 
 
 def sharing_gated_submit(submit: SubmitFn | None, allowed: Callable[[], bool]) -> SubmitFn | None:
-    """Wrap a ``NetWorker.submit`` so it drops work while sharing is off.
+    """Wrap a ``NetWorker.submit`` so it drops work sharing is not allowed to do.
 
-    ``allowed`` is ``SharingCoordinator.network_allowed`` in the app — the
-    coordinator stays the one place that decides whether the network is open,
-    which is also why this takes a predicate rather than reading
+    ``allowed`` is ``SharingCoordinator.pigparse_rest_allowed`` in the app —
+    the coordinator stays the one place that decides whether the network is
+    open, which is why this takes a predicate rather than reading
     ``settings.sharing.mode`` itself.
 
     The hub client is not the only thing that talks to pigparse.org: roughly
@@ -194,6 +194,11 @@ class SharingCoordinator:
         self.timers = timers
         self._last_you_activity = last_you_activity
         self._client = client
+        #: The mode the app was BUILT with. Composition constructs this
+        #: coordinator before it builds any client, so this is the network the
+        #: session actually has; a later mode change can only ever take that
+        #: away (see apply_mode and pigparse_rest_allowed).
+        self._launch_mode = settings.sharing.mode
         self._inbox: SimpleQueue[object] = SimpleQueue()
         self._last_loc: Loc | None = None
         self._last_send_time: datetime | None = None
@@ -207,46 +212,68 @@ class SharingCoordinator:
     def set_client(self, client: SharingClient | None) -> None:
         self._client = client
 
-    def network_allowed(self) -> bool:
-        """May sharing talk to the network right now? (The REST gate — see
-        ``sharing_gated_submit``, which asks this on every hop.)
+    def pigparse_rest_allowed(self) -> bool:
+        """May sharing publish to pigparse.org's REST API right now? (The gate
+        ``sharing_gated_submit`` asks on every hop.)
 
-        Two conditions, and the second is what keeps "off" one-way for the
-        session. A live client is required, so REST publishing cannot outlive
-        the hub connection it belongs to: ``apply_mode`` drops the client and
-        nothing rebuilds it before a restart, which means Apply-off then
-        Apply-on again resumes NEITHER half. Without that, off -> on would
-        quietly restart the /who upserts and NPC-activity posts while the map
-        stayed dark and the Sharing page said a restart was needed — the same
-        half-applied disease #69 is about, in the other direction.
+        Named for what it guards, because the answer is not "is sharing on":
+        that API is **pigparse's**, so the /who upserts and NPC-activity posts
+        belong to pigparse mode alone. A ``PigParseApiClient`` can exist in a
+        session that is not sharing to pigparse at all — picking pigparse.org
+        as the character-dump destination builds one for the uploader, which
+        is a separate decision the user makes in a separate control, and
+        ``nparse`` mode plus that destination must not turn the self-hosted
+        websocket user into a pigparse publisher.
 
-        It also covers the cold-start pair: a session launched with sharing
-        off but a pigparse dump-upload target builds the REST client for the
-        uploader and has no sharing client, so the publishers stay shut
-        whatever the mode is later set to.
+        Three conditions, each closing a different door:
+
+        * a **live client**, which is what keeps "off" one-way for the
+          session. ``apply_mode`` drops the client and nothing rebuilds it
+          before a restart, so Apply-off then Apply-on again resumes NEITHER
+          half. Otherwise off -> on would quietly restart the upserts while
+          the map stayed dark and the page said a restart was needed — the
+          half-applied disease #69 is about, pointed the other way.
+        * the mode **is** pigparse, so a live switch to nparse (or off) stops
+          it even if something forgot to call ``apply_mode``.
+        * the app was **built** for pigparse, so a session that has no
+          pigparse hub — launched off or on nparse, with the REST client built
+          only for dump uploads — can never start publishing, whatever the
+          mode is set to later.
         """
-        return self._client is not None and self.settings.sharing.mode != "off"
+        return (
+            self._client is not None
+            and self.settings.sharing.mode == "pigparse"
+            and self._launch_mode == "pigparse"
+        )
 
     def apply_mode(self) -> bool:
         """Push a changed ``settings.sharing.mode`` onto the running app.
 
-        Only **off** applies live, and that is the whole point (#69): the mode
-        was already live for outbound sends, so a half-applied "off" left the
-        socket connected — still announcing this character by presence — and
-        the map still filling with other people's dots. Stopping the client
-        and dropping it closes that; the mode gate in ``_dispatch_inbound``
-        covers anything already sitting in the inbox.
+        What applies live is **stopping**, and that is the whole point (#69):
+        the mode was already live for outbound sends, so a half-applied "off"
+        left the socket connected — still announcing this character by
+        presence — and the map still filling with other people's dots.
+        Stopping the client and dropping it closes that; the mode gate in
+        ``_dispatch_inbound`` covers anything already sitting in the inbox.
+
+        Any move AWAY from the mode the app was built with stops the client,
+        not just "off". Switching pigparse -> nparse is a promise to stop
+        talking to pigparse, and the nparse client cannot be built without a
+        restart, so leaving the old one running would keep publishing to the
+        service the user just switched away from.
 
         Turning sharing **on** still needs a restart: roughly ten handlers
         captured the REST client as a constructor argument, so there is
-        nothing to hand a freshly built one to (the L half of #69).
+        nothing to hand a freshly built one to (the L half of #69). Returning
+        to the launch mode after a live stop does not resurrect anything
+        either — the client is gone for the session.
 
         Returns True when a client was stopped and dropped, so a caller that
         holds its own reference (``Backend.sharing_client``) can clear it too.
         Safe from the GUI thread — ``Backend.stop`` already calls ``stop()``
         there; nothing here touches the bus or TimersService.
         """
-        if self.settings.sharing.mode != "off" or self._client is None:
+        if self.settings.sharing.mode == self._launch_mode or self._client is None:
             return False
         self._client.stop()
         self.set_client(None)
