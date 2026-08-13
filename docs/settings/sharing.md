@@ -7,7 +7,16 @@ The network switch, and the optional pigparse.org account. Background:
 
 | Setting | What it does |
 |---|---|
-| **Location sharing** | The global mode: **pigparse** (the public hub EQTool uses), **nparse** (self-hostable websocket), or **off**. Applies after restart. |
+| **Location sharing** | The global mode: **pigparse** (the public hub EQTool uses), **nparse** (self-hostable websocket), or **off**. |
+
+Each direction applies differently, and the page says so:
+
+- **Turning it off applies immediately.** Hit Apply and the connection
+  closes, nothing more is sent, and remote dots, waypoints, dragon roars and
+  shared timers stop arriving. The tray's sharing line reads `off`.
+- **Turning it on — or switching between pigparse and nparse — needs a
+  restart.** The network client and the handlers that publish through it are
+  built at startup.
 
 Per-character everyone/guild-only/off switches and the Share timers toggle
 live on the [Character](character.md) page — the global mode picks the

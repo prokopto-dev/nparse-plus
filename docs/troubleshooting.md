@@ -72,7 +72,8 @@ Where they live:
 ## Sharing won't connect / no dots
 
 1. Sharing mode set? ([Settings → Sharing](settings/sharing.md)) — and
-   restart after changing it.
+   restart after turning it **on** or switching networks (turning it off
+   applies immediately, no restart).
 2. This character's location sharing on?
    ([Settings → Character](settings/character.md))
 3. You only receive a zone's players after **sending** a location — type

@@ -279,3 +279,45 @@ def test_corpse_marker_respects_sharing_gate() -> None:
             )
         )
         assert rig.client.waypoints == []
+
+
+# --- apply_mode: turning sharing off, live (#69) --------------------------------
+
+
+def test_apply_mode_off_stops_and_drops_the_client() -> None:
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+
+    assert rig.coordinator.apply_mode() is True
+
+    assert rig.client.stopped == 1  # the socket closes; no more presence
+    rig.push_location()
+    assert rig.client.locations == []
+    assert rig.coordinator.status == "off"
+
+
+def test_apply_mode_is_idempotent() -> None:
+    """The settings window fires it on every Apply, not only on a change."""
+    rig = Rig()
+    rig.settings.sharing.mode = "off"
+    rig.coordinator.apply_mode()
+    assert rig.coordinator.apply_mode() is False  # nothing left to stop
+    assert rig.client.stopped == 1
+
+
+def test_apply_mode_leaves_a_running_client_alone() -> None:
+    rig = Rig()  # mode stays "pigparse"
+    assert rig.coordinator.apply_mode() is False
+    assert rig.client.stopped == 0
+    rig.push_location()
+    assert len(rig.client.locations) == 1
+
+
+def test_apply_mode_off_clears_keepalive_state() -> None:
+    rig = Rig()
+    rig.push_location(T0)
+    rig.settings.sharing.mode = "off"
+    rig.coordinator.apply_mode()
+    rig.last_you = T0 + timedelta(seconds=15)
+    rig.coordinator.tick(T0 + timedelta(seconds=10))
+    assert len(rig.client.locations) == 1  # the 10s keepalive never fires

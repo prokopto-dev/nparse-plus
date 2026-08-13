@@ -205,6 +205,24 @@ class Backend:
             session_min_fight_s=dps.session_min_fight_seconds,
         )
 
+    def apply_overlay_timings(self) -> None:
+        """Push the overlay durations onto the live trigger engine — the
+        Qt-free half of the seam the settings window calls on Apply (its
+        callback re-times the overlay window's own timers next). The engine
+        outlives every settings window, so this is an assignment rather than
+        a rebuild; deliberately not folded into the appearance callback,
+        which is also the skin picker's preview path."""
+        self.trigger_engine.display_text_seconds = self.settings.general.overlay_text_seconds
+
+    def apply_sharing_mode(self) -> None:
+        """Push the sharing mode onto the live coordinator — the seam the
+        settings window calls on Apply. Only "off" applies live (see
+        ``SharingCoordinator.apply_mode``); turning sharing on still needs a
+        restart. Clearing our own handle keeps ``stop()`` from stopping a
+        client the coordinator has already dropped."""
+        if self.sharing.apply_mode():
+            self.sharing_client = None
+
     def stop(self) -> None:
         self.driver.stop()
         if self.timer_persistence is not None:

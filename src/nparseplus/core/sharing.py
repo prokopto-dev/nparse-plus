@@ -137,6 +137,34 @@ class SharingCoordinator:
     def set_client(self, client: SharingClient | None) -> None:
         self._client = client
 
+    def apply_mode(self) -> bool:
+        """Push a changed ``settings.sharing.mode`` onto the running app.
+
+        Only **off** applies live, and that is the whole point (#69): the mode
+        was already live for outbound sends, so a half-applied "off" left the
+        socket connected — still announcing this character by presence — and
+        the map still filling with other people's dots. Stopping the client
+        and dropping it closes that; the mode gate in ``_dispatch_inbound``
+        covers anything already sitting in the inbox.
+
+        Turning sharing **on** still needs a restart: roughly ten handlers
+        captured the REST client as a constructor argument, so there is
+        nothing to hand a freshly built one to (the L half of #69).
+
+        Returns True when a client was stopped and dropped, so a caller that
+        holds its own reference (``Backend.sharing_client``) can clear it too.
+        Safe from the GUI thread — ``Backend.stop`` already calls ``stop()``
+        there; nothing here touches the bus or TimersService.
+        """
+        if self.settings.sharing.mode != "off" or self._client is None:
+            return False
+        self._client.stop()
+        self.set_client(None)
+        # Keepalive state belongs to the connection that just went away.
+        self._last_loc = None
+        self._last_send_time = None
+        return True
+
     @property
     def status(self) -> str:
         mode = self.settings.sharing.mode
@@ -184,6 +212,18 @@ class SharingCoordinator:
         if callable(item):
             # A NetWorker delivery: apply a fetched result on the driver thread.
             item()
+            return
+        if self.settings.sharing.mode == "off":
+            # Sharing off means off in BOTH directions (#69) — drop remote
+            # traffic instead of publishing it, so no dot, waypoint, roar or
+            # shared timer arrives from an inbox filled before the client
+            # stopped. Deliberately below the callable branch: a NetWorker
+            # delivery is our own fetch landing on the driver thread (dump
+            # uploads run with sharing off), not someone else's location.
+            #
+            # The gate lives here, on the driver thread, and NOT in
+            # enqueue_inbound: net threads call that one, and the bus and
+            # TimersService are not thread-safe.
             return
         if isinstance(
             item, OtherPlayerLocationReceivedRemoteEvent | PlayerDisconnectReceivedRemoteEvent
