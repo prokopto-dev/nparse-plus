@@ -6,6 +6,15 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.9.0 (2026-08-13)
+
+### Features
+
+- **branding**: Give nParse+ its own mark, generated from an SVG master
+  ([#105](https://github.com/prokopto-dev/nparse-plus/pull/105),
+  [`4bff33f`](https://github.com/prokopto-dev/nparse-plus/commit/4bff33f9bba892f62afa64d0b16fee454a55108b))
+
+
 ## v2.8.0 (2026-08-13)
 
 ### Bug Fixes
