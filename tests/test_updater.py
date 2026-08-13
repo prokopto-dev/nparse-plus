@@ -9,6 +9,7 @@ import pytest
 
 from nparseplus import updater
 from nparseplus.updater import (
+    DownloadStatus,
     ReleaseAsset,
     ReleaseInfo,
     check_for_update,
@@ -151,6 +152,59 @@ def test_pick_asset_macos_falls_back_to_single_dmg() -> None:
     assert pick_asset(release, "darwin", machine="x86_64").name.endswith("-macos-arm64.dmg")
 
 
+def _macos_release(*names: str) -> ReleaseInfo:
+    return ReleaseInfo(
+        version="1.0.0",
+        html_url="https://example/release",
+        # Every release carries the Windows zip too — the trap the macOS
+        # branch must not fall into.
+        assets=tuple(_dmg(name) for name in (*names, "nparseplus-1.0.0-win64.zip")),
+    )
+
+
+def test_pick_asset_macos_self_update_prefers_the_app_zip() -> None:
+    # A DMG needs hdiutil to open; the zip is what a swap helper can unpack.
+    release = _macos_release(
+        "nParse+-1.0.0-macos-arm64.dmg",
+        "nParse+-1.0.0-macos-arm64.zip",
+        "nParse+-1.0.0-macos-x86_64.dmg",
+        "nParse+-1.0.0-macos-x86_64.zip",
+    )
+    for arch in ("arm64", "x86_64"):
+        picked = pick_asset(release, "darwin", machine=arch, self_update=True)
+        assert picked.name == f"nParse+-1.0.0-macos-{arch}.zip"
+        # The human path is unchanged: the DMG mounts and shows Applications.
+        assert pick_asset(release, "darwin", machine=arch).name.endswith(f"-macos-{arch}.dmg")
+
+
+def test_pick_asset_macos_self_update_falls_back_to_the_dmg() -> None:
+    # A release from before #75 has no zip at all; the updater takes the DMG
+    # rather than nothing — and never the Windows zip sitting beside it.
+    release = _macos_release("nParse+-1.0.0-macos-arm64.dmg", "nParse+-1.0.0-macos-x86_64.dmg")
+    picked = pick_asset(release, "darwin", machine="arm64", self_update=True)
+    assert picked.name == "nParse+-1.0.0-macos-arm64.dmg"
+    # Even with no macOS asset for this arch at all, the fallback stays a DMG.
+    intel = pick_asset(
+        _macos_release("nParse+-1.0.0-macos-arm64.dmg"),
+        "darwin",
+        machine="x86_64",
+        self_update=True,
+    )
+    assert intel.name.endswith(".dmg")
+
+
+def test_pick_asset_self_update_changes_nothing_off_darwin() -> None:
+    release = check_for_update(current="1.0.0", client=_client(_release_handler))
+    for platform, kwargs in (
+        ("win32", {}),
+        ("linux", {"in_flatpak": False}),
+        ("linux", {"in_flatpak": True}),
+        ("sunos", {}),
+    ):
+        plain = pick_asset(release, platform, **kwargs)
+        assert pick_asset(release, platform, **kwargs, self_update=True) == plain
+
+
 def test_running_in_flatpak_detection(tmp_path: Path) -> None:
     marker = tmp_path / ".flatpak-info"
     assert not updater.running_in_flatpak(marker)
@@ -182,55 +236,65 @@ def _staging(tmp_path: Path, name: str = "x.dmg") -> Path:
 
 
 def test_download_asset(tmp_path: Path) -> None:
-    path = download_asset(_asset(), tmp_path, client=_client(_serve()))
-    assert path is not None and path.read_bytes() == BODY
+    outcome = download_asset(_asset(), tmp_path, client=_client(_serve()))
+    assert outcome.ok and outcome.path.read_bytes() == BODY
     # The staging file is promoted, not left beside the artifact.
     assert not _staging(tmp_path).exists()
 
 
-def test_download_failure_returns_none(tmp_path: Path) -> None:
+def test_download_failure_reports_a_transport_failure(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500)
 
-    assert download_asset(_asset(), tmp_path, client=_client(handler)) is None
+    outcome = download_asset(_asset(), tmp_path, client=_client(handler))
+    assert outcome.status is DownloadStatus.FAILED
+    assert not outcome.ok and not outcome.refused and outcome.path is None
+    assert outcome.needs_attention
 
 
 def test_download_asset_accepts_the_published_digest(tmp_path: Path) -> None:
     asset = _asset(digest=f"sha256:{BODY_SHA256}", size=len(BODY))
-    path = download_asset(asset, tmp_path, client=_client(_serve()))
-    assert path is not None and path.read_bytes() == BODY
+    outcome = download_asset(asset, tmp_path, client=_client(_serve()))
+    assert outcome.ok and outcome.path.read_bytes() == BODY
+    # Verified against a published digest: nothing to tell the user.
+    assert outcome.pinned and not outcome.needs_attention
 
 
 def test_download_asset_refuses_a_digest_mismatch(tmp_path: Path, caplog) -> None:
     asset = _asset(digest="sha256:" + "a" * 64)
 
     with caplog.at_level("WARNING"):
-        assert download_asset(asset, tmp_path, client=_client(_serve())) is None
+        outcome = download_asset(asset, tmp_path, client=_client(_serve()))
 
+    assert outcome.status is DownloadStatus.DIGEST_MISMATCH
+    assert outcome.refused and outcome.path is None
     # Nothing survives under the artifact's own name — the failed download is
     # not left somewhere the user could open it.
     assert not (tmp_path / "x.dmg").exists()
     assert not _staging(tmp_path).exists()
     # Both digests are named, like the plugin installer's refusal.
     assert "a" * 64 in caplog.text and BODY_SHA256 in caplog.text
+    assert "a" * 64 in outcome.detail and BODY_SHA256 in outcome.detail
 
 
 def test_a_refusal_and_a_flaky_network_log_differently(tmp_path: Path, caplog) -> None:
     # A 500 means "try again"; a digest mismatch means the bytes are wrong.
-    # Until the dialog says so (#93), the log level is the distinction.
+    # The log level is one half of the distinction; the status is the other.
     def dead(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500)
 
     with caplog.at_level("WARNING"):
-        assert download_asset(_asset(), tmp_path, client=_client(dead)) is None
+        assert download_asset(_asset(), tmp_path, client=_client(dead)).status is (
+            DownloadStatus.FAILED
+        )
     assert "ERROR" not in [r.levelname for r in caplog.records]
 
     caplog.clear()
     with caplog.at_level("WARNING"):
-        assert (
-            download_asset(_asset(digest="sha256:" + "a" * 64), tmp_path, client=_client(_serve()))
-            is None
+        refused = download_asset(
+            _asset(digest="sha256:" + "a" * 64), tmp_path, client=_client(_serve())
         )
+    assert refused.refused
     assert "ERROR" in [r.levelname for r in caplog.records]
 
 
@@ -238,9 +302,27 @@ def test_download_asset_refuses_a_truncated_body(tmp_path: Path) -> None:
     # Truncation with a digest published is caught by the hash; this is the
     # same failure on a release from before GitHub served assets[].digest.
     asset = _asset(size=len(BODY))
-    assert download_asset(asset, tmp_path, client=_client(_serve(BODY[:4]))) is None
+    outcome = download_asset(asset, tmp_path, client=_client(_serve(BODY[:4])))
+    assert outcome.status is DownloadStatus.SIZE_MISMATCH
+    # Unpinnable AND wrong: the size is the only check such a release has, and
+    # the message says that rather than blaming a checksum that never existed.
+    assert not outcome.pinned
+    message = outcome.message()
+    assert "not the size" in message and "did not match the checksum" not in message
     assert not (tmp_path / "x.dmg").exists()
     assert not _staging(tmp_path).exists()
+
+
+def test_download_asset_that_cannot_be_pinned_says_so(tmp_path: Path) -> None:
+    # A release published before GitHub served assets[].digest: the download
+    # succeeds, and "nothing could check it" is NOT the same message as
+    # "the check failed".
+    outcome = download_asset(_asset(size=len(BODY)), tmp_path, client=_client(_serve()))
+    assert outcome.ok and not outcome.pinned
+    assert outcome.needs_attention  # worth one sentence, unlike a verified one
+    assert not outcome.refused
+    message = outcome.message()
+    assert "no checksum" in message and "did not match" not in message
 
 
 def test_download_asset_refuses_a_redirect_to_http(tmp_path: Path) -> None:
@@ -252,7 +334,7 @@ def test_download_asset_refuses_a_redirect_to_http(tmp_path: Path) -> None:
             return httpx.Response(302, headers={"location": "http://dl.test/plaintext.dmg"})
         return httpx.Response(200, content=BODY)
 
-    assert download_asset(_asset(), tmp_path, client=_client(handler)) is None
+    assert not download_asset(_asset(), tmp_path, client=_client(handler)).ok
     # The plaintext hop is never requested at all.
     assert seen == ["https://dl.test/x.dmg"]
     assert not (tmp_path / "x.dmg").exists()
@@ -264,12 +346,14 @@ def test_download_asset_follows_an_https_redirect(tmp_path: Path) -> None:
             return httpx.Response(302, headers={"location": "https://cdn.test/blob"})
         return httpx.Response(200, content=BODY)
 
-    path = download_asset(_asset(digest=f"sha256:{BODY_SHA256}"), tmp_path, client=_client(handler))
-    assert path is not None and path.read_bytes() == BODY
+    outcome = download_asset(
+        _asset(digest=f"sha256:{BODY_SHA256}"), tmp_path, client=_client(handler)
+    )
+    assert outcome.ok and outcome.path.read_bytes() == BODY
 
 
 def test_download_asset_refuses_an_over_budget_body(tmp_path: Path) -> None:
-    assert download_asset(_asset(), tmp_path, client=_client(_serve()), max_bytes=4) is None
+    assert not download_asset(_asset(), tmp_path, client=_client(_serve()), max_bytes=4).ok
     assert not _staging(tmp_path).exists()
 
 
@@ -277,15 +361,32 @@ def test_download_asset_caps_at_the_published_size(tmp_path: Path) -> None:
     # A body longer than the size GitHub published is cut off mid-stream
     # rather than buffered to the global budget first.
     asset = _asset(size=4)
-    assert download_asset(asset, tmp_path, client=_client(_serve())) is None
+    assert not download_asset(asset, tmp_path, client=_client(_serve())).ok
 
 
 def test_download_asset_refuses_a_path_bearing_asset_name(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
     asset = _asset(name="../outside/evil.dmg")
-    assert download_asset(asset, tmp_path / "downloads", client=_client(_serve())) is None
+    outcome = download_asset(asset, tmp_path / "downloads", client=_client(_serve()))
+    assert outcome.refused and outcome.status is DownloadStatus.REFUSED
     assert list(outside.iterdir()) == []
+
+
+def test_every_refusal_message_names_the_artifact_and_the_reason() -> None:
+    # The acceptance criterion of #93, stated once over the whole vocabulary.
+    for status in updater.REFUSALS:
+        outcome = updater.DownloadOutcome(
+            status=status, asset_name="nParse+-9.9.9-macos-arm64.dmg", detail="the technical line"
+        )
+        assert "nParse+-9.9.9-macos-arm64.dmg" in outcome.message()
+        assert "refused" in outcome.title().lower()
+        assert outcome.needs_attention and not outcome.ok
+    # ...and a transport failure still reads as a network problem, not as a
+    # verification result.
+    failed = updater.DownloadOutcome(status=DownloadStatus.FAILED, asset_name="x.dmg")
+    assert "network" in failed.message() and not failed.refused
+    assert "checksum" not in failed.message()
 
 
 def test_stream_https_to_file_returns_hash_and_length(tmp_path: Path) -> None:
@@ -342,7 +443,7 @@ def test_install_action_darwin_downloads_and_opens(tmp_path: Path, monkeypatch) 
     )
     opened_paths: list[Path] = []
     opened_urls: list[str] = []
-    install_action(
+    outcome = install_action(
         release,
         platform="darwin",
         open_path=opened_paths.append,
@@ -352,13 +453,76 @@ def test_install_action_darwin_downloads_and_opens(tmp_path: Path, monkeypatch) 
     assert opened_paths == [tmp_path / "a.dmg"]
     assert opened_urls == []
     assert (tmp_path / "a.dmg").read_bytes() == b"DMG BYTES"
+    assert outcome.ok and outcome.path == tmp_path / "a.dmg"
 
 
 def test_install_action_falls_back_to_release_page(tmp_path: Path) -> None:
     release = ReleaseInfo(version="9.9.9", html_url="https://example/release", assets=())
     opened_urls: list[str] = []
-    install_action(release, platform="linux", open_url=opened_urls.append, downloads_dir=tmp_path)
+    outcome = install_action(
+        release, platform="linux", open_url=opened_urls.append, downloads_dir=tmp_path
+    )
     assert opened_urls == ["https://example/release"]
+    assert outcome.status is DownloadStatus.UNAVAILABLE and outcome.opened_release_page
+    assert "open in your browser" in outcome.message()
+
+
+def _one_asset_release(digest: str | None = None) -> ReleaseInfo:
+    return ReleaseInfo(
+        version="9.9.9",
+        html_url="https://example/release",
+        assets=(
+            ReleaseAsset(
+                name="a.dmg", browser_download_url="https://dl.test/a.dmg", digest=digest or ""
+            ),
+        ),
+    )
+
+
+def test_install_action_does_not_open_the_release_page_on_a_refusal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # THE point of #93: the release page serves the very artifact that was
+    # just refused, so opening it silently hands the user the bad download
+    # back and tells them nothing.
+    monkeypatch.setattr(updater, "_download_client", lambda c: _client(_serve()))
+    opened_paths: list[Path] = []
+    opened_urls: list[str] = []
+
+    outcome = install_action(
+        _one_asset_release(digest="sha256:" + "a" * 64),
+        platform="darwin",
+        open_path=opened_paths.append,
+        open_url=opened_urls.append,
+        downloads_dir=tmp_path,
+    )
+
+    assert outcome.status is DownloadStatus.DIGEST_MISMATCH
+    assert opened_urls == [] and opened_paths == []
+    assert not outcome.opened_release_page
+    assert "checksum" in outcome.message() and "a.dmg" in outcome.message()
+
+
+def test_install_action_still_opens_the_release_page_on_a_network_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def dead(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    monkeypatch.setattr(updater, "_download_client", lambda c: _client(dead))
+    opened_urls: list[str] = []
+
+    outcome = install_action(
+        _one_asset_release(),
+        platform="darwin",
+        open_path=lambda path: None,
+        open_url=opened_urls.append,
+        downloads_dir=tmp_path,
+    )
+
+    assert outcome.status is DownloadStatus.FAILED and outcome.opened_release_page
+    assert opened_urls == ["https://example/release"]
+    assert "release page is open in your browser" in outcome.message()
 
 
 def test_release_json_shape_matches_github() -> None:

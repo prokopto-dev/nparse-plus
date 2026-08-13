@@ -13,6 +13,10 @@ on every redirect hop, and the result is pinned to the ``sha256:`` digest
 GitHub publishes for the asset. That digest is a **channel** guarantee, not a
 signature — see ``expected_sha256`` for what it does and does not cover.
 
+Every download answers with a ``DownloadOutcome`` rather than a bare path, so
+a refusal can say *why* it refused instead of looking like a flaky network to
+the caller (#93).
+
 Qt-free; the tray layer marshals results to the GUI thread itself. Every
 failure — including the repo not existing yet — degrades to "no update".
 """
@@ -26,6 +30,7 @@ import subprocess
 import sys
 import webbrowser
 from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
 
 import httpx
@@ -169,10 +174,44 @@ def format_release_notes(release: ReleaseInfo) -> str:
     return "\n\n---\n\n".join(sections)
 
 
-# macOS ships one DMG per architecture (…-macos-arm64.dmg / …-macos-x86_64.dmg).
+# macOS ships one DMG per architecture (…-macos-arm64.dmg / …-macos-x86_64.dmg)
+# and, since #75, a ditto zip of the same .app beside each one.
 # platform.machine() reports the RUNNING interpreter's arch (arm64 native, or
 # x86_64 under Rosetta), which is exactly the build the user needs.
 _MACOS_ARCH = {"arm64": "arm64", "x86_64": "x86_64", "amd64": "x86_64"}
+
+
+def _pick_macos_asset(
+    release: ReleaseInfo, machine: str | None, self_update: bool
+) -> ReleaseAsset | None:
+    """macOS artifact: the DMG a person installs, or the zip an updater unpacks.
+
+    Two shapes of the same build ship together. A DMG is right for a human —
+    it mounts and shows the drag-to-Applications window — and wrong for code,
+    which would have to ``hdiutil attach`` / copy / ``detach`` to reach the
+    ``.app`` inside. The zip is the opposite, so the choice belongs to the
+    caller: ``self_update`` picks the zip, everything else keeps the DMG. The
+    swap helper (#76) is what flips it.
+
+    The trailing fallback is deliberately ``.dmg`` and NOT the requested
+    suffix: a release carries the Windows ``.zip`` too, so a bare
+    ``endswith(".zip")`` sweep here would happily hand macOS a Windows build.
+    Every macOS asset is arch-tagged, and an arch-agnostic zip has never
+    existed — releases that predate #75 have DMGs only, which is exactly what
+    this returns.
+    """
+    arch = _MACOS_ARCH.get((machine or platform_mod.machine()).lower())
+    if arch is not None:
+        suffixes = (".zip", ".dmg") if self_update else (".dmg",)
+        for suffix in suffixes:
+            match = next(
+                (a for a in release.assets if a.name.lower().endswith(f"-macos-{arch}{suffix}")),
+                None,
+            )
+            if match is not None:
+                return match
+    # Older releases shipped a single arm64 DMG with no arch in some names.
+    return next((a for a in release.assets if a.name.lower().endswith(".dmg")), None)
 
 
 def pick_asset(
@@ -180,27 +219,146 @@ def pick_asset(
     platform: str = sys.platform,
     in_flatpak: bool | None = None,
     machine: str | None = None,
+    *,
+    self_update: bool = False,
 ) -> ReleaseAsset | None:
-    """The artifact for this platform: macOS .dmg (arch-matched), Windows .zip,
-    Linux .flatpak inside the sandbox / .tar.gz outside; None when unknown."""
+    """The artifact for this platform: macOS .dmg (arch-matched, or the .app
+    zip when ``self_update``), Windows .zip, Linux .flatpak inside the sandbox
+    / .tar.gz outside; None when unknown."""
+    if platform == "darwin":
+        return _pick_macos_asset(release, machine, self_update)
     if platform.startswith("linux"):
         flatpak = running_in_flatpak() if in_flatpak is None else in_flatpak
         suffix = ".flatpak" if flatpak else ".tar.gz"
     else:
-        suffix = {"darwin": ".dmg", "win32": ".zip"}.get(platform)
+        suffix = {"win32": ".zip"}.get(platform)
     if suffix is None:
         return None
-    if platform == "darwin":
-        arch = _MACOS_ARCH.get((machine or platform_mod.machine()).lower())
-        if arch is not None:
-            match = next(
-                (a for a in release.assets if a.name.lower().endswith(f"-macos-{arch}.dmg")),
-                None,
-            )
-            if match is not None:
-                return match
-        # Fall back to any .dmg — older releases shipped a single arm64 DMG.
     return next((a for a in release.assets if a.name.lower().endswith(suffix)), None)
+
+
+class DownloadStatus(StrEnum):
+    """What became of one download attempt.
+
+    A vocabulary rather than a bool, because the reasons are not
+    interchangeable: a timeout says "try again", a digest mismatch says the
+    bytes that arrived are not the bytes the release describes, and no
+    artifact for this platform says the release page is the only route. The
+    swap helper (#76) adds its pre-flight refusals here (unwritable install
+    root, insufficient disk, a translocated bundle) — each one degrades to
+    download-and-open with a message naming the reason, which is this shape.
+    """
+
+    OK = "ok"  # the artifact is on disk under its real name
+    DIGEST_MISMATCH = "digest_mismatch"  # wrong bytes, and we can prove it
+    SIZE_MISMATCH = "size_mismatch"  # wrong length (the only guard pre-digest)
+    REFUSED = "refused"  # refused for a reason only `detail` can state
+    FAILED = "failed"  # transport: timeout, 5xx, dropped connection
+    UNAVAILABLE = "unavailable"  # the release has nothing for this platform
+
+
+#: Statuses that mean "the bytes arrived and we threw them away", as opposed to
+#: "they never arrived". A caller distinguishes these two, never the members.
+REFUSALS = frozenset(
+    {DownloadStatus.DIGEST_MISMATCH, DownloadStatus.SIZE_MISMATCH, DownloadStatus.REFUSED}
+)
+
+
+class DownloadOutcome(BaseModel):
+    """The result of a download attempt — path on success, reason otherwise.
+
+    ``download_asset`` used to answer ``None`` for everything that went wrong,
+    which made the one case the verification exists to catch indistinguishable
+    from a flaky network: the caller opened the release page and said nothing,
+    pointing the user straight back at the artifact that had just been refused
+    (#93). The status carries the distinction out to the UI, and ``message()``
+    is the prose — kept here, not in the dialog, so the Qt layer stays a
+    renderer and the wording is testable without a window.
+
+    ``pinned`` is deliberately orthogonal to ``status``: "this release
+    published no checksum to check against" and "the checksum did not match"
+    are different facts about different releases, and collapsing them would
+    tell a user on a pre-digest release that their download was corrupt.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    status: DownloadStatus
+    asset_name: str = ""
+    path: Path | None = None
+    #: The technical line, both digests named — what a bug report quotes.
+    detail: str = ""
+    #: False when the release published no usable sha256 for this asset.
+    pinned: bool = True
+    #: Set when the caller has already sent the user to the release page.
+    opened_release_page: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return self.status is DownloadStatus.OK
+
+    @property
+    def refused(self) -> bool:
+        """The bytes arrived and were thrown away — not a transport failure."""
+        return self.status in REFUSALS
+
+    @property
+    def needs_attention(self) -> bool:
+        """Worth interrupting the user for: anything but a verified download."""
+        return not self.ok or not self.pinned
+
+    def title(self) -> str:
+        """Short caption for the dialog."""
+        if self.refused:
+            return "Update download refused"
+        if self.status is DownloadStatus.FAILED:
+            return "Update download failed"
+        if self.status is DownloadStatus.UNAVAILABLE:
+            return "No download for this platform"
+        if not self.pinned:
+            return "Update downloaded, but not verified"
+        return "Update downloaded"
+
+    def message(self) -> str:
+        """One paragraph of prose saying what happened and what to do."""
+        name = self.asset_name or "the update"
+        page = (
+            " The release page is open in your browser."
+            if self.opened_release_page
+            else " You can download it by hand from the release page."
+        )
+        if self.status is DownloadStatus.DIGEST_MISMATCH:
+            return (
+                f"The download of {name} did not match the checksum published for it, "
+                "so it was discarded and nothing was installed.\n\n"
+                "That is almost always a corrupted or interrupted transfer — try again. "
+                "If it keeps happening, download the release by hand and compare its "
+                "checksum against the one on the release page before opening it."
+            )
+        if self.status is DownloadStatus.SIZE_MISMATCH:
+            return (
+                f"The download of {name} was not the size the release said it would be, "
+                "so it was discarded and nothing was installed.\n\n"
+                "This release publishes no checksum, so its length is the only check "
+                "there is. Try again, or download it by hand from the release page."
+            )
+        if self.status is DownloadStatus.REFUSED:
+            return (
+                f"The download of {name} was refused: it is not the artifact the release "
+                f"describes, so nothing was installed.{page}"
+            )
+        if self.status is DownloadStatus.FAILED:
+            return f"{name} could not be downloaded. This is usually a network problem.{page}"
+        if self.status is DownloadStatus.UNAVAILABLE:
+            return f"This release publishes no download for your platform.{page}"
+        if not self.pinned:
+            return (
+                f"{name} downloaded, but this release publishes no checksum for it, "
+                "so nothing could verify that the file is the one the release describes. "
+                "Releases published before GitHub served per-asset checksums carry none; "
+                "its length was all there was to check."
+            )
+        return f"{name} downloaded and verified against the checksum published for it."
 
 
 class VerificationRefused(ValueError):
@@ -210,10 +368,14 @@ class VerificationRefused(ValueError):
     or a dropped connection is a flaky network and the honest answer is "try
     again", while this one means the bytes that arrived are not the bytes
     GitHub published a digest for. Refusals are logged at ERROR (transport
-    failures stay WARNING) and carry this type so a caller can tell the two
-    apart. Surfacing the reason in the update dialog is TODO(#93) — today it
-    only reaches ``nparseplus.log``.
+    failures stay WARNING) and reach the caller as a ``DownloadOutcome``
+    carrying one of ``REFUSALS``; the type is what carries the reason from the
+    check that made it up to ``download_asset``.
     """
+
+    def __init__(self, message: str, status: DownloadStatus) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
@@ -340,8 +502,8 @@ def download_asset(
     client: httpx.Client | None = None,
     *,
     max_bytes: int = MAX_ASSET_BYTES,
-) -> Path | None:
-    """Stream the artifact into ``dest_dir``, verified; None on any failure.
+) -> DownloadOutcome:
+    """Stream the artifact into ``dest_dir``, verified; a reason on any failure.
 
     The bytes land on a ``.part`` sibling of the destination and are renamed
     into place only once the published digest matches what arrived — so the
@@ -349,13 +511,18 @@ def download_asset(
     later, a swap step) could open it. A refusal deletes the staging file
     instead of leaving a plausible-looking partial download in ~/Downloads,
     and happens before anything opens the archive.
+
+    ``dest_dir`` is a parameter and not a constant because the swap helper
+    (#76) must stage beside the install root — ``os.rename`` is atomic only
+    within one filesystem, and ~/Downloads is a different one on many setups.
     """
     # The asset name comes off the wire and is joined to a directory path; a
     # name carrying a separator would write outside dest_dir. Real GitHub asset
     # names are plain filenames, so this only ever rejects a hostile one.
     if Path(asset.name).name != asset.name:
-        logger.error("refusing release asset with a path-bearing name %r", asset.name)
-        return None
+        detail = f"refusing release asset with a path-bearing name {asset.name!r}"
+        logger.error(detail)
+        return DownloadOutcome(status=DownloadStatus.REFUSED, asset_name=asset.name, detail=detail)
     destination = Path(dest_dir) / asset.name
     staging = destination.with_name(destination.name + _STAGING_SUFFIX)
     expected = expected_sha256(asset)
@@ -376,20 +543,38 @@ def download_asset(
             max_bytes=min(max_bytes, asset.size) if asset.size > 0 else max_bytes,
             client=client,
         )
-        refusal = digest_error(actual, expected) or _size_error(written, asset.size)
-        if refusal is not None:
-            raise VerificationRefused(refusal)
+        digest_refusal = digest_error(actual, expected)
+        if digest_refusal is not None:
+            raise VerificationRefused(digest_refusal, DownloadStatus.DIGEST_MISMATCH)
+        size_refusal = _size_error(written, asset.size)
+        if size_refusal is not None:
+            raise VerificationRefused(size_refusal, DownloadStatus.SIZE_MISMATCH)
         staging.replace(destination)
     except VerificationRefused as exc:
         # Not a flaky network: the bytes arrived and are the wrong bytes.
         logger.error("REFUSED the downloaded %s — %s", asset.name, exc)
         staging.unlink(missing_ok=True)
-        return None
+        return DownloadOutcome(
+            status=exc.status,
+            asset_name=asset.name,
+            detail=str(exc),
+            pinned=expected is not None,
+        )
     except Exception as exc:
         logger.warning("update download failed for %s: %s", asset.name, exc, exc_info=True)
         staging.unlink(missing_ok=True)
-        return None
-    return destination
+        return DownloadOutcome(
+            status=DownloadStatus.FAILED,
+            asset_name=asset.name,
+            detail=str(exc),
+            pinned=expected is not None,
+        )
+    return DownloadOutcome(
+        status=DownloadStatus.OK,
+        asset_name=asset.name,
+        path=destination,
+        pinned=expected is not None,
+    )
 
 
 def install_action(
@@ -398,16 +583,27 @@ def install_action(
     open_path: Callable[[Path], None] | None = None,
     open_url: Callable[[str], None] = webbrowser.open,
     downloads_dir: Path | None = None,
-) -> None:
-    """User-initiated 'install': download + open, or open the release page."""
+) -> DownloadOutcome:
+    """User-initiated 'install': download + open, or open the release page.
+
+    Returns what happened so the caller can say so. **A refusal does not open
+    the release page**, which is the whole of #93: that page points at the
+    same artifact that was just refused, so opening it silently hands the user
+    back the bad download and tells them nothing. Nothing arriving at all is a
+    different matter — the page is then the only route left, so a transport
+    failure keeps opening it and the message says it did.
+    """
     asset = pick_asset(release, platform)
     if asset is None:
         open_url(release.html_url)
-        return
-    downloaded = download_asset(asset, downloads_dir or (Path.home() / "Downloads"))
-    if downloaded is None:
+        return DownloadOutcome(status=DownloadStatus.UNAVAILABLE, opened_release_page=True)
+    outcome = download_asset(asset, downloads_dir or (Path.home() / "Downloads"))
+    if outcome.status is DownloadStatus.FAILED:
         open_url(release.html_url)
-        return
+        return outcome.model_copy(update={"opened_release_page": True})
+    if not outcome.ok or outcome.path is None:
+        return outcome
+    downloaded = outcome.path
     if open_path is not None:
         open_path(downloaded)
     elif platform == "darwin":
@@ -420,3 +616,5 @@ def install_action(
         subprocess.run(["xdg-open", str(downloaded)], check=False)
     else:
         open_url(release.html_url)
+        return outcome.model_copy(update={"opened_release_page": True})
+    return outcome

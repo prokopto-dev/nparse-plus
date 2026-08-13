@@ -242,6 +242,36 @@ defends against a corrupted, truncated or substituted CDN object and against
 nothing that can publish a release. A signed `SHA256SUMS` (minisign, public
 key compiled in) is the only actual signature and is still to do.
 
+**A refusal is not a flaky network, and the caller now hears the difference**
+(#93). `download_asset` answers a `DownloadOutcome` (frozen pydantic:
+`status` + `asset_name` + `path` + `detail` + `pinned`), never a bare `None` —
+answering `None` to both made the one case verification exists to catch
+indistinguishable from a timeout, and `install_action` turned that into
+"open the release page", handing the user a browser pointed at the artifact
+that had just been refused. `DownloadStatus` is a vocabulary meant to grow
+(the #76 pre-flights — unwritable install root, insufficient disk,
+translocated bundle — land here); `REFUSALS` is the set a caller actually
+branches on, so nobody switches on members. **`pinned` is orthogonal to
+`status` on purpose**: "this release published no checksum" and "the checksum
+did not match" are facts about different releases, and collapsing them tells
+someone on a pre-digest release their download is corrupt. The prose lives in
+`DownloadOutcome.message()`/`title()` — Qt-free and tested without a window —
+and `ui/updatewindow.DownloadOutcomeDialog` is a pure renderer of it, with
+the digests in the details drawer. **A refusal does not open the release
+page**; a transport failure still does, and says so.
+
+**macOS publishes a `.app` zip beside the DMG** (#75), built with `ditto -c -k
+--keepParent`, NOT `zip`: the bundle's signature seals over resource forks and
+extended attributes that `zip` drops, so a plain-zipped `.app` fails
+`codesign --verify` and, on Apple Silicon, will not launch. CI extracts the
+zip and verifies the seal, which is the guard on that line. `pick_asset`
+takes the zip only under `self_update=True` (nothing passes it yet — #76's
+swap helper is what will): the DMG is what a person should get, since it
+mounts and shows the drag-to-Applications window, and the zip is what code
+can unpack without `hdiutil attach`/copy/`detach`. The macOS branch's last
+fallback is deliberately `.dmg` and never "the requested suffix" — the
+Windows artifact is a `.zip` sitting in the same release.
+
 Since 1.18 the spec also `copy_metadata`s BOTH distributions (`nparseplus`
 and `nparseplus-sdk`) — a frozen app has no site-packages, so a plugin's
 `importlib.metadata.version(...)` would raise without it — and declares the
