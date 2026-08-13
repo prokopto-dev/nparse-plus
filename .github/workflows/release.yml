@@ -95,14 +95,36 @@ jobs:
             || { echo "::error::Info.plist version $GOT != ${RELEASE_TAG#v}"; exit 1; }
       - name: Ad-hoc codesign
         run: codesign --force --deep -s - "dist/nParse+.app"
+      - name: Zip the .app (what the updater downloads)
+        # ditto, NOT zip: the bundle's signature seals over resource forks and
+        # extended attributes, which `zip` drops — the extracted .app would
+        # then fail codesign and, on Apple Silicon, refuse to launch at all.
+        # The DMG stays the human download; this is the shape code can unpack
+        # without hdiutil attach/copy/detach (#75).
+        run: |
+          set -euxo pipefail
+          ditto -c -k --keepParent "dist/nParse+.app" \
+            "dist/nParse+-${RELEASE_TAG#v}-macos-${{ matrix.arch }}.zip"
+      - name: Verify the extracted .app still passes codesign
+        # The guard on the line above: if the zip is ever produced by
+        # something that does not preserve the bundle's metadata, this fails
+        # here rather than on a user's Mac after an update.
+        run: |
+          set -euxo pipefail
+          rm -rf "$RUNNER_TEMP/zipcheck"
+          ditto -x -k "dist/nParse+-${RELEASE_TAG#v}-macos-${{ matrix.arch }}.zip" \
+            "$RUNNER_TEMP/zipcheck"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/zipcheck/nParse+.app"
       - name: Build DMG
         run: uv run dmgbuild -s packaging/dmg_settings.py "nParse+" "dist/nParse+-${RELEASE_TAG#v}-macos-${{ matrix.arch }}.dmg"
       - uses: actions/upload-artifact@v4
         with:
           # Artifact names must be unique per matrix leg (upload-artifact@v4);
           # the release job downloads all of them with merge-multiple.
-          name: macos-dmg-${{ matrix.arch }}
-          path: dist/*.dmg
+          name: macos-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
           if-no-files-found: error
 
   build-windows:

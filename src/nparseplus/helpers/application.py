@@ -14,7 +14,7 @@ from nparseplus.helpers.settings import SettingsSignals
 from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
 from nparseplus.ui import appquit
-from nparseplus.ui.updatewindow import UpdateAvailableDialog
+from nparseplus.ui.updatewindow import DownloadOutcomeDialog, UpdateAvailableDialog
 
 config.load("nparse.config.json")
 # validate settings file
@@ -75,6 +75,7 @@ class NomnsParse(QApplication):
 
     update_available = Signal(object)  # ReleaseInfo, emitted off-thread
     update_checked = Signal(object)  # ReleaseInfo | None — manual tray-check result
+    install_finished = Signal(object)  # updater.DownloadOutcome, emitted off-thread
 
     def __init__(self, *args, backend):
         super().__init__(*args)
@@ -93,6 +94,7 @@ class NomnsParse(QApplication):
         self._update_window = None
         self.update_available.connect(self._on_update_available)
         self.update_checked.connect(self._on_update_checked)
+        self.install_finished.connect(self._on_install_finished)
 
         self._toggled = False
 
@@ -180,12 +182,27 @@ class NomnsParse(QApplication):
         release = self._available_release
         if release is None:
             return
-        threading.Thread(
-            target=updater.install_action,
-            args=(release,),
-            name="update-install",
-            daemon=True,
-        ).start()
+
+        def work():
+            self.install_finished.emit(updater.install_action(release))
+
+        threading.Thread(target=work, name="update-install", daemon=True).start()
+
+    def _on_install_finished(self, outcome):
+        """Report a download that did not simply install (#93).
+
+        Silence on the happy path — the artifact is already open in front of
+        the user. Everything else gets a dialog, including a download that
+        succeeded but could not be verified, because "we could not check this"
+        and "this failed the check" are different things to be told.
+        """
+        if outcome is None or not outcome.needs_attention:
+            return
+        release = self._available_release
+        url = release.html_url if release is not None else updater.releases_page_url()
+        dialog = DownloadOutcomeDialog(outcome)
+        dialog.open_release_requested.connect(lambda: webbrowser.open(url))
+        dialog.exec()
 
     @property
     def maps_window(self):
