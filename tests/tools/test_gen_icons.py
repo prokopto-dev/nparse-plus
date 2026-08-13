@@ -52,6 +52,13 @@ def test_the_master_starts_with_the_svg_tag():
     format", which is a fatal compose error, not a warning. Qt renders the
     file either way, so nothing else here would notice: v2.9.0 was tagged and
     never shipped because of exactly this.
+
+    The ``lstrip`` is deliberate and matches the loader rather than being
+    laxer than it: librsvg registers its prefix as ``" <svg"``, whose leading
+    space is gdk-pixbuf's "skip whitespace" marker. Leading blank lines were
+    measured against appstreamcli 1.0.2 and compose still succeeds, so
+    demanding ``<svg`` at byte zero would fail a file that builds fine. What
+    may not precede the tag is *content* — a comment or a declaration.
     """
     head = gen_icons.MASTER.read_text().lstrip()
     assert head.startswith(("<svg", "<!DOCTYPE svg")), (
