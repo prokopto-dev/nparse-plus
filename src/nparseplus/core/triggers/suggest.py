@@ -70,15 +70,42 @@ _NOT_ACTORS = frozenset(
 
 _MAX_NAME_CHARS = 48
 
+#: A ``{word}`` sequence in OUTPUT text. ``Trigger.expand`` rewrites ``{c}``,
+#: ``{COUNTER}`` and any token naming a capture — and the model has no escape
+#: for a literal brace in output text (EQTool parity: the C# has none
+#: either). So a log line that happens to contain one cannot be reproduced
+#: verbatim on the overlay, and copying it through unchanged is the bad
+#: option: "cast {c} on me" would announce your own character's name, and
+#: "{COUNTER} times" a tally that changes on every fire, where the log said
+#: neither. Dropping the braces is the closest stable rendering.
+_OUTPUT_TOKEN_RE = re.compile(r"\{(\w+)\}")
+
+
+def neutralize_output_tokens(text: str) -> str:
+    """Strip the braces from ``{word}`` sequences so ``expand`` leaves them be.
+
+    Applied to text taken from the log, never to the tokens this module
+    inserts deliberately. Every ``{word}`` goes, not only the ones expand
+    would rewrite today: which ones are live depends on the trigger's capture
+    groups at match time, so sparing "safe" ones is a rule that breaks the
+    moment the user adds a group to the pattern.
+    """
+    return _OUTPUT_TOKEN_RE.sub(r"\1", text)
+
 
 @dataclass(frozen=True, slots=True)
 class TriggerSuggestion:
     """Both forms of a trigger built from one log line; the user picks.
 
     ``pattern``/``display_text`` are the tokenised offer (regex mode);
-    ``literal`` is the line verbatim, for a plain-text (non-regex) trigger.
+    ``literal``/``literal_display`` are the plain-text (non-regex) offer.
     With no tokens applied ``pattern`` is simply the fully escaped message,
     which still matches the line it came from.
+
+    The two ``*_display`` fields are OUTPUT text and are not interchangeable
+    with the search fields: ``literal`` keeps the message verbatim because a
+    non-regex search is a substring test, while ``literal_display`` has any
+    brace token neutralized because output text is expanded.
     """
 
     message: str
@@ -87,6 +114,7 @@ class TriggerSuggestion:
     literal: str
     display_text: str
     tokens: tuple[str, ...] = ()
+    literal_display: str = ""
 
     @property
     def has_tokens(self) -> bool:
@@ -144,6 +172,7 @@ def suggest_trigger_text(line: str, player_name: str = "") -> TriggerSuggestion:
     message = strip_timestamp(line)
     if not message:
         return TriggerSuggestion(message="", name="", pattern="", literal="", display_text="")
+    literal_display = neutralize_output_tokens(message)
 
     spans = _player_spans(message, player_name)
     actor = _actor_span(message)
@@ -159,15 +188,18 @@ def suggest_trigger_text(line: str, player_name: str = "") -> TriggerSuggestion:
     tokens: list[str] = []
     cursor = 0
     for start, end, token, label in spans:
+        # Search text escapes the literal halves; display text neutralizes
+        # their brace tokens. Same spans, different output languages — the
+        # token we insert is added raw to both, because there it is meant.
         pattern_parts.append(re.escape(message[cursor:start]))
         pattern_parts.append(token)
-        display_parts.append(message[cursor:start])
+        display_parts.append(neutralize_output_tokens(message[cursor:start]))
         display_parts.append(token)
         if label not in tokens:
             tokens.append(label)
         cursor = end
     pattern_parts.append(re.escape(message[cursor:]))
-    display_parts.append(message[cursor:])
+    display_parts.append(neutralize_output_tokens(message[cursor:]))
 
     return TriggerSuggestion(
         message=message,
@@ -176,4 +208,5 @@ def suggest_trigger_text(line: str, player_name: str = "") -> TriggerSuggestion:
         literal=message,
         display_text="".join(display_parts),
         tokens=tuple(tokens),
+        literal_display=literal_display,
     )

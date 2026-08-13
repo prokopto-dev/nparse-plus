@@ -21,6 +21,7 @@ from nparseplus.core.triggers.model import (
 )
 from nparseplus.core.triggers.suggest import (
     TriggerSuggestion,
+    neutralize_output_tokens,
     strip_timestamp,
     suggest_trigger_name,
     suggest_trigger_text,
@@ -44,6 +45,7 @@ __all__ = [
     "TriggerTimerEnding",
     "effective_triggers",
     "load_builtin_triggers",
+    "neutralize_output_tokens",
     "parse_custom_timer",
     "strip_timestamp",
     "suggest_trigger_name",

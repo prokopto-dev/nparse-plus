@@ -220,6 +220,68 @@ def test_metacharacters_still_match_their_own_line(line: str) -> None:
     assert matched(suggestion.literal, line, use_regex=False)
 
 
+def expanded_display(line: str, player_name: str, counter: int = 0) -> str:
+    """What the overlay would actually SAY for a trigger made from ``line``.
+
+    The search side and the output side are different languages, and testing
+    only the first is how a pattern that matches correctly ends up announcing
+    the wrong words.
+    """
+    suggestion = suggest_trigger_text(line, player_name)
+    trigger = Trigger(search_text=suggestion.pattern, use_regex=True)
+    trigger.player_name = player_name
+    assert trigger.matches(line)
+    trigger.current_counter = counter
+    return trigger.expand(suggestion.display_text)
+
+
+def test_a_context_token_in_the_log_is_not_expanded_on_the_overlay() -> None:
+    # The log said "cast {c} on me" — literally, in someone's tell. Copying
+    # the braces into output text made the overlay announce the player's own
+    # name instead, since Trigger.expand rewrites {c} wherever it appears.
+    line = "Gorenaire tells you, 'cast {c} on me'"
+
+    said = expanded_display(line, "Zzz")
+
+    assert "Zzz" not in said
+    assert said == "Gorenaire tells you, 'cast c on me'"
+
+
+def test_a_counter_token_in_the_log_does_not_change_per_fire() -> None:
+    line = "Gorenaire yells {COUNTER} times"
+
+    first = expanded_display(line, "Zzz", counter=1)
+    later = expanded_display(line, "Zzz", counter=99)
+
+    assert first == later == "Gorenaire yells COUNTER times"
+
+
+def test_the_exact_text_offer_neutralizes_output_tokens_too() -> None:
+    line = "Gorenaire tells you, 'cast {c} on me'"
+    suggestion = suggest_trigger_text(line, "Zzz")
+
+    # The plain-text SEARCH keeps the braces — it is a substring test, and
+    # the line really does contain them.
+    assert suggestion.literal == line
+    # The display text is expanded, so it must not.
+    trigger = Trigger(search_text=suggestion.literal, use_regex=False)
+    trigger.player_name = "Zzz"
+    assert trigger.matches(line)
+    said = trigger.expand(suggestion.literal_display)
+    assert "Zzz" not in said
+    assert said == "Gorenaire tells you, 'cast c on me'"
+
+
+def test_neutralizing_leaves_ordinary_text_alone() -> None:
+    from nparseplus.core.triggers.suggest import neutralize_output_tokens
+
+    assert neutralize_output_tokens("Gorenaire begins to cast a spell.") == (
+        "Gorenaire begins to cast a spell."
+    )
+    # A brace pair that is not a {word} token is not a token to expand either.
+    assert neutralize_output_tokens("a {} b { c } d") == "a {} b { c } d"
+
+
 def test_a_brace_in_the_log_stays_literal() -> None:
     # Escaped as \{c\}: Trigger._compile's placeholder pass needs "{word}"
     # with no backslash before the closing brace, so this cannot become a

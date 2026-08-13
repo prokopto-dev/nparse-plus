@@ -1026,7 +1026,9 @@ class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             use_regex=bool(tokenized),
             basic=TriggerOutput(
                 display_text_enabled=True,
-                display_text=suggestion.display_text if tokenized else suggestion.message,
+                # NOT suggestion.message: display text is expanded, so a brace
+                # the log line carried would rewrite itself on the overlay.
+                display_text=(suggestion.display_text if tokenized else suggestion.literal_display),
                 display_text_color="Red",
             ),
             timer=TriggerTimer(timer_type=TimerType.NO_TIMER),

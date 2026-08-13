@@ -53,6 +53,14 @@ Add the token by hand if you want one.
 The timestamp is never part of the trigger: nParse+ matches lines with the
 timestamp already stripped, so a pattern containing one would never fire.
 
+One rare case worth knowing: if the log line itself contains something that
+*looks* like a token — someone typing `cast {c} on me` in a tell — the
+prefilled **display text** drops the braces (`cast c on me`). Output text is
+expanded before it reaches the overlay and there is no way to escape a
+literal brace there, so copying it through would make the alert announce
+your own character name instead of what was said. The search text is
+unaffected and still matches the braces exactly.
+
 ## Typical uses
 
 - **First-run check**: say something in game; if it shows up here, the

@@ -160,6 +160,45 @@ def test_the_exact_action_makes_a_plain_text_trigger(qtbot) -> None:
     assert not trigger.matches("Lord Nagafen begins to cast a spell.")
 
 
+@pytest.mark.parametrize("label", [CREATE_TRIGGER_LABEL, CREATE_TRIGGER_EXACT_LABEL])
+def test_a_brace_in_the_log_never_rewrites_the_overlay_text(qtbot, label: str) -> None:
+    # End to end, both offers: the log line literally contains "{c}", and the
+    # display text is EXPANDED before it reaches the overlay. Copying the
+    # braces through made the alert announce the player's own name.
+    settings = Settings(players=[PlayerInfo(name="Zzz", server="green")])
+    wired = Wired(qtbot, settings)
+    line = "Gorenaire tells you, 'cast {c} on me'"
+    wired.push(line)
+
+    wired.menu_actions()[label].trigger()
+
+    trigger = wired.editor.current_trigger()
+    assert trigger is not None
+    assert trigger.matches(line)
+    said = trigger.expand(trigger.effective_basic().display_text)
+    assert "Zzz" not in said
+    assert said == "Gorenaire tells you, 'cast c on me'"
+    # The editor's own test box shows the same expansion, so what the user
+    # reads before saving is what the overlay will say.
+    assert "Zzz" not in wired.editor.test_result.text()
+
+
+def test_a_counter_token_in_the_log_is_not_a_live_counter(qtbot) -> None:
+    wired = Wired(qtbot)
+    line = "Gorenaire yells {COUNTER} times"
+    wired.push(line)
+
+    wired.menu_actions()[CREATE_TRIGGER_LABEL].trigger()
+
+    trigger = wired.editor.current_trigger()
+    assert trigger is not None
+    assert trigger.matches(line)  # populates the {name} capture
+    trigger.current_counter = 42
+    assert trigger.expand(trigger.effective_basic().display_text) == (
+        "Gorenaire yells COUNTER times"
+    )
+
+
 def test_a_line_with_no_token_offers_only_one_action(qtbot) -> None:
     wired = Wired(qtbot)
     wired.push("You begin casting Clarity.")
