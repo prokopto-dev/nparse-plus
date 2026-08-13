@@ -1,9 +1,12 @@
 """core.socialsync — capturing in-game macro changes into the local mirror."""
 
+import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from nparseplus.core import socialstore
+from nparseplus.core.background import run_inline
 from nparseplus.core.socials import Social
 from nparseplus.core.socialstore import SocialOrigin
 from nparseplus.core.socialsync import SCAN_INTERVAL_SECONDS, SocialSyncWatcher
@@ -31,14 +34,27 @@ class Env:
         self.store_dir.mkdir()
         self.enabled = True
         self.running = False
+        #: One thread ident per is_running() call — the probe is the expensive
+        #: part of a scan and the tests care where it happened.
+        self.probes: list[int] = []
+        self.probe_gate: threading.Event | None = None
 
-    def watcher(self) -> SocialSyncWatcher:
+    def is_running(self) -> bool:
+        self.probes.append(threading.get_ident())
+        if self.probe_gate is not None:
+            self.probe_gate.wait(5.0)
+        return self.running
+
+    def watcher(self, spawn: Callable | None = run_inline) -> SocialSyncWatcher:
+        # Scans run on a background thread in the app; most tests drive them
+        # inline so a tick's effect is observable on the next line.
         return SocialSyncWatcher(
             get_eq_dir=lambda: self.eq_dir,
             get_store_dir=lambda: self.store_dir,
             is_enabled=lambda: self.enabled,
             get_servers=lambda: ["P1999Green"],
-            is_running=lambda: self.running,
+            is_running=self.is_running,
+            spawn=spawn,
         )
 
     def store(self):
@@ -191,8 +207,58 @@ def test_tick_never_raises(tmp_path: Path) -> None:
         get_store_dir=lambda: tmp_path,
         is_enabled=lambda: True,
         is_running=lambda: False,
+        spawn=run_inline,
     )
     watcher.tick(NOW)  # swallowed
+
+
+# -- the tick stays off the slow paths (#88) ---------------------------------
+
+
+def test_tick_only_schedules_and_never_probes_on_the_calling_thread(tmp_path: Path) -> None:
+    # eq_is_running() spawns pgrep: 17.6 ms mean, seconds in the worst case,
+    # on the thread that tails the log. The tick must only schedule.
+    env = Env(tmp_path)
+    scheduled: list[Callable[[], None]] = []
+    watcher = env.watcher(spawn=lambda _name, work: scheduled.append(work))
+
+    watcher.tick(NOW)
+    assert env.probes == []  # nothing ran on this thread
+    assert env.store() is None  # ...including the file I/O
+
+    assert len(scheduled) == 1
+    scheduled[0]()  # and what was scheduled is the probe + sync
+    assert env.probes
+    assert env.store() is not None
+
+
+def test_the_scan_runs_off_the_calling_thread(tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    watcher = env.watcher(spawn=None)  # the real one-shot daemon thread
+
+    watcher.tick(NOW)
+    assert watcher._job.wait(timeout=5.0)
+
+    assert env.probes and env.probes[0] != threading.get_ident()
+    assert env.store() is not None
+
+
+def test_a_scan_still_running_does_not_start_another(tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    env.probe_gate = threading.Event()
+    watcher = env.watcher(spawn=None)
+
+    watcher.tick(NOW)
+    watcher.tick(LATER)  # the interval has passed, but the scan has not finished
+    watcher.tick(LATER + timedelta(seconds=SCAN_INTERVAL_SECONDS + 1))
+    env.probe_gate.set()
+    assert watcher._job.wait(timeout=5.0)
+
+    # One scan, one sync — and the refused ticks did not charge the interval,
+    # so the next one can start a fresh scan immediately.
+    assert len(env.probes) == 1
+    assert watcher.last_added == 1
+    assert watcher._job.submit(lambda: None) is True
 
 
 def test_status_text_reports_the_last_sync(tmp_path: Path) -> None:
