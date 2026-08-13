@@ -271,6 +271,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         on_dps_changed: Callable[[], None] | None = None,
         on_overlay_timing_changed: Callable[[], None] | None = None,
         on_sharing_changed: Callable[[], None] | None = None,
+        on_upload_target_changed: Callable[[], None] | None = None,
+        on_install_dir_changed: Callable[[], object] | None = None,
         legacy_config: dict[str, Any] | None = None,
         on_legacy_save: Callable[[], None] | None = None,
         notify_legacy: Callable[[], None] | None = None,
@@ -302,6 +304,11 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         # skin picker's preview path (#67).
         self._on_overlay_timing_changed = on_overlay_timing_changed
         self._on_sharing_changed = on_sharing_changed
+        # Picking a dump destination has to bring its own network plumbing,
+        # which sharing's callback above deliberately does not do (#68).
+        self._on_upload_target_changed = on_upload_target_changed
+        # The EQ install directory decides which spells_us.txt is live (#70).
+        self._on_install_dir_changed = on_install_dir_changed
         # The skin the window opened with, so Close can undo a live preview.
         self._skin_on_open = settings.general.skin
         self._legacy = legacy_config if legacy_config is not None else {}
@@ -1670,7 +1677,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         note = self.UPLOAD_NOTES.get(target, "")
         if target != "off":
             note += (
-                "\nApplies after restart, and rides on the Character Dumps "
+                "\nTakes effect on Apply, and rides on the Character Dumps "
                 "window's auto-import — that is what notices the dump."
             )
         self._upload_note.setText(note)
@@ -1931,8 +1938,10 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     def apply(self) -> None:
         general = self._settings.general
         old_log_dir = str(general.eq_log_dir)
+        old_install_dir = str(general.eq_install_dir or "")
         old_voice = general.tts_voice
         old_volume = general.global_audio_volume
+        old_upload_target = self._settings.dumps.upload_target
         general.eq_log_dir = Path(self._log_dir.path()).expanduser()
         install = self._install_dir.path()
         general.eq_install_dir = Path(install).expanduser() if install else None
@@ -2012,6 +2021,18 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             self._repaint_maps()  # maps canvas reads its keys at paint time
         if self._on_log_dir_changed is not None and str(general.eq_log_dir) != old_log_dir:
             self._on_log_dir_changed(Path(general.eq_log_dir))
+        if (
+            self._on_install_dir_changed is not None
+            and str(general.eq_install_dir or "") != old_install_dir
+        ):
+            # Re-resolves spells_us.txt; a no-op unless the file actually
+            # moved (the backend decides that, not this window).
+            self._on_install_dir_changed()
+        if (
+            self._on_upload_target_changed is not None
+            and self._settings.dumps.upload_target != old_upload_target
+        ):
+            self._on_upload_target_changed()  # build the destination's plumbing
         if self._on_audio_changed is not None and (
             general.tts_voice != old_voice or general.global_audio_volume != old_volume
         ):

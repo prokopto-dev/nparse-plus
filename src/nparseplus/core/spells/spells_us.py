@@ -223,12 +223,57 @@ class SpellBook:
     spells: list[Spell] = field(default_factory=list)
     npcs: frozenset[str] = frozenset()
     casting: CastingState = field(default_factory=CastingState)
+    #: The spells_us.txt this book was loaded from — the user's EQ install or
+    #: the bundled copy. Kept so :meth:`reload` can be a no-op when the
+    #: resolved path has not actually moved.
+    source_path: Path | None = None
     # Keys are casefolded; use the accessor methods rather than the dicts.
     _all_spells: dict[str, Spell] = field(default_factory=dict)
     _cast_other_spells: dict[str, list[Spell]] = field(default_factory=dict)
     _cast_on_you_spells: dict[str, list[Spell]] = field(default_factory=dict)
     _you_cast_spells: dict[str, list[Spell]] = field(default_factory=dict)
     _worn_off_spells: dict[str, list[Spell]] = field(default_factory=dict)
+
+    def adopt(self, other: SpellBook) -> None:
+        """Take ``other``'s contents, in place — the driver-thread half of a
+        reload.
+
+        The book is captured at construction by ``ParseContext``,
+        ``SpellTimerHandler``, ``AbilityCooldownHandler`` and
+        ``TimerPersistenceHandler``, so the switch from the bundled database
+        to the user's install (#70) cannot hand out a new object: it has to
+        keep the identity every holder already has and swap what is inside.
+
+        Six rebinds and no work, because the parse that produced ``other``
+        costs ~1.1 s and belongs on a background thread (see
+        ``composition._SpellBookReloader``). This is the part the driver
+        thread has to do, and it is the part that is cheap.
+
+        ``casting`` deliberately survives: it is session state, not database
+        content, and clearing a spell the player is mid-cast on would read as
+        an interrupt that never happened.
+        """
+        self.spells = other.spells
+        self._all_spells = other._all_spells
+        self._cast_other_spells = other._cast_other_spells
+        self._cast_on_you_spells = other._cast_on_you_spells
+        self._you_cast_spells = other._you_cast_spells
+        self._worn_off_spells = other._worn_off_spells
+        self.source_path = other.source_path
+
+    def reload(self, path: Path) -> None:
+        """Parse the database at ``path`` and adopt it — both halves at once.
+
+        Parse first, adopt after: a failed read raises before anything moves,
+        so the old database survives a bad path intact. The master NPC list is
+        reused rather than re-read — it is bundled data with nothing to do
+        with the EQ install directory, and re-reading it costs ~100 ms.
+
+        The app splits the two halves across threads rather than calling this;
+        it is the whole operation for anyone who does not have a driver thread
+        to protect.
+        """
+        self.adopt(load_spell_book(path, npcs=self.npcs))
 
     def spell_by_name(self, name: str) -> Spell | None:
         return self._all_spells.get(name.casefold())
@@ -487,6 +532,7 @@ def load_spell_book(path: Path, npcs: frozenset[str] | None = None) -> SpellBook
     book = SpellBook(
         spells=[_to_spell(raw) for raw in by_name.values()],
         npcs=npcs if npcs is not None else load_master_npc_list(),
+        source_path=path,
     )
     book._index()
     logger.info("loaded %d spells from %s", len(book.spells), path)

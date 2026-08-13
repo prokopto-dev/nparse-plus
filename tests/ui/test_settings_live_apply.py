@@ -1,10 +1,13 @@
 """Settings that used to claim a restart and now apply on Apply.
 
-Two issues meet here because the page copy is half the fix: overlay alert
-duration + CH lane retention (#67), and the sharing mode's "off" direction
-(#69). Both follow the ``on_dps_changed`` seam — the window mutates settings
-and fires a callback the app wired to the live object.
+Several issues meet here because the page copy is half the fix: overlay alert
+duration + CH lane retention (#67), the sharing mode's "off" direction (#69),
+the dump upload destination (#68) and the EQ install directory's spell
+database (#70). All follow the ``on_dps_changed`` seam — the window mutates
+settings and fires a callback the app wired to the live object.
 """
+
+from datetime import datetime
 
 import pytest
 
@@ -92,8 +95,6 @@ def test_apply_timings_keeps_the_floor(qtbot) -> None:
 def test_a_running_alert_is_retimed(qtbot) -> None:
     """Qt restarts a running timer when the interval changes, which is what
     lets the change reach the alert already on screen."""
-    from datetime import datetime
-
     from nparseplus.core.events import OverlayEvent
 
     overlay = EventOverlayWindow(clear_after_s=4.0)
@@ -221,3 +222,87 @@ def test_the_sharing_page_says_what_is_true_of_each_direction(qtbot) -> None:
     text = _hints(_window(qtbot, Settings()), "Sharing").lower()
     assert "turning sharing off applies immediately" in text
     assert "restart" in text  # ...but turning it on still needs one
+
+
+# --- the dump upload destination (#68) --------------------------------------------
+
+
+def test_apply_fires_the_upload_callback_only_when_the_destination_moved(qtbot) -> None:
+    calls: list[str] = []
+    settings = Settings()
+    window = _window(qtbot, settings, on_upload_target_changed=lambda: calls.append("upload"))
+
+    window.apply()
+    assert calls == []  # unchanged: nothing to build
+
+    window._upload_target.setCurrentIndex(window._upload_target.findData("p99planner"))
+    window.apply()
+    assert settings.dumps.upload_target == "p99planner"
+    assert calls == ["upload"]
+
+    window.apply()
+    assert calls == ["upload"]  # still p99planner
+
+
+def test_the_upload_note_no_longer_claims_a_restart(qtbot) -> None:
+    window = _window(qtbot, Settings())
+    window._upload_target.setCurrentIndex(window._upload_target.findData("pigparse"))
+    note = window._upload_note.text().lower()
+    assert "restart" not in note
+    assert "auto-import" in note  # the limitation that IS still true
+
+
+# --- the EQ install directory's spell database (#70) ------------------------------
+
+
+def test_apply_fires_the_install_dir_callback_only_when_it_moved(qtbot, tmp_path) -> None:
+    calls: list[str] = []
+    settings = Settings()
+    window = _window(qtbot, settings, on_install_dir_changed=lambda: calls.append("install"))
+
+    window.apply()
+    assert calls == []
+
+    window._install_dir.edit.setText(str(tmp_path))
+    window.apply()
+    assert settings.general.eq_install_dir == tmp_path
+    assert calls == ["install"]
+
+    window.apply()
+    assert calls == ["install"]  # same directory, no reload
+
+
+def test_apply_reaches_the_spell_book_end_to_end(qtbot, tmp_path) -> None:
+    """Apply -> Backend.reload_spell_book -> the driver tick -> the very book
+    the parse context holds. The first-run case: install directory set
+    mid-session, spell data live for the next cast."""
+    from pathlib import Path
+
+    from nparseplus.composition import build_backend
+
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "spells_us.txt"
+    clarity = next(
+        line
+        for line in fixture.read_text(encoding="utf-8").splitlines()
+        if line.split("^")[1:2] == ["Clarity"]
+    )
+    (tmp_path / "spells_us.txt").write_text(clarity + "\n", encoding="utf-8")
+
+    settings = Settings()
+    backend = build_backend(settings, speaker=_NullSpeaker())
+    book = backend.spells
+    assert len(book.spells) > 1
+
+    window = _window(qtbot, settings, on_install_dir_changed=backend.reload_spell_book)
+    window._install_dir.edit.setText(str(tmp_path))
+    window.apply()
+
+    # What the driver thread does: one tick starts the parse off-thread (it
+    # costs ~1.1 s and must not sit on the log tail), a later one adopts it.
+    assert backend.spell_reload is not None
+    backend.spell_reload.tick(datetime.now())
+    assert backend.spell_reload.wait()
+    backend.spell_reload.tick(datetime.now())
+
+    assert backend.spells is book  # the handlers' handle never moved
+    assert [spell.name for spell in book.spells] == ["Clarity"]

@@ -7,12 +7,16 @@ container. The UI layer (app.py) attaches on top via the Qt bridge.
 
 from __future__ import annotations
 
+import functools
+import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from nparseplus.config.paths import ensure_dumps_dir, ensure_socials_dir
 from nparseplus.config.settings import Settings, find_player
+from nparseplus.core.background import BackgroundJob, Spawn
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.driver import LogDriver
@@ -65,6 +69,8 @@ from nparseplus.net.p99planner import P99PlannerClient
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.pigparse_hub import PigParseHubClient
 from nparseplus.net.worker import NetWorker
+
+logger = logging.getLogger(__name__)
 
 
 class TriggerTimerSink:
@@ -137,6 +143,94 @@ class _SwappableSpeaker:
             close()
 
 
+class _SpellBookReloader:
+    """Swaps the spell database under the objects holding it (#70).
+
+    The speaker above is live-swappable because everything speaks through one
+    holder; the spell book cannot be, because four handlers and the parse
+    context captured the object itself. So the swap is
+    :meth:`SpellBook.adopt` — same object, new contents — and what is left to
+    arrange is *which thread*, on both halves:
+
+    * Parsing spells_us.txt costs **~1.1 s**. That is four times the budget a
+      plugin tick is evicted for, on the thread that tails the log and runs
+      every countdown in the app, so it goes on a ``BackgroundJob`` like the
+      log-archive copy and the EQ probe before it. Filesystem work with a
+      result delivered through an inbox is exactly what that seam is for.
+    * Adopting the result is six rebinds, and it has to happen where the
+      reads happen — between lines on the driver thread, not from the GUI
+      thread while ``apply()`` runs.
+
+    So a request lands in the inbox (the shape
+    ``SharingCoordinator.enqueue_inbound`` and ``DumpWatcher.request_scan``
+    use), a tick starts the parse, and a later tick adopts what came back —
+    a few hundred ms after Apply, which nobody can perceive and no log line
+    is lost to. Only the last request survives: two Applies in a row mean the
+    second path is the one the user wants.
+    """
+
+    def __init__(self, book: SpellBook, *, spawn: Spawn | None = None) -> None:
+        self._book = book
+        self._job = BackgroundJob("spell-reload", spawn=spawn)
+        self._lock = threading.Lock()
+        self._pending: Path | None = None
+        self._ready: SpellBook | None = None
+
+    def request(self, path: Path) -> None:
+        """Ask for the book to be reloaded from ``path``. Any thread."""
+        with self._lock:
+            self._pending = path
+
+    @property
+    def pending(self) -> Path | None:
+        """A path asked for and not yet handed to the background job."""
+        with self._lock:
+            return self._pending
+
+    def wait(self, timeout: float = 10.0) -> bool:
+        """Block until no parse is in flight. True if it finished."""
+        return self._job.wait(timeout)
+
+    def tick(self, now: datetime) -> None:
+        """Driver-tick hook. Never raises."""
+        self._start_pending()
+        self._adopt_ready()
+
+    def _start_pending(self) -> None:
+        with self._lock:
+            path = self._pending
+            if path is None:
+                return
+            self._pending = None
+        if not self._job.submit(functools.partial(self._parse, path)):
+            # A reload is already in flight; keep the request for the tick
+            # after it lands rather than dropping it.
+            with self._lock:
+                self._pending = path
+
+    def _parse(self, path: Path) -> None:
+        """Background thread: read and index the database, hand it back.
+
+        Touches no shared state but ``_ready`` (``npcs`` is an immutable
+        frozenset that a reload never replaces), so nothing the driver thread
+        is reading moves until the tick below adopts it.
+        """
+        try:
+            book = load_spell_book(path, npcs=self._book.npcs)
+        except Exception:
+            logger.warning("could not reload the spell database from %s", path, exc_info=True)
+            return
+        with self._lock:
+            self._ready = book
+
+    def _adopt_ready(self) -> None:
+        with self._lock:
+            book, self._ready = self._ready, None
+        if book is not None:
+            self._book.adopt(book)
+            logger.info("spell database switched to %s", book.source_path)
+
+
 @dataclass
 class Backend:
     """Everything the UI needs a handle on. Qt-free."""
@@ -165,6 +259,7 @@ class Backend:
     dump_watcher: DumpWatcher | None = None
     inventory_upload: InventoryUploadHandler | None = None
     planner_api: P99PlannerClient | None = None
+    spell_reload: _SpellBookReloader | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -217,6 +312,72 @@ class Backend:
         which is also the skin picker's preview path."""
         self.trigger_engine.display_text_seconds = self.settings.general.overlay_text_seconds
 
+    def apply_upload_target(self) -> None:
+        """Build whatever the newly-picked dump destination needs and push it
+        onto the live uploader — the seam the settings window calls on Apply.
+
+        ``dumps.upload_target`` was already read live by the handler; what was
+        not live was the plumbing that read depends on, decided once in
+        ``build_backend``, so picking a destination mid-session left
+        ``api``/``planner``/``submit`` at None and every upload silently
+        no-opped (#68). This closes it for the Discord login too: the token
+        rides in a per-request header, so logging in and picking pigparse in
+        one Apply now works without a restart.
+
+        **Nothing is ever torn down here.** ``stop()`` closes these at quit
+        and an in-flight p99planner claim or PUT would be lost with them, so
+        switching away leaves the client idle rather than killing it — which
+        costs nothing, because the target is what gates a send, not the
+        client. That gate is read twice: ``accepts()`` before anything is
+        queued, and ``InventoryUploadHandler._still_targeting`` on the worker
+        thread just before the request leaves, so a dump already sitting in
+        the queue when the user switches off is dropped rather than sent.
+
+        Deliberately narrow: the seven handlers that publish on *sharing's*
+        behalf are not rewired, because a REST client built for an upload
+        destination is not permission to share a location (#69).
+        """
+        target = self.settings.dumps.upload_target
+        if target == "p99planner" and self.planner_api is None:
+            self.planner_api = P99PlannerClient()
+        if target == "pigparse" and self.pigparse_api is None:
+            self.pigparse_api = PigParseApiClient(self.settings.sharing.pigparse_api_url)
+        if target != "off" and self.net_worker is None:
+            # start() ran at launch and will not run again, so this one starts
+            # its own thread.
+            self.net_worker = NetWorker(deliver=self.sharing.enqueue_inbound)
+            self.net_worker.start()
+        if self.inventory_upload is not None:
+            self.inventory_upload.api = self.pigparse_api
+            self.inventory_upload.planner = self.planner_api
+            self.inventory_upload.submit = (
+                self.net_worker.submit if self.net_worker is not None else None
+            )
+
+    def reload_spell_book(self) -> bool:
+        """Re-resolve the spell database and schedule a reload if it moved.
+
+        Called when the EQ install directory changes. Every other consumer of
+        that setting was already live; this one silently stayed on whatever
+        it resolved at launch, which bites hardest on first run — log
+        directory and install directory get set in the same visit and spell
+        durations stay on the bundled database all session (#70).
+
+        Returns whether a reload was *scheduled* — the parse runs off-thread
+        and the swap lands on a driver tick a few hundred ms later (see
+        :class:`_SpellBookReloader`). "Same file" is a visible answer rather
+        than an inferred one because pointing at an install with no
+        ``spells_us.txt`` resolves straight back to the bundled copy, and
+        re-parsing 8k lines to arrive where we already are is pure cost.
+        """
+        if self.spell_reload is None:  # pragma: no cover - always wired
+            return False
+        path = _spells_path(self.settings)
+        if _same_file(path, self.spells.source_path):
+            return False
+        self.spell_reload.request(path)
+        return True
+
     def apply_sharing_mode(self) -> None:
         """Push the sharing mode onto the live coordinator — the seam the
         settings window calls on Apply. Only "off" applies live (see
@@ -251,6 +412,21 @@ def _spells_path(settings: Settings) -> Path:
     return Path("data/spells/spells_us.txt")  # bundled fallback (repo/app root)
 
 
+def _same_file(path: Path, other: Path | None) -> bool:
+    """Whether two spell-database paths name the same file.
+
+    Resolved, because the bundled fallback above is relative to the app's CWD
+    while an install path is absolute — comparing them raw would report a move
+    that isn't one.
+    """
+    if other is None:
+        return False
+    try:
+        return path.resolve() == other.resolve()
+    except OSError:  # pragma: no cover - defensive (unreadable parent)
+        return path == other
+
+
 def build_backend(settings: Settings, speaker=None, request_save=None) -> Backend:
     """``request_save`` is the app's DebouncedSaver.request_save (thread-safe);
     driver-thread handlers use it to persist per-character profile changes."""
@@ -258,6 +434,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     player = ActivePlayer()
     zones = load_zone_database()
     spells = load_spell_book(_spells_path(settings))
+    spell_reload = _SpellBookReloader(spells)
     timers = TimersService()
 
     ctx = ParseContext(bus=bus, player=player, spells=spells, zones=zones, settings=settings)
@@ -492,6 +669,9 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     )
 
     buff_warner = BuffFadeWarner(bus, timers, speaker, settings.spellwindow)
+    # First: a reload asked for by the last Apply lands before this tick's
+    # handlers read the book.
+    driver.on_tick.append(spell_reload.tick)
     driver.on_tick.append(timers.tick)
     driver.on_tick.append(buff_warner.tick)
     driver.on_tick.append(engine.tick)
@@ -528,5 +708,6 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         dump_watcher=dump_watcher,
         inventory_upload=inventory_upload,
         planner_api=planner_api,
+        spell_reload=spell_reload,
         _retained=[chat_commands, window_commands, sink, *handlers],
     )
