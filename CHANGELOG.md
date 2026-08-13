@@ -6,6 +6,35 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.6.0 (2026-08-13)
+
+### Bug Fixes
+
+- **dps**: Derive the spell credit deadline so the window applies live
+  ([#97](https://github.com/prokopto-dev/nparse-plus/pull/97),
+  [`0e0c18c`](https://github.com/prokopto-dev/nparse-plus/commit/0e0c18c7ca9192d0b8414487f798926a090e2eb9))
+
+- **dps**: Keep a dead pet's damage in the session footer
+  ([#97](https://github.com/prokopto-dev/nparse-plus/pull/97),
+  [`0e0c18c`](https://github.com/prokopto-dev/nparse-plus/commit/0e0c18c7ca9192d0b8414487f798926a090e2eb9))
+
+- **dps**: Make both counting changes opt-in rather than default
+  ([#97](https://github.com/prokopto-dev/nparse-plus/pull/97),
+  [`0e0c18c`](https://github.com/prokopto-dev/nparse-plus/commit/0e0c18c7ca9192d0b8414487f798926a090e2eb9))
+
+### Features
+
+- **dps**: Attribute non-melee damage and count pet damage as yours
+  ([#97](https://github.com/prokopto-dev/nparse-plus/pull/97),
+  [`0e0c18c`](https://github.com/prokopto-dev/nparse-plus/commit/0e0c18c7ca9192d0b8414487f798926a090e2eb9))
+
+### Testing
+
+- **settings**: Compare eq_log_dir as a Path, not a string
+  ([#97](https://github.com/prokopto-dev/nparse-plus/pull/97),
+  [`0e0c18c`](https://github.com/prokopto-dev/nparse-plus/commit/0e0c18c7ca9192d0b8414487f798926a090e2eb9))
+
+
 ## v2.5.0 (2026-08-13)
 
 ### Bug Fixes
