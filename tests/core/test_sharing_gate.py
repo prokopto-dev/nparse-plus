@@ -12,6 +12,7 @@ pigparse dump-upload target, which builds the REST client for the uploader.
 from __future__ import annotations
 
 import ast
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.sharing import sharing_gated_submit
 from nparseplus.core.zones import load_zone_database
+from nparseplus.net.worker import NetWorker
 
 T0 = datetime(2026, 7, 8, 12, 0, 0)
 
@@ -101,6 +103,114 @@ def test_gate_reads_the_mode_per_call() -> None:
 
 def test_gate_passes_none_through() -> None:
     assert sharing_gated_submit(None, Settings()) is None
+
+
+# --- queued work: the mode is re-read where the call is actually made ----------
+
+
+class DeferredWorker:
+    """A NetWorker stand-in that queues instead of running — the FIFO the real
+    one has, made explicit so a task can be dequeued after the mode changes."""
+
+    def __init__(self) -> None:
+        self.queued: list[tuple] = []
+
+    def submit(self, fetch, apply=None) -> None:
+        self.queued.append((fetch, apply))
+
+    def run_all(self) -> None:
+        for fetch, apply in self.queued:
+            result = fetch()
+            if apply is not None:
+                apply(result)
+        self.queued.clear()
+
+
+def test_a_queued_call_is_dropped_when_it_finally_runs() -> None:
+    """Submitted while sharing was on, dequeued after Apply — the request must
+    not be made. One worker, one FIFO: this is a slow request away from being
+    the common case, not a corner."""
+    settings = Settings()
+    settings.sharing.mode = "pigparse"
+    worker = DeferredWorker()
+    api = RecordingApi()
+    gated = sharing_gated_submit(worker.submit, settings)
+
+    gated(lambda: api.upsert_players([], 0))
+    assert worker.queued, "the task was queued while sharing was on"
+
+    settings.sharing.mode = "off"
+    worker.run_all()
+    assert api.calls == []
+
+
+def test_a_queued_result_is_not_applied_after_the_switch() -> None:
+    """The fetch got its answer just before Apply; applying it afterwards
+    would mutate local state from data sharing was supposed to stop."""
+    settings = Settings()
+    settings.sharing.mode = "pigparse"
+    worker = DeferredWorker()
+    applied: list[object] = []
+    gated = sharing_gated_submit(worker.submit, settings)
+
+    gated(lambda: "roster", applied.append)
+    fetch, apply = worker.queued[0]
+    result = fetch()  # ran while sharing was still on
+    settings.sharing.mode = "off"
+    apply(result)
+    assert applied == []
+
+
+def test_a_queued_call_still_runs_while_sharing_stays_on() -> None:
+    settings = Settings()
+    settings.sharing.mode = "pigparse"
+    worker = DeferredWorker()
+    applied: list[object] = []
+    sharing_gated_submit(worker.submit, settings)(lambda: "roster", applied.append)
+    worker.run_all()
+    assert applied == ["roster"]
+
+
+def test_a_falsy_fetch_result_still_reaches_apply() -> None:
+    """The drop sentinel must not be confused with a real empty answer —
+    players_by_names returning [] is the normal case."""
+    settings = Settings()
+    settings.sharing.mode = "pigparse"
+    worker = DeferredWorker()
+    applied: list[object] = []
+    sharing_gated_submit(worker.submit, settings)(lambda: None, applied.append)
+    worker.run_all()
+    assert applied == [None]
+
+
+def test_the_real_worker_drops_a_task_stuck_behind_a_slow_one() -> None:
+    """The review's scenario, on the actual NetWorker thread: a sharing call
+    queued behind an in-progress request, with Apply landing in between."""
+    settings = Settings()
+    settings.sharing.mode = "pigparse"
+    delivered: list = []
+    worker = NetWorker(deliver=delivered.append)
+    api = RecordingApi()
+
+    holding = threading.Event()
+    released = threading.Event()
+
+    def slow_unrelated_request():
+        holding.set()
+        released.wait(timeout=5.0)
+
+    worker.start()
+    try:
+        worker.submit(slow_unrelated_request)  # raw handle: an upload, say
+        assert holding.wait(timeout=5.0), "the worker never picked up the first task"
+        sharing_gated_submit(worker.submit, settings)(lambda: api.upsert_players([], 0))
+
+        settings.sharing.mode = "off"  # the user hits Apply while it waits
+        released.set()
+        worker.stop()  # drains the queue, then joins
+    finally:
+        released.set()
+    assert api.calls == []
 
 
 # --- the two publishers the review named --------------------------------------

@@ -55,6 +55,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Sentinel result for a queued sharing call the gate dropped at execution
+#: time — tells the wrapped ``apply`` there is nothing to apply. Never a real
+#: fetch result, so it cannot collide with one (including ``None``).
+_DROPPED = object()
+
 KEEPALIVE_SECONDS = 10.0
 IDLE_LIMIT_SECONDS = 300.0  # 5 min without a "You..." line stops keepalives
 ROAR_DEDUPE_SECONDS = 4.0
@@ -131,16 +136,39 @@ def sharing_gated_submit(submit: SubmitFn | None, settings: Settings) -> SubmitF
     gated by ``dumps.upload_target``, a decision the user makes separately,
     and composition deliberately builds its plumbing with sharing off.
 
-    Work already handed to the worker may still complete — this stops new
-    work rather than cancelling a request in flight.
+    The mode is checked THREE times, and all three are needed. At submit, so
+    nothing is queued while off. Again inside ``fetch``, on the worker thread
+    — there is one worker with a FIFO queue, so a request submitted while
+    sharing was on can sit behind a slow one and reach pigparse.org seconds
+    after the user pressed Apply; re-reading the mode where the call is
+    actually made is what makes "nothing further is sent" true rather than
+    nearly true. And once more before ``apply``, so a result fetched moments
+    before the switch does not mutate local state after it. (The coordinator's
+    inbox cannot make that last call for us: ``_dispatch_inbound`` sees an
+    opaque callable and must run it, because dump-upload deliveries arrive the
+    same way.)
+
+    What survives, unavoidably: a request already issued on the socket. Its
+    reply is dropped rather than applied, but the bytes are gone.
     """
     if submit is None:
         return None
 
-    def gated(*args: object, **kwargs: object) -> None:
+    def gated(fetch: Callable[[], object], apply: Callable[[object], None] | None = None) -> None:
         if settings.sharing.mode == "off":
             return
-        submit(*args, **kwargs)
+
+        def guarded_fetch() -> object:
+            if settings.sharing.mode == "off":
+                return _DROPPED  # dequeued after the user turned sharing off
+            return fetch()
+
+        def guarded_apply(result: object) -> None:
+            if result is _DROPPED or settings.sharing.mode == "off":
+                return
+            apply(result)  # type: ignore[misc]
+
+        submit(guarded_fetch, None if apply is None else guarded_apply)
 
     return gated
 
