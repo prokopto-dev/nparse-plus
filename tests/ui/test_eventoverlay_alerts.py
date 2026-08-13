@@ -22,6 +22,7 @@ from nparseplus.config.settings import OverlayRegion, WindowState
 from nparseplus.core.events import OverlayEvent
 from nparseplus.ui.eventoverlay import (
     KICKER_MAX_CHARS,
+    MIN_ALERT_BUDGET,
     MIN_REGION_HEIGHT,
     MIN_REGION_WIDTH,
     SCROLL_HEAD_HOLD,
@@ -428,6 +429,95 @@ def test_the_headline_never_overruns_its_region(qtbot, text, height) -> None:
     if not overlay.is_scrolling():
         assert label.y() >= 0
         assert label.y() + label.height() <= overlay._alert_viewport.height()
+
+
+def _alert_layout_state(overlay: EventOverlayWindow) -> tuple:
+    return (
+        overlay._center_text.styleSheet(),
+        overlay._alert_viewport.height(),
+        overlay._center_text.height(),
+        overlay.is_scrolling(),
+        overlay._scroll_travel,
+    )
+
+
+@pytest.mark.parametrize(("grab", "push"), [("right", -260), ("right", 260), ("left", 200)])
+def test_dragging_the_alerts_region_refits_the_live_headline_to_the_new_box(
+    qtbot, grab, push
+) -> None:
+    """The headline must be laid out for the box the region has, not the one
+    it just left: measuring before the hosts move clips a shrink and leaves a
+    grown region crawling for overflow it no longer has."""
+    state = _region_state()
+    state.overlay_regions["alert"] = OverlayRegion(anchor="center", width=520, height=150)
+    overlay = EventOverlayWindow(state=state)
+    qtbot.addWidget(overlay)
+    overlay.resize(1200, 800)
+    overlay.show()
+    overlay.set_edit_mode(True)
+    overlay._layout_regions()
+    _alert(overlay, PARAGRAPH)
+
+    alert = overlay._alert_host
+    y = alert.y() + alert.height() // 2
+    x = alert.x() + alert.width() - 2 if grab == "right" else alert.x() + 1
+    _press(overlay, x, y)
+    assert overlay._region_resize_edges
+    _move(overlay, x + push, y)
+
+    # A second pass must change nothing: if the drag had measured against the
+    # old geometry, re-fitting now would move it.
+    settled = _alert_layout_state(overlay)
+    overlay._restyle_alert()
+    assert _alert_layout_state(overlay) == settled
+    # And whatever it settled on still fits the region.
+    assert overlay._alert_viewport.height() <= overlay._alert_budget_height()
+
+
+def test_the_alerts_region_cannot_be_dragged_below_its_own_budget(qtbot) -> None:
+    """`MIN_REGION_HEIGHT` is a bar/lane strip floor. Alerts needs room for
+    the smallest headline plus its kicker and rule, or the budget has to
+    overrun the region that is documented as exact."""
+    state = _region_state()
+    state.overlay_regions["alert"] = OverlayRegion(anchor="center", width=520, height=300)
+    overlay = EventOverlayWindow(state=state)
+    qtbot.addWidget(overlay)
+    overlay.resize(1200, 800)
+    overlay.show()
+    overlay.set_edit_mode(True)
+    overlay._layout_regions()
+
+    floor = overlay._min_region_height("alert")
+    assert floor >= MIN_ALERT_BUDGET + overlay._alert_chrome_height()
+    assert overlay._min_region_height("bars") == MIN_REGION_HEIGHT  # unchanged
+
+    alert = overlay._alert_host
+    x = alert.x() + alert.width() // 2
+    _press(overlay, x, alert.y() + alert.height() - 2)  # bottom edge
+    _move(overlay, x, alert.y() - 5000)  # drag it into the ground
+
+    assert state.overlay_regions["alert"].height == floor
+    # At that floor the headline is still budgeted INSIDE the region.
+    _alert(overlay, PARAGRAPH)
+    assert overlay._alert_budget_height() >= MIN_ALERT_BUDGET
+    assert overlay._alert_budget_height() + overlay._alert_chrome_height() <= floor
+
+
+@pytest.mark.parametrize("height", [MIN_REGION_HEIGHT, 33, 48, 64])
+def test_a_hand_written_short_alerts_region_never_overflows(qtbot, height) -> None:
+    """The drag floor cannot police settings.json, which a user may edit by
+    hand — so the budget itself has to stay inside the host either way."""
+    state = _region_state()
+    state.overlay_regions["alert"] = OverlayRegion(anchor="center", width=520, height=height)
+    overlay = EventOverlayWindow(state=state)
+    qtbot.addWidget(overlay)
+    overlay.resize(1200, 800)
+    overlay.show()
+    _alert(overlay, PARAGRAPH)
+
+    host_h = overlay._alert_host.height()
+    assert overlay._alert_budget_height() + overlay._alert_chrome_height() <= host_h
+    assert overlay._alert_viewport.height() <= host_h
 
 
 def test_a_content_regions_height_is_a_floor_not_a_cap(qtbot) -> None:

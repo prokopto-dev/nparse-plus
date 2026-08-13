@@ -64,7 +64,9 @@ MIN_ALERT_TEXT_SIZE = 12
 # What a headline may occupy of the overlay's height before it shrinks. Only
 # the default: an Alerts region resized in position mode says so itself.
 ALERT_HEIGHT_FRACTION = 0.42
-# Floor for that budget, so a region dragged to nothing still shows a line.
+# Floor for the DEFAULT budget above (a tiny overlay window still gets a
+# line). A configured Alerts region is never floored against this — it is
+# exact, and ``_min_region_height`` keeps it from being dragged below it.
 MIN_ALERT_BUDGET = 40
 DEFAULT_FONT_SIZE = 12
 DEFAULT_EMPHASIS = "pulse"
@@ -1059,6 +1061,12 @@ class EventOverlayWindow(QWidget):
                 region.dx = self._region_drag_base[0] + delta.x()
                 region.dy = self._region_drag_base[1] + delta.y()
             self._layout_regions()
+            # AFTER the hosts have their new geometry. The Alerts region is a
+            # text budget, so a live headline refits as the box is dragged —
+            # but measuring before this line reads the box the region just
+            # left, which shrinks into a clip and grows into a stale crawl.
+            if self._drag_region == "alert" and self._alert_text:
+                self._restyle_alert()
             self._position_region_chrome()
             event.accept()
         elif self._edit_mode and self._drag_offset is not None:
@@ -1079,6 +1087,20 @@ class EventOverlayWindow(QWidget):
         else:
             self.setCursor(cursor)
 
+    def _min_region_height(self, key: str) -> int:
+        """The floor an edge drag may shrink region ``key`` to.
+
+        Alerts gets its own, larger one. Its height is a text budget, and a
+        floor shared with the bar and lane strips let it be dragged to a box
+        that could not hold one line of the smallest headline plus the kicker
+        and rule — the budget then had to overrun the region to stay
+        readable. Derived from the same two numbers the budget is, so the two
+        cannot drift apart.
+        """
+        if key != "alert":
+            return MIN_REGION_HEIGHT
+        return max(MIN_REGION_HEIGHT, MIN_ALERT_BUDGET + self._alert_chrome_height())
+
     def _apply_region_resize(self, delta: QPoint) -> None:
         """Turn an edge drag into the region's new size and offsets.
 
@@ -1095,7 +1117,7 @@ class EventOverlayWindow(QWidget):
             delta.x(),
             delta.y(),
             MIN_REGION_WIDTH,
-            MIN_REGION_HEIGHT,
+            self._min_region_height(self._drag_region),
         )
         region.width = rect.width()
         region.height = rect.height()
@@ -1108,10 +1130,6 @@ class EventOverlayWindow(QWidget):
             self.width(),
             self.height(),
         )
-        # The Alerts region is a text budget, so a live headline refits into
-        # the new box as it is dragged rather than at the next alert.
-        if self._drag_region == "alert" and self._alert_text:
-            self._restyle_alert()
 
     def mouseReleaseEvent(self, event) -> None:
         self._drag_offset = None
@@ -1189,7 +1207,7 @@ class EventOverlayWindow(QWidget):
         host = self._region_hosts()[key]
         host_w = region.width if region.width is not None else defaults[key]
         if key == "alert" and region.height:
-            host_h = max(MIN_REGION_HEIGHT, region.height)
+            host_h = self._alert_region_height(region)
         else:
             host_h = max(1, host.sizeHint().height(), region.height or 0)
         return max(MIN_REGION_WIDTH, host_w), host_h
@@ -1637,16 +1655,43 @@ class EventOverlayWindow(QWidget):
             regions = self._state.overlay_regions or {}
             region = regions.get("alert")
         if region is not None and region.height:
-            budget = region.height - self._alert_layout.spacing() * 2
-            # ``isHidden`` not ``isVisible``: this runs while the overlay
-            # itself is still hidden (it is shown once there is something to
-            # show), and a child of a hidden window is never "visible".
-            if not self._alert_kicker.isHidden():
-                budget -= self._alert_kicker.sizeHint().height()
-            if not self._alert_rule.isHidden():
-                budget -= self._alert_rule.sizeHint().height()
-            return max(MIN_ALERT_BUDGET, budget)
+            # EXACT, never floored: the region height is the box the user
+            # drew and the viewport has to fit inside it. Clamping this up to
+            # MIN_ALERT_BUDGET made a short region's headline taller than the
+            # region itself, which is the clipping this whole path exists to
+            # stop. The floor lives on the resize instead (_min_region_height)
+            # so the box can never get small enough to need one here.
+            return max(1, self._alert_region_height(region) - self._alert_chrome_height())
         return max(MIN_ALERT_BUDGET, round((self.height() or 600) * ALERT_HEIGHT_FRACTION))
+
+    def _alert_region_height(self, region: OverlayRegion) -> int:
+        """The exact height the Alerts host is laid out at for ``region``.
+
+        THE number for that region: ``_region_size`` lays the host out at it
+        and ``_alert_budget_height`` fits the headline inside it. Two
+        expressions for it is precisely how the headline came to be budgeted
+        for a box the host did not have.
+        """
+        return max(MIN_REGION_HEIGHT, region.height or 0)
+
+    def _alert_chrome_height(self) -> int:
+        """What the kicker, the rule and the gaps cost inside that region.
+
+        Also one number with two callers that must agree: the budget
+        subtracts it from the region height, and the region's resize floor
+        adds it back on, so a region can never be dragged smaller than the
+        budget it is then asked to honor.
+
+        ``isHidden`` not ``isVisible``: this runs while the overlay itself is
+        still hidden (it is shown once there is something to show), and a
+        child of a hidden window is never "visible".
+        """
+        chrome = self._alert_layout.spacing() * 2
+        if not self._alert_kicker.isHidden():
+            chrome += self._alert_kicker.sizeHint().height()
+        if not self._alert_rule.isHidden():
+            chrome += self._alert_rule.sizeHint().height()
+        return chrome
 
     def _measure_headline(self, size: int) -> QRect:
         """The rect the current headline wraps into at ``size`` px.

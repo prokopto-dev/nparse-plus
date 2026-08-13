@@ -97,7 +97,9 @@ A region's size sticks. For CH chains, Timer bars and Utility it is a
 minimum — a sixth timer bar still grows the region rather than being cut off.
 For **Alerts** it is exact, because that is the box the alert text is fitted
 into: make it taller to get more of a long alert on screen at once, or
-shorter to keep alerts compact.
+shorter to keep alerts compact. It stops shrinking once it is down to one
+line of the smallest headline plus its gold label — below that there would be
+nothing left to fit text into.
 
 !!! tip
     Make the overlay match your EQ window, not your whole monitor — alert
