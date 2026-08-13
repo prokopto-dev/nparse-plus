@@ -1,59 +1,254 @@
 """Log archiving — port of EQTool's LogArchiveService.
 
 When enabled, any ``*.txt`` in the log directory over the size threshold is
-moved to ``<log_dir>/archive/<name>_<timestamp>.txt``. EQ re-creates the log
-on its next write, and our LogTail treats the shrink as a rotation. Files the
-OS refuses to move (in use) are skipped silently, same as the C#.
+copied into ``<log_dir>/archive/<name>_<timestamp>.txt`` and then **truncated
+in place**, leaving an empty file behind.
+
+**Not a rename** — that was the bug in #87. The C# moves the file and relies
+on Windows refusing to move one the client holds open, which is how the
+active log survived the sweep. POSIX has no such notion: the rename succeeds,
+EQ (under Wine) keeps writing through its open descriptor to the moved inode,
+and no ``eqlog_*.txt`` is left for us to attach to. The app went deaf for the
+rest of the session — no timers, no triggers, no dots — with nothing logged,
+and restarting nParse+ did not help while the game still held the moved file.
+The sweep is *guaranteed* to hit the active log, because the active log is by
+definition the one that grows.
+
+Copy-and-truncate is what log rotators do for exactly this reason. The
+client's descriptor stays valid; Win32 append writes resolve to end-of-file
+at write time (Wine included), so it continues at offset 0. On Windows the
+``r+b`` open fails while the client holds the file, so the sweep skips it
+with nothing copied — the same outcome as before, and the reason the open
+comes first.
+
+**The work is split across two threads on purpose.** Copying a 100 MB log
+(80 ms measured, and it scales) does not belong on the thread that tails the
+log, so ``stage_oversized_logs`` runs on a ``core.background`` job. But
+emptying the log is what the tail has to notice, and no *detection* can be
+made airtight: an emptied log the client refills to the tail's read offset,
+or past it, before the next 100 ms poll is neither smaller nor — with EQ's
+repeated identical lines — different in content at that offset. So
+``finish_archive`` runs on the DRIVER thread, from the tick, and calls
+``on_rotated`` right after the truncate: the log is emptied and the tail is
+reset in one step that no poll can land inside. The tail's own shrink and
+signature checks stay as the backstop for rotations nobody tells us about
+(the client recreating its log, a user emptying it by hand).
+
+What runs on that thread is therefore bounded rather than merely small — the
+point of the split is not to stall the log tail. One staged log per tick,
+and per log: one read capped at ``CATCHUP_LIMIT_BYTES`` (0.2 ms), one write
+(1.2 ms, no fsync — the bulk was made durable when it was staged), one
+rename (0.5 ms) and the ``truncate`` itself, which is the only part that
+scales with the log: 10 ms typical and 43 ms worst measured on a 100 MB
+file, against the 250 ms a plugin tick is evicted for. It happens once per
+archive, hourly at most, and only with archiving turned on.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import shutil
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from nparseplus.core.background import BackgroundJob, Spawn
 
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL_S = 60 * 60  # hourly, like EQTool
+# The swap runs on the driver thread (see below), so the one piece of it that
+# is not a fixed number of syscalls gets a ceiling. This is how much of what
+# the client wrote *during* the staged copy we will carry into the archive:
+# enough that the case never arises in practice (staging a 100 MB log takes
+# ~80 ms, in which a busy raid log grows by single-digit KB), and small
+# enough that the worst case is a fraction of a millisecond. Beyond it the
+# archive loses its tail, which is the right thing to lose — the app has
+# already read those lines off the live log, and the alternative is stalling
+# the thread that reads it.
+CATCHUP_LIMIT_BYTES = 256 * 1024
 
 
-def archive_oversized_logs(log_dir: Path, threshold_mb: int) -> list[Path]:
-    """Move oversized logs into the archive folder; returns the new paths."""
+@dataclass(frozen=True)
+class StagedArchive:
+    """A log copied aside, waiting for its swap on the driver thread."""
+
+    source: Path
+    partial: Path
+    dest: Path
+    #: Bytes of ``source`` already in ``partial``; the rest is caught up
+    #: during the swap, so the client keeps writing throughout the copy.
+    copied: int
+    atime_ns: int
+    mtime_ns: int
+
+
+def _copy_aside(path: Path, partial: Path) -> int:
+    """Copy ``path`` into ``partial`` durably; returns the bytes copied.
+
+    Opens for write even though it only reads: that is the check that we
+    could truncate later, and it is what the client's share mode refuses on
+    Windows. Failing here means the file is skipped with nothing copied,
+    rather than a duplicate archive appearing every hour.
+    """
+    with path.open("r+b") as src, partial.open("wb") as out:
+        shutil.copyfileobj(src, out)
+        out.flush()
+        os.fsync(out.fileno())
+        return src.tell()
+
+
+def stage_oversized_logs(log_dir: Path, threshold_mb: int) -> list[StagedArchive]:
+    """Copy every oversized log aside. Leaves the originals untouched."""
     if threshold_mb <= 0 or not log_dir.is_dir():
         return []
     threshold = threshold_mb * 1024 * 1024
     archive_dir = log_dir / "archive"
-    moved: list[Path] = []
+    staged: list[StagedArchive] = []
     for path in log_dir.glob("*.txt"):
         try:
-            if path.stat().st_size < threshold:
+            stat = path.stat()
+            if stat.st_size < threshold:
                 continue
             archive_dir.mkdir(exist_ok=True)
             stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             dest = archive_dir / f"{path.stem}_{stamp}.txt"
-            path.rename(dest)
-            moved.append(dest)
-            logger.info("archived %s -> %s", path.name, dest.name)
+            # A partial name until the copy is complete, so a crash mid-sweep
+            # cannot leave a short archive looking like the whole log. It is
+            # not a *.txt, so a later sweep will not pick it up either.
+            partial = dest.with_name(f".{dest.name}.part")
+            copied = _copy_aside(path, partial)
+            staged.append(
+                StagedArchive(
+                    source=path,
+                    partial=partial,
+                    dest=dest,
+                    copied=copied,
+                    atime_ns=stat.st_atime_ns,
+                    mtime_ns=stat.st_mtime_ns,
+                )
+            )
         except OSError:
             logger.debug("could not archive %s (in use?)", path, exc_info=True)
-    return moved
+    return staged
+
+
+def finish_archive(
+    staged: StagedArchive,
+    on_rotated: Callable[[Path], None] | None = None,
+) -> Path | None:
+    """Seal the copy and empty the log; returns the archive path.
+
+    **Driver thread only.** ``on_rotated`` is called immediately after the
+    truncate so that emptying the log and resetting whoever tails it are one
+    step — see the module docstring for why detection alone cannot be.
+    """
+    try:
+        with staged.source.open("r+b") as src:
+            end = src.seek(0, os.SEEK_END)
+            src.seek(staged.copied)
+            # The client kept writing while we staged the copy; pick that up
+            # so the archive keeps it. ONE bounded read: this is the driver
+            # thread, and read() with no size is however much the client
+            # managed to write. Past the cap the archive loses its tail
+            # rather than the app losing its tick — see CATCHUP_LIMIT_BYTES.
+            catchup = src.read(CATCHUP_LIMIT_BYTES) if end > staged.copied else b""
+            if catchup:
+                with staged.partial.open("ab") as out:
+                    out.write(catchup)
+                    # No fsync: the bulk of the archive was made durable when
+                    # it was staged, and this is a few KB on the thread that
+                    # tails the log.
+            staged.partial.replace(staged.dest)
+            src.truncate(0)
+            dropped = max(0, end - staged.copied - len(catchup))
+    except OSError:
+        logger.debug("could not archive %s (in use?)", staged.source, exc_info=True)
+        with contextlib.suppress(OSError):
+            staged.partial.unlink(missing_ok=True)
+        return None
+    if on_rotated is not None:
+        on_rotated(staged.source)
+    # An emptied log keeps its old mtime: `logfile.find_active_log` picks the
+    # most recently modified log, and a stale character's truncated file would
+    # otherwise look like the newest one and pull the driver off the live log.
+    # The active log's own mtime is corrected by the client's next write.
+    with contextlib.suppress(OSError):
+        os.utime(staged.source, ns=(staged.atime_ns, staged.mtime_ns))
+    logger.info("archived %s -> %s", staged.source.name, staged.dest.name)
+    if dropped:
+        logger.warning(
+            "%s grew by %d bytes while it was being archived; the last %d are "
+            "not in %s (they were parsed live)",
+            staged.source.name,
+            end - staged.copied,
+            dropped,
+            staged.dest.name,
+        )
+    return staged.dest
+
+
+def archive_oversized_logs(
+    log_dir: Path,
+    threshold_mb: int,
+    on_rotated: Callable[[Path], None] | None = None,
+) -> list[Path]:
+    """Stage and swap in one call; returns the archive paths.
+
+    The service splits these across two threads (see the module docstring);
+    this is the whole sweep for callers that are already on the right one.
+    """
+    archived = [
+        finish_archive(item, on_rotated) for item in stage_oversized_logs(log_dir, threshold_mb)
+    ]
+    return [path for path in archived if path is not None]
 
 
 class LogArchiveService:
     """Driver-tick hook: runs the sweep at most once per CHECK_INTERVAL_S."""
 
-    def __init__(self, get_log_dir, is_enabled, get_threshold_mb) -> None:
+    def __init__(
+        self,
+        get_log_dir,
+        is_enabled,
+        get_threshold_mb,
+        on_rotated: Callable[[Path], None] | None = None,
+        spawn: Spawn | None = None,
+    ) -> None:
         self._get_log_dir = get_log_dir
         self._is_enabled = is_enabled
         self._get_threshold_mb = get_threshold_mb
+        self._on_rotated = on_rotated
         self._last_check = 0.0
+        self._job = BackgroundJob("log-archive", spawn=spawn)
+        #: Copies the background sweep has finished, waiting for their swap.
+        self._staged: list[StagedArchive] = []
 
     def tick(self, _now: datetime) -> None:
+        if self._staged:
+            # We are on the driver thread: empty the log here, next to the
+            # tail, rather than on the thread that made the copy. ONE per
+            # tick — a first sweep can find several oversized logs, and this
+            # thread should carry one swap at a time, 100 ms apart, rather
+            # than all of them at once.
+            finish_archive(self._staged.pop(0), self._on_rotated)
+            return
         if not self._is_enabled():
             return
         now = time.monotonic()
         if self._last_check and now - self._last_check < CHECK_INTERVAL_S:
             return
         self._last_check = now
-        archive_oversized_logs(Path(self._get_log_dir()), self._get_threshold_mb())
+        log_dir = Path(self._get_log_dir())
+        threshold_mb = self._get_threshold_mb()
+
+        def sweep() -> None:
+            self._staged = stage_oversized_logs(log_dir, threshold_mb)
+
+        # Off-thread: this reads the whole log (100 MB by default) and
+        # touches nothing the driver owns.
+        self._job.submit(sweep)

@@ -19,6 +19,15 @@ already closed also syncs once, so enabling the setting mid-session works
 without waiting for a launch/quit cycle. Mtimes gate the actual work, so a
 character whose file has not changed costs one ``stat``.
 
+**The tick itself does none of that work.** Asking whether EQ is running
+spawns ``pgrep`` (17.6 ms mean, and a subprocess ceiling of seconds), and
+the sync reads every character ini and rewrites its mirror — neither belongs
+on the thread that tails the log and ticks every countdown. The tick decides
+only *whether* a scan is due and hands it to a
+:class:`~nparseplus.core.background.BackgroundJob`, which will not start a
+second scan while one is in flight. Nothing here touches the bus or
+TimersService, which is what makes that safe.
+
 Follows the ``InventoryWatcher`` idiom: everything injected as zero-arg
 callables, driven from ``driver.on_tick``, and every failure swallowed —
 a sync problem must never disturb the log pipeline.
@@ -26,13 +35,16 @@ a sync problem must never disturb the log pipeline.
 
 from __future__ import annotations
 
+import functools
 import logging
+import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from nparseplus.core import eqini, socialstore
 from nparseplus.core import socials as socials_core
+from nparseplus.core.background import BackgroundJob, Spawn
 from nparseplus.core.eqprocess import eq_is_running
 
 logger = logging.getLogger(__name__)
@@ -51,12 +63,18 @@ class SocialSyncWatcher:
         is_enabled: Callable[[], bool],
         get_servers: Callable[[], list[str]] | None = None,
         is_running: Callable[[], bool] = eq_is_running,
+        spawn: Spawn | None = None,
     ) -> None:
         self._get_eq_dir = get_eq_dir
         self._get_store_dir = get_store_dir
         self._is_enabled = is_enabled
         self._get_servers = get_servers or (lambda: list(eqini.SERVER_SUFFIXES.values()))
         self._is_running = is_running
+        self._job = BackgroundJob("socials-autosync", spawn=spawn)
+        # The settings window's "Sync now" calls sync() on the GUI thread, so
+        # a scan and a manual sync can meet. Serializing them keeps one from
+        # re-reading files the other has already folded in.
+        self._sync_lock = threading.Lock()
         self._next_scan: datetime | None = None
         self._was_running: bool | None = None
         self._mtimes: dict[Path, float] = {}
@@ -67,7 +85,7 @@ class SocialSyncWatcher:
         self.last_lost = 0
 
     def tick(self, now: datetime) -> None:
-        """Driver-tick hook. Never raises."""
+        """Driver-tick hook: schedules a scan, never performs one. Never raises."""
         try:
             self._tick(now)
         except Exception:  # pragma: no cover - defensive
@@ -80,8 +98,13 @@ class SocialSyncWatcher:
             return
         if self._next_scan is not None and now < self._next_scan:
             return
-        self._next_scan = now + timedelta(seconds=SCAN_INTERVAL_SECONDS)
+        # Only charge the interval to a scan that actually started: if the
+        # previous one is still going, look again on the next tick.
+        if self._job.submit(functools.partial(self._scan, now)):
+            self._next_scan = now + timedelta(seconds=SCAN_INTERVAL_SECONDS)
 
+    def _scan(self, now: datetime) -> None:
+        """The probe and (maybe) the sync — off the driver thread."""
         running = self._is_running()
         previously = self._was_running
         self._was_running = running
@@ -97,8 +120,13 @@ class SocialSyncWatcher:
         """Fold every character's current socials into their mirror.
 
         Returns the number of character files examined. Reads game files and
-        writes only nParse+'s own mirrors.
+        writes only nParse+'s own mirrors. Safe to call from any thread; it
+        touches nothing the driver owns.
         """
+        with self._sync_lock:
+            return self._sync(now)
+
+    def _sync(self, now: datetime) -> int:
         eq_dir = self._get_eq_dir()
         store_dir = self._get_store_dir()
         if eq_dir is None or store_dir is None or eqini.preflight(eq_dir) is not None:

@@ -21,6 +21,24 @@ _LOG_NAME = re.compile(r"^eqlog_(?P<char>[A-Za-z]+)_(?P<server>[A-Za-z0-9]+)\.tx
 _ATTACH_BACKTRACK_BYTES = 4096
 _SESSION_MARKER = b"] Welcome to EverQuest!"
 
+# The last few bytes we read, kept so the next poll can notice it is not
+# reading the same file it left off in. A shrink is the obvious rotation
+# signal but not a sufficient one: a log emptied and refilled to our offset,
+# or past it, before the next poll is not smaller, and we would resume
+# mid-file and skip everything written from offset 0 up to that point.
+#
+# This is a BACKSTOP, deliberately, and it is checked on every poll rather
+# than only when the size looks odd — it costs one 64-byte read (~12 us) on
+# polls that would otherwise be a bare stat, 0.01% of a core at the 100 ms
+# cadence. It cannot be the mechanism, because a finite signature can always
+# collide: EQ repeats identical lines, so a refill can match at our offset.
+# The rotation nParse+ performs itself is therefore not inferred at all —
+# `logarchive.finish_archive` truncates on the driver thread and calls
+# `driver.note_log_rotated`, which restarts the tail in the same step. What
+# is left for this check is rotations nobody tells us about: the client
+# recreating its log, or a user emptying it by hand.
+_SIGNATURE_BYTES = 64
+
 
 def parse_log_filename(path: Path | str) -> tuple[str, str] | None:
     """eqlog_<Character>_<server>.txt -> (character, server), else None."""
@@ -69,6 +87,7 @@ class LogTail:
     path: Path
     position: int = 0
     _partial: bytes = field(default=b"", repr=False)
+    _signature: bytes = field(default=b"", repr=False)
 
     @classmethod
     def attach(cls, path: Path) -> LogTail:
@@ -82,30 +101,53 @@ class LogTail:
         marker = chunk.rfind(_SESSION_MARKER)
         if marker != -1:
             eol = chunk.find(b"\n", marker)
-            position = start + (eol + 1 if eol != -1 else len(chunk))
+            offset = eol + 1 if eol != -1 else len(chunk)
         else:
-            position = size
-        return cls(path=path, position=position)
+            offset = len(chunk)
+        return cls(
+            path=path,
+            position=start + offset,
+            _signature=chunk[max(0, offset - _SIGNATURE_BYTES) : offset],
+        )
+
+    def restart(self) -> None:
+        """Read the file from the top again (it is not the one we left)."""
+        self.position = 0
+        self._partial = b""
+        self._signature = b""
 
     def poll(self) -> list[str]:
         """Return complete new lines since the last poll (may be empty).
 
-        Handles truncation/rotation: if the file shrank below our position,
-        restart from the beginning.
+        Rotation is decided by the bytes at our read offset, not by the file
+        having got smaller. The size is only a shortcut: an emptied log that
+        the client refills *to* our offset, or past it, before the next poll
+        is the same size or larger, and resuming there would skip everything
+        written from the top. Whenever there is a signature to check we read
+        it back and compare, and start over if it does not match.
         """
         try:
             size = self.path.stat().st_size
         except OSError:
             return []
         if size < self.position:
-            self.position = 0
-            self._partial = b""
-        if size == self.position:
-            return []
+            self.restart()
+        back = min(len(self._signature), self.position)
+        if size == self.position and not back:
+            return []  # nothing new and nothing yet to compare against
         with self.path.open("rb") as f:
-            f.seek(self.position)
+            f.seek(self.position - back)
             data = f.read()
+        if back and data[:back] != self._signature[len(self._signature) - back :]:
+            self.restart()
+            with self.path.open("rb") as f:
+                data = f.read()
+        else:
+            data = data[back:]
+        if not data:
+            return []
         self.position += len(data)
+        self._signature = (self._signature + data)[-_SIGNATURE_BYTES:]
         data = self._partial + data
         # Keep a trailing partial line (no terminator yet) for the next poll.
         if data.endswith(b"\n"):

@@ -473,6 +473,10 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         get_log_dir=lambda: settings.general.eq_log_dir,
         is_enabled=lambda: settings.general.log_archive_enabled,
         get_threshold_mb=lambda: settings.general.log_archive_size_mb,
+        # Emptying a log and resetting whoever tails it have to be one step —
+        # the service's tick runs on the driver thread precisely so they can
+        # be. See core/logarchive.py's docstring.
+        on_rotated=driver.note_log_rotated,
     )
 
     buff_warner = BuffFadeWarner(bus, timers, speaker, settings.spellwindow)

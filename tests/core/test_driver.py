@@ -265,3 +265,53 @@ def test_no_supervised_ticks_never_reads_the_clock(tmp_path: Path, clock: FakeCl
         driver.stop()
 
     assert clock.perf_counter_calls == 0
+
+
+# -- the log-archive handoff (#87) -------------------------------------------
+
+
+def test_note_log_rotated_reads_the_tail_from_the_top(tmp_path: Path) -> None:
+    """core.logarchive tells us on the tick, right after it empties the log.
+
+    Detection cannot cover this alone: a client that refills the emptied log
+    to the tail's offset before the next poll is neither smaller nor — EQ
+    repeats identical lines — different at that offset.
+    """
+    body = b"[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n" * 200
+    _write_log(tmp_path, "eqlog_Alice_P1999Green.txt", mtime=1000, body=body)
+    driver, _player, _events = _make_driver(tmp_path)
+    driver._maybe_switch_log()
+    log = tmp_path / "eqlog_Alice_P1999Green.txt"
+    assert driver._tail is not None and driver._tail.position == len(body)
+
+    driver.note_log_rotated(log)
+
+    assert driver._tail.position == 0
+
+
+def test_note_log_rotated_ignores_a_log_we_are_not_tailing(tmp_path: Path) -> None:
+    _write_log(tmp_path, "eqlog_Alice_P1999Green.txt", mtime=1000, body=b"x" * 64)
+    driver, _player, _events = _make_driver(tmp_path)
+    driver._maybe_switch_log()
+    at = driver._tail.position
+
+    driver.note_log_rotated(tmp_path / "eqlog_Someone_P1999Green.txt")
+
+    assert driver._tail.position == at
+
+
+def test_note_log_rotated_matches_however_the_path_was_spelled(tmp_path: Path) -> None:
+    _write_log(tmp_path, "eqlog_Alice_P1999Green.txt", mtime=1000, body=b"x" * 64)
+    driver, _player, _events = _make_driver(tmp_path)
+    driver._maybe_switch_log()
+
+    # The archiver builds its path from the settings, the driver from its own
+    # log_dir; the same file can reach them spelled differently.
+    driver.note_log_rotated(tmp_path / "." / "eqlog_Alice_P1999Green.txt")
+
+    assert driver._tail.position == 0
+
+
+def test_note_log_rotated_before_any_tail_is_harmless(tmp_path: Path) -> None:
+    driver, _player, _events = _make_driver(tmp_path)
+    driver.note_log_rotated(tmp_path / "eqlog_Alice_P1999Green.txt")  # no tail yet

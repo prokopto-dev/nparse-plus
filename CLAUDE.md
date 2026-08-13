@@ -62,6 +62,8 @@ src/nparseplus/
   core/                 # Qt-free engine (see rule above)
     events.py           #   44 events, 1:1 with EQTool LogEvents.cs — extend, don't fork
     bus.py, pipeline.py, driver.py, logfile.py, lineinfo.py
+    background.py       #   BackgroundJob: the one-at-a-time off-the-driver-
+                        #   thread seam (log archive sweep, socials EQ probe)
     parsers/            #   one module per EQTool parser; registry.py fixes the order
     handlers/           #   bus subscribers (spawn timers, DPS, CH, pets, …)
     triggers/           #   Trigger model ({name}/{c}/{COUNTER} tokens), engine, builtin sync
@@ -780,6 +782,61 @@ multiset name diff). Plugins reach them today through the SDK's lazy
 path publishes from the driver thread, including the window's buttons, which
 is why `ui/dumpswindow.py` calls `request_scan()`/`request_import()` instead
 of importing itself (same inbox shape as `SharingCoordinator`).
+
+**Three things left the driver thread** (post-2.3.2, ~2130 tests). All three
+were found by a survey of that thread; two were latent, one was live.
+
+*Log archiving stopped killing the app on macOS/Linux* (#87). The sweep
+**renamed** the log it found over the threshold — which is by definition the
+one the game is writing, since that is the one that grows. The C# gets away
+with it because Windows refuses to move a file the client holds open; POSIX
+relinks the inode instead, EQ under Wine keeps writing to it, and no
+`eqlog_*.txt` is left to attach to. The app went deaf for the rest of the
+session with nothing logged, and restarting nParse+ did not help while the
+game held the moved file. `logarchive.py` now copies the contents out and
+**truncates in place** (what log rotators do): the client's descriptor stays
+valid and its append writes resolve to offset 0.
+
+**The tail is told, not left to notice.** A log emptied and refilled to the
+tail's read offset — or past it — before the next 100 ms poll is not smaller,
+and EQ repeats identical lines, so it need not differ in content there
+either; no detector settles this. So the sweep is split across the two
+threads it needs: `stage_oversized_logs` copies (100 MB = 80 ms, and it
+scales) on a `BackgroundJob`, and `finish_archive` runs from the **driver
+thread's tick**, truncating and calling `driver.note_log_rotated` in one step
+no poll can land inside. What lands on that thread is *bounded*, which is the
+whole point: one log per tick, one catch-up read capped at
+`CATCHUP_LIMIT_BYTES` (past it the archive loses its tail, which the app has
+already parsed), no fsync, and the `truncate` — 10 ms typical, 43 ms worst
+measured at 100 MB. `LogTail`'s own shrink-and-signature checks stay as
+the backstop for rotations nobody tells us about (the client recreating its
+log, a user emptying it by hand) — hence the 64 bytes it keeps, re-read on
+every poll for ~12 us. The write handle is opened FIRST so the
+Windows share-mode refusal skips the file with nothing copied; the copy
+lands under a `.part` name and is fsynced before the source is emptied; and
+an emptied log **keeps its old mtime**, or a stale character's freshly
+truncated file would become the newest one and pull the driver off the live
+log.
+
+*The EQ-running probe went off-thread* (#88). `SocialSyncWatcher.tick`
+spawned `pgrep` every 15 s on the driver thread — 17.6 ms mean measured
+against 0.092 ms for all ten app-owned ticks combined, with a 5 s subprocess
+ceiling on the thread that tails the log. `core/background.py` is the seam:
+the tick decides only *whether* a scan is due and submits it, the job runs
+on a one-shot daemon thread and refuses a second run while one is in flight,
+and a refused submit does not charge the interval. Scheduling costs 0.035 ms.
+Only filesystem/subprocess work may run there — the bus and TimersService
+stay driver-thread-only, which is what makes the seam safe. The archive
+sweep uses it too (copying a 100 MB log measured 80 ms).
+
+*`parse_line` stopped going through `strptime`* (#89). `%a`/`%b` read the
+process `LC_TIME`, so under a non-English locale the parse raised, the
+`except ValueError` silently took the `datetime.now()` fallback, and every
+line got a wall-clock stamp instead of the log's own clock. Nothing calls
+`setlocale` today — a plugin could. The stamp is fixed-width, so slice the
+digits and look the month up in a dict: locale-proof, and 2.99 → 1.00
+us/line on a function that runs on every log line. The `datetime.now()`
+fallback stays for genuinely malformed lines; that tolerance is EQTool's.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

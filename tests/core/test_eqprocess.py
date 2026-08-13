@@ -41,3 +41,18 @@ def test_eq_is_running_passes_the_expected_pattern(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(subprocess, "run", record)
     eqprocess.eq_is_running()
     assert seen == [["pgrep", "-if", "eqgame"]]
+
+
+def test_eq_is_running_bounds_the_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[float] = []
+
+    def record(cmd, *args, **kwargs):
+        seen.append(kwargs["timeout"])
+        return _Result(1)
+
+    monkeypatch.setattr(subprocess, "run", record)
+    eqprocess.eq_is_running()
+    # Whoever asks waits this long in the worst case — a GUI thread hang or a
+    # stalled log tail. A pgrep that slow has already failed.
+    assert seen == [eqprocess.PROBE_TIMEOUT_S]
+    assert eqprocess.PROBE_TIMEOUT_S <= 2.0
