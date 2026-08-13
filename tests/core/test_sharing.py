@@ -246,7 +246,11 @@ def test_inbound_callables_run_on_tick_and_failures_are_contained() -> None:
 def test_status_reflects_mode_and_client() -> None:
     rig = Rig()
     assert rig.coordinator.status == "pigparse — connected"
+    # A mode with no client is not "off" — that would contradict the picker
+    # the user just set. It is a session that never built this network (#69).
     rig.coordinator.set_client(None)
+    assert rig.coordinator.status == "pigparse — restart to connect"
+    rig.settings.sharing.mode = "off"
     assert rig.coordinator.status == "off"
 
 

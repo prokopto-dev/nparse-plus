@@ -350,7 +350,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     # the REST client for the uploader and used to hand it to these seven too.
     # InventoryUploadHandler keeps the raw handle: its gate is
     # dumps.upload_target.
-    sharing_submit = sharing_gated_submit(submit, settings)
+    sharing_submit = sharing_gated_submit(submit, sharing.network_allowed)
 
     def timer_recast() -> str:
         """The active character's PlayerInfo.TimerRecastSetting."""

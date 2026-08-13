@@ -20,7 +20,10 @@ Each direction applies differently, and the page says so:
   setting, below.)
 - **Turning it on — or switching between pigparse and nparse — needs a
   restart.** The network client and the handlers that publish through it are
-  built at startup.
+  built at startup. That includes turning it *back* on after turning it off
+  in the same session: nothing resumes, neither the map dots nor the
+  publishing, until you restart. The tray's sharing line says so —
+  `pigparse — restart to connect`.
 
 Per-character everyone/guild-only/off switches and the Share timers toggle
 live on the [Character](character.md) page — the global mode picks the

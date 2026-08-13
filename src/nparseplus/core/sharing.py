@@ -114,8 +114,13 @@ class SharingClient(Protocol):
     ) -> None: ...
 
 
-def sharing_gated_submit(submit: SubmitFn | None, settings: Settings) -> SubmitFn | None:
+def sharing_gated_submit(submit: SubmitFn | None, allowed: Callable[[], bool]) -> SubmitFn | None:
     """Wrap a ``NetWorker.submit`` so it drops work while sharing is off.
+
+    ``allowed`` is ``SharingCoordinator.network_allowed`` in the app — the
+    coordinator stays the one place that decides whether the network is open,
+    which is also why this takes a predicate rather than reading
+    ``settings.sharing.mode`` itself.
 
     The hub client is not the only thing that talks to pigparse.org: roughly
     seven collaborators (player tracker, FTE, quake, boat, con, zone activity,
@@ -136,17 +141,17 @@ def sharing_gated_submit(submit: SubmitFn | None, settings: Settings) -> SubmitF
     gated by ``dumps.upload_target``, a decision the user makes separately,
     and composition deliberately builds its plumbing with sharing off.
 
-    The mode is checked THREE times, and all three are needed. At submit, so
-    nothing is queued while off. Again inside ``fetch``, on the worker thread
-    — there is one worker with a FIFO queue, so a request submitted while
-    sharing was on can sit behind a slow one and reach pigparse.org seconds
-    after the user pressed Apply; re-reading the mode where the call is
-    actually made is what makes "nothing further is sent" true rather than
-    nearly true. And once more before ``apply``, so a result fetched moments
-    before the switch does not mutate local state after it. (The coordinator's
-    inbox cannot make that last call for us: ``_dispatch_inbound`` sees an
-    opaque callable and must run it, because dump-upload deliveries arrive the
-    same way.)
+    The predicate is consulted THREE times, and all three are needed. At
+    submit, so nothing is queued while off. Again inside ``fetch``, on the
+    worker thread — there is one worker with a FIFO queue, so a request
+    submitted while sharing was on can sit behind a slow one and reach
+    pigparse.org seconds after the user pressed Apply; re-checking where the
+    call is actually made is what makes "nothing further is sent" true rather
+    than nearly true. And once more before ``apply``, so a result fetched
+    moments before the switch does not mutate local state after it. (The
+    coordinator's inbox cannot make that last call for us:
+    ``_dispatch_inbound`` sees an opaque callable and must run it, because
+    dump-upload deliveries arrive the same way.)
 
     What survives, unavoidably: a request already issued on the socket. Its
     reply is dropped rather than applied, but the bytes are gone.
@@ -155,16 +160,16 @@ def sharing_gated_submit(submit: SubmitFn | None, settings: Settings) -> SubmitF
         return None
 
     def gated(fetch: Callable[[], object], apply: Callable[[object], None] | None = None) -> None:
-        if settings.sharing.mode == "off":
+        if not allowed():
             return
 
         def guarded_fetch() -> object:
-            if settings.sharing.mode == "off":
+            if not allowed():
                 return _DROPPED  # dequeued after the user turned sharing off
             return fetch()
 
         def guarded_apply(result: object) -> None:
-            if result is _DROPPED or settings.sharing.mode == "off":
+            if result is _DROPPED or not allowed():
                 return
             apply(result)  # type: ignore[misc]
 
@@ -202,6 +207,26 @@ class SharingCoordinator:
     def set_client(self, client: SharingClient | None) -> None:
         self._client = client
 
+    def network_allowed(self) -> bool:
+        """May sharing talk to the network right now? (The REST gate — see
+        ``sharing_gated_submit``, which asks this on every hop.)
+
+        Two conditions, and the second is what keeps "off" one-way for the
+        session. A live client is required, so REST publishing cannot outlive
+        the hub connection it belongs to: ``apply_mode`` drops the client and
+        nothing rebuilds it before a restart, which means Apply-off then
+        Apply-on again resumes NEITHER half. Without that, off -> on would
+        quietly restart the /who upserts and NPC-activity posts while the map
+        stayed dark and the Sharing page said a restart was needed — the same
+        half-applied disease #69 is about, in the other direction.
+
+        It also covers the cold-start pair: a session launched with sharing
+        off but a pigparse dump-upload target builds the REST client for the
+        uploader and has no sharing client, so the publishers stay shut
+        whatever the mode is later set to.
+        """
+        return self._client is not None and self.settings.sharing.mode != "off"
+
     def apply_mode(self) -> bool:
         """Push a changed ``settings.sharing.mode`` onto the running app.
 
@@ -233,8 +258,15 @@ class SharingCoordinator:
     @property
     def status(self) -> str:
         mode = self.settings.sharing.mode
-        if mode == "off" or self._client is None:
+        if mode == "off":
             return "off"
+        if self._client is None:
+            # The mode asks for a network this session never built — sharing
+            # was turned off live and back on, or launched off. Saying "off"
+            # here would contradict the picker the user just set; say what is
+            # actually needed instead (the tray line is the one place this
+            # state is visible).
+            return f"{mode} — restart to connect"
         return f"{mode} — {self._client.status}"
 
     # --- inbound (any thread enqueues; only tick drains) -----------------------
