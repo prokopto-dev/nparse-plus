@@ -10,8 +10,8 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QEvent, QPoint, Qt
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QRegion
 from PySide6.QtWidgets import QApplication, QLabel
 
 from nparseplus.helpers import config
@@ -214,6 +214,83 @@ def test_touching_the_map_wakes_the_backdrop(maps) -> None:
     maps._fade_backdrop()
     maps.eventFilter(maps._map.viewport(), QEvent(QEvent.Type.Enter))
     assert maps._map.backdrop_opacity() == 70
+
+
+# -- the backdrop needs a window that can hold alpha (#99) ----------------------
+#
+# The report was "the backdrop does nothing, and then it starts working after
+# clicking Apply twice". The value was never late: what an Apply did was reach
+# ParserWindow.apply_window_state -> _set_flags -> setWindowFlags, which
+# RECREATES the native window — and the recreated one finally honoured
+# WA_TranslucentBackground. A window created without an alpha channel has
+# nowhere to composite a below-100% backdrop, so it reads as opaque black at
+# every setting (total since #65, which writes alpha with CompositionMode_Source
+# instead of accumulating it).
+
+
+@pytest.fixture
+def maps_open(qtbot, tmp_path, monkeypatch):
+    """A Maps window that was open at last quit — so ParserWindow.__init__
+    shows it, which is when the platform window gets created."""
+    config.load(str(tmp_path / "nparse.config.json"))
+    config.verify_settings()
+    config.data["maps"]["last_zone"] = ZONE
+    config.data["maps"]["toggled"] = True
+    monkeypatch.setattr(config, "save", lambda: None)
+    app = QApplication.instance()
+    if not hasattr(app, "_signals"):
+        app._signals = {"settings": SettingsSignals()}
+    window = Maps()
+    qtbot.addWidget(window)
+    window.resize(400, 400)
+    return window
+
+
+def test_the_map_window_is_created_with_an_alpha_channel(maps_open) -> None:
+    """WA_TranslucentBackground only reaches the surface format of the window
+    created AFTER it is set: QWindow::setFormat() past create() does not
+    recreate anything, so setting it later (as _build_chrome did) left the
+    request permanently ungranted."""
+    handle = maps_open.windowHandle()
+    assert handle is not None, "the window should be shown, and so have a platform window"
+    assert handle.format().alphaBufferSize() > 0
+
+
+def test_the_alpha_channel_does_not_wait_for_a_settings_apply(maps_open) -> None:
+    """The bug's signature: it took an Apply (any Apply — it only had to change
+    a window flag) to recreate the window and grant the alpha. Nothing here
+    calls apply_window_state, and the channel is already there."""
+    before = maps_open.windowHandle().format().alphaBufferSize()
+    maps_open.apply_window_state()  # what Settings > Windows does on Apply
+    assert before == maps_open.windowHandle().format().alphaBufferSize() > 0
+
+
+def test_one_apply_is_enough_to_move_the_rendered_backdrop(maps_open) -> None:
+    """Drive the settings-window apply path ONCE and read the pixels.
+
+    The QImage is the previous frame, exactly as in the #65 tests: the map
+    starts opaque, so a backdrop that only lands on the second Apply would
+    leave black behind.
+    """
+    canvas = maps_open._map
+    canvas.apply_backdrop_opacity(100)
+    image = QImage(canvas.width(), canvas.height(), QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(QColor(0, 0, 0, 255))
+    canvas.viewport().render(image, QPoint(), QRegion(image.rect()))
+    # A point the zone's geometry does not ink, so the reading is the backdrop.
+    bare = next(
+        QPoint(x, y)
+        for x in range(4, image.width(), 7)
+        for y in range(4, image.height(), 7)
+        if image.pixelColor(x, y) == QColor(0, 0, 0, 255)
+    )
+
+    # One Apply: _apply_maps writes the legacy key, then config_updated fires.
+    config.data["maps"]["backdrop_opacity"] = 40
+    QApplication.instance()._signals["settings"].config_updated.emit()
+
+    canvas.viewport().render(image, QPoint(), QRegion(image.rect()))
+    assert image.pixelColor(bare) == QColor(0, 0, 0, 102)
 
 
 # -- the chrome survives an early resize ----------------------------------------
