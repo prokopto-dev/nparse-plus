@@ -39,6 +39,7 @@ from nparseplus.core.handlers.quake import QuakeHandler
 from nparseplus.core.handlers.random_roll import RandomRollHandler
 from nparseplus.core.handlers.respawn_expiry import RespawnExpiryNotifier
 from nparseplus.core.handlers.ring_war import RingWarHandler
+from nparseplus.core.handlers.root_break import RootBreakHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.handlers.timer_persistence import TimerPersistenceHandler
@@ -437,6 +438,13 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             speaker=speaker,
             timers=timers,
             enabled=lambda: settings.general.bard_count_enabled,
+        ),
+        RootBreakHandler(
+            bus,
+            player,
+            speaker=speaker,
+            overlay_enabled=lambda: settings.general.root_break_overlay,
+            audio_enabled=lambda: settings.general.root_break_audio,
         ),
         DeathLoopHandler(bus, player, speaker=speaker),
         GroupLeaderHandler(bus, player),

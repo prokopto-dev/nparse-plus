@@ -127,6 +127,12 @@ class GeneralSettings(BaseModel):
     # Bard AoE hit counter: yellow overlay + TTS tally of hits/resists when a
     # bard swarm session finalizes (EQTool BardCountHandler).
     bard_count_enabled: bool = True
+    # Root break warning (#79, EQTool RootHasWornOffHandler): red overlay +
+    # TTS when one of your roots wears off. EQTool stores these per character
+    # on PlayerInfo; the comparable alert toggles here are global, so these
+    # are too (see core/handlers/root_break.py).
+    root_break_overlay: bool = True
+    root_break_audio: bool = True
 
 
 class SharingSettings(BaseModel):

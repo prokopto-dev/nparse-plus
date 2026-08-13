@@ -1530,6 +1530,17 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             "when a swarm session finalizes (2+ hits only)."
         )
         form.addRow("Bard AoE hit counter", self._bard_count)
+        self._root_break_overlay = QCheckBox(self)
+        self._root_break_overlay.setChecked(general.root_break_overlay)
+        self._root_break_overlay.setToolTip(
+            'Show a red "<Spell> has worn off!" overlay alert when one of your '
+            "roots breaks (Root, Fetter, Enstill, Immobilize, the Roots line)."
+        )
+        form.addRow("Root break overlay", self._root_break_overlay)
+        self._root_break_audio = QCheckBox(self)
+        self._root_break_audio.setChecked(general.root_break_audio)
+        self._root_break_audio.setToolTip("Speak the same root-break warning.")
+        form.addRow("Speak root break warning", self._root_break_audio)
         return self._page(form)
 
     def _test_voice(self) -> None:
@@ -1905,6 +1916,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             if line.strip()
         ]
         general.bard_count_enabled = self._bard_count.isChecked()
+        general.root_break_overlay = self._root_break_overlay.isChecked()
+        general.root_break_audio = self._root_break_audio.isChecked()
         general.log_archive_enabled = self._archive_enabled.isChecked()
         general.log_archive_size_mb = self._archive_mb.value()
         general.socials_autosync = self._socials_autosync.isChecked()
