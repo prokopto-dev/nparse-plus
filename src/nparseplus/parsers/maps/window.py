@@ -174,14 +174,46 @@ class Maps(ParserWindow):
 
     # -- chrome ---------------------------------------------------------------
 
+    def _set_flags(self):
+        """Claim the alpha channel before the native window is created.
+
+        The window has to be translucent for a backdrop below 100% to show the
+        game at all, and ``WA_TranslucentBackground`` is only honoured by the
+        platform window that is created *after* it is set: ``QWidget``
+        re-requests the surface format when the attribute changes, but
+        ``QWindow::setFormat()`` after ``create()`` does not recreate the
+        window, so a late request is simply never granted. Setting it in
+        ``_build_chrome`` (where it used to live) is late — ``ParserWindow``
+        shows the window at the end of its own ``__init__``, before this
+        subclass runs, whenever the map was open at last quit — and the map
+        then had no alpha channel to composite into: every backdrop value
+        below 100% still read as opaque black (#99).
+
+        ``_set_flags`` is the right home because ``setWindowFlags`` is the
+        thing that (re)creates the native window, so this runs before every
+        creation rather than before one of them. It is also why the backdrop
+        used to start working after a Settings Apply or two: Apply reaches
+        here through ``apply_window_state``, and the recreation was granting
+        the alpha channel that construction had not.
+
+        Since #65 the backdrop composites with ``CompositionMode_Source``,
+        which writes colour AND alpha — into a surface with no alpha channel
+        that discards the alpha outright, where the old ``SourceOver`` fill
+        had accumulated it over the previous frame instead. That accumulation
+        was the ghosting; removing it exposed the missing channel underneath.
+        """
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        super()._set_flags()
+
     def _build_chrome(self):
         """Build the over-canvas chrome and the backdrop idle-fade timer.
 
         The window itself goes translucent so a backdrop below 100% actually
         shows the game: the legacy stylesheet painted ``#ParserWindow`` opaque
-        black, which would have swallowed the canvas's new alpha.
+        black, which would have swallowed the canvas's new alpha. The
+        attribute half of that lives in ``_set_flags`` — it has to be set
+        before the platform window exists.
         """
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("#ParserWindow { background: transparent; }")
 
         self._header = MapHeader(
