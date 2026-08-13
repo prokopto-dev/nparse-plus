@@ -6,6 +6,15 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.3.3 (2026-08-13)
+
+### Performance Improvements
+
+- **dps**: Carry the best window instead of re-sweeping every hit
+  ([#91](https://github.com/prokopto-dev/nparse-plus/pull/91),
+  [`f2fe3f6`](https://github.com/prokopto-dev/nparse-plus/commit/f2fe3f623b61ca216c03305740779a2fb1b23a01))
+
+
 ## v2.3.2 (2026-08-10)
 
 ### Bug Fixes
