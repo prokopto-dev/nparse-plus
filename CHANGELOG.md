@@ -6,6 +6,41 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.5.0 (2026-08-13)
+
+### Bug Fixes
+
+- **triggers**: Keep a possessive out of the {name} token
+  ([#98](https://github.com/prokopto-dev/nparse-plus/pull/98),
+  [`cb79c80`](https://github.com/prokopto-dev/nparse-plus/commit/cb79c802737d7fbfc5591e5dae4daf0944a4309d))
+
+- **triggers**: Stop a log line's braces rewriting the overlay text
+  ([#98](https://github.com/prokopto-dev/nparse-plus/pull/98),
+  [`cb79c80`](https://github.com/prokopto-dev/nparse-plus/commit/cb79c802737d7fbfc5591e5dae4daf0944a4309d))
+
+- **updater**: Classify an over-long body as a size refusal, not a failure
+  ([#95](https://github.com/prokopto-dev/nparse-plus/pull/95),
+  [`45601e9`](https://github.com/prokopto-dev/nparse-plus/commit/45601e94f236142ce24b7fd45dfa74e316d0b4b6))
+
+### Features
+
+- Create a trigger from a log line, and warn when a root breaks
+  ([#98](https://github.com/prokopto-dev/nparse-plus/pull/98),
+  [`cb79c80`](https://github.com/prokopto-dev/nparse-plus/commit/cb79c802737d7fbfc5591e5dae4daf0944a4309d))
+
+- **overlays**: Warn when a root breaks (port RootHasWornOffHandler)
+  ([#98](https://github.com/prokopto-dev/nparse-plus/pull/98),
+  [`cb79c80`](https://github.com/prokopto-dev/nparse-plus/commit/cb79c802737d7fbfc5591e5dae4daf0944a4309d))
+
+- **triggers**: Create a trigger from a log line (Console right-click)
+  ([#98](https://github.com/prokopto-dev/nparse-plus/pull/98),
+  [`cb79c80`](https://github.com/prokopto-dev/nparse-plus/commit/cb79c802737d7fbfc5591e5dae4daf0944a4309d))
+
+- **updater**: Say why a download was refused, and ship a macOS .app zip
+  ([#95](https://github.com/prokopto-dev/nparse-plus/pull/95),
+  [`45601e9`](https://github.com/prokopto-dev/nparse-plus/commit/45601e94f236142ce24b7fd45dfa74e316d0b4b6))
+
+
 ## v2.4.3 (2026-08-13)
 
 ### Bug Fixes
