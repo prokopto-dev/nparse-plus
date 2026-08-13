@@ -12,18 +12,26 @@ exclude_docs: |
 
 theme:
   name: material
+  # Generated from data/assets/icon.svg by tools/gen_icons.py. `favicon`
+  # overrides the theme's own assets/images/favicon.png rather than replacing
+  # the file inside the installed package.
+  logo: assets/images/nparseplus-mark.png
+  favicon: assets/images/favicon.png
+  # "custom" is Material's hook for a palette it does not ship: the values are
+  # defined in assets/extra.css. The app's own gold-on-stone, from ui/skins.py
+  # — the previous "deep purple" belonged to no part of this project.
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode

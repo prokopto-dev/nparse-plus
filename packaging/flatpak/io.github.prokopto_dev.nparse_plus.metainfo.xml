@@ -14,6 +14,18 @@
     </p>
   </description>
   <launchable type="desktop-id">io.github.prokopto_dev.nparse_plus.desktop</launchable>
+  <!-- Stated rather than left to be derived from the .desktop file's Icon=,
+       so a store front end that reads only this file still finds the mark.
+       The name matches what the manifest installs into hicolor/. -->
+  <icon type="stock">io.github.prokopto_dev.nparse_plus</icon>
+  <!-- Software-centre accent colours, taken from the icon's own plate
+       (data/assets/icon.svg, which takes them from ui/skins.py's velious
+       skin) so a store page frames the app in the same gold-on-stone it
+       runs in. -->
+  <branding>
+    <color type="primary" scheme_preference="light">#c8a951</color>
+    <color type="primary" scheme_preference="dark">#241e14</color>
+  </branding>
   <url type="homepage">https://github.com/prokopto-dev/nparse-plus</url>
   <url type="bugtracker">https://github.com/prokopto-dev/nparse-plus/issues</url>
   <releases>
