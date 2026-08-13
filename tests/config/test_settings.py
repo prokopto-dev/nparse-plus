@@ -468,5 +468,5 @@ class TestDpsSettings:
             )
         )
         loaded = load_settings(path)
-        assert str(loaded.general.eq_log_dir) == "/keep/me"
+        assert loaded.general.eq_log_dir == Path("/keep/me")
         assert loaded.dps.trailing_window_seconds == 6.0
