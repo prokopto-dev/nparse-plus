@@ -53,3 +53,21 @@ kills if you like pacing your grind.
 Server-wide events parsed from the log (and enriched over the
 [network](sharing.md)): earthquake announcements, Ring War status, and
 first-to-engage callouts for contested targets raise overlay alerts.
+
+## Root break warning
+
+When one of your roots wears off, nParse+ raises a red
+`<Spell> has worn off!` alert on the [Event Overlay](../windows/event-overlay.md)
+and speaks it. It is the drop-everything moment root exists to prevent: the
+CC'd add is loose, or the raid mob is no longer parked.
+
+Eleven spells count — Root, Fetter, Enstill, Immobilize, Paralyzing Earth,
+and the Roots line (Grasping, Ensnaring, Enveloping, Engulfing, Engorging,
+Entrapping) — matched by name, ignoring case. It fires on your own roots
+(the log only tells you about your own spells wearing off a target), and
+nothing else uses the wear-off line, so a fading buff stays quiet.
+
+Both halves are independent toggles in
+[Settings → Audio & Overlays](../settings/audio-overlays.md) —
+**Root break overlay** and **Speak root break warning** — on by default,
+applied on Apply with no restart.

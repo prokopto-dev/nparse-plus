@@ -70,6 +70,7 @@ from nparseplus.core.triggers.model import (
     TriggerTimerEnding,
     trigger_group_key,
 )
+from nparseplus.core.triggers.suggest import suggest_trigger_text
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui import chromewidgets
 from nparseplus.ui.overlaybase import OverlayWindowBase
@@ -107,6 +108,11 @@ _ROLE_ID = Qt.ItemDataRole.UserRole
 #: read-only built-in folders from movable user groups.
 _ROLE_FOLDER_KIND = _ROLE_ID + 1
 
+#: Where a trigger made from a console line lands when nothing is selected.
+#: The same user group ``new_trigger()`` defaults to — built-ins are
+#: read-only, so a new trigger can never go anywhere else.
+DEFAULT_USER_GROUP = "Custom"
+
 
 def _set_combo(combo: QComboBox, value: str) -> None:
     """Select the entry whose data equals ``value``, adding it if unknown."""
@@ -129,6 +135,7 @@ class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     Public API (for integration/tests): ``toggle()``, ``apply()``,
     ``new_trigger()``, ``duplicate_current()``, ``delete_current()``,
     ``revert_current()``, ``run_test()``, ``select_trigger(id)``,
+    ``create_trigger_from_line(line, tokenized)``, ``test_player_name()``,
     ``show_trigger(id)``, ``current_trigger()``, ``item_for(id)``,
     ``folder_names()``, ``trigger_ids()``, ``handle_events(list)``, plus the
     named form widgets (``name_edit``, ``search_edit``, ...) and ``activity``
@@ -982,7 +989,7 @@ class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         trigger = Trigger(
             trigger_enabled=True,
             trigger_name="New Trigger",
-            category=self._selected_user_group() or "Custom",
+            category=self._selected_user_group() or DEFAULT_USER_GROUP,
             search_text="",
             use_regex=False,
             basic=TriggerOutput(display_text_enabled=True, display_text_color="Red"),
@@ -994,6 +1001,50 @@ class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._working.append(trigger)
         self._dirty = True
         self._rebuild_tree(select_id=trigger.trigger_id)
+
+    def create_trigger_from_line(self, line: str, tokenized: bool = True) -> Trigger | None:
+        """Create (and select) a trigger prefilled from a log line — #82.
+
+        ``line`` is a console row or a raw log line; the timestamp is stripped
+        by the suggestion function, since the pipeline matches on the message.
+        The new trigger lands in a user group (built-ins are read-only), the
+        test box is primed with the source line and the test is run, so the
+        window opens already reporting "Matched." on the line it came from.
+        """
+        suggestion = suggest_trigger_text(line, self.test_player_name())
+        if not suggestion.message:
+            return None
+        self._commit_form()
+        trigger = Trigger(
+            trigger_enabled=True,
+            trigger_name=suggestion.name,
+            category=self._selected_user_group() or DEFAULT_USER_GROUP,
+            search_text=suggestion.pattern if tokenized else suggestion.literal,
+            # The tokenised form is a regex (its literal halves are escaped);
+            # the exact form is a plain-text substring, so no escaping applies
+            # and the user sees the line as they read it in the console.
+            use_regex=bool(tokenized),
+            basic=TriggerOutput(
+                display_text_enabled=True,
+                # NOT suggestion.message: display text is expanded, so a brace
+                # the log line carried would rewrite itself on the overlay.
+                display_text=(suggestion.display_text if tokenized else suggestion.literal_display),
+                display_text_color="Red",
+            ),
+            timer=TriggerTimer(timer_type=TimerType.NO_TIMER),
+            timer_ending=TriggerTimerEnding(),
+            timer_ended=TriggerTimerEnded(),
+            counter=TriggerCounter(),
+        )
+        self._working.append(trigger)
+        self._dirty = True
+        self._rebuild_tree(select_id=trigger.trigger_id)
+        self.test_line_edit.setText(suggestion.message)
+        self.run_test()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        return trigger
 
     def duplicate_current(self) -> None:
         self._commit_form()
@@ -1173,7 +1224,13 @@ class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
 
     # -- test box ----------------------------------------------------------------
 
-    def _test_player_name(self) -> str:
+    def test_player_name(self) -> str:
+        """The character the test box (and {c} tokenisation) resolves to.
+
+        Public because the Console window's "Create trigger from this line…"
+        must tokenise against the SAME name, or the prefilled trigger would
+        not match its own source line in the box below it.
+        """
         if self._settings.players:
             return self._settings.players[0].name
         return "You"
@@ -1186,7 +1243,7 @@ class TriggerEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         # so the working trigger's runtime state is never disturbed.
         probe = trigger.model_copy(deep=True)
         self._apply_form(probe, self._form_values())
-        probe.player_name = self._test_player_name()
+        probe.player_name = self.test_player_name()
         line = self.test_line_edit.text()
         if not probe.matches(line):
             self.test_result.setText("No match.")

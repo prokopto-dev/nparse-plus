@@ -10,6 +10,15 @@ Create and edit triggers in the
 [Trigger Editor](../windows/trigger-editor.md); a library of
 [built-ins](builtin-triggers.md) ships with the app.
 
+## The fastest way to make one
+
+Right-click the line in the [Console](../windows/console.md) and pick
+**Create trigger from this line…**. The editor opens with the search text,
+display text and test line already filled in, with the character name and a
+leading mob name turned into `{c}` and `{name}` tokens so the trigger fires
+again next time. Full details, including when no token is offered, are in
+[Create a trigger from a log line](../windows/console.md#create-a-trigger-from-a-log-line).
+
 ## Search text
 
 - **Plain text** (default): a case-insensitive substring match against the
