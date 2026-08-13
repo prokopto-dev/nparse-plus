@@ -7,12 +7,19 @@ intervening release body for the update-details window. "Install" downloads
 the platform artifact to ~/Downloads and opens it (macOS DMG), or falls back
 to opening the release page in a browser.
 
+The download is verified before it is handed anywhere: bytes stream to a
+staging file under a byte budget with a rolling sha256, https is re-asserted
+on every redirect hop, and the result is pinned to the ``sha256:`` digest
+GitHub publishes for the asset. That digest is a **channel** guarantee, not a
+signature — see ``expected_sha256`` for what it does and does not cover.
+
 Qt-free; the tray layer marshals results to the GUI thread itself. Every
 failure — including the repo not existing yet — degrades to "no update".
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import platform as platform_mod
 import subprocess
@@ -32,6 +39,18 @@ logger = logging.getLogger(__name__)
 GITHUB_OWNER = "prokopto-dev"
 GITHUB_REPO = "nparse-plus"
 TIMEOUT_S = 10.0
+
+# Release artifacts run 195-255 MB. The plugin installer's fetch caps a
+# download at 50 MiB held *in memory*, which is the right budget for a plugin
+# zip and unusable here — hence the streaming sibling below with its own
+# ceiling. Do NOT raise MAX_TOTAL_UNCOMPRESSED_BYTES to meet this one. Roughly
+# 3x the largest artifact today, so a build that grows does not need a code
+# change, while an endless response still stops.
+MAX_ASSET_BYTES = 768 * 1024 * 1024
+MAX_REDIRECTS = 5
+# The download's name until its digest checks out; a sibling of the final path
+# so the promotion is a same-directory rename.
+_STAGING_SUFFIX = ".part"
 
 # Flatpak mounts this file into every sandboxed app instance.
 FLATPAK_INFO = Path("/.flatpak-info")
@@ -56,6 +75,10 @@ class ReleaseAsset(BaseModel):
     name: str
     browser_download_url: str
     size: int = 0
+    # GitHub serves "sha256:<hex>" per asset (present on every asset of
+    # v2.3.2). Optional because releases published before the field existed
+    # carry nothing to pin to.
+    digest: str | None = None
 
 
 class ReleaseNote(BaseModel):
@@ -180,20 +203,173 @@ def pick_asset(
     return next((a for a in release.assets if a.name.lower().endswith(suffix)), None)
 
 
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def expected_sha256(asset: ReleaseAsset) -> str | None:
+    """The sha256 hex GitHub published for this asset, or None if it published none.
+
+    **This digest is a channel guarantee, not a signature, and the difference
+    is worth keeping sharp.** It arrives over the same TLS session as the
+    release metadata that describes it, from the same API, so pinning to it
+    proves only that the object the CDN served is the object the API named. It
+    defends against a corrupted, truncated or substituted artifact — a
+    mirror, a proxy, a half-written CDN object, a swapped upload. It defends
+    against *nothing* that can publish a release: whatever can change the
+    artifact there can change the digest beside it in the same breath.
+
+    A signature would move the trust root off the GitHub account and onto a
+    key we hold — a per-release ``SHA256SUMS`` signed with minisign, the
+    public key compiled into the app. That is issue #73 item 3 and is
+    deliberately not what this function is.
+
+    Anything unparseable (no digest, an algorithm we do not compute, a
+    malformed hex string) reads as "unpinnable" rather than as a failure: a
+    release predating the field must still be installable, and a caller that
+    treats None as verified would be the actual bug.
+    """
+    algorithm, _, value = (asset.digest or "").strip().lower().partition(":")
+    if algorithm != "sha256" or len(value) != 64 or not set(value) <= _HEX_DIGITS:
+        return None
+    return value
+
+
+def digest_error(actual: str, expected: str | None) -> str | None:
+    """Message for a failed digest check; None when it passed or could not run.
+
+    Both digests are named, matching ``core.plugins.install._checksum_error``:
+    a user reporting this can compare what arrived against the release page by
+    hand, and the two paths say it the same way.
+    """
+    if expected is None or actual == expected:
+        return None
+    return f"checksum mismatch: expected sha256 {expected}, got {actual} — refusing to install"
+
+
+def _size_error(written: int, declared: int) -> str | None:
+    """Refuse a body that disagrees with the size GitHub published.
+
+    Redundant whenever a digest is present, and the only truncation guard on a
+    release published before GitHub served one.
+    """
+    if declared > 0 and written != declared:
+        return f"size mismatch: expected {declared} bytes, got {written} — refusing to install"
+    return None
+
+
+def _download_client(client: httpx.Client | None) -> httpx.Client:
+    """Client for artifact downloads — redirects are NOT delegated to httpx."""
+    return client or httpx.Client(
+        timeout=TIMEOUT_S,
+        follow_redirects=False,
+        headers={"User-Agent": f"nparseplus/{nparseplus.__version__}"},
+    )
+
+
+def stream_https_to_file(
+    url: str,
+    destination: Path,
+    *,
+    max_bytes: int = MAX_ASSET_BYTES,
+    client: httpx.Client | None = None,
+) -> tuple[str, int]:
+    """GET an https URL onto disk; return ``(sha256 hex, bytes written)``.
+
+    The streaming sibling of ``core.plugins.install.fetch_https_bytes``, and
+    deliberately a second function rather than a widened one: that fetch
+    buffers the whole body under a 50 MiB in-memory cap, which is right for a
+    plugin zip and wrong for a quarter-gigabyte release artifact in both
+    dimensions. What carries across is the part that matters — redirects are
+    followed **by hand** so https is re-asserted on every hop (an https
+    release URL that 302s to http is refused, not silently downloaded in
+    plaintext, which is what ``follow_redirects=True`` used to do), and the
+    body is cut off the moment it passes ``max_bytes``.
+
+    The hash rolls as the bytes land, so nothing is read twice and the caller
+    can refuse before anything opens the file. Raises on any refusal; callers
+    turn that into a user message.
+    """
+    digest = hashlib.sha256()
+    written = 0
+    session = _download_client(client)
+    try:
+        for _ in range(MAX_REDIRECTS + 1):
+            if not url.lower().startswith("https://"):
+                raise ValueError(f"refusing non-https URL {url!r}")
+            # follow_redirects is passed per request rather than left to the
+            # client: an injected client may default to following them, and a
+            # hop httpx takes on its own is precisely the one we need to see.
+            with session.stream("GET", url, follow_redirects=False) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location", "")
+                    if not location:
+                        raise ValueError("redirect without a Location header")
+                    url = str(response.url.join(location))
+                    continue
+                response.raise_for_status()
+                with open(destination, "wb") as fh:
+                    for chunk in response.iter_bytes():
+                        written += len(chunk)
+                        if written > max_bytes:
+                            raise ValueError(f"response exceeds the {max_bytes} byte limit")
+                        digest.update(chunk)
+                        fh.write(chunk)
+                return digest.hexdigest(), written
+        raise ValueError(f"too many redirects (limit {MAX_REDIRECTS})")
+    finally:
+        if client is None:
+            session.close()
+
+
 def download_asset(
-    asset: ReleaseAsset, dest_dir: Path, client: httpx.Client | None = None
+    asset: ReleaseAsset,
+    dest_dir: Path,
+    client: httpx.Client | None = None,
+    *,
+    max_bytes: int = MAX_ASSET_BYTES,
 ) -> Path | None:
-    """Stream the artifact into ``dest_dir``; None on any failure."""
+    """Stream the artifact into ``dest_dir``, verified; None on any failure.
+
+    The bytes land on a ``.part`` sibling of the destination and are renamed
+    into place only once the published digest matches what arrived — so the
+    artifact never exists under its real name unverified, where the user (or,
+    later, a swap step) could open it. A refusal deletes the staging file
+    instead of leaving a plausible-looking partial download in ~/Downloads,
+    and happens before anything opens the archive.
+    """
+    # The asset name comes off the wire and is joined to a directory path; a
+    # name carrying a separator would write outside dest_dir. Real GitHub asset
+    # names are plain filenames, so this only ever rejects a hostile one.
+    if Path(asset.name).name != asset.name:
+        logger.warning("refusing release asset with a path-bearing name %r", asset.name)
+        return None
     destination = Path(dest_dir) / asset.name
+    staging = destination.with_name(destination.name + _STAGING_SUFFIX)
+    expected = expected_sha256(asset)
+    if expected is None:
+        logger.warning(
+            "release asset %s publishes no usable sha256 digest (%r) — "
+            "the download cannot be pinned",
+            asset.name,
+            asset.digest,
+        )
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with _client(client).stream("GET", asset.browser_download_url) as resp:
-            resp.raise_for_status()
-            with open(destination, "wb") as fh:
-                for chunk in resp.iter_bytes():
-                    fh.write(chunk)
-    except Exception:
-        logger.warning("update download failed for %s", asset.name, exc_info=True)
+        actual, written = stream_https_to_file(
+            asset.browser_download_url,
+            staging,
+            # The published size is a tighter ceiling than the global budget
+            # whenever GitHub gives us one.
+            max_bytes=min(max_bytes, asset.size) if asset.size > 0 else max_bytes,
+            client=client,
+        )
+        refusal = digest_error(actual, expected) or _size_error(written, asset.size)
+        if refusal is not None:
+            raise ValueError(refusal)
+        staging.replace(destination)
+    except Exception as exc:
+        logger.warning("update download failed for %s: %s", asset.name, exc, exc_info=True)
+        staging.unlink(missing_ok=True)
         return None
     return destination
 
