@@ -21,7 +21,10 @@ Three things have to be right or the produced trigger is worse than useless:
   forever. The player's name becomes ``{c}`` and a leading actor becomes
   ``{name}`` — the tokens :class:`~nparseplus.core.triggers.model.Trigger`
   already understands, using its own ``[\\w` ]+`` name expansion rather than a
-  second name pattern invented here.
+  second name pattern invented here. What the actor pattern accepts must
+  stay a **subset** of what that expansion can consume, or the token cannot
+  match the text it replaced (see ``_ACTOR_WORD``); the round-trip tests
+  assert the capture equals the replaced text, not merely that it matched.
 
 The actor heuristic is deliberately conservative: it only fires on a leading
 run of capitalised words followed by a lowercase word ("Gorenaire begins…",
@@ -43,10 +46,21 @@ from dataclasses import dataclass
 #: that legitimately opens with a bracket is left alone.
 _TIMESTAMP_PREFIX_RE = re.compile(r"^\[[^\]]*\d{1,2}:\d{2}:\d{2}[^\]]*\]\s*")
 
-#: A leading run of capitalised words, followed by a lowercase word (the verb
-#: in every EQ actor line). Backticks and apostrophes appear inside EQ names
-#: ("Ixiblat`Fer"); ``[\w]`` covers digits, which pet names carry.
-_ACTOR_RE = re.compile(r"^[A-Z][\w'`]*(?: [A-Z][\w'`]*)*(?= [a-z])")
+#: What one word of an actor name may contain. This MUST stay a subset of
+#: ``EQ_NAME_CHARS`` — the class ``{name}`` expands to — or the token cannot
+#: consume the very text it replaced. An apostrophe here was exactly that
+#: bug: "Gorenaire's corpse falls to the ground." tokenised the possessive
+#: into the name, and since ``[\w` ]+`` cannot cross the apostrophe the
+#: pattern re-matched from the "s" instead. It still reported a match, and
+#: quietly captured "s" — a wrong answer is worse than a missing one.
+_ACTOR_WORD = r"[\w`]*"
+
+#: A leading run of capitalised words, followed either by a lowercase word
+#: (the verb in every EQ actor line) or by a possessive "'s" — which is left
+#: OUT of the name and matched literally, so "{name}'s corpse falls to the
+#: ground." captures the owner. ``\w`` covers the digits pet names carry, and
+#: the backtick appears inside EQ names ("Ixiblat`Fer").
+_ACTOR_RE = re.compile(rf"^[A-Z]{_ACTOR_WORD}(?: [A-Z]{_ACTOR_WORD})*(?=(?: [a-z])|(?:'s\b))")
 
 #: Capitalised openers that are never an actor name on their own: pronouns
 #: (yours are "You"/"Your" lines; "It begins to rain.") and bare articles.

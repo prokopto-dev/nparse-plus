@@ -7,6 +7,8 @@ trigger the user has to debug before it ever fires.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from nparseplus.core.triggers.model import Trigger
@@ -21,6 +23,20 @@ def matched(pattern: str, line: str, player_name: str = "", use_regex: bool = Tr
     trigger = Trigger(search_text=pattern, use_regex=use_regex)
     trigger.player_name = player_name
     return trigger.matches(line)
+
+
+def captured(pattern: str, line: str, group: str = "name", player_name: str = "") -> str | None:
+    """What ``{group}`` actually captured, or None if the pattern missed.
+
+    "Did it match" is the weaker question: a token whose expansion cannot
+    consume the text it replaced can still re-match further along the line
+    and capture garbage, which reads as success everywhere the user looks.
+    """
+    trigger = Trigger(search_text=pattern, use_regex=True)
+    trigger.player_name = player_name
+    if not trigger.matches(line):
+        return None
+    return trigger._value_hash.get(group)
 
 
 # -- timestamps ----------------------------------------------------------------
@@ -65,7 +81,28 @@ def test_multi_word_actor_is_captured_whole() -> None:
     suggestion = suggest_trigger_text(line)
 
     assert suggestion.pattern.startswith(r"{name}\ hits")
-    assert matched(suggestion.pattern, line)
+    assert captured(suggestion.pattern, line) == "Lord Nagafen"
+
+
+@pytest.mark.parametrize(
+    ("line", "actor"),
+    [
+        ("Gorenaire begins to cast a spell.", "Gorenaire"),
+        ("Lord Nagafen hits YOU for 500 points of damage.", "Lord Nagafen"),
+        ("Ixiblat`Fer begins to cast a spell.", "Ixiblat`Fer"),
+        ("Gorenaire says, 'Who dares (again)?'", "Gorenaire"),
+        ("Gorenaire's corpse falls to the ground.", "Gorenaire"),
+    ],
+)
+def test_every_name_token_captures_exactly_the_text_it_replaced(line: str, actor: str) -> None:
+    # The round trip that matters: matching is not enough, the token has to
+    # capture what it stood in for or every output expanding {name} is wrong.
+    suggestion = suggest_trigger_text(line)
+
+    assert captured(suggestion.pattern, line) == actor
+    trigger = Trigger(search_text=suggestion.pattern, use_regex=True)
+    trigger.matches(line)
+    assert trigger.expand(suggestion.display_text) == line
 
 
 def test_player_name_becomes_the_context_token() -> None:
@@ -94,6 +131,41 @@ def test_possessive_player_name_still_tokenises() -> None:
 
     assert "{c}" in suggestion.pattern
     assert matched(suggestion.pattern, line, player_name="Gorenaire")
+
+
+@pytest.mark.parametrize(
+    ("line", "actor"),
+    [
+        ("Gorenaire's corpse falls to the ground.", "Gorenaire"),
+        ("Lord Nagafen's pet hits YOU for 12 points of damage.", "Lord Nagafen"),
+        ("Ixiblat`Fer's corpse falls to the ground.", "Ixiblat`Fer"),
+    ],
+)
+def test_a_possessive_actor_captures_the_owner_not_the_s(line: str, actor: str) -> None:
+    # The apostrophe stays literal and OUT of the token: {name} expands to
+    # [\w` ]+, which cannot cross it. Folding the possessive into the name
+    # let the pattern re-match from the "s" — it reported a match and
+    # captured "s", so the display text expanded to "s corpse falls...".
+    suggestion = suggest_trigger_text(line, "Soandso")
+
+    assert suggestion.tokens == ("name",)
+    assert suggestion.pattern.startswith(r"{name}'s")
+    assert captured(suggestion.pattern, line) == actor
+
+
+def test_the_actor_class_is_a_subset_of_what_name_can_consume() -> None:
+    # The invariant behind the bug above: anything the actor pattern accepts
+    # must be consumable by the model's own {name} expansion, or the token
+    # cannot match the text it replaced.
+    from nparseplus.core.triggers.model import EQ_NAME_CHARS
+    from nparseplus.core.triggers.suggest import _ACTOR_WORD
+
+    name_chars = re.compile(EQ_NAME_CHARS)
+    actor_word = re.compile(f"^{_ACTOR_WORD}$")
+    for code in range(32, 0x2500):
+        char = chr(code)
+        if actor_word.match(char):
+            assert name_chars.match(char), f"{char!r} is an actor char {{name}} cannot consume"
 
 
 def test_you_lines_get_no_actor_token() -> None:
