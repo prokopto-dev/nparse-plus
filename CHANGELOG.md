@@ -6,6 +6,21 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.7.0 (2026-08-13)
+
+### Bug Fixes
+
+- **dumps**: Drop a queued upload when the destination changes
+  ([#96](https://github.com/prokopto-dev/nparse-plus/pull/96),
+  [`862c496`](https://github.com/prokopto-dev/nparse-plus/commit/862c49689869b4ac02812d6db787324d0c4b757f))
+
+### Features
+
+- **settings**: Apply the dump destination and the EQ install dir live
+  ([#96](https://github.com/prokopto-dev/nparse-plus/pull/96),
+  [`862c496`](https://github.com/prokopto-dev/nparse-plus/commit/862c49689869b4ac02812d6db787324d0c4b757f))
+
+
 ## v2.6.0 (2026-08-13)
 
 ### Bug Fixes
