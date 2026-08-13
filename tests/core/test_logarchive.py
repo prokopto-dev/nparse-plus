@@ -76,6 +76,34 @@ def test_archiving_keeps_the_tail_alive_while_the_game_holds_the_log(tmp_path: P
         game.close()
 
 
+def test_a_log_refilled_past_our_offset_still_reaches_the_tail(tmp_path: Path) -> None:
+    """The sweep empties the log from its own thread, so the client can refill
+    it past our read offset before the next 100 ms poll — at which point the
+    file is no longer *smaller* than where we left off."""
+    log = tmp_path / "eqlog_Tanky_P1999Green.txt"
+    log.write_text("[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n" * 21_000)
+    game = log.open("a", buffering=1)
+    try:
+        tail = LogTail.attach(log)
+        assert tail.poll() == []  # caught up, as the driver would be
+        offset = tail.position
+
+        assert len(archive_oversized_logs(tmp_path, threshold_mb=1)) == 1
+
+        game.write("[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n")
+        game.write("[Wed Jul 15 21:05:01 2026] You slash Gorenaire.\n" * 30_000)
+        game.flush()
+        assert log.stat().st_size > offset  # regrown past us: no shrink to see
+
+        lines = tail.poll()
+    finally:
+        game.close()
+
+    # The first line after the sweep is the one a resume mid-file would eat.
+    assert lines[0].endswith("Gorenaire begins to cast a spell.")
+    assert len(lines) == 30_001
+
+
 def test_lines_written_during_the_copy_still_reach_the_archive(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
     _make_log(log, 2 * 1024 * 1024)

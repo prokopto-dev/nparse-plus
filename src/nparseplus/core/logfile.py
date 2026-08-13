@@ -21,6 +21,15 @@ _LOG_NAME = re.compile(r"^eqlog_(?P<char>[A-Za-z]+)_(?P<server>[A-Za-z0-9]+)\.tx
 _ATTACH_BACKTRACK_BYTES = 4096
 _SESSION_MARKER = b"] Welcome to EverQuest!"
 
+# The last few bytes we read, kept so the next poll can prove it is reading
+# the same file it left off in. A shrink is the obvious rotation signal, but
+# it is not a reliable one: log archiving empties the file from another
+# thread, and if the client refills it past our old offset before the next
+# 100 ms poll, the size test sees nothing wrong and we resume mid-file,
+# silently skipping everything written from offset 0 up to that point. This
+# many bytes costs one comparison per poll and does not depend on timing.
+_SIGNATURE_BYTES = 64
+
 
 def parse_log_filename(path: Path | str) -> tuple[str, str] | None:
     """eqlog_<Character>_<server>.txt -> (character, server), else None."""
@@ -69,6 +78,7 @@ class LogTail:
     path: Path
     position: int = 0
     _partial: bytes = field(default=b"", repr=False)
+    _signature: bytes = field(default=b"", repr=False)
 
     @classmethod
     def attach(cls, path: Path) -> LogTail:
@@ -82,30 +92,50 @@ class LogTail:
         marker = chunk.rfind(_SESSION_MARKER)
         if marker != -1:
             eol = chunk.find(b"\n", marker)
-            position = start + (eol + 1 if eol != -1 else len(chunk))
+            offset = eol + 1 if eol != -1 else len(chunk)
         else:
-            position = size
-        return cls(path=path, position=position)
+            offset = len(chunk)
+        return cls(
+            path=path,
+            position=start + offset,
+            _signature=chunk[max(0, offset - _SIGNATURE_BYTES) : offset],
+        )
+
+    def _restart(self) -> None:
+        """Read the file from the top again (it is not the one we left)."""
+        self.position = 0
+        self._partial = b""
+        self._signature = b""
 
     def poll(self) -> list[str]:
         """Return complete new lines since the last poll (may be empty).
 
-        Handles truncation/rotation: if the file shrank below our position,
-        restart from the beginning.
+        Handles truncation/rotation two ways: a file that shrank below our
+        position, and a file whose bytes *at* our position are no longer the
+        ones we read there — which is what an emptied-and-refilled log looks
+        like when it regrows past us between polls. Either way, restart from
+        the beginning rather than resume mid-file.
         """
         try:
             size = self.path.stat().st_size
         except OSError:
             return []
         if size < self.position:
-            self.position = 0
-            self._partial = b""
+            self._restart()
         if size == self.position:
             return []
+        back = min(len(self._signature), self.position)
         with self.path.open("rb") as f:
-            f.seek(self.position)
+            f.seek(self.position - back)
             data = f.read()
+        if back and data[:back] != self._signature[len(self._signature) - back :]:
+            self._restart()
+            with self.path.open("rb") as f:
+                data = f.read()
+        else:
+            data = data[back:]
         self.position += len(data)
+        self._signature = (self._signature + data)[-_SIGNATURE_BYTES:]
         data = self._partial + data
         # Keep a trailing partial line (no terminator yet) for the next poll.
         if data.endswith(b"\n"):

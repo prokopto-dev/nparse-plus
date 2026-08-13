@@ -795,8 +795,11 @@ relinks the inode instead, EQ under Wine keeps writing to it, and no
 session with nothing logged, and restarting nParse+ did not help while the
 game held the moved file. `logarchive.py` now copies the contents out and
 **truncates in place** (what log rotators do): the client's descriptor stays
-valid, its append writes resolve to offset 0, and `LogTail.poll` already
-reads the shrink as a rotation. The write handle is opened FIRST so the
+valid and its append writes resolve to offset 0. `LogTail.poll` reads that as
+a rotation **by the byte signature at its offset**, not by the file having
+shrunk — the sweep runs on its own thread, so a fast writer can refill the
+log past that offset before the next 100 ms poll, and a size test would then
+resume mid-file and eat everything written before it. The write handle is opened FIRST so the
 Windows share-mode refusal skips the file with nothing copied; the copy
 lands under a `.part` name and is fsynced before the source is emptied; and
 an emptied log **keeps its old mtime**, or a stale character's freshly
