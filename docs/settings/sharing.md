@@ -90,7 +90,11 @@ mule roster at once — use **Upload dumps** in the Character Dumps window.
 
 Changing the destination takes effect when you press **Apply** — no restart,
 and the same is true of logging in with Discord and picking pigparse.org in
-the same visit. Switching *away* from a destination stops uploads
-immediately; the connection it was using is simply left idle for the rest of
-the session rather than torn down under an upload that may still be in
-flight.
+the same visit.
+
+Switching *away* from a destination stops uploads immediately, including any
+dump still queued and waiting to be sent — the destination is re-checked at
+the moment each upload leaves, so nothing already in the pipe reaches a site
+you have just turned off. The connection it was using is left idle for the
+rest of the session rather than torn down, which is what keeps a p99planner
+review link you have not approved yet from being lost.

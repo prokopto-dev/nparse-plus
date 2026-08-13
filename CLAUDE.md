@@ -982,9 +982,17 @@ newly-picked target needs and lacks, then pushes all three onto the handler.
 It closes the Discord login case too: `pigparse_account.api_token` rides in
 a per-request header and was genuinely live, but `pigparse_api` may never
 have been built. **Nothing is ever torn down** — `stop()` closes these at
-quit, an in-flight p99planner claim or PUT would go with them, and `accepts()`
-already gates on the target before any send, so switching away stops uploads
-by itself and an idle client costs nothing. Deliberately narrow: a REST
+quit and an in-flight p99planner claim or PUT would go with them, so
+switching away leaves the client idle instead. What stops an upload is the
+target, read **twice**: `accepts()` before anything is queued, and
+`InventoryUploadHandler._still_targeting` on the net-worker thread just
+before the request leaves. The second read is not belt-and-braces — one
+worker serves the queue, so a dump submitted behind a slow POST waits there
+while Settings > Apply changes the destination, and without it turning
+uploads off still published the inventory. `forget_claim` deliberately does
+NOT go through that gate: releasing a staged copy is the user withdrawing
+data, and switching the destination off first is the likely order.
+Deliberately narrow: a REST
 client built for an upload does not re-arm the seven handlers that publish
 on *sharing's* behalf (#69 owns that direction).
 

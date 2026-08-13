@@ -324,11 +324,14 @@ class Backend:
         rides in a per-request header, so logging in and picking pigparse in
         one Apply now works without a restart.
 
-        **Nothing is ever torn down here.** ``stop()`` closes these at quit,
-        an in-flight p99planner claim or PUT would be lost with them, and
-        ``accepts()`` already gates on the target before any send — so
-        switching away stops uploads by itself and the idle client costs
-        nothing for the rest of the session.
+        **Nothing is ever torn down here.** ``stop()`` closes these at quit
+        and an in-flight p99planner claim or PUT would be lost with them, so
+        switching away leaves the client idle rather than killing it — which
+        costs nothing, because the target is what gates a send, not the
+        client. That gate is read twice: ``accepts()`` before anything is
+        queued, and ``InventoryUploadHandler._still_targeting`` on the worker
+        thread just before the request leaves, so a dump already sitting in
+        the queue when the user switches off is dropped rather than sent.
 
         Deliberately narrow: the seven handlers that publish on *sharing's*
         behalf are not rewired, because a REST client built for an upload

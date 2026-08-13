@@ -58,6 +58,13 @@ worker thread. The claim state is read and written *only* there, which is
 what serializes two dumps landing back to back into one POST and then a PUT
 rather than two competing POSTs. :meth:`upload_now` is safe to call from the
 GUI thread precisely because all it does is submit.
+
+One consequence of that single thread: queued work can outlive the decision
+that queued it. ``dumps.upload_target`` is live, and Settings > Apply can
+change it while a dump waits behind a slow POST — so the target is read a
+second time, on the worker, immediately before the request leaves
+(:meth:`_still_targeting`). Without it, turning uploads off published the
+inventory anyway.
 """
 
 from __future__ import annotations
@@ -201,6 +208,32 @@ class InventoryUploadHandler(BaseHandler):
             return self._start_pigparse(usable)
         return self._start_planner(usable)
 
+    # -- the gate, re-read at send time -------------------------------------
+
+    def _still_targeting(self, target: str) -> bool:
+        """Whether ``target`` is *still* the destination, checked on the net
+        worker thread just before the send.
+
+        ``upload_now`` reads the target to decide what to queue, but the queue
+        is served by one worker thread: a dump submitted behind a slow POST
+        can sit there for seconds, and Settings > Apply can change the
+        destination in that window. Without this the queued work would still
+        reach the site the user just turned off — an inventory published to a
+        service they had already opted out of.
+
+        So the target is checked twice on purpose. The first read decides
+        *what to build*; this one decides *whether to send*, and it is the one
+        that has to be true at the moment the request leaves. Cancelling by
+        tearing down the client would take an in-flight p99planner claim with
+        it, which is why the gate lives here rather than in
+        ``Backend.apply_upload_target``.
+        """
+        if self._get_target() == target:
+            return True
+        self._set_status("Upload cancelled — the destination changed.")
+        logger.info("dropped a queued %s upload: the destination changed", target)
+        return False
+
     # -- pigparse ----------------------------------------------------------
 
     def _start_pigparse(self, dumps: list[CharacterDump]) -> str:
@@ -224,6 +257,8 @@ class InventoryUploadHandler(BaseHandler):
                 continue
 
             def fetch(character: str = character, items: list = items) -> None:
+                if not self._still_targeting("pigparse"):
+                    return
                 api.upload_inventory(
                     character_name=character, server=server_int, items=items, api_token=token
                 )
@@ -253,6 +288,8 @@ class InventoryUploadHandler(BaseHandler):
         """
         planner = self.planner
         if planner is None:  # pragma: no cover - guarded by the caller
+            return
+        if not self._still_targeting("p99planner"):
             return
         claim = self._current_claim()
 

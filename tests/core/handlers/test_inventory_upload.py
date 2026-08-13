@@ -324,6 +324,109 @@ def test_only_the_chosen_destination_receives(planner_env: Env) -> None:
     assert len(planner_env.planner.staged) == 1
 
 
+class QueuedWorker:
+    """A NetWorker stand-in that holds submitted work until told to run it.
+
+    The real worker is ONE thread serving a queue, so a dump submitted behind
+    a slow POST waits there — and Settings > Apply can change the destination
+    inside that window. ImmediateWorker cannot express that gap; this can.
+    """
+
+    def __init__(self) -> None:
+        self.queue: list = []
+
+    def submit(self, fetch, apply=None) -> None:
+        self.queue.append((fetch, apply))
+
+    def drain(self) -> None:
+        queued, self.queue = self.queue, []
+        for fetch, apply in queued:
+            result = fetch()
+            if apply is not None:
+                apply(result)
+
+
+def test_a_queued_pigparse_upload_is_dropped_when_the_target_goes_off(tmp_path: Path) -> None:
+    """The destination is checked twice on purpose: once to decide what to
+    queue, and again on the worker thread to decide whether to send. Without
+    the second read, turning uploads off published an inventory the user had
+    just opted out of."""
+    worker = QueuedWorker()
+    env = Env(tmp_path, submit=worker.submit)
+    env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
+    env.watcher.tick(T0 + timedelta(minutes=1))
+    assert worker.queue, "the send is queued, not done"
+    assert env.api.uploads == []
+
+    env.state["target"] = "off"  # Settings > Apply, while the worker is busy
+    worker.drain()
+
+    assert env.api.uploads == []
+    assert "destination changed" in env.handler.status_text()
+
+
+def test_a_queued_pigparse_upload_is_dropped_when_the_target_moves_sites(
+    tmp_path: Path,
+) -> None:
+    """Switching sites must not send the old site's queued work either — it
+    would publish to exactly the service the user just left."""
+    worker = QueuedWorker()
+    env = Env(tmp_path, submit=worker.submit)
+    env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
+    env.watcher.tick(T0 + timedelta(minutes=1))
+
+    env.state["target"] = "p99planner"
+    worker.drain()
+
+    assert env.api.uploads == []
+    assert env.planner.staged == []  # nor is it re-routed to the new site
+
+
+def test_a_queued_planner_handoff_is_dropped_when_the_target_goes_off(tmp_path: Path) -> None:
+    worker = QueuedWorker()
+    env = Env(tmp_path, target="p99planner", submit=worker.submit)
+    env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
+    env.watcher.tick(T0 + timedelta(minutes=1))
+    assert worker.queue
+
+    env.state["target"] = "off"
+    worker.drain()
+
+    assert env.planner.staged == []
+    assert not env.handler.has_claim()  # nothing was staged, so nothing to approve
+    assert env.opened == []  # ...and no review page opened
+
+
+def test_a_queued_upload_still_sends_when_the_destination_did_not_move(tmp_path: Path) -> None:
+    """The guard must not swallow the normal case: queueing is what the
+    worker does with every send."""
+    worker = QueuedWorker()
+    env = Env(tmp_path, submit=worker.submit)
+    env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
+    env.watcher.tick(T0 + timedelta(minutes=1))
+    worker.drain()
+
+    assert len(env.api.uploads) == 1
+
+
+def test_cancelling_a_claim_is_not_gated_on_the_target(tmp_path: Path) -> None:
+    """forget_claim releases the staged copy. That is the user withdrawing
+    data, not publishing it, so switching the destination off first — the
+    likely order — must not strand it on the server."""
+    worker = QueuedWorker()
+    env = Env(tmp_path, target="p99planner", submit=worker.submit)
+    env.dump("Xantik-Inventory.txt", DUMP, T0 + timedelta(minutes=1))
+    env.watcher.tick(T0 + timedelta(minutes=1))
+    worker.drain()
+    assert env.handler.has_claim()
+
+    env.state["target"] = "off"
+    env.handler.forget_claim()
+    worker.drain()
+
+    assert env.planner.released == ["token1"]
+
+
 # --- p99planner -------------------------------------------------------------
 
 
