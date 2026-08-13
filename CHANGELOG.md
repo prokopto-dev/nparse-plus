@@ -6,6 +6,47 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.4.1 (2026-08-13)
+
+### Bug Fixes
+
+- **net**: Drop queued sharing REST work when the mode goes off mid-flight
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+- **net**: Keep sharing off one-way for the session after a live off
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+- **net**: Scope the REST gate to pigparse mode, and stop on a network switch
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+- **net**: Silence the pigparse REST publishers when sharing goes off
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+- **settings**: Apply overlay durations and sharing-off without a restart
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+- **settings**: Stop the settings window promising restarts it doesn't need
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+### Documentation
+
+- **config**: Mark the settings fields nothing reads
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+### Testing
+
+- **config**: Read source as UTF-8 in the unread-settings scan
+  ([#94](https://github.com/prokopto-dev/nparse-plus/pull/94),
+  [`1a68e7a`](https://github.com/prokopto-dev/nparse-plus/commit/1a68e7a8236c7b9a3f438025a125c9eb14c4c4e7))
+
+
 ## v2.4.0 (2026-08-13)
 
 ### Bug Fixes
