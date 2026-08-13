@@ -6,6 +6,29 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.8.0 (2026-08-13)
+
+### Bug Fixes
+
+- **overlay**: Explainable alert splitting, scrolling long alerts, resizable regions
+  ([#103](https://github.com/prokopto-dev/nparse-plus/pull/103),
+  [`6ef5b5c`](https://github.com/prokopto-dev/nparse-plus/commit/6ef5b5cd4e39f544d2ca78ed4f276141799e0cfe))
+
+- **overlay**: Fit the headline to the box the Alerts region has, not the one it left
+  ([#103](https://github.com/prokopto-dev/nparse-plus/pull/103),
+  [`6ef5b5c`](https://github.com/prokopto-dev/nparse-plus/commit/6ef5b5cd4e39f544d2ca78ed4f276141799e0cfe))
+
+- **overlay**: Stop trigger alerts losing their opening clause to the gold kicker
+  ([#103](https://github.com/prokopto-dev/nparse-plus/pull/103),
+  [`6ef5b5c`](https://github.com/prokopto-dev/nparse-plus/commit/6ef5b5cd4e39f544d2ca78ed4f276141799e0cfe))
+
+### Features
+
+- **overlay**: Scroll over-long alerts, and make the overlay's regions resizable
+  ([#103](https://github.com/prokopto-dev/nparse-plus/pull/103),
+  [`6ef5b5c`](https://github.com/prokopto-dev/nparse-plus/commit/6ef5b5cd4e39f544d2ca78ed4f276141799e0cfe))
+
+
 ## v2.7.0 (2026-08-13)
 
 ### Bug Fixes
