@@ -804,7 +804,11 @@ either; no detector settles this. So the sweep is split across the two
 threads it needs: `stage_oversized_logs` copies (100 MB = 80 ms, and it
 scales) on a `BackgroundJob`, and `finish_archive` runs from the **driver
 thread's tick**, truncating and calling `driver.note_log_rotated` in one step
-no poll can land inside. `LogTail`'s own shrink-and-signature checks stay as
+no poll can land inside. What lands on that thread is *bounded*, which is the
+whole point: one log per tick, one catch-up read capped at
+`CATCHUP_LIMIT_BYTES` (past it the archive loses its tail, which the app has
+already parsed), no fsync, and the `truncate` — 10 ms typical, 43 ms worst
+measured at 100 MB. `LogTail`'s own shrink-and-signature checks stay as
 the backstop for rotations nobody tells us about (the client recreating its
 log, a user emptying it by hand) — hence the 64 bytes it keeps, re-read on
 every poll for ~12 us. The write handle is opened FIRST so the

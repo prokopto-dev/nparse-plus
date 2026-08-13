@@ -33,6 +33,15 @@ repeated identical lines — different in content at that offset. So
 reset in one step that no poll can land inside. The tail's own shrink and
 signature checks stay as the backstop for rotations nobody tells us about
 (the client recreating its log, a user emptying it by hand).
+
+What runs on that thread is therefore bounded rather than merely small — the
+point of the split is not to stall the log tail. One staged log per tick,
+and per log: one read capped at ``CATCHUP_LIMIT_BYTES`` (0.2 ms), one write
+(1.2 ms, no fsync — the bulk was made durable when it was staged), one
+rename (0.5 ms) and the ``truncate`` itself, which is the only part that
+scales with the log: 10 ms typical and 43 ms worst measured on a 100 MB
+file, against the 250 ms a plugin tick is evicted for. It happens once per
+archive, hourly at most, and only with archiving turned on.
 """
 
 from __future__ import annotations
@@ -52,10 +61,16 @@ from nparseplus.core.background import BackgroundJob, Spawn
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL_S = 60 * 60  # hourly, like EQTool
-# How many times to go back for lines the client appended while we copied.
-# Each pass is smaller than the last, so a couple converge; the bound is
-# there so a firehose cannot hold the swap open indefinitely.
-CATCHUP_PASSES = 3
+# The swap runs on the driver thread (see below), so the one piece of it that
+# is not a fixed number of syscalls gets a ceiling. This is how much of what
+# the client wrote *during* the staged copy we will carry into the archive:
+# enough that the case never arises in practice (staging a 100 MB log takes
+# ~80 ms, in which a busy raid log grows by single-digit KB), and small
+# enough that the worst case is a fraction of a millisecond. Beyond it the
+# archive loses its tail, which is the right thing to lose — the app has
+# already read those lines off the live log, and the alternative is stalling
+# the thread that reads it.
+CATCHUP_LIMIT_BYTES = 256 * 1024
 
 
 @dataclass(frozen=True)
@@ -134,21 +149,23 @@ def finish_archive(
     """
     try:
         with staged.source.open("r+b") as src:
+            end = src.seek(0, os.SEEK_END)
             src.seek(staged.copied)
-            with staged.partial.open("ab") as out:
-                # The client kept writing while we copied. Whatever it appends
-                # after this last read is lost to the truncate below, so go
-                # back for it: that shrinks the hole from the length of the
-                # copy to the length of one small tail read.
-                for _ in range(CATCHUP_PASSES):
-                    tail = src.read()
-                    if not tail:
-                        break
-                    out.write(tail)
-                out.flush()
-                os.fsync(out.fileno())
+            # The client kept writing while we staged the copy; pick that up
+            # so the archive keeps it. ONE bounded read: this is the driver
+            # thread, and read() with no size is however much the client
+            # managed to write. Past the cap the archive loses its tail
+            # rather than the app losing its tick — see CATCHUP_LIMIT_BYTES.
+            catchup = src.read(CATCHUP_LIMIT_BYTES) if end > staged.copied else b""
+            if catchup:
+                with staged.partial.open("ab") as out:
+                    out.write(catchup)
+                    # No fsync: the bulk of the archive was made durable when
+                    # it was staged, and this is a few KB on the thread that
+                    # tails the log.
             staged.partial.replace(staged.dest)
             src.truncate(0)
+            dropped = max(0, end - staged.copied - len(catchup))
     except OSError:
         logger.debug("could not archive %s (in use?)", staged.source, exc_info=True)
         with contextlib.suppress(OSError):
@@ -163,6 +180,15 @@ def finish_archive(
     with contextlib.suppress(OSError):
         os.utime(staged.source, ns=(staged.atime_ns, staged.mtime_ns))
     logger.info("archived %s -> %s", staged.source.name, staged.dest.name)
+    if dropped:
+        logger.warning(
+            "%s grew by %d bytes while it was being archived; the last %d are "
+            "not in %s (they were parsed live)",
+            staged.source.name,
+            end - staged.copied,
+            dropped,
+            staged.dest.name,
+        )
     return staged.dest
 
 
@@ -204,11 +230,12 @@ class LogArchiveService:
 
     def tick(self, _now: datetime) -> None:
         if self._staged:
-            # We are on the driver thread: empty the logs here, next to the
-            # tail, rather than on the thread that made the copies.
-            staged, self._staged = self._staged, []
-            for item in staged:
-                finish_archive(item, self._on_rotated)
+            # We are on the driver thread: empty the log here, next to the
+            # tail, rather than on the thread that made the copy. ONE per
+            # tick — a first sweep can find several oversized logs, and this
+            # thread should carry one swap at a time, 100 ms apart, rather
+            # than all of them at once.
+            finish_archive(self._staged.pop(0), self._on_rotated)
             return
         if not self._is_enabled():
             return

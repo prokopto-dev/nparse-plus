@@ -10,7 +10,13 @@ from unittest import mock
 import pytest
 
 from nparseplus.core.background import run_inline
-from nparseplus.core.logarchive import LogArchiveService, archive_oversized_logs
+from nparseplus.core.logarchive import (
+    CATCHUP_LIMIT_BYTES,
+    LogArchiveService,
+    archive_oversized_logs,
+    finish_archive,
+    stage_oversized_logs,
+)
 from nparseplus.core.logfile import LogTail, find_active_log
 
 
@@ -158,6 +164,55 @@ def test_lines_written_during_the_copy_still_reach_the_archive(tmp_path: Path) -
 
     assert "Gorenaire" in archived[0].read_text()
     assert log.stat().st_size == 0
+
+
+def test_the_catch_up_on_the_driver_thread_is_capped(tmp_path: Path) -> None:
+    """The swap runs beside the log tail, so its one variable-size read has a
+    ceiling: a client writing hard while the copy is staged must not be able
+    to turn the tick into an arbitrarily long read."""
+    log = tmp_path / "eqlog_Tanky_P1999Green.txt"
+    _make_log(log, 2 * 1024 * 1024)
+    game = _client_handle(log)
+    try:
+        staged = stage_oversized_logs(tmp_path, threshold_mb=1)
+        assert len(staged) == 1
+        # ...and now the client writes far more than the cap before the tick
+        # that finishes the swap gets to run.
+        flood = b"[Wed Jul 15 21:05:00 2026] You slash Gorenaire.\n" * 20_000
+        assert len(flood) > CATCHUP_LIMIT_BYTES * 2
+        game.write(flood)
+
+        archived = finish_archive(staged[0])
+    finally:
+        game.close()
+
+    assert archived is not None
+    # Exactly the staged copy plus the cap — the rest of the flood is left
+    # out of the archive rather than read on the driver thread.
+    assert archived.stat().st_size == staged[0].copied + CATCHUP_LIMIT_BYTES
+    assert log.stat().st_size == 0  # still emptied
+
+
+def test_the_swap_takes_one_log_per_tick(tmp_path: Path) -> None:
+    # A first sweep can find several oversized logs; the driver thread should
+    # carry one truncate at a time, a tick apart, not all of them at once.
+    logs = [tmp_path / f"eqlog_Mule{n}_P1999Green.txt" for n in range(3)]
+    for log in logs:
+        _make_log(log, 2 * 1024 * 1024)
+    service = LogArchiveService(
+        get_log_dir=lambda: tmp_path,
+        is_enabled=lambda: True,
+        get_threshold_mb=lambda: 1,
+        spawn=run_inline,
+    )
+
+    service.tick(datetime.now())  # stages all three
+    emptied = []
+    for _ in range(3):
+        service.tick(datetime.now())
+        emptied.append(sum(1 for log in logs if log.stat().st_size == 0))
+
+    assert emptied == [1, 2, 3]
 
 
 def test_a_log_we_cannot_write_is_skipped_whole(tmp_path: Path) -> None:
