@@ -18,6 +18,16 @@ def _make_log(path: Path, size: int) -> None:
     path.write_bytes(b"x" * size)
 
 
+def _client_handle(path: Path):
+    """The game's own handle: appending, unbuffered, and binary.
+
+    Binary because these tests count bytes and Windows text mode would
+    expand every \n; unbuffered because the client's writes are visible to
+    us as it makes them.
+    """
+    return path.open("ab", buffering=0)
+
+
 def test_archives_only_oversized_logs(tmp_path: Path) -> None:
     big = tmp_path / "eqlog_Big_P1999Green.txt"
     small = tmp_path / "eqlog_Small_P1999Green.txt"
@@ -55,19 +65,17 @@ def test_an_emptied_log_keeps_its_mtime(tmp_path: Path) -> None:
 def test_archiving_keeps_the_tail_alive_while_the_game_holds_the_log(tmp_path: Path) -> None:
     """#87: the repro — EQ under Wine holds the log open for append."""
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("[Wed Jul 15 21:00:00 2026] Welcome to EverQuest!\n")
-    game = log.open("a", buffering=1)
+    log.write_bytes(b"[Wed Jul 15 21:00:00 2026] Welcome to EverQuest!\n")
+    game = _client_handle(log)
     try:
         tail = LogTail.attach(log)
-        game.write("[Wed Jul 15 21:00:01 2026] You slash a lava defender.\n")
-        game.write("x" * (2 * 1024 * 1024) + "\n")
-        game.flush()
+        game.write(b"[Wed Jul 15 21:00:01 2026] You slash a lava defender.\n")
+        game.write(b"x" * (2 * 1024 * 1024) + b"\n")
         assert tail.poll()  # the app is reading, as it would be
 
         assert len(archive_oversized_logs(tmp_path, threshold_mb=1)) == 1
 
-        game.write("[Wed Jul 15 21:05:00 2026] Lord Nagafen hits YOU for 900 points.\n")
-        game.flush()
+        game.write(b"[Wed Jul 15 21:05:00 2026] Lord Nagafen hits YOU for 900 points.\n")
 
         # Still one log to attach to, and it is still the one we are reading.
         assert find_active_log(tmp_path) == log
@@ -81,8 +89,8 @@ def test_a_log_refilled_past_our_offset_still_reaches_the_tail(tmp_path: Path) -
     it past our read offset before the next 100 ms poll — at which point the
     file is no longer *smaller* than where we left off."""
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n" * 21_000)
-    game = log.open("a", buffering=1)
+    log.write_bytes(b"[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n" * 21_000)
+    game = _client_handle(log)
     try:
         tail = LogTail.attach(log)
         assert tail.poll() == []  # caught up, as the driver would be
@@ -90,9 +98,8 @@ def test_a_log_refilled_past_our_offset_still_reaches_the_tail(tmp_path: Path) -
 
         assert len(archive_oversized_logs(tmp_path, threshold_mb=1)) == 1
 
-        game.write("[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n")
-        game.write("[Wed Jul 15 21:05:01 2026] You slash Gorenaire.\n" * 30_000)
-        game.flush()
+        game.write(b"[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n")
+        game.write(b"[Wed Jul 15 21:05:01 2026] You slash Gorenaire.\n" * 30_000)
         assert log.stat().st_size > offset  # regrown past us: no shrink to see
 
         lines = tail.poll()
@@ -108,9 +115,9 @@ def test_a_log_refilled_to_exactly_our_offset_still_reaches_the_tail(tmp_path: P
     """The boundary of the case above: the refill can land on the offset
     exactly, where the size says nothing at all."""
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    line = "[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n"
-    log.write_text(line * 21_000)
-    game = log.open("a", buffering=1)
+    line = b"[Wed Jul 15 21:00:00 2026] You slash a lava defender.\n"
+    log.write_bytes(line * 21_000)
+    game = _client_handle(log)
     try:
         tail = LogTail.attach(log)
         assert tail.poll() == []
@@ -118,13 +125,12 @@ def test_a_log_refilled_to_exactly_our_offset_still_reaches_the_tail(tmp_path: P
 
         assert len(archive_oversized_logs(tmp_path, threshold_mb=1)) == 1
 
-        refill = "[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n"
+        refill = b"[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n"
         while len(refill) + len(line) < offset:
             refill += line
-        refill += "x" * (offset - len(refill) - 1) + "\n"
+        refill += b"x" * (offset - len(refill) - 1) + b"\n"
         assert len(refill) == offset
         game.write(refill)
-        game.flush()
         assert log.stat().st_size == offset  # exactly where we left off
 
         lines = tail.poll()
@@ -137,14 +143,13 @@ def test_a_log_refilled_to_exactly_our_offset_still_reaches_the_tail(tmp_path: P
 def test_lines_written_during_the_copy_still_reach_the_archive(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
     _make_log(log, 2 * 1024 * 1024)
-    game = log.open("a", buffering=1)
+    game = _client_handle(log)
     try:
         real_copy = shutil.copyfileobj
 
         def copy_then_write(src, dst, *args, **kwargs):
             real_copy(src, dst, *args, **kwargs)
-            game.write("[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n")
-            game.flush()
+            game.write(b"[Wed Jul 15 21:05:00 2026] Gorenaire begins to cast a spell.\n")
 
         with mock.patch.object(shutil, "copyfileobj", copy_then_write):
             archived = archive_oversized_logs(tmp_path, threshold_mb=1)

@@ -42,6 +42,19 @@ def _line(n: int) -> str:
     return f"[Wed Jul 15 21:00:00 2026] line {n}\n"
 
 
+def _write(path: Path, text: str) -> None:
+    """Replace the file, without newline translation.
+
+    Windows would turn every \\n into \\r\\n, and these tests count bytes.
+    """
+    path.write_text(text, newline="")
+
+
+def _append(path: Path, text: str) -> None:
+    with path.open("a", newline="") as f:
+        f.write(text)
+
+
 def _padded_to(text: str, size: int) -> str:
     """`text` grown to exactly `size` bytes, still newline-terminated."""
     assert len(text) <= size
@@ -52,7 +65,7 @@ def _padded_to(text: str, size: int) -> str:
 
 def test_attach_starts_after_the_last_session_marker(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text(_line(1) + "[Wed Jul 15 21:00:01 2026] Welcome to EverQuest!\n" + _line(2))
+    _write(log, _line(1) + "[Wed Jul 15 21:00:01 2026] Welcome to EverQuest!\n" + _line(2))
     tail = LogTail.attach(log)
     # History before the marker is not replayed; what follows it is.
     assert tail.poll() == [_line(2).rstrip("\n")]
@@ -60,35 +73,32 @@ def test_attach_starts_after_the_last_session_marker(tmp_path: Path) -> None:
 
 def test_poll_returns_only_what_is_new(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text(_line(1))
+    _write(log, _line(1))
     tail = LogTail.attach(log)
     assert tail.poll() == []
 
-    with log.open("a") as f:
-        f.write(_line(2))
+    _append(log, _line(2))
     assert tail.poll() == [_line(2).rstrip("\n")]
     assert tail.poll() == []
 
 
 def test_poll_holds_a_partial_line_until_it_terminates(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text(_line(1))
+    _write(log, _line(1))
     tail = LogTail.attach(log)
 
-    with log.open("a") as f:
-        f.write("[Wed Jul 15 21:00:02 2026] half a li")
+    _append(log, "[Wed Jul 15 21:00:02 2026] half a li")
     assert tail.poll() == []
-    with log.open("a") as f:
-        f.write("ne\n")
+    _append(log, "ne\n")
     assert tail.poll() == ["[Wed Jul 15 21:00:02 2026] half a line"]
 
 
 def test_poll_restarts_when_the_file_shrinks(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("".join(_line(n) for n in range(50)))
+    _write(log, "".join(_line(n) for n in range(50)))
     tail = LogTail.attach(log)
 
-    log.write_text(_line(99))
+    _write(log, _line(99))
     assert tail.poll() == [_line(99).rstrip("\n")]
 
 
@@ -100,14 +110,14 @@ def test_poll_restarts_when_the_file_regrew_past_our_offset(tmp_path: Path) -> N
     silently skip every line from offset 0 up to it.
     """
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("".join(_line(n) for n in range(200)))
+    _write(log, "".join(_line(n) for n in range(200)))
     tail = LogTail.attach(log)
     was = tail.position
     assert was > 0
 
     refilled = "".join(_line(n) for n in range(1000, 1400))
     assert len(refilled) > was  # regrown past where we left off
-    log.write_text(refilled)
+    _write(log, refilled)
 
     lines = tail.poll()
     assert lines[0] == _line(1000).rstrip("\n")  # nothing skipped at the top
@@ -119,7 +129,7 @@ def test_poll_restarts_when_the_file_refilled_to_exactly_our_offset(tmp_path: Pa
     """The size can come back to precisely where we left off, at which point
     it is not evidence of anything — hence the check on every poll."""
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("".join(_line(n) for n in range(200)))
+    _write(log, "".join(_line(n) for n in range(200)))
     tail = LogTail.attach(log)
     assert tail.poll() == []
 
@@ -128,7 +138,7 @@ def test_poll_restarts_when_the_file_refilled_to_exactly_our_offset(tmp_path: Pa
         body += _line(1001)
     refilled = _padded_to(body, tail.position)
     assert len(refilled) == tail.position  # same length, different content
-    log.write_text(refilled)
+    _write(log, refilled)
 
     lines = tail.poll()
     assert lines[0] == _line(1000).rstrip("\n")  # nothing skipped at the top
@@ -137,7 +147,7 @@ def test_poll_restarts_when_the_file_refilled_to_exactly_our_offset(tmp_path: Pa
 
 def test_poll_is_quiet_while_the_file_does_not_change(tmp_path: Path) -> None:
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("".join(_line(n) for n in range(20)))
+    _write(log, "".join(_line(n) for n in range(20)))
     tail = LogTail.attach(log)
     at = tail.position
     for _ in range(5):
@@ -151,17 +161,16 @@ def test_poll_survives_a_shrink_between_the_stat_and_the_read(
     # The sweep truncates on its own thread, so it can land mid-poll: the
     # stat sees the old size and the read finds an emptied file.
     log = tmp_path / "eqlog_Tanky_P1999Green.txt"
-    log.write_text("".join(_line(n) for n in range(50)))
+    _write(log, "".join(_line(n) for n in range(50)))
     tail = LogTail.attach(log)
-    with log.open("a") as f:
-        f.write(_line(51))
+    _append(log, _line(51))
 
     real_open = Path.open
 
     def truncate_then_open(self: Path, *args: object, **kwargs: object):
         monkeypatch.setattr(Path, "open", real_open)  # once, and not re-entrant
         if self == log:
-            log.write_text(_line(77))
+            _write(log, _line(77))
         return real_open(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", truncate_then_open)
