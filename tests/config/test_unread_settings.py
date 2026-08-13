@@ -44,6 +44,12 @@ def _runtime_modules() -> list[Path]:
     return [path for path in sorted(SRC.rglob("*.py")) if path.parent.name != "config"]
 
 
+def _source(path: Path) -> str:
+    """Read a module as UTF-8 explicitly — the Windows runner's default
+    encoding is cp1252 and chokes on the em dashes these files are full of."""
+    return path.read_text(encoding="utf-8")
+
+
 def _receiver(node: ast.Attribute) -> str:
     """The name the attribute was read off: ``a.b.c`` -> "b" for ``.c``."""
     value = node.value
@@ -95,7 +101,7 @@ def test_nothing_outside_config_reaches_settings_maps() -> None:
     passed as one — assert neither happens, which together is the claim."""
     readers = []
     for path in _runtime_modules():
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(_source(path))
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Attribute)
@@ -110,7 +116,7 @@ def test_map_settings_is_not_passed_around_either() -> None:
     holders = [
         path.name
         for path in _runtime_modules()
-        if "MapSettings" in path.read_text()  # an annotation or a construction
+        if "MapSettings" in _source(path)  # an annotation or a construction
     ]
     assert holders == [], f"MapSettings reaches {holders}; it is documented as unread"
 
@@ -118,7 +124,7 @@ def test_map_settings_is_not_passed_around_either() -> None:
 def test_nothing_reads_the_legacy_spellwindow_fields() -> None:
     readers = []
     for path in _runtime_modules():
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(_source(path))
         holders = _spellwindow_holders(tree)
         for node in ast.walk(tree):
             if (
