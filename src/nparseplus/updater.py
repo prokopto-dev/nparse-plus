@@ -426,10 +426,30 @@ def _size_error(written: int, declared: int) -> str | None:
 
     Redundant whenever a digest is present, and the only truncation guard on a
     release published before GitHub served one.
+
+    Only the *short* half of that comparison reaches here: a body running long
+    is stopped mid-stream by the byte ceiling instead, which is what
+    ``ByteBudgetExceeded`` exists to keep classifiable.
     """
     if declared > 0 and written != declared:
         return f"size mismatch: expected {declared} bytes, got {written} — refusing to install"
     return None
+
+
+class ByteBudgetExceeded(ValueError):
+    """The body ran past the ceiling this download was given.
+
+    Carries the ceiling because only the caller knows where it came from, and
+    that decides what the overflow *means*: stopped at the size GitHub
+    published, the body is provably not that artifact and the answer is the
+    same refusal ``_size_error`` would have given had the stream been allowed
+    to finish; stopped at the global backstop, all that is known is that the
+    response would not end.
+    """
+
+    def __init__(self, message: str, limit: int) -> None:
+        super().__init__(message)
+        self.limit = limit
 
 
 def _download_client(client: httpx.Client | None) -> httpx.Client:
@@ -486,7 +506,9 @@ def stream_https_to_file(
                     for chunk in response.iter_bytes():
                         written += len(chunk)
                         if written > max_bytes:
-                            raise ValueError(f"response exceeds the {max_bytes} byte limit")
+                            raise ByteBudgetExceeded(
+                                f"response exceeds the {max_bytes} byte limit", max_bytes
+                            )
                         digest.update(chunk)
                         fh.write(chunk)
                 return digest.hexdigest(), written
@@ -533,6 +555,18 @@ def download_asset(
             asset.name,
             asset.digest,
         )
+
+    def refusal(status: DownloadStatus, detail: str) -> DownloadOutcome:
+        # Not a flaky network: the bytes arrived and are the wrong bytes.
+        logger.error("REFUSED the downloaded %s — %s", asset.name, detail)
+        staging.unlink(missing_ok=True)
+        return DownloadOutcome(
+            status=status,
+            asset_name=asset.name,
+            detail=detail,
+            pinned=expected is not None,
+        )
+
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         actual, written = stream_https_to_file(
@@ -551,15 +585,24 @@ def download_asset(
             raise VerificationRefused(size_refusal, DownloadStatus.SIZE_MISMATCH)
         staging.replace(destination)
     except VerificationRefused as exc:
-        # Not a flaky network: the bytes arrived and are the wrong bytes.
-        logger.error("REFUSED the downloaded %s — %s", asset.name, exc)
-        staging.unlink(missing_ok=True)
-        return DownloadOutcome(
-            status=exc.status,
-            asset_name=asset.name,
-            detail=str(exc),
-            pinned=expected is not None,
-        )
+        return refusal(exc.status, str(exc))
+    except ByteBudgetExceeded as exc:
+        # An over-long body never reaches _size_error — the stream is cut the
+        # moment it passes the ceiling. When that ceiling WAS the size the
+        # release published, the comparison has effectively already happened
+        # and this is the same refusal, not a transport failure; letting it
+        # fall through to `except Exception` would report a network problem
+        # and open the release page for an artifact we just rejected.
+        if asset.size > 0 and exc.limit == asset.size:
+            return refusal(
+                DownloadStatus.SIZE_MISMATCH,
+                f"size mismatch: expected {asset.size} bytes, the response ran past that "
+                "— refusing to install",
+            )
+        # No published size to compare against: all that is known is that the
+        # response would not stop. Still a refusal — nothing arrived that we
+        # would install, and retrying is not the advice.
+        return refusal(DownloadStatus.REFUSED, str(exc))
     except Exception as exc:
         logger.warning("update download failed for %s: %s", asset.name, exc, exc_info=True)
         staging.unlink(missing_ok=True)

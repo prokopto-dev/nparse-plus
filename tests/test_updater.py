@@ -353,15 +353,47 @@ def test_download_asset_follows_an_https_redirect(tmp_path: Path) -> None:
 
 
 def test_download_asset_refuses_an_over_budget_body(tmp_path: Path) -> None:
-    assert not download_asset(_asset(), tmp_path, client=_client(_serve()), max_bytes=4).ok
+    # No published size to compare against, so the only fact is that the
+    # response would not stop — a refusal, not "try again in a moment".
+    outcome = download_asset(_asset(), tmp_path, client=_client(_serve()), max_bytes=4)
+    assert outcome.status is DownloadStatus.REFUSED and outcome.refused
     assert not _staging(tmp_path).exists()
 
 
 def test_download_asset_caps_at_the_published_size(tmp_path: Path) -> None:
     # A body longer than the size GitHub published is cut off mid-stream
-    # rather than buffered to the global budget first.
+    # rather than buffered to the global budget first — and the cut is a
+    # SIZE refusal, not a transport failure: the ceiling that stopped it was
+    # the release's own number, so this is the same disagreement _size_error
+    # reports for a short body.
     asset = _asset(size=4)
-    assert not download_asset(asset, tmp_path, client=_client(_serve())).ok
+    outcome = download_asset(asset, tmp_path, client=_client(_serve()))
+    assert outcome.status is DownloadStatus.SIZE_MISMATCH and outcome.refused
+    assert "expected 4 bytes" in outcome.detail
+
+
+def test_an_oversized_artifact_does_not_open_the_release_page(tmp_path: Path, monkeypatch) -> None:
+    # The regression this pairs with: a substituted artifact that is merely
+    # LONGER than the release says used to read as a network failure, which
+    # sent the user straight back to the page serving it.
+    monkeypatch.setattr(updater, "_download_client", lambda c: _client(_serve()))
+    release = ReleaseInfo(
+        version="9.9.9",
+        html_url="https://example/release",
+        assets=(ReleaseAsset(name="a.dmg", browser_download_url="https://dl.test/a.dmg", size=4),),
+    )
+    opened_urls: list[str] = []
+
+    outcome = install_action(
+        release,
+        platform="darwin",
+        open_path=lambda path: None,
+        open_url=opened_urls.append,
+        downloads_dir=tmp_path,
+    )
+
+    assert outcome.status is DownloadStatus.SIZE_MISMATCH
+    assert opened_urls == [] and not outcome.opened_release_page
 
 
 def test_download_asset_refuses_a_path_bearing_asset_name(tmp_path: Path) -> None:

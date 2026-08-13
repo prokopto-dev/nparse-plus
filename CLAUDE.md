@@ -254,7 +254,15 @@ translocated bundle — land here); `REFUSALS` is the set a caller actually
 branches on, so nobody switches on members. **`pinned` is orthogonal to
 `status` on purpose**: "this release published no checksum" and "the checksum
 did not match" are facts about different releases, and collapsing them tells
-someone on a pre-digest release their download is corrupt. The prose lives in
+someone on a pre-digest release their download is corrupt. **An over-long
+body never reaches `_size_error`** — the published size doubles as the stream
+ceiling, so it is cut mid-download; `ByteBudgetExceeded` carries which
+ceiling stopped it so the caller can say. Stopped at the release's own
+number that is the same `SIZE_MISMATCH` a short body gets; stopped at the
+global backstop it is a bare `REFUSED`. Left as a plain `ValueError` it read
+as a transport failure and opened the release page for an artifact that had
+just been rejected — the exact bug #93 is about, one path over. The prose
+lives in
 `DownloadOutcome.message()`/`title()` — Qt-free and tested without a window —
 and `ui/updatewindow.DownloadOutcomeDialog` is a pure renderer of it, with
 the digests in the details drawer. **A refusal does not open the release
