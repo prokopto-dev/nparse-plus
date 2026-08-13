@@ -6,6 +6,57 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.4.2 (2026-08-13)
+
+### Bug Fixes
+
+- Three driver-thread defects — log archiving, the EQ probe, and the timestamp parse
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+- **logs**: Archive by copy-and-truncate so the tail survives
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+- **logs**: Check the tail signature on every poll, not only on a shrink
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+- **logs**: Detect a rotation the log outgrew before the next poll
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+- **logs**: Hand the rotation to the tail instead of inferring it
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+### Documentation
+
+- Record the three driver-thread fixes (#87, #88, #89)
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+### Performance Improvements
+
+- **logs**: Bound what the archive swap does on the driver thread
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+- **pipeline**: Parse the log timestamp without strptime
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+- **socials**: Probe for the EQ client off the driver thread
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+### Testing
+
+- **logs**: Count bytes, not characters, in the rotation tests
+  ([#92](https://github.com/prokopto-dev/nparse-plus/pull/92),
+  [`3ddac6a`](https://github.com/prokopto-dev/nparse-plus/commit/3ddac6ac70ae1633065cc5cb894ccc1f9b3a64e4))
+
+
 ## v2.4.1 (2026-08-13)
 
 ### Bug Fixes
