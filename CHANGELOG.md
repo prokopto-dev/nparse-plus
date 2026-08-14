@@ -6,6 +6,25 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.10.0 (2026-08-14)
+
+### Documentation
+
+- Add a README product shot and regenerate the screenshot set
+  ([#111](https://github.com/prokopto-dev/nparse-plus/pull/111),
+  [`f51b643`](https://github.com/prokopto-dev/nparse-plus/commit/f51b6432dca8a24d7aa2b190cc569286d9f91af4))
+
+- Correct stale FAQ assertions and v2.4-v2.9 drift
+  ([#112](https://github.com/prokopto-dev/nparse-plus/pull/112),
+  [`72e700d`](https://github.com/prokopto-dev/nparse-plus/commit/72e700dfa81a3ceecabf44bd9b4bff52442bd321))
+
+### Features
+
+- **maps**: Choose how the map is panned
+  ([#118](https://github.com/prokopto-dev/nparse-plus/pull/118),
+  [`b5f7116`](https://github.com/prokopto-dev/nparse-plus/commit/b5f711696df016c5699b5b6566ec015d5170259e))
+
+
 ## v2.9.2 (2026-08-14)
 
 ### Bug Fixes
