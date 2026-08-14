@@ -91,6 +91,10 @@ ALERT_SEPARATORS = (" — ", " -- ", " - ", ": ")
 # ordinary prose, so anything longer than a label is the alert itself (#102).
 KICKER_MAX_CHARS = 28
 KICKER_MAX_WORDS = 4
+# Stand-in text for measuring how tall a POPULATED kicker is (see
+# ``_measure_kicker_height``). Any non-empty string does; the glyphs do not
+# matter, only that there are some.
+KICKER_HEIGHT_PROBE = "Ag"
 # Punctuation that marks structured text rather than a name. A mob-info dump
 # opens with "<Mob> [Slowable, baneable] - ..." — brackets are the tell.
 KICKER_FORBIDDEN_CHARS = frozenset("[]{}()<>|/*")
@@ -699,6 +703,9 @@ class EventOverlayWindow(QWidget):
         self._alert_kicker.setTextFormat(Qt.TextFormat.PlainText)
         set_caps(self._alert_kicker)
         self._alert_kicker.hide()
+        # How tall the kicker is once it has text — the number the Alerts
+        # region's floor is charged for. Re-measured by every apply_skin.
+        self._kicker_worst_height = 0
         self._center_text = QLabel("", self)
         self._center_text.setObjectName("EventOverlayText")
         self._center_text.setTextFormat(Qt.TextFormat.PlainText)
@@ -932,6 +939,8 @@ class EventOverlayWindow(QWidget):
             skins.typography_style(self._font_size, kicker_role, color=skin.alert_kicker_color)
             + " background: transparent;"
         )
+        # After its stylesheet, before anything asks for the floor.
+        self._kicker_worst_height = self._measure_kicker_height()
         display_style = skins.typography_style(
             self._font_size, skins.SMALL_DISPLAY, color=skin.overlay_chip_text
         )
@@ -1789,11 +1798,46 @@ class EventOverlayWindow(QWidget):
         child of a hidden window is never "visible".
         """
         chrome = self._alert_layout.spacing() * 2
-        if worst_case or not self._alert_kicker.isHidden():
+        if worst_case:
+            chrome += self._kicker_worst_height
+        elif not self._alert_kicker.isHidden():
             chrome += self._alert_kicker.sizeHint().height()
         if worst_case or not self._alert_rule.isHidden():
             chrome += self._alert_rule.sizeHint().height()
         return chrome
+
+    def _measure_kicker_height(self) -> int:
+        """The tallest the kicker can be, whatever it ends up saying.
+
+        A single-line QLabel's height is its font's line height and does not
+        depend on which glyphs it holds — but it DOES depend on whether it
+        holds any, and the floor is computed in position mode, where the
+        kicker is empty. The difference is platform-specific and goes both
+        ways: measured in CI, the populated label is one pixel taller on
+        Linux (so the floor under-charged and the "guaranteed" budget came
+        out at 39 against a ``MIN_ALERT_BUDGET`` of 40 — the same defect
+        #107 is about, one pixel instead of eleven) and two pixels shorter
+        on Windows, while macOS reports the same number either way. So ask
+        the widget both ways and keep the larger.
+
+        Measured through the real widget rather than from a ``QFontMetrics``
+        of our own: the size is set by a stylesheet, and a QLabel's own
+        ``font()`` does not carry that (the trap ``_measure_headline``
+        documents). Called from ``apply_skin`` and cached, because it is the
+        skin and the base font that move this number — and because the
+        alternative is mutating a widget from inside ``_min_region_height``,
+        which a region drag calls on every mouse move.
+        """
+        kicker = self._alert_kicker
+        current = kicker.sizeHint().height()
+        if kicker.text():
+            return current  # already the populated measurement
+        kicker.setText(KICKER_HEIGHT_PROBE)
+        try:
+            populated = kicker.sizeHint().height()
+        finally:
+            kicker.setText("")
+        return max(current, populated)
 
     def _measure_headline(self, size: int) -> QRect:
         """The rect the current headline wraps into at ``size`` px.

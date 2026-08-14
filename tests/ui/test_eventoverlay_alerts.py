@@ -13,6 +13,7 @@ to what the user actually sees.
 """
 
 from datetime import datetime
+from math import ceil
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
@@ -821,9 +822,17 @@ def test_a_region_above_the_floor_is_left_exactly_as_drawn(qtbot) -> None:
 # -- #107: #102/#103 are not regressed ------------------------------------------
 
 
-def test_a_long_alert_still_scrolls_and_completes_in_its_own_lifetime(qtbot) -> None:
-    """#103's guarantee, re-asserted now that the viewport has a real width —
-    which is what the overflow was always supposed to be measured against."""
+def test_a_long_alert_still_scrolls_the_whole_way(qtbot) -> None:
+    """#103's crawl, re-asserted now that the viewport has a real width —
+    which is what the overflow was always supposed to be measured against.
+
+    Completion, not a deadline. ``alert_scroll_speed`` is capped at a
+    readable 2.5 lines/second and #103 is explicit that for an alert far
+    longer than its display time the readable rate wins and the remedy is a
+    longer duration or a taller region. Whether THIS paragraph fits in four
+    seconds is a question about a platform's font metrics, so the deadline is
+    pinned on the pure function instead, where it is not.
+    """
     overlay = EventOverlayWindow(clear_after_s=4.0)
     qtbot.addWidget(overlay)
     overlay.resize(400, 200)
@@ -831,11 +840,16 @@ def test_a_long_alert_still_scrolls_and_completes_in_its_own_lifetime(qtbot) -> 
     _fire(qtbot, overlay, PARAGRAPH)
 
     assert overlay.is_scrolling()
-    ticks = round(4000 / SCROLL_TICK_MS)
-    for _ in range(ticks):
+    travel, speed = overlay._scroll_travel, overlay._scroll_speed
+    assert travel > 0 and speed > 0
+    budget = overlay._scroll_hold_ticks + ceil(travel / (speed * SCROLL_TICK_MS / 1000)) + 2
+    for _ in range(budget):
+        if not overlay.is_scrolling():
+            break
         overlay._advance_scroll()
+
     assert not overlay.is_scrolling()
-    assert overlay.scroll_offset() == pytest.approx(overlay._scroll_travel)
+    assert overlay.scroll_offset() == pytest.approx(travel)
     # The reset match still sees the whole string, split or not.
     assert overlay.current_text() == PARAGRAPH
 
@@ -870,3 +884,28 @@ def test_raising_the_base_font_re_clamps_the_region_live(qtbot) -> None:
     _fire(qtbot, overlay, "Gorenaire — ENRAGED")
     assert overlay._alert_budget_height() >= MIN_ALERT_BUDGET
     assert _painted_columns(overlay)[2] > 0
+
+
+def test_the_kicker_height_charged_covers_a_populated_kicker(qtbot) -> None:
+    """A QLabel's height depends on whether it holds text at all, and by how
+    much is platform-specific.
+
+    CI measured the populated kicker one pixel TALLER than the empty one on
+    Linux and two pixels SHORTER on Windows, while macOS reports the same
+    number either way. The floor is computed while the kicker is empty, so
+    charging that measurement under-charged by a pixel on Linux and the
+    "guaranteed" budget came out at 39 against a MIN_ALERT_BUDGET of 40 —
+    #107's own defect one pixel wide instead of eleven, and just as
+    invisible from a Mac.
+    """
+    overlay = _shown(qtbot)
+    charged = overlay._kicker_worst_height
+    assert charged >= overlay._alert_kicker.sizeHint().height()  # empty
+    assert overlay._alert_kicker.text() == ""  # the probe put it back
+
+    _fire(qtbot, overlay, "Gorenaire — ENRAGED")
+    assert not overlay._alert_kicker.isHidden()
+    assert charged >= overlay._alert_kicker.sizeHint().height()  # populated
+    # Which is the whole point: worst case really is the worst case, so the
+    # floor does not move under a live alert.
+    assert overlay._alert_chrome_height(worst_case=True) >= overlay._alert_chrome_height()
