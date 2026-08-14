@@ -6,6 +6,23 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.11.1 (2026-08-14)
+
+### Bug Fixes
+
+- **mobinfo**: Reach P99 wiki with OS trust store
+  ([#119](https://github.com/prokopto-dev/nparse-plus/pull/119),
+  [`255d734`](https://github.com/prokopto-dev/nparse-plus/commit/255d734a9dcd28aaa337ea594e6fc051d2709f43))
+
+- **mobinfo**: Reach the P99 wiki through the OS trust store
+  ([#119](https://github.com/prokopto-dev/nparse-plus/pull/119),
+  [`255d734`](https://github.com/prokopto-dev/nparse-plus/commit/255d734a9dcd28aaa337ea594e6fc051d2709f43))
+
+- **mobinfo**: Retry unavailable wiki lookups
+  ([#119](https://github.com/prokopto-dev/nparse-plus/pull/119),
+  [`255d734`](https://github.com/prokopto-dev/nparse-plus/commit/255d734a9dcd28aaa337ea594e6fc051d2709f43))
+
+
 ## v2.11.0 (2026-08-14)
 
 ### Features
