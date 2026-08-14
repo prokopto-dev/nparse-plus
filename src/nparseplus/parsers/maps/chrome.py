@@ -19,6 +19,7 @@ should say) are testable without a live window.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPoint, QRect, Qt
@@ -136,6 +137,16 @@ def edge_anchor(dx: float, dy: float, width: int, height: int, inset: int = 0) -
     x = min(max(x, inset), width - inset)
     y = min(max(y, inset), height - inset)
     return int(x), int(y)
+
+
+def covers_point(point: QPoint, rects: Iterable[QRect]) -> bool:
+    """True when ``point`` (window-local) lands inside any of ``rects``.
+
+    What stops a drag that starts on the header from panning the map sliding
+    underneath it. Callers pass the geometry of the panels that are actually
+    up, so a dismissed rail covers nothing.
+    """
+    return any(rect.contains(point) for rect in rects)
 
 
 def zone_line_label(text: str) -> str:
