@@ -404,3 +404,29 @@ def test_a_faction_page_link_names_the_faction() -> None:
     assert links[0].note == "(-30)"
     # ... and still points at the page that exists.
     assert links[0].url == "https://wiki.project1999.com/Trakanon_(Faction)"
+
+
+def test_lookup_keeps_an_unreachable_wiki_distinct_and_does_not_cache_it() -> None:
+    fetches: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        fetches.append(str(request.url))
+        return httpx.Response(500)
+
+    client = P99WikiClient(client=_mock_client(handler))
+    assert client.lookup("Lord Nagafen").status == "unreachable"
+    assert client.lookup("Lord Nagafen").status == "unreachable"
+    assert len(fetches) == 2  # recovery must not wait out a negative TTL
+
+
+def test_lookup_remembers_a_page_the_wiki_says_is_missing() -> None:
+    fetches: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        fetches.append(str(request.url))
+        return httpx.Response(404)
+
+    client = P99WikiClient(client=_mock_client(handler))
+    assert client.lookup("a gnoll pup").status == "missing"
+    assert client.lookup("a gnoll pup").status == "missing"
+    assert len(fetches) == 1

@@ -16,7 +16,7 @@ from nparseplus.core.events import ConEvent
 from nparseplus.core.handlers.consider import ConHandler, LootPrice, MobInfoState, merge_loot
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
-from nparseplus.net.p99wiki import WikiDrop, WikiNpc
+from nparseplus.net.p99wiki import WikiDrop, WikiLookupResult, WikiNpc
 from nparseplus.net.pigparse_models import ItemPrice
 from nparseplus.net.worker import ImmediateWorker
 
@@ -41,9 +41,9 @@ class FakeWiki:
         self.answer = answer
         self.calls: list[tuple[str, bool]] = []
 
-    def npc(self, title: str, *, with_image: bool = False) -> WikiNpc | None:
+    def lookup(self, title: str, *, with_image: bool = False) -> WikiLookupResult:
         self.calls.append((title, with_image))
-        return self.answer
+        return WikiLookupResult(npc=self.answer, status="ok" if self.answer else "missing")
 
 
 class FakeApi:
@@ -217,3 +217,18 @@ def test_a_pet_is_never_looked_up() -> None:
     bus, _h = _handler(player_pet=pet, wiki=wiki, wiki_submit=ImmediateWorker().submit)
     bus.publish(ConEvent(timestamp=T0, name="Vexer"))
     assert wiki.calls == []
+
+
+def test_an_unreachable_wiki_is_recorded_separately_from_a_missing_page() -> None:
+    class UnreachableWiki(FakeWiki):
+        def lookup(self, title: str, *, with_image: bool = False) -> WikiLookupResult:
+            self.calls.append((title, with_image))
+            return WikiLookupResult(status="unreachable")
+
+    state = MobInfoState()
+    bus, _h = _handler(
+        mob_info=state, wiki=UnreachableWiki(None), wiki_submit=ImmediateWorker().submit
+    )
+    bus.publish(ConEvent(timestamp=T0, name="Lord Nagafen"))
+    assert state.wiki is None
+    assert state.wiki_unreachable is True

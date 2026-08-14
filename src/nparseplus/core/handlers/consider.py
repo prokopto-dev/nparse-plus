@@ -40,7 +40,7 @@ from nparseplus.core.wiki import WikiLookup
 from nparseplus.core.zones import ZoneDatabase
 
 if TYPE_CHECKING:
-    from nparseplus.net.p99wiki import WikiDrop, WikiNpc
+    from nparseplus.net.p99wiki import WikiDrop, WikiLookupResult, WikiNpc
 
 WIKI_BASE = "https://wiki.project1999.com"
 PIGPARSE_ITEM_URL = "https://pigparse.azurewebsites.net/ItemDetails"
@@ -149,6 +149,9 @@ class MobInfoState:
     #: The mob's P99 wiki page, once the lookup lands. ``None`` while it is
     #: in flight, when the lookup is off, and for a page that does not exist.
     wiki: WikiNpc | None = None
+    #: The last lookup could not reach the wiki at all — a different fact
+    #: from "this mob has no page", and the window says which (#116).
+    wiki_unreachable: bool = False
     on_change: list[Callable[[MobInfoState], None]] = field(default_factory=list)
 
     def _notify(self) -> None:
@@ -214,6 +217,7 @@ class ConHandler(BaseHandler):
         info.is_notable = notable
         info.loot = []
         info.wiki = None
+        info.wiki_unreachable = False
         self._priced_for = ""
         self._priced = []
         info._notify()
@@ -258,13 +262,14 @@ class ConHandler(BaseHandler):
             return
         want_image = self.want_image
 
-        def fetch() -> WikiNpc | None:
-            return wiki.npc(name, with_image=want_image())
+        def fetch() -> WikiLookupResult:
+            return wiki.lookup(name, with_image=want_image())
 
-        def apply(npc: WikiNpc | None) -> None:
+        def apply(result: WikiLookupResult) -> None:
             if self.mob_info.name != name:
                 return
-            self.mob_info.wiki = npc
+            self.mob_info.wiki = result.npc
+            self.mob_info.wiki_unreachable = result.unreachable
             self._republish()
 
         submit(fetch, apply)

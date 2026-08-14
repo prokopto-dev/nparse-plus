@@ -34,6 +34,9 @@ dependencies = [
   "pathvalidate>=3.2",
   "websocket-client>=1.8",
   "certifi>=2024.2.2",  # pinned CA store for websocket-client (frozen app)
+  # Verify against the OS trust store rather than certifi (#116). Pure
+  # Python, no build step; it is the mechanism pip itself uses for this.
+  "truststore>=0.9",
   # The plugin contract package. Published on PyPI, but resolved from sdk/ as
   # a uv workspace member ([tool.uv.sources]) until it moves to its own repo,
   # so an SDK edit is immediately visible to the app's tests (see sdk/README.md).
