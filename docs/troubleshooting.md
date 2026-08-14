@@ -186,6 +186,25 @@ The plugin stays active — its parsers, event handlers, and windows are
 unaffected. Nothing to fix on your side; it's a bug report for the add-on's
 author.
 
+## An update download was refused
+
+**Update download refused** is not a network error. It means the bytes that
+arrived are not the ones the release describes — nParse+ checks every
+download against the sha256 checksum GitHub publishes for that asset (or, on
+older releases that carry none, against its published length) and deletes
+anything that doesn't match, so nothing was installed. Almost always a
+corrupted or interrupted transfer: try again.
+
+The release page is deliberately *not* opened for you here, because it
+serves the same artifact that was just refused. **Update download failed**
+is the other one — that's a real transport problem, and it does offer the
+release page.
+
+**Show Details** on the refusal carries both checksums, the published one
+and the one that arrived; paste those into a bug report. Full explanation of
+what the check does and does not prove:
+[Self-updater → Verified downloads](features/updater.md#verified-downloads).
+
 ## Settings seem lost / where is settings.json?
 
 See [First run → Where settings

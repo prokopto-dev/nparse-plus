@@ -6,8 +6,17 @@
 
 | Setting | What it does |
 |---|---|
-| **Archive oversized logs** | EQ log files grow forever (the game only appends). With this on, nParse+ moves oversized logs into an archive folder and lets the game start a fresh one. |
+| **Archive oversized logs** | EQ log files grow forever (the game only appends). With this on, nParse+ copies an oversized log into an `archive/` folder beside it and then empties the original in place, so the game keeps writing to the same file from the top. |
 | **Archive threshold** | The size (MB) at which a log gets archived. |
+
+!!! note "Why it empties the file instead of moving it"
+    The log being archived is, by definition, the one EQ is still writing —
+    it's the one that grew. Moving it would work on Windows, which refuses
+    to move a file the client holds open, but on macOS and Linux the move
+    succeeds, EQ keeps writing into the file at its new path, and nParse+ is
+    left with no log to follow. Copying the contents out and truncating in
+    place is what log rotators do for the same reason: the client's open
+    file keeps working and its next line lands at the top of the empty file.
 
 ## Macros
 

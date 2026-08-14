@@ -32,9 +32,16 @@ Logs folder hides per setup.
 
 ## Can I import my GINA triggers?
 
-Not yet — there's no importer. See
-[Migrating from GINA](migrating/from-gina.md) for the concept map and a
-fast manual workflow; the [built-in
+Yes. In the [Trigger Editor](windows/trigger-editor.md), **Import…** reads
+GINA `.gtp` packages directly (and the raw XML, if that's what you have).
+Trigger groups become categories — the whole nested path, so
+`Raid Pack / Sebilis` stays `Raid Pack / Sebilis` — and `{S}` tokens,
+timers, early-enders, counters and text-to-speech carry over. Sound media
+files, copy-to-clipboard and phrase modifiers have no equivalent here and
+are skipped. Nothing is kept until you hit Apply.
+
+See [Migrating from GINA](migrating/from-gina.md) for the full concept map.
+Before importing a big raid pack, note the [built-in
 triggers](features/builtin-triggers.md) already cover the standard raid
 alerts.
 
@@ -42,14 +49,31 @@ alerts.
 
 No. The [PigParse network](features/sharing.md) features — map dots,
 shared timers, feeds — work without any account. The optional Discord
-login only adds inventory upload to your pigparse.org character page.
+login adds one thing: uploading an inventory dump to your pigparse.org
+character page. Sending dumps to
+[p99planner.com](settings/sharing.md#character-dump-upload) instead needs
+no account at all, and the local [Character Dumps](windows/character-dumps.md)
+library needs nothing either.
 
 ## Can other people see where I am?
 
 Only if you turn sharing on, and you control it per character:
 everyone / guild-only / off ([Settings →
 Character](settings/character.md)). With sharing off nothing leaves your
-machine. Locations are only sent when you type `/loc`.
+machine.
+
+With it on, precisely what happens is: typing `/loc` sends that position,
+and **the same position is then resent every 10 seconds** as a keepalive so
+your dot doesn't go stale on other people's maps. The keepalive stops after
+5 minutes with no activity from you, and immediately when you camp — after
+which nothing is sent until your next `/loc`.
+
+The distinction worth understanding is that nParse+ only ever learns where
+you are *from* `/loc`: the keepalive repeats your last known position and
+cannot report movement between them. Your last `/loc` also rides along with
+a dragon-roar broadcast and with the NPC activity posts nParse+ makes on
+pigparse mode, and dying sends a corpse waypoint (on `nparse` mode only —
+the PigParse hub has no waypoint wire).
 
 ## Why does macOS say the app is damaged?
 

@@ -7,8 +7,9 @@ and ends with what you gain. The
 
 - **[From nParse](from-nparse.md)** — your config migrates automatically,
   custom timers included.
-- **[From GINA](from-gina.md)** — no importer (honest!), but the trigger
-  concepts map one-to-one; recreating your key triggers is quick.
+- **[From GINA](from-gina.md)** — your `.gtp` packages import directly,
+  folder paths and all; the concepts map one-to-one for anything you'd
+  rather rebuild.
 - **[From EQTool](from-eqtool.md)** — near-identical feature set by
   design; mostly a matter of finding where things live.
 
