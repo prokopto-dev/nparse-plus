@@ -285,6 +285,7 @@ class MobInfoWindow(OverlayWindowBase):
             mob.is_notable,
             tuple((e.name, e.price, e.rarity, e.url) for e in mob.loot),
             mob.wiki,  # frozen pydantic model: compares by value
+            mob.wiki_unreachable,
             self._settings.mobinfo.show_image,
         )
         if fingerprint == getattr(self, "_rendered_fingerprint", None):
@@ -343,6 +344,10 @@ class MobInfoWindow(OverlayWindowBase):
         parts = []
         if mob.zone:
             parts.append(f"Zone: {mob.zone}")
+        if mob.wiki_unreachable and not mob.is_pet:
+            # A failed request is not the same as a page without data. This
+            # tells players why no new wiki details appeared (#116).
+            parts.append("Wiki: unavailable (could not reach project1999.com)")
         if wiki is not None and wiki.spawn_location:
             parts.append(f"Spawn: {wiki.spawn_location}")
         if mob.spawn_seconds:

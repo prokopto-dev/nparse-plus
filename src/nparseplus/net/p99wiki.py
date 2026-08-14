@@ -47,11 +47,13 @@ import re
 import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+
+from nparseplus.net.tls import verify_option
 
 if TYPE_CHECKING:
     from nparseplus.core.zones import ZoneDatabase
@@ -497,6 +499,40 @@ def parse_image_url(payload: str) -> str | None:
     return None
 
 
+class WikiLookupResult(BaseModel):
+    """What one page lookup answered, and why it answered nothing.
+
+    "This mob has no wiki page" and "the wiki could not be reached" are not
+    the same fact, and rendering both as an empty panel is what made #116
+    look like "the update did nothing" instead of a connection failure. The
+    caller gets to tell them apart.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    npc: WikiNpc | None = None
+    #: ok        - the page was fetched (``npc`` set)
+    #: missing   - the wiki answered, and there is no such page (404)
+    #: unreachable - nothing was fetched: TLS, DNS, timeout, or a 5xx
+    status: Literal["ok", "missing", "unreachable"] = "missing"
+
+    @property
+    def unreachable(self) -> bool:
+        return self.status == "unreachable"
+
+
+def _failure_status(error: Exception) -> Literal["missing", "unreachable"]:
+    """Did the wiki say "no such page", or did we never hear from it?
+
+    Only a 404 is the wiki answering. Everything else — TLS, DNS, timeout, a
+    5xx — is us failing to ask, and the difference is the whole point of
+    :class:`WikiLookupResult`.
+    """
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 404:
+        return "missing"
+    return "unreachable"
+
+
 def _cache_name(url: str) -> str:
     suffix = Path(urlparse(url).path).suffix.lower()
     if suffix not in _IMAGE_SUFFIXES:
@@ -517,7 +553,12 @@ class P99WikiClient:
         self._base = base_url.rstrip("/")
         self._zones = zones
         self._client = client or httpx.Client(
-            timeout=TIMEOUT_S, headers={"User-Agent": "nparseplus"}, follow_redirects=True
+            timeout=TIMEOUT_S,
+            headers={"User-Agent": "nparseplus"},
+            follow_redirects=True,
+            # The wiki serves an incomplete chain; certifi cannot build a path
+            # through it and every request fails (#116). See net/tls.py.
+            verify=verify_option(),
         )
         self._image_dir = image_cache_dir
         self._ttl = ttl_s
@@ -525,7 +566,8 @@ class P99WikiClient:
         self._search_cache: dict[str, list[str]] = {}
         #: title -> (fetched-at, result). The stamp is what makes re-considering
         #: a mob free: the window polls twice a second and must never fetch.
-        self._npc_cache: dict[str, tuple[float, WikiNpc | None]] = {}
+        #: Only ``ok`` and ``missing`` land here — see _page.
+        self._npc_cache: dict[str, tuple[float, WikiLookupResult]] = {}
 
     def search(self, query: str, limit: int = 8) -> list[str]:
         """Page titles matching the query (opensearch)."""
@@ -554,20 +596,38 @@ class P99WikiClient:
     def npc(self, title: str, *, with_image: bool = False) -> WikiNpc | None:
         """Fetch and parse one NPC page (None on failure/non-NPC pages).
 
+        The thin form, for callers with nothing to say about *why* a page is
+        missing — the maps NPC search is one. :meth:`lookup` is the same work
+        with the reason attached.
+        """
+        return self.lookup(title, with_image=with_image).npc
+
+    def lookup(self, title: str, *, with_image: bool = False) -> WikiLookupResult:
+        """One page, with the reason when it answers nothing.
+
         ``with_image`` additionally resolves and caches the page picture. It
         is a second and third request, so the caller decides — in the app
-        that is the ``mobinfo.show_image`` setting.
+        that is the ``mobinfo.show_image`` setting. A failure there is not a
+        failure of the lookup: the page still renders without its picture.
         """
-        npc = self._page(title)
+        result = self._page(title)
+        npc = result.npc
         if npc is None or not with_image or not npc.image_file:
-            return npc
+            return result
         if npc.image_url is not None or npc.image_path is not None:
-            return npc
+            return result
         url = self.image_url(npc.image_file)
-        resolved = npc.model_copy(
-            update={"image_url": url, "image_path": self.cache_image(url) if url else None}
+        resolved = result.model_copy(
+            update={
+                "npc": npc.model_copy(
+                    update={
+                        "image_url": url,
+                        "image_path": self.cache_image(url) if url else None,
+                    }
+                )
+            }
         )
-        stamp, _ = self._npc_cache.get(title, (self._clock(), None))
+        stamp, _ = self._npc_cache.get(title, (self._clock(), resolved))
         self._npc_cache[title] = (stamp, resolved)
         return resolved
 
@@ -638,7 +698,7 @@ class P99WikiClient:
 
     # -- internals ---------------------------------------------------------------
 
-    def _page(self, title: str) -> WikiNpc | None:
+    def _page(self, title: str) -> WikiLookupResult:
         cached = self._npc_cache.get(title)
         if cached is not None and (self._clock() - cached[0]) < self._ttl:
             return cached[1]
@@ -649,10 +709,21 @@ class P99WikiClient:
                 # action=raw hands back the redirect wikitext rather than
                 # following it; one hop covers the name variants P99 uses.
                 text = self._raw(redirect.group(1).strip())
-            result = parse_npc(title, text, self._zones) if text else None
-        except Exception:
+            result = (
+                WikiLookupResult(npc=parse_npc(title, text, self._zones), status="ok")
+                if text
+                else WikiLookupResult(status="missing")
+            )
+        except Exception as error:
             logger.warning("wiki page fetch failed for %r", title, exc_info=True)
-            result = None
+            result = WikiLookupResult(status=_failure_status(error))
+        if result.unreachable:
+            # NOT cached. A negative answer is worth remembering for the TTL —
+            # a mob with no page must not be re-asked every con — but a
+            # connection failure says nothing about the page, and caching it
+            # would keep the window blank for an hour after the network came
+            # back.
+            return result
         self._npc_cache[title] = (self._clock(), result)
         return result
 

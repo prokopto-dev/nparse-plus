@@ -12,8 +12,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from nparseplus.net.p99wiki import WikiNpc
+    from nparseplus.net.p99wiki import WikiLookupResult
 
 
 class WikiLookup(Protocol):
-    def npc(self, title: str, *, with_image: bool = False) -> WikiNpc | None: ...
+    def lookup(self, title: str, *, with_image: bool = False) -> WikiLookupResult:
+        """One page, carrying why it answered nothing when it did.
+
+        The handler needs the reason: "no such mob page" and "could not reach
+        the wiki" render differently, and collapsing them made a connection
+        failure look like a feature that had not shipped (#116).
+        """
+        ...

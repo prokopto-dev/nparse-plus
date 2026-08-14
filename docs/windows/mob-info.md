@@ -74,3 +74,8 @@ default and both applied without a restart:
 - Not every page carries every field. Respawn time and attack speed are the
   most commonly missing; a mob with no wiki page at all still shows name,
   zone, respawn and the notable flag from local data.
+- If the detail line says **“Wiki: unavailable”**, nParse+ could not reach the
+  wiki; it is different from a mob whose page simply has no details. Check
+  your connection and `nparseplus.log` for the network error, then consider
+  the mob again. A failed request is deliberately not cached, so recovery
+  does not require restarting the app.

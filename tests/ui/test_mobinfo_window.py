@@ -130,6 +130,12 @@ def test_a_mob_with_no_page_renders_what_it_always_did(qtbot) -> None:
     assert window.current_stats() == "" and window.current_subtitle() == ""
 
 
+def test_an_unreachable_wiki_explains_why_no_details_appeared(qtbot) -> None:
+    state = MobInfoState(name="Lord Nagafen", wiki_unreachable=True)
+    window = _window(qtbot, Settings(), state)
+    assert "Wiki: unavailable" in window.current_detail()
+
+
 # --- escaping (the #102 class of bug) -------------------------------------------
 
 
