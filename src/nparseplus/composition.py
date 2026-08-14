@@ -14,7 +14,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from nparseplus.config.paths import ensure_dumps_dir, ensure_socials_dir
+from nparseplus.config.paths import (
+    ensure_dumps_dir,
+    ensure_socials_dir,
+    ensure_wiki_image_cache_dir,
+)
 from nparseplus.config.settings import Settings, find_player
 from nparseplus.core.background import BackgroundJob, Spawn
 from nparseplus.core.bus import EventBus
@@ -66,6 +70,7 @@ from nparseplus.core.triggers.window_commands import WindowChatCommands
 from nparseplus.core.zones import ZoneDatabase, load_zone_database
 from nparseplus.net.nparse_ws import NParseWsClient
 from nparseplus.net.p99planner import P99PlannerClient
+from nparseplus.net.p99wiki import P99WikiClient
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.pigparse_hub import PigParseHubClient
 from nparseplus.net.worker import NetWorker
@@ -260,6 +265,8 @@ class Backend:
     inventory_upload: InventoryUploadHandler | None = None
     planner_api: P99PlannerClient | None = None
     spell_reload: _SpellBookReloader | None = None
+    con_handler: ConHandler | None = None
+    wiki: P99WikiClient | None = None
     # Handlers/subscribers kept alive for the app lifetime.
     _retained: list[object] = field(default_factory=list)
 
@@ -353,6 +360,36 @@ class Backend:
             self.inventory_upload.submit = (
                 self.net_worker.submit if self.net_worker is not None else None
             )
+
+    def apply_mobinfo_settings(self) -> None:
+        """Build what the Mob Info wiki lookup needs and push it onto the live
+        ConHandler — the seam the settings window calls on Apply (#113).
+
+        Same shape as ``apply_upload_target``, and for the same reason: the
+        handler reads ``show_image`` live through a callable, but the client
+        and the worker thread it needs were decided once in ``build_backend``,
+        so turning the lookup on mid-session would otherwise do nothing until
+        a restart. Nothing is torn down — turning it off drops the handler's
+        reference, which is what stops the fetch; the client is idle after
+        that and ``stop()`` closes the worker at quit.
+        """
+        if self.con_handler is None:  # pragma: no cover - always wired
+            return
+        if self.settings.mobinfo.wiki_details:
+            if self.wiki is None:
+                self.wiki = P99WikiClient(
+                    zones=self.zones, image_cache_dir=ensure_wiki_image_cache_dir()
+                )
+            if self.net_worker is None:
+                # start() ran at launch and will not run again (see
+                # apply_upload_target), so this one starts its own thread.
+                self.net_worker = NetWorker(deliver=self.sharing.enqueue_inbound)
+                self.net_worker.start()
+            self.con_handler.wiki = self.wiki
+            self.con_handler.wiki_submit = self.net_worker.submit
+        else:
+            self.con_handler.wiki = None
+            self.con_handler.wiki_submit = None
 
     def reload_spell_book(self) -> bool:
         """Re-resolve the spell database and schedule a reload if it moved.
@@ -522,6 +559,14 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         pigparse_api = PigParseApiClient(settings.sharing.pigparse_api_url)
     if net_worker is None and settings.dumps.upload_target != "off":
         net_worker = NetWorker(deliver=sharing.enqueue_inbound)
+    # Mob Info's wiki lookup is a third feature that needs a thread and has
+    # nothing to do with either of the two above: wiki.project1999.com is not
+    # pigparse's API, so sharing does not gate it (#113).
+    wiki_client: P99WikiClient | None = None
+    if settings.mobinfo.wiki_details:
+        wiki_client = P99WikiClient(zones=zones, image_cache_dir=ensure_wiki_image_cache_dir())
+        if net_worker is None:
+            net_worker = NetWorker(deliver=sharing.enqueue_inbound)
 
     sharing.set_client(sharing_client)
     submit = net_worker.submit if net_worker is not None else None
@@ -562,6 +607,20 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     )
 
     player_tracker = PlayerTrackerHandler(bus, player, api=pigparse_api, submit=sharing_submit)
+    # Two submits on purpose: the pigparse pricing leg is sharing's and takes
+    # the gated one; the wiki leg is not, and takes the raw worker (#113).
+    con_handler = ConHandler(
+        bus,
+        player,
+        zones,
+        player_pet=player_pet,
+        mob_info=mob_info,
+        api=pigparse_api,
+        submit=sharing_submit,
+        wiki=wiki_client,
+        wiki_submit=submit,
+        want_image=lambda: settings.mobinfo.show_image,
+    )
     profile_handler = PlayerProfileHandler(bus, player, settings, request_save=request_save)
     # Constructed (= subscribed) after PlayerProfileHandler: restore-on-player-
     # change needs the profile's class/level already loaded into ActivePlayer.
@@ -591,15 +650,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         RingWarHandler(bus, player, timers),
         BoatHandler(bus, player, timers, zones, api=pigparse_api, submit=sharing_submit),
         PetHandler(bus, player, pets, player_pet=player_pet),
-        ConHandler(
-            bus,
-            player,
-            zones,
-            player_pet=player_pet,
-            mob_info=mob_info,
-            api=pigparse_api,
-            submit=sharing_submit,
-        ),
+        con_handler,
         ZoneActivityHandler(bus, player, zones, api=pigparse_api, submit=sharing_submit),
         DisciplineCooldownHandler(bus, player, timers),
         MendWoundsHandler(bus, player, timers),
@@ -709,5 +760,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         inventory_upload=inventory_upload,
         planner_api=planner_api,
         spell_reload=spell_reload,
+        con_handler=con_handler,
+        wiki=wiki_client,
         _retained=[chat_commands, window_commands, sink, *handlers],
     )

@@ -324,6 +324,17 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             ch_lane_retention_s=settings.general.ch_lane_retention_seconds,
         )
 
+    def _apply_mobinfo() -> None:
+        """Mob Info's wiki lookup + picture, live on Apply (#113).
+
+        Two halves, like every other live-applied setting that needs
+        something built: the backend wires (or unwires) the wiki client and
+        the worker thread the ConHandler fetches on, and the window
+        re-renders — its fingerprint would otherwise see no change.
+        """
+        backend.apply_mobinfo_settings()
+        mob_info_window.apply_mobinfo_settings()
+
     macro_editor = MacroEditorWindow(settings, on_save=save, store_dir=ensure_socials_dir())
     dumps_window = CharacterDumpsWindow(
         settings,
@@ -381,6 +392,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_log_dir_changed=backend.driver.set_log_dir,
         on_audio_changed=backend.rebuild_speaker,
         on_dps_changed=backend.apply_dps_settings,
+        on_mobinfo_changed=_apply_mobinfo,
         on_overlay_timing_changed=_apply_overlay_timings,
         on_sharing_changed=backend.apply_sharing_mode,
         on_upload_target_changed=backend.apply_upload_target,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from platformdirs import user_config_dir, user_data_dir, user_log_dir
+from platformdirs import user_cache_dir, user_config_dir, user_data_dir, user_log_dir
 
 APP_NAME = "nparseplus"
 
@@ -77,6 +77,27 @@ def ensure_plugins_dir() -> Path:
 def plugin_data_dir(plugin_id: str) -> Path:
     """Per-plugin private data directory (storage.json + free-form files)."""
     return config_dir() / "plugin-data" / plugin_id
+
+
+def cache_dir() -> Path:
+    """Per-user cache directory — re-fetchable copies of somebody else's data.
+
+    Deliberately not ``data_dir()``: everything under here can be deleted at
+    any time and the app just fetches it again.
+    """
+    return Path(user_cache_dir(APP_NAME))
+
+
+def wiki_image_cache_dir() -> Path:
+    """Where Mob Info keeps the P99 wiki pictures it has downloaded."""
+    return cache_dir() / "wiki-images"
+
+
+def ensure_wiki_image_cache_dir() -> Path:
+    """Create the wiki image cache (and parents) if needed; return it."""
+    path = wiki_image_cache_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def log_dir() -> Path:

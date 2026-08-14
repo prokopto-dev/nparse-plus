@@ -68,6 +68,11 @@ def approve(settings: Settings, plugin_id: str, *, enabled: bool = True) -> None
 def settings() -> Settings:
     s = Settings()
     s.sharing.mode = "off"
+    # A backend with no network plumbing at all — which now takes turning the
+    # Mob Info wiki lookup off too, since that is a third feature that brings
+    # its own worker thread (#113). test_context asserts on that emptiness to
+    # reach the plugin context's lazily-created worker.
+    s.mobinfo.wiki_details = False
     return s
 
 

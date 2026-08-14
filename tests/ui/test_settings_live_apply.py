@@ -306,3 +306,27 @@ def test_apply_reaches_the_spell_book_end_to_end(qtbot, tmp_path) -> None:
 
     assert backend.spells is book  # the handlers' handle never moved
     assert [spell.name for spell in book.spells] == ["Clarity"]
+
+
+# --- Mob Info's wiki lookup + picture (#113) -------------------------------------
+
+
+def test_apply_writes_the_mobinfo_toggles_and_fires_its_callback(qtbot) -> None:
+    calls: list[str] = []
+    settings = Settings()
+    window = _window(qtbot, settings, on_mobinfo_changed=lambda: calls.append("mobinfo"))
+    assert settings.mobinfo.wiki_details is True  # both default on
+
+    window._mobinfo_wiki.setChecked(False)
+    window._mobinfo_image.setChecked(False)
+    window.apply()
+
+    assert settings.mobinfo.wiki_details is False
+    assert settings.mobinfo.show_image is False
+    assert calls == ["mobinfo"]
+
+
+def test_the_mobinfo_page_copy_promises_no_restart(qtbot) -> None:
+    window = _window(qtbot, Settings())
+    for widget in (window._mobinfo_wiki, window._mobinfo_image):
+        assert "restart" not in widget.toolTip().lower()
