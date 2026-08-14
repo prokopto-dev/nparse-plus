@@ -12,9 +12,10 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QMenu
+from PySide6.QtWidgets import QApplication, QLabel, QMenu
 
 from nparseplus.config.settings import Settings, load_settings, save_settings
+from nparseplus.core.events import OverlayEvent
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.timers import (
@@ -412,18 +413,51 @@ def test_overlay_base_font_size_reaches_the_kicker_not_the_headline(qtbot) -> No
 
 @pytest.mark.parametrize("skin_name", skins.SKIN_ORDER)
 def test_alert_content_is_centered_in_every_skin(qtbot, skin_name) -> None:
+    """Centered in its region under every skin — the deliberate exception.
+
+    Asserted as GEOMETRY, not as alignment flags. This test used to require an
+    ``AlignHCenter`` flag on the viewport's layout item, and that flag was the
+    bug: Qt clamps an aligned item to its size hint, the viewport is a bare
+    QWidget whose hint width was 0, and so every alert was laid out zero pixels
+    wide while this test went on passing (#107). The flag belongs on the kicker
+    and the rule, which have real hints and are narrower than the panel; the
+    headline is centered by the label's own alignment inside a viewport that
+    spans the host.
+    """
     skins.set_skin(skin_name)
     overlay = EventOverlayWindow()
     qtbot.addWidget(overlay)
+    overlay.resize(1200, 800)
+    overlay.show()
+    overlay.handle_event(
+        OverlayEvent(
+            timestamp=datetime.now(),
+            line="",
+            line_number=1,
+            text="Gorenaire — ENRAGED",
+            foreground="Red",
+        )
+    )
+    # Deliver the posted LayoutRequests: these are layout RESULTS, and the
+    # hints were the part that lied.
+    for _ in range(3):
+        QApplication.sendPostedEvents()
+        QApplication.processEvents()
 
     for widget in (overlay._alert_kicker, overlay._center_text):
         assert bool(widget.alignment() & Qt.AlignmentFlag.AlignHCenter)
         assert not bool(widget.alignment() & Qt.AlignmentFlag.AlignLeft)
-    # The headline's layout item is its clipping viewport (#102); the label is
-    # centered inside that, so the panel is still centered in its region.
-    for widget in (overlay._alert_kicker, overlay._alert_viewport, overlay._alert_rule):
+
+    host = overlay._alert_host
+    # The viewport is the full-width layout item, so the label it holds is too.
+    assert overlay._alert_viewport.width() == host.width()
+    assert overlay._center_text.width() == host.width()
+    # The kicker and the rule are narrower, and centered as layout items.
+    for widget in (overlay._alert_kicker, overlay._alert_rule):
         item = overlay._alert_layout.itemAt(overlay._alert_layout.indexOf(widget))
         assert bool(item.alignment() & Qt.AlignmentFlag.AlignHCenter)
+    kicker = overlay._alert_kicker
+    assert kicker.x() + kicker.width() // 2 == pytest.approx(host.width() // 2, abs=1)
 
 
 def test_an_unknown_emphasis_falls_back_instead_of_raising(qtbot) -> None:

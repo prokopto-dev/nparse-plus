@@ -99,7 +99,10 @@ For **Alerts** it is exact, because that is the box the alert text is fitted
 into: make it taller to get more of a long alert on screen at once, or
 shorter to keep alerts compact. It stops shrinking once it is down to one
 line of the smallest headline plus its gold label — below that there would be
-nothing left to fit text into.
+nothing left to fit text into. That minimum depends on your **UI / overlay
+font size**, so if an Alerts region saved earlier (or edited by hand in
+`settings.json`) is shorter than the current font needs, it is raised back to
+the minimum rather than left too short to show anything.
 
 !!! tip
     Make the overlay match your EQ window, not your whole monitor — alert

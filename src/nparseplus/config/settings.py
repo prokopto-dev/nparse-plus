@@ -33,6 +33,14 @@ def _default_eq_log_dir() -> Path:
     return Path.home() / "Games/EverQuest/Logs"
 
 
+# Smallest an overlay region may be stored at — the same two numbers
+# ``ui/eventoverlay.py`` drags against, and it imports them from here rather
+# than the other way round: this layer is the one that has to police what a
+# settings.json says, and it may not import Qt to find out (#107).
+MIN_REGION_WIDTH = 120
+MIN_REGION_HEIGHT = 32
+
+
 class OverlayRegion(BaseModel):
     """Per-region placement for the event overlay's three zones.
 
@@ -50,8 +58,51 @@ class OverlayRegion(BaseModel):
     anchor: Literal["top", "center", "bottom"] = "top"
     dx: int = 0
     dy: int = 0
-    width: int | None = None
-    height: int | None = None
+    width: int | None = Field(default=None, ge=MIN_REGION_WIDTH)
+    height: int | None = Field(default=None, ge=MIN_REGION_HEIGHT)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _repair_unusable_sizes(cls, data: object) -> object:
+        """Bring a stored size back inside the bounds instead of rejecting it.
+
+        A region small enough to hold nothing renders nothing, silently: the
+        Alerts region reads its height as an exact text budget, so a legacy
+        or hand-edited ``"height": 8`` left the headline a couple of pixels
+        tall with no error anywhere (#107). Too-small is therefore clamped UP
+        to the floor — that keeps the user's "I want it small" — while a value
+        that is not a number at all is dropped to ``None``, the region's own
+        "use the default".
+
+        Never raises, which is the whole reason this is a validator and not
+        just the ``ge=`` bounds above: ``load_settings`` reads a ValueError as
+        a corrupt document and falls back to defaults, so one bad pixel count
+        would discard every other setting in the file. Same shape as
+        ``PluginsSettings``, which normalizes or drops an unusable registry
+        row rather than failing the load. The bounds then still hold the line
+        for code constructing a region directly.
+
+        The floors here are structural, not sufficient: what the Alerts region
+        actually needs depends on the font and skin, so the overlay clamps it
+        again against real chrome once those are known.
+        """
+        if not isinstance(data, Mapping):
+            return data
+        repaired = dict(data)
+        for key, floor in (("width", MIN_REGION_WIDTH), ("height", MIN_REGION_HEIGHT)):
+            value = repaired.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool):  # int(True) == 1 would clamp to the floor
+                repaired[key] = None
+                continue
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                repaired[key] = None
+                continue
+            repaired[key] = max(floor, number)
+        return repaired
 
 
 class WindowState(BaseModel):

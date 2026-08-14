@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from nparseplus.config.settings import (
+    MIN_REGION_HEIGHT,
+    MIN_REGION_WIDTH,
     SCHEMA_VERSION,
     DebouncedSaver,
     OverlayRegion,
@@ -483,3 +485,70 @@ class TestDpsSettings:
         loaded = load_settings(path)
         assert loaded.general.eq_log_dir == Path("/keep/me")
         assert loaded.dps.trailing_window_seconds == 6.0
+
+
+class TestOverlayRegionSizeBounds:
+    """#107. A region small enough to hold nothing renders nothing, silently:
+    the Alerts region reads its height as an exact text budget, so a legacy or
+    hand-edited value could leave the headline a couple of pixels tall with no
+    error anywhere. The bounds are enforced here, where the file is read —
+    Qt-free, because ``config`` may not import PySide6."""
+
+    def test_a_too_small_size_is_clamped_up_not_rejected(self) -> None:
+        region = OverlayRegion(anchor="center", width=10, height=8)
+        assert region.width == MIN_REGION_WIDTH
+        assert region.height == MIN_REGION_HEIGHT
+
+    def test_a_usable_size_is_left_exactly_alone(self) -> None:
+        region = OverlayRegion(anchor="center", width=600, height=140)
+        assert (region.width, region.height) == (600, 140)
+
+    def test_none_still_means_use_the_default(self) -> None:
+        region = OverlayRegion(anchor="center")
+        assert region.width is None
+        assert region.height is None
+
+    @pytest.mark.parametrize("junk", ["wide", [], {}, True, False])
+    def test_a_size_that_is_not_a_number_drops_to_the_default(self, junk) -> None:
+        """Including bools: ``int(True)`` is 1, which would clamp to the floor
+        and quietly invent a size the file never asked for."""
+        region = OverlayRegion.model_validate({"anchor": "center", "height": junk})
+        assert region.height is None
+
+    def test_a_bad_size_never_costs_the_rest_of_the_document(self, tmp_path: Path) -> None:
+        """The house rule, and the reason this is a validator rather than only
+        the ``ge=`` bounds: ``load_settings`` reads a ValueError as a corrupt
+        document and falls back to defaults, so one bad pixel count would
+        discard everything else configured (the PluginsSettings precedent)."""
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "general": {"eq_log_dir": "/keep/me"},
+                    "windows": {
+                        "events": {
+                            "overlay_regions": {
+                                "alert": {"anchor": "center", "width": 0, "height": -40},
+                            }
+                        }
+                    },
+                }
+            )
+        )
+        loaded = load_settings(path)
+
+        assert loaded.general.eq_log_dir == Path("/keep/me")
+        region = loaded.windows["events"].overlay_regions["alert"]
+        assert region.width == MIN_REGION_WIDTH
+        assert region.height == MIN_REGION_HEIGHT
+
+    def test_the_repaired_value_survives_a_round_trip(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        settings = Settings()
+        settings.windows["events"] = WindowState(
+            overlay_regions={"alert": OverlayRegion(anchor="center", height=4)}
+        )
+        save_settings(settings, path)
+
+        region = load_settings(path).windows["events"].overlay_regions["alert"]
+        assert region.height == MIN_REGION_HEIGHT
