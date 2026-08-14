@@ -232,3 +232,24 @@ def test_an_unreachable_wiki_is_recorded_separately_from_a_missing_page() -> Non
     bus.publish(ConEvent(timestamp=T0, name="Lord Nagafen"))
     assert state.wiki is None
     assert state.wiki_unreachable is True
+
+
+def test_reconsidering_an_unreachable_mob_retries_its_wiki_lookup() -> None:
+    class RecoveringWiki(FakeWiki):
+        def lookup(self, title: str, *, with_image: bool = False) -> WikiLookupResult:
+            self.calls.append((title, with_image))
+            if len(self.calls) == 1:
+                return WikiLookupResult(status="unreachable")
+            return WikiLookupResult(npc=_npc(hp="42000"), status="ok")
+
+    state = MobInfoState()
+    wiki = RecoveringWiki(None)
+    bus, _h = _handler(mob_info=state, wiki=wiki, wiki_submit=ImmediateWorker().submit)
+    event = ConEvent(timestamp=T0, name="Lord Nagafen")
+    bus.publish(event)
+    assert state.wiki_unreachable is True
+
+    bus.publish(event)
+    assert len(wiki.calls) == 2
+    assert state.wiki is not None and state.wiki.hp == "42000"
+    assert state.wiki_unreachable is False

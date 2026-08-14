@@ -203,8 +203,8 @@ class ConHandler(BaseHandler):
             info._notify()
             return
 
-        if event.name == info.name and not info.is_pet:
-            return  # C# skips the refetch when the same mob is conned again
+        if event.name == info.name and not info.is_pet and not info.wiki_unreachable:
+            return  # C# skips successful same-mob lookups; failures must retry (#116)
 
         zone = self.zones.get(self.player.zone) if self.player.zone else None
         notable = zone is not None and any(
