@@ -188,14 +188,20 @@ def _spell(backend, name: str):
     return Spell(id=abs(hash(name)) % 99999, name=name)
 
 
-def cap_spell_timers(backend) -> None:
+def seed_spell_timers(backend) -> None:
+    """Populate TimersService with the canonical spell-timer sample.
+
+    Split out of ``cap_spell_timers`` so the README product shot (phase B,
+    a different process and a different window instance) shows the SAME rows
+    as ``window--spell-timers.png``. Two hand-kept copies of this data would
+    drift the moment one was edited.
+    """
     from nparseplus.core.timers import (
         TRIGGER_TIMER_GROUP,
         YOU_GROUP,
         SpellRow,
         TimerRow,
     )
-    from nparseplus.ui.spellwindow import SpellTimerWindow
 
     t = backend.timers
     t.clear_all()
@@ -256,6 +262,11 @@ def cap_spell_timers(backend) -> None:
         )
     )
 
+
+def cap_spell_timers(backend) -> None:
+    from nparseplus.ui.spellwindow import SpellTimerWindow
+
+    seed_spell_timers(backend)
     w = _keep(SpellTimerWindow(backend))
     w._refresh_timer.stop()
     w._flash_timer.stop()
@@ -263,10 +274,10 @@ def cap_spell_timers(backend) -> None:
     capture(w, "window--spell-timers", size=(250, 430))
 
 
-def cap_dps_meter(backend) -> None:
-    import nparseplus.ui.dpswindow as dpswindow
+def seed_fights(backend) -> None:
+    """Populate FightTracker with the canonical DPS sample (see
+    ``seed_spell_timers`` for why this is shared rather than duplicated)."""
     from nparseplus.core.events import DamageEvent
-    from nparseplus.ui.dpswindow import DpsMeterWindow
 
     fights = backend.fights
     fights.clear()
@@ -300,6 +311,12 @@ def cap_dps_meter(backend) -> None:
             )
     fights.tick(NOW)  # roll session Best/Current from your entity
 
+
+def cap_dps_meter(backend) -> None:
+    import nparseplus.ui.dpswindow as dpswindow
+    from nparseplus.ui.dpswindow import DpsMeterWindow
+
+    seed_fights(backend)
     restore = freeze_now(dpswindow)
     try:
         w = _keep(DpsMeterWindow(backend))
@@ -364,27 +381,40 @@ def cap_console(backend, settings) -> None:
     capture(w, "window--console", size=(620, 360))
 
 
+def seed_alert(w) -> None:
+    """Fire the canonical alert + two draining timer bars into an overlay.
+
+    Shared with the README product shot. The alert text is deliberately the
+    split form ("kicker — HEADLINE"): #107 was a regression where the headline
+    rendered zero pixels wide while the kicker still drew, so an unsplit string
+    showed literally nothing. This sample exercises both halves, which makes
+    the screenshot a check on that path and not just decoration.
+    """
+    from nparseplus.core.events import OverlayEvent, TimerBarEvent
+
+    w.handle_event(OverlayEvent(text="Gorenaire — ENRAGED", foreground="Yellow"))
+    w.handle_event(TimerBarEvent(name="Stun Breath", total_seconds=30, bar_color="Gold"))
+    w.handle_event(TimerBarEvent(name="Dragon Roar", total_seconds=12, bar_color="Red"))
+    w._clear_timer.stop()
+    w._bar_timer.stop()
+    w._sweep_timer.stop()
+    # Show the bars part-drained rather than freshly full.
+    for name, remaining in (("Stun Breath", 18), ("Dragon Roar", 7)):
+        entry = w._bars.get(name)
+        if entry is not None:
+            entry.ends_at = NOW + timedelta(seconds=remaining)
+            w._render_bar(entry, NOW)
+
+
 def cap_event_overlay() -> None:
     import nparseplus.ui.eventoverlay as eventoverlay
     from nparseplus.config.settings import WindowState
-    from nparseplus.core.events import OverlayEvent, TimerBarEvent
     from nparseplus.ui.eventoverlay import EventOverlayWindow
 
     restore = freeze_now(eventoverlay)
     try:
         w = _keep(EventOverlayWindow(state=WindowState(geometry=(0, 0, 820, 460))))
-        w.handle_event(OverlayEvent(text="Gorenaire — ENRAGED", foreground="Yellow"))
-        w.handle_event(TimerBarEvent(name="Stun Breath", total_seconds=30, bar_color="Gold"))
-        w.handle_event(TimerBarEvent(name="Dragon Roar", total_seconds=12, bar_color="Red"))
-        w._clear_timer.stop()
-        w._bar_timer.stop()
-        w._sweep_timer.stop()
-        # Show the bars part-drained rather than freshly full.
-        for name, remaining in (("Stun Breath", 18), ("Dragon Roar", 7)):
-            entry = w._bars.get(name)
-            if entry is not None:
-                entry.ends_at = NOW + timedelta(seconds=remaining)
-                w._render_bar(entry, NOW)
+        seed_alert(w)
         capture(w, "window--event-overlay", size=(820, 460), backdrop=OVERLAY_BACKDROP)
     finally:
         restore()
@@ -621,6 +651,48 @@ def cap_trigger_activity(backend, settings) -> None:
     capture(w, "window--trigger-activity", size=(960, 480))
 
 
+# (sidebar title, output name). Selected by TITLE, never by row index.
+#
+# This used to be a list of hardcoded indices tracking the sidebar order in
+# UnifiedSettingsWindow.__init__. When a "DPS Meter" page landed at row 5
+# (post-2.2), every later index shifted by one and the list went silently
+# wrong: settings--maps.png would have captured the DPS page, settings--
+# advanced.png would have captured Sharing, and Advanced would never have
+# been captured at all — each one saved under a filename that lies about it.
+# A missing screenshot renders an honest placeholder; a mislabelled one does
+# not. Titles are stable across insertions, so they are what we match.
+SETTINGS_PAGES = [
+    ("General", "settings--overview"),
+    ("General", "settings--general"),
+    ("Appearance", "settings--appearance"),
+    ("Character", "settings--character"),
+    ("Friends", "settings--friends"),
+    ("Spell Timers", "settings--spell-timers"),
+    ("DPS Meter", "settings--dps-meter"),
+    ("Maps", "settings--maps"),
+    ("Windows", "settings--windows"),
+    ("Audio & Overlays", "settings--audio-overlays"),
+    ("Sharing", "settings--sharing"),
+    ("Advanced", "settings--advanced"),
+]
+
+
+def _select_settings_page(window, title: str) -> None:
+    """Select the settings sidebar row named ``title``.
+
+    Raises rather than falling back to "whatever is showing": capturing the
+    wrong page under the right filename is exactly the failure this replaced,
+    and it is invisible in the output. A renamed page should stop the run.
+    """
+    from PySide6.QtCore import Qt
+
+    items = window._sidebar.findItems(title, Qt.MatchFlag.MatchExactly)
+    if not items:
+        have = [window._sidebar.item(i).text() for i in range(window._sidebar.count())]
+        raise SystemExit(f"settings page {title!r} not found — sidebar has {have}")
+    window._sidebar.setCurrentRow(window._sidebar.row(items[0]))
+
+
 def cap_settings(backend, settings) -> None:
     import nparseplus.ui.settingswindow as settingswindow
     from nparseplus.audio.tts import VoiceInfo
@@ -646,22 +718,18 @@ def cap_settings(backend, settings) -> None:
         )
     )
     w._friends_text.setPlainText("Alistra\nBorin Stoutmug\nCaldwell\nDelphine\nEbonhawk")
-    # Indices track the sidebar order in UnifiedSettingsWindow.__init__.
-    pages = [
-        (0, "settings--overview"),
-        (0, "settings--general"),
-        (1, "settings--appearance"),
-        (2, "settings--character"),
-        (3, "settings--friends"),
-        (4, "settings--spell-timers"),
-        (5, "settings--maps"),
-        (6, "settings--windows"),
-        (7, "settings--audio-overlays"),
-        (8, "settings--sharing"),
-        (9, "settings--advanced"),
-    ]
-    for idx, name in pages:
-        w._sidebar.setCurrentRow(idx)
+    # Display-only: the real value points at this checkout's scratch dir, so the
+    # published shot used to carry the generating machine's worktree path. Show
+    # what a user's own setting looks like instead. Purely cosmetic — nothing is
+    # applied from this window during a capture.
+    #
+    # The install dir is deliberately left EMPTY. Filling it with a matching
+    # fake sends Advanced's Night Vision panel into "Not a directory: …", and a
+    # docs screenshot showing an error state is worse than one showing the
+    # neutral "Set the EQ install directory first." a new user actually sees.
+    w._log_dir.edit.setText("/Users/you/Library/Application Support/EverQuest/Logs")
+    for title, name in SETTINGS_PAGES:
+        _select_settings_page(w, title)
         capture(w, name, size=(700, 800))
 
 
@@ -833,24 +901,28 @@ def cap_update_dialog() -> None:
     from nparseplus.ui.updatewindow import UpdateAvailableDialog
     from nparseplus.updater import ReleaseInfo, ReleaseNote
 
+    # Real, recent release notes rather than invented ones. A mock offering
+    # 1.12.0 over 1.10.0 kept shipping in the docs long after the app reached
+    # 2.9.x, which reads to a user as a screenshot of some other program.
+    # Keep these roughly current when regenerating.
     release = ReleaseInfo(
-        version="1.12.0",
-        html_url="https://github.com/prokopto-dev/nparse-plus/releases/tag/v1.12.0",
+        version="2.9.2",
+        html_url="https://github.com/prokopto-dev/nparse-plus/releases/tag/v2.9.2",
         notes=(
             ReleaseNote(
-                version="1.12.0",
-                body="- feat: x86_64 (Intel) macOS build\n"
-                '- feat: "Check for updates" tray action\n'
-                "- docs: offscreen screenshot generator",
+                version="2.9.2",
+                body="- fix(overlay): stop laying the alert viewport out zero pixels "
+                "wide (#108)\n"
+                "- Alerts fired audibly but rendered nothing; the headline is back.",
             ),
             ReleaseNote(
-                version="1.11.0",
-                body="- Raid-mode grouping, post-expiry rebuff alerts, CH cadence indicator\n"
-                '- Version badge + "Check now" in Settings',
+                version="2.9.1",
+                body="- fix(packaging): make icon.svg readable by appstreamcli so the "
+                "Linux release builds (#106)",
             ),
         ),
     )
-    w = _keep(UpdateAvailableDialog(release, installed_version="1.10.0"))
+    w = _keep(UpdateAvailableDialog(release, installed_version="2.9.0"))
     capture(w, "window--update-available", size=(700, 520))
 
 
@@ -967,7 +1039,7 @@ def _write_scratch_settings(path: Path) -> None:
     save_settings(s, path)
 
 
-def _inject_map(maps, extra_dots: bool):
+def _inject_map(maps, extra_dots: bool, size: tuple[int, int] = (900, 680)):
     """Place your marker (with a heading arrow), other players' dots, and a
     spawn-point countdown near the loaded zone's center."""
     from nparseplus.parsers.maps.mapclasses import MapPoint
@@ -994,7 +1066,7 @@ def _inject_map(maps, extra_dots: bool):
 
     from PySide6.QtWidgets import QApplication
 
-    maps.resize(900, 680)
+    maps.resize(*size)
     QApplication.processEvents()
     vp = canvas.viewport().size()
     ratio = min(vp.width() / w, vp.height() / h) * 0.85
@@ -1038,7 +1110,134 @@ def _restore_legacy(had: bool, backup: Path, legacy: Path) -> None:
         pass
 
 
-PHASE_B_SHOTS = {"window--maps", "feature--sharing-dots", "tray--menu"}
+# --------------------------------------------------------------------------- #
+# The README product shot — four windows composed on one canvas
+# --------------------------------------------------------------------------- #
+PRODUCT_SHOT = "readme--product-shot"
+
+# Layout. The alert banner spans the top (that is where an event overlay
+# actually sits over the game); maps, spell timers and the DPS meter share one
+# row beneath it at a common height, which is what keeps the canvas wide rather
+# than tall — a README renders it at roughly 900px, so height is the scarce
+# axis. Sizes are the panels' own natural framings where they have one
+# (spell timers 250 wide, DPS 300) so the product shot and the individual shots
+# show the same windows at the same proportions.
+#
+# Each window gets its own natural height and the row is TOP-aligned rather
+# than stretched to a common height: a panel padded out to a shared height
+# shows a band of empty chrome that reads as a rendering fault, while unequal
+# heights over the backdrop read as what they are — separate windows on a
+# desktop. The banner is tall enough to lay out the timer bars under the
+# alert; below roughly 200px the overlay has room for the headline only and
+# the bars silently vanish from the shot.
+PRODUCT_PAD = 28
+PRODUCT_GAP = 20
+PRODUCT_BANNER_H = 215
+PRODUCT_MAPS = (760, 430)
+PRODUCT_SPELL = (250, 285)
+PRODUCT_DPS = (300, 310)
+# Slightly darker than PANEL_BACKDROP: the panels carry their own near-opaque
+# background, so the canvas reads as the gap between windows rather than as
+# part of any one of them.
+PRODUCT_BACKDROP = "#0c0e13"
+
+
+def _product_layout() -> tuple[int, int, dict[str, tuple[int, int, int, int]]]:
+    """Pure geometry for the product shot: canvas size + each window's box.
+
+    Separated from the painting so the arrangement can be reasoned about (and
+    adjusted) without booting Qt.
+    """
+    row_y = PRODUCT_PAD + PRODUCT_BANNER_H + PRODUCT_GAP
+    boxes: dict[str, tuple[int, int, int, int]] = {}
+    x = PRODUCT_PAD
+    for key, (w, h) in (("maps", PRODUCT_MAPS), ("spell", PRODUCT_SPELL), ("dps", PRODUCT_DPS)):
+        boxes[key] = (x, row_y, w, h)
+        x += w + PRODUCT_GAP
+    banner_w = x - PRODUCT_GAP - PRODUCT_PAD
+    boxes["overlay"] = (PRODUCT_PAD, PRODUCT_PAD, banner_w, PRODUCT_BANNER_H)
+    width = PRODUCT_PAD * 2 + banner_w
+    height = row_y + max(h for _x, _y, _w, h in boxes.values() if _y == row_y) + PRODUCT_PAD
+    return width, height, boxes
+
+
+def _grab(widget, size: tuple[int, int]):
+    """Show a window at ``size`` and grab it, alpha intact.
+
+    Deliberately never hides afterwards — these are the full app's own
+    windows, and hiding one offscreen can wedge window activation for the
+    rest of the run (same reason ``capture(hide_after=False)`` exists).
+    """
+    from PySide6.QtWidgets import QApplication
+
+    widget.resize(*size)
+    widget.show()
+    QApplication.processEvents()
+    QApplication.processEvents()
+    return widget.grab()
+
+
+def cap_product_shot(ctx) -> None:
+    """Compose the README product shot from four live windows.
+
+    This is NOT the docs hero (``home--overview.png``). The hero is a
+    photograph of the real thing — EQ running, overlays on top of it, taken by
+    a human at a display — and it stays manual. This is a *product shot*: no
+    game behind it, composed offscreen from the same windows and the same
+    synthetic data as the individual screenshots, so it regenerates with them
+    and cannot end up showing a UI that no longer ships. Keep both; they
+    answer different questions and neither substitutes for the other.
+    """
+    import nparseplus.ui.dpswindow as dpswindow
+    import nparseplus.ui.eventoverlay as eventoverlay
+
+    width, height, boxes = _product_layout()
+    backend = ctx.backend
+    seed_spell_timers(backend)
+    seed_fights(backend)
+
+    spell = _keep(ctx.spell_window)
+    spell._refresh_timer.stop()
+    spell._flash_timer.stop()
+    dps = _keep(ctx.dps_window)
+    dps._refresh_timer.stop()
+    overlay = _keep(ctx.event_overlay)
+    maps = ctx.app.maps_window
+
+    restore_dps = freeze_now(dpswindow)
+    restore_overlay = freeze_now(eventoverlay)
+    try:
+        spell.refresh(now=NOW)
+        dps.refresh()
+        seed_alert(overlay)
+        _inject_map(maps, extra_dots=True, size=boxes["maps"][2:])
+
+        grabs = {
+            key: _grab(widget, boxes[key][2:])
+            for key, widget in (
+                ("overlay", overlay),
+                ("maps", maps),
+                ("spell", spell),
+                ("dps", dps),
+            )
+        }
+    finally:
+        restore_overlay()
+        restore_dps()
+
+    from PySide6.QtGui import QColor, QPainter, QPixmap
+
+    canvas = QPixmap(width, height)
+    canvas.fill(QColor(PRODUCT_BACKDROP))
+    painter = QPainter(canvas)
+    for key, pixmap in grabs.items():
+        x, y, _w, _h = boxes[key]
+        painter.drawPixmap(x, y, pixmap)
+    painter.end()
+    _composite_and_save(canvas, PRODUCT_SHOT, PRODUCT_BACKDROP, pad=0)
+
+
+PHASE_B_SHOTS = {"window--maps", "feature--sharing-dots", "tray--menu", PRODUCT_SHOT}
 
 
 def run_phase_b(only: set[str] | None) -> None:
@@ -1115,6 +1314,11 @@ def _run_phase_b_captures(scratch_settings: Path, only: set[str] | None) -> None
             )
     finally:
         restore()
+
+    # After the maps shots: the product shot re-sizes and re-seeds the map,
+    # and it wants the busier (shared-dots) version anyway.
+    if want(PRODUCT_SHOT):
+        cap_product_shot(ctx)
 
     # The tray QMenu is built via app._build_tray_menu() + popup (never the
     # blocking exec), so it captures offscreen like everything else.

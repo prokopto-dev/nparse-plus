@@ -9,6 +9,11 @@
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://prokopto-dev.github.io/nparse-plus/latest/getting-started/)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
+![nParse+ running: an Event Overlay alert, live maps, spell timers and the DPS meter](docs/assets/screenshots/readme--product-shot.png)
+
+*An Event Overlay alert with raid-AOE countdowns, the live zone map, per-target
+spell timers, and the DPS meter.*
+
 **An EverQuest Project 1999 companion overlay for macOS, Windows, and Linux.**
 
 nParse+ tails your EQ log file and gives you, in real time: per-target
