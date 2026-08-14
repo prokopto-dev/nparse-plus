@@ -42,6 +42,25 @@ BACKDROP_EDGE_PX = 18
 BACKDROP_WHEEL_STEP = 8
 
 
+def pan_on_press(pan_mode, ctrl_held, on_chrome, in_edge_band):
+    """Should a left-button press here start a pan? Pure — no widget needed.
+
+    Two gestures, and they are not symmetric. **Ctrl+drag is explicit**: the
+    user said "pan" with a modifier, so it pans under either setting and
+    anywhere on the map. **Plain drag is implicit**, so it stands off the edge
+    band, where the wheel already means "nudge the backdrop" and where a
+    frameless window's border is the thing you are reaching for.
+
+    A press on the chrome never pans under either gesture — you are pressing a
+    header, not the map behind it.
+    """
+    if on_chrome:
+        return False
+    if ctrl_held:
+        return True
+    return pan_mode == config.PAN_DRAG and not in_edge_band
+
+
 class MapCanvas(QGraphicsView):
     """Map Widget for Everquest Map Files."""
 
@@ -114,6 +133,12 @@ class MapCanvas(QGraphicsView):
         self._center_pending = False
         self._tracking_circles = {}  # name -> QGraphicsEllipseItem (true radius)
         self.map_loaded_callback = None  # set by the Maps window
+        # Set by the Maps window: "does this canvas-local point land under a
+        # visible chrome panel?". The chrome are the WINDOW's children, not the
+        # canvas's, so Qt's own hit-testing already keeps a press on the header
+        # away from here — this is the canvas's own guard, and it is what keeps
+        # the rule true for a panel that later goes mouse-transparent.
+        self.chrome_hit_test = None
         # Persistent user markers (nparse #10 / eqtool #190): app.py injects a
         # config.settings.MapMarkerStore; None keeps markers session-only.
         self.marker_store = None
@@ -817,6 +842,75 @@ class MapCanvas(QGraphicsView):
         self._mouse_location.set_value(self.mapToScene(event.pos()), self._scale, self)
         QGraphicsView.mouseMoveEvent(self, event)
 
+    # -- panning ------------------------------------------------------------
+
+    def pan_mode(self):
+        """The configured pan gesture, read fresh from the legacy config.
+
+        Read at PRESS time rather than cached at construction, so a change on
+        Settings > Maps applies live — the same shape as show_mouse_location in
+        enterEvent. An unknown value reads as the default rather than as
+        "never pan".
+        """
+        mode = config.data["maps"].get("pan_mode", config.PAN_DRAG)
+        return mode if mode in config.PAN_MODES else config.PAN_DRAG
+
+    def _set_drag_mode(self, mode):
+        """Set the view's drag mode, keeping the pointer honest.
+
+        Qt forgets the stored viewport cursor when it ENTERS ScrollHandDrag, so
+        leaving that mode does not restore it — without the unset, the pointer
+        keeps an open hand over a map that is no longer panning.
+        """
+        if self.dragMode() == mode:
+            return
+        self.setDragMode(mode)
+        if mode == QGraphicsView.DragMode.NoDrag:
+            self.viewport().unsetCursor()
+
+    def _ctrl_held(self, event):
+        # `&`, not `==`: exact equality made every Ctrl+<other modifier>
+        # combination (Ctrl+Shift while running with a hand on the keyboard)
+        # silently fail to arm the drag.
+        return bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+
+    def _on_chrome(self, position):
+        return bool(self.chrome_hit_test and self.chrome_hit_test(position.toPoint()))
+
+    def mousePressEvent(self, event):
+        """Decide the pan HERE, so the setting needs no restart.
+
+        QGraphicsView only starts a hand-scroll if the drag mode is already
+        ScrollHandDrag when the press arrives, which is why this runs before
+        the base class rather than after it.
+        """
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._set_drag_mode(
+                QGraphicsView.DragMode.ScrollHandDrag
+                if pan_on_press(
+                    self.pan_mode(),
+                    self._ctrl_held(event),
+                    self._on_chrome(event.position()),
+                    self._in_backdrop_band(event.position()),
+                )
+                else QGraphicsView.DragMode.NoDrag
+            )
+        QGraphicsView.mousePressEvent(self, event)
+
+    def mouseReleaseEvent(self, event):
+        QGraphicsView.mouseReleaseEvent(self, event)
+        # Recomputed from the modifiers as they are NOW, not restored from what
+        # the press captured: Ctrl can be released mid-drag, and leaving the
+        # hand cursor up afterwards would say the map is still armed.
+        self._set_drag_mode(self._drag_mode_for(event))
+
+    def _drag_mode_for(self, event):
+        return (
+            QGraphicsView.DragMode.ScrollHandDrag
+            if self._ctrl_held(event)
+            else QGraphicsView.DragMode.NoDrag
+        )
+
     def wheelEvent(self, event):
         # Scale based on scroll wheel direction
         movement = event.angleDelta().y()
@@ -826,34 +920,54 @@ class MapCanvas(QGraphicsView):
             step = BACKDROP_WHEEL_STEP if movement > 0 else -BACKDROP_WHEEL_STEP
             self.set_backdrop_opacity(self._backdrop_opacity + step, persist=True)
             return
-        if self.dragMode() == QGraphicsView.DragMode.NoDrag:
-            if movement > 0:
-                self.update_(self._scale + self._scale * 0.1)
-            else:
-                self.update_(self._scale - self._scale * 0.1)
-        else:
+        # Ctrl+wheel steps the Z layer; a plain wheel zooms. This asks the
+        # KEYBOARD, not dragMode(). dragMode() used to stand in for "is Ctrl
+        # held" — true only while Ctrl was the one thing that ever set it. With
+        # plain-drag panning the view sits in ScrollHandDrag with no key down,
+        # and reading it here would have made the wheel silently stop zooming
+        # and start walking the Z layers instead.
+        if self._ctrl_held(event):
             if self._data:
                 if movement > 0:
                     self._z_index = max(self._z_index - 1, 0)
                 else:
                     self._z_index = min(self._z_index + 1, len(self._data.geometry.z_groups) - 1)
                 self.update_()
+        else:
+            if movement > 0:
+                self.update_(self._scale + self._scale * 0.1)
+            else:
+                self.update_(self._scale - self._scale * 0.1)
 
         # Update Mouse Location
         mouse_pos = int(event.position().x()), int(event.position().y())
         self._mouse_location.set_value(self.mapToScene(*mouse_pos), self._scale, self)
 
     def keyPressEvent(self, event):
-        # Enable drag mode while control button is being held down
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        # Arm the hand cursor while Ctrl is held: the affordance for the
+        # explicit gesture, which pans under either pan_mode. The press handler
+        # is what actually decides, so this only ever runs ahead of it.
+        if self._ctrl_held(event):
+            self._set_drag_mode(QGraphicsView.DragMode.ScrollHandDrag)
         QGraphicsView.keyPressEvent(self, event)
 
     def keyReleaseEvent(self, event):
         # Disable drag mode when control button released
         if event.key() == Qt.Key.Key_Control:
-            self.setDragMode(QGraphicsView.DragMode.NoDrag)
-        QGraphicsView.keyPressEvent(self, event)
+            self._set_drag_mode(QGraphicsView.DragMode.NoDrag)
+        QGraphicsView.keyReleaseEvent(self, event)
+
+    def focusOutEvent(self, event):
+        """Disarm on the way out.
+
+        Alt-tabbing (or clicking the game) while Ctrl is held never delivers
+        the key release, which left the view stuck in ScrollHandDrag: an
+        open-hand cursor over a map nobody was panning, and — before the wheel
+        stopped reading dragMode() — a scroll wheel walking the Z layers
+        instead of zooming for the rest of the session.
+        """
+        self._set_drag_mode(QGraphicsView.DragMode.NoDrag)
+        QGraphicsView.focusOutEvent(self, event)
 
     def resizeEvent(self, event):
         self.center()

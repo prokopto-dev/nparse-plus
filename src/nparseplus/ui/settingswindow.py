@@ -65,6 +65,11 @@ from nparseplus.core.events import (
 from nparseplus.core.player import TRACKABLE_CLASSES, ActivePlayer
 from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.zones import ZoneDatabase
+
+# The one legacy import here, and it is a vocabulary, not state: the maps
+# window still reads config.data, and these are the values its pan_mode key
+# accepts (see helpers/config.py). Everything else legacy stays injected.
+from nparseplus.helpers.config import PAN_CTRL_DRAG, PAN_DRAG
 from nparseplus.net.discordauth import DiscordAuthResult
 from nparseplus.net.discordauth import login as discord_login
 from nparseplus.ui import appicon, chrome, chromewidgets, skins
@@ -1307,6 +1312,23 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         )
         form.addRow("Show other players' dots", self._maps_show_others)
 
+        # Panning was Ctrl+drag and nothing said so, while a plain drag did
+        # nothing at all — "I cannot drag the map" is a discoverability report,
+        # not a platform bug. Plain drag is the default because it was inert
+        # before, so switching it on takes no capability away; Ctrl+drag pans
+        # under either value.
+        self._maps_pan_mode = QComboBox(self)
+        self._maps_pan_mode.addItem("Click and drag", PAN_DRAG)
+        self._maps_pan_mode.addItem("Ctrl + click and drag", PAN_CTRL_DRAG)
+        self._maps_pan_mode.setCurrentIndex(
+            max(0, self._maps_pan_mode.findData(self._lc("maps", "pan_mode", PAN_DRAG)))
+        )
+        self._maps_pan_mode.setToolTip(
+            "Ctrl + drag pans either way. This chooses whether a plain drag "
+            "does too. Applies immediately — no restart."
+        )
+        form.addRow("Pan the map with", self._maps_pan_mode)
+
         # Transparency: two controls, not one. Window opacity (Settings >
         # Windows) fades the whole window — geometry, labels and player dots
         # with it — so it could never answer "let me see the game through the
@@ -1396,6 +1418,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._lc_set("maps", "grid_line_width", self._maps_grid_width.value())
         self._lc_set("maps", "map_font_scale", self._maps_font_scale.value())
         self._lc_set("maps", "show_other_players", self._maps_show_others.isChecked())
+        self._lc_set("maps", "pan_mode", self._maps_pan_mode.currentData())
         self._lc_set("maps", "backdrop_opacity", self._maps_backdrop.value())
         self._lc_set("maps", "backdrop_fade_idle", self._maps_fade_idle.isChecked())
         self._lc_set("maps", "backdrop_fade_seconds", self._maps_fade_seconds.value())

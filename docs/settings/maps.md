@@ -10,7 +10,25 @@ Display tuning for the [Maps window](../windows/maps.md).
 | **Grid line width** | Thickness of the coordinate grid. |
 | **Map label size** | Scales POI labels, player names, and spawn countdowns. |
 | **Show other players' dots** | Master toggle for shared player dots ([Sharing](../features/sharing.md)). |
+| **Pan the map with** | Whether a plain **click and drag** pans the map, or whether it takes **Ctrl + click and drag**. Applies immediately. |
 | **Per-Z-layer opacity** | Opacity per elevation layer when explicit Z layers are on. |
+
+## Panning
+
+Panning used to be **Ctrl + drag only**, with nothing on screen saying so —
+a plain drag did nothing at all, and "I cannot drag the map" is what that
+looks like from the outside. So **Click and drag is the default**, and
+
+- **Ctrl + drag still pans under either setting.** Picking *Ctrl + click
+  and drag* only turns the plain drag back off; it never takes the
+  modifier gesture away.
+- The change applies to a map that is already open — no restart.
+
+The scroll wheel is unaffected either way: it **zooms**, <kbd>Ctrl</kbd> +
+wheel steps the Z layer, and a wheel near a map edge nudges the backdrop
+(below). A plain drag that *starts* in that same edge band does not pan,
+so reaching for the border of a frameless window still means the border;
+Ctrl + drag pans from there as it always has.
 
 ## Transparency
 

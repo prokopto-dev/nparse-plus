@@ -74,15 +74,33 @@ The map spends its pixels on the map. Everything else is summoned:
 
 ## Display options
 
-Zoom with the scroll wheel; drag to pan. Scroll near a map **edge** to
-nudge the backdrop instead — see below. In
-[Settings → Maps](../settings/maps.md):
+Zoom with the scroll wheel; drag to pan. <kbd>Ctrl</kbd> + wheel steps the
+Z layer instead of zooming, and scrolling near a map **edge** nudges the
+backdrop — see below. In [Settings → Maps](../settings/maps.md):
 
+- **how the map is panned** (see below)
 - line/grid width and **label size**
 - **backdrop opacity** and the idle fade (see below)
 - **z-axis fading** — floors above/below you fade out smoothly, tuned per
   zone (enable, opacity floor, strength, fallback height)
 - per-Z-layer opacity, other-players toggle
+
+### Panning
+
+**Click and drag** the map to pan it. **<kbd>Ctrl</kbd> + drag** does the
+same thing and always has — it was the *only* way until nParse+ 2.10, and
+nothing on screen said so, so a plain drag looked like a map that would
+not move.
+
+If you would rather keep the plain drag free, **Pan the map with** on
+[Settings → Maps](../settings/maps.md#panning) switches back to
+Ctrl + drag only. Either way the modifier gesture keeps working, and the
+setting applies without a restart.
+
+Two places a plain drag deliberately does nothing: on the summoned chrome
+(you are pressing the header, not the map under it), and in the thin band
+along each map edge, which belongs to the backdrop wheel and to the border
+of a frameless window. <kbd>Ctrl</kbd> + drag pans from the edge band too.
 
 ### Seeing through the map
 

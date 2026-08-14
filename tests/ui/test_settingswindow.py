@@ -18,6 +18,7 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
+from nparseplus.helpers.config import PAN_CTRL_DRAG, PAN_DRAG
 from nparseplus.ui.settingswindow import (
     MIN_SIZE,
     PLUGIN_WINDOWS_SECTION,
@@ -153,6 +154,23 @@ def test_apply_dual_writes_and_notifies_once(qtbot, tmp_path: Path) -> None:
     # Bridge callables: exactly once each.
     assert calls == {"save": 1, "legacy_save": 1, "notify": 1, "repaint": 1}
     assert dir_changes == [tmp_path]
+
+
+def test_pan_mode_picker_round_trips_the_legacy_key(qtbot) -> None:
+    """A document written before the setting existed shows the default, not an
+    empty picker — and the map's gesture was Ctrl+drag, so the value the picker
+    writes is what the canvas reads at press time."""
+    legacy = _legacy()
+    assert "pan_mode" not in legacy["maps"]
+    window = _window(qtbot, legacy=legacy)
+    assert window._maps_pan_mode.currentData() == PAN_DRAG
+
+    window._maps_pan_mode.setCurrentIndex(window._maps_pan_mode.findData(PAN_CTRL_DRAG))
+    window.apply()
+    assert legacy["maps"]["pan_mode"] == PAN_CTRL_DRAG
+
+    reopened = _window(qtbot, legacy=legacy)
+    assert reopened._maps_pan_mode.currentData() == PAN_CTRL_DRAG
 
 
 def test_windows_grid_writes_both_families_and_applies(qtbot) -> None:

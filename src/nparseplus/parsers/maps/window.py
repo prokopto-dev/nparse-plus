@@ -242,6 +242,10 @@ class Maps(ParserWindow):
         self._puck.show()
         self._edge_tabs = []
         self._chrome_shown = False
+        # The canvas decides whether a press starts a pan, and it cannot see
+        # the chrome: these panels are the WINDOW's children, sitting over the
+        # canvas rather than inside it.
+        self._map.chrome_hit_test = self._chrome_covers
 
         # Idle fade: drop the backdrop to nothing when the map is just sitting
         # there, and restore the user's value the moment they touch it again.
@@ -254,6 +258,32 @@ class Maps(ParserWindow):
         self._map.installEventFilter(self)
         self._map.viewport().installEventFilter(self)
         self._arm_idle_fade()
+
+    def _chrome_panels(self):
+        """Every summoned surface that sits over the canvas, up or not."""
+        return [
+            self._header,
+            self._toolbar,
+            self._rail,
+            self._puck,
+            self._search_box,
+            self._search_results,
+            *self._edge_tabs,
+        ]
+
+    def _chrome_covers(self, point):
+        """True when a CANVAS-local point lands under visible chrome.
+
+        Qt's own hit-testing is the first line here — a press on the header
+        goes to the header, not to the canvas underneath — so this exists to
+        make the rule the canvas enforces ("a drag that starts on chrome does
+        not pan") true on its own terms, including for a panel that is later
+        made transparent for mouse events.
+        """
+        return chrome.covers_point(
+            self._map.mapTo(self, point),
+            [panel.geometry() for panel in self._chrome_panels() if panel.isVisible()],
+        )
 
     @property
     def _map_colors(self):

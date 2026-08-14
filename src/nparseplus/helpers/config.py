@@ -10,6 +10,16 @@ data = {}
 _filename = ""
 APP_EXIT = False
 
+# maps.pan_mode — how a left-drag on the map canvas behaves. The vocabulary
+# lives here, next to the validation, because three places need it and none of
+# them may import the others: this module (verify_settings), the canvas that
+# implements the gesture (parsers/maps/mapcanvas.py) and the settings window's
+# Maps page. Plain drag is the default: it was inert before, so turning it on
+# takes nothing away, and Ctrl+drag keeps working under both.
+PAN_DRAG = "drag"
+PAN_CTRL_DRAG = "ctrl_drag"
+PAN_MODES = (PAN_DRAG, PAN_CTRL_DRAG)
+
 
 def _resolve_config_path(filename):
     """Relative config paths resolve against the CWD from a source checkout,
@@ -132,6 +142,13 @@ def verify_settings():
     )
     data["maps"]["other_z_alpha"] = get_setting(
         data["maps"].get("other_z_alpha", 10), 10, lambda x: 1 <= x <= 100
+    )
+    # Plain click-and-drag panning, the default, is a DISCOVERABILITY fix: the
+    # gesture was Ctrl+drag and nothing on screen said so ("I cannot drag the
+    # map"), while a plain drag did nothing at all. Ctrl+drag still pans under
+    # either value, so this only ever adds a way in.
+    data["maps"]["pan_mode"] = get_setting(
+        data["maps"].get("pan_mode", PAN_DRAG), PAN_DRAG, lambda x: x in PAN_MODES
     )
     data["maps"]["scale"] = get_setting(data["maps"].get("scale", 0.07), 0.07)
     data["maps"]["show_grid"] = get_setting(data["maps"].get("show_grid", True), True)
