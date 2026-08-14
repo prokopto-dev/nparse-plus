@@ -246,9 +246,23 @@ def test_the_parse_does_not_run_on_the_driver_thread(tmp_path) -> None:
 
     threads: list[str] = []
     backend.spell_reload._book = _Recorder(book, threads)  # type: ignore[assignment]
+
+    # Hold the spawn rather than racing it. `tick` starts the parse and then
+    # adopts in the same call, so a one-spell database can finish on its
+    # daemon thread in the microseconds between the two — which made
+    # "threads == []" a coin flip on a fast machine rather than a claim about
+    # the driver thread. Capturing the work proves what the test is for: the
+    # starting tick SUBMITS and returns, having parsed and adopted nothing.
+    spawned: list[tuple[str, object]] = []
+    backend.spell_reload._job._spawn = lambda name, work: spawned.append((name, work))
     backend.spell_reload.tick(datetime.now())
     assert threads == []  # the starting tick adopted nothing
+    assert spawned, "the tick submitted the parse instead of running it"
 
+    name, work = spawned[0]
+    worker = threading.Thread(target=work, name=name)  # type: ignore[arg-type]
+    worker.start()
+    worker.join(timeout=10.0)
     assert backend.spell_reload.wait()
     backend.spell_reload.tick(datetime.now())
     assert threads == ["MainThread"]  # ...the adopting one did, here
