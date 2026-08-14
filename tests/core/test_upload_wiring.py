@@ -23,6 +23,10 @@ def backend_for(mode: str, target: str):
     settings = Settings()
     settings.sharing.mode = mode
     settings.dumps.upload_target = target
+    # Off so the assertions below are about the upload destination alone: the
+    # Mob Info wiki lookup is a third, unrelated reason to build a worker
+    # thread (#113), and it defaults on.
+    settings.mobinfo.wiki_details = False
     return build_backend(settings, speaker=StubSpeaker())
 
 

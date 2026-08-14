@@ -279,6 +279,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         on_audio_changed: Callable[[], None] | None = None,
         on_appearance_changed: Callable[[], None] | None = None,
         on_dps_changed: Callable[[], None] | None = None,
+        on_mobinfo_changed: Callable[[], None] | None = None,
         on_overlay_timing_changed: Callable[[], None] | None = None,
         on_sharing_changed: Callable[[], None] | None = None,
         on_upload_target_changed: Callable[[], None] | None = None,
@@ -309,6 +310,11 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._on_audio_changed = on_audio_changed
         self._on_appearance_changed = on_appearance_changed
         self._on_dps_changed = on_dps_changed
+        # Turning the Mob Info wiki lookup on mid-session has to build the
+        # client and the worker thread it needs, like the dump destination
+        # below — the handler reads the setting live, the plumbing does not
+        # exist until something makes it (#113).
+        self._on_mobinfo_changed = on_mobinfo_changed
         # Overlay durations are BEHAVIOR, so they get their own callback
         # rather than riding on _on_appearance_changed — that one is also the
         # skin picker's preview path (#67).
@@ -1645,6 +1651,32 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._root_break_audio.setChecked(general.root_break_audio)
         self._root_break_audio.setToolTip("Speak the same root-break warning.")
         form.addRow("Speak root break warning", self._root_break_audio)
+
+        mobinfo = self._settings.mobinfo
+        mob_box = QGroupBox("Mob Info", self)
+        mob_form = QFormLayout()
+        self._mobinfo_wiki = QCheckBox(self)
+        self._mobinfo_wiki.setChecked(mobinfo.wiki_details)
+        self._mobinfo_wiki.setToolTip(
+            "Look the considered mob up on wiki.project1999.com and show what "
+            "the page says: HP, AC, damage per hit, where it spawns, its "
+            "factions and its drop table.\n\n"
+            "One request per mob you consider, cached for the session — the "
+            "window's own refresh never fetches. Turning this off leaves the "
+            "name, the zone and the respawn timer, and contacts the wiki "
+            "never."
+        )
+        mob_form.addRow("Look up wiki details", self._mobinfo_wiki)
+        self._mobinfo_image = QCheckBox(self)
+        self._mobinfo_image.setChecked(mobinfo.show_image)
+        self._mobinfo_image.setToolTip(
+            "Show the picture from the mob's wiki page. Downloaded once at "
+            "thumbnail size and kept in the local cache; needs the lookup "
+            "above."
+        )
+        mob_form.addRow("Show mob picture", self._mobinfo_image)
+        mob_box.setLayout(mob_form)
+        form.addRow(mob_box)
         return self._page(form)
 
     def _test_voice(self) -> None:
@@ -2029,6 +2061,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         general.socials_autosync = self._socials_autosync.isChecked()
         self._settings.sharing.mode = self._sharing_mode.currentText()  # type: ignore[assignment]
         self._settings.dumps.upload_target = self._upload_target.currentData()
+        self._settings.mobinfo.wiki_details = self._mobinfo_wiki.isChecked()
+        self._settings.mobinfo.show_image = self._mobinfo_image.isChecked()
         spellwindow = self._settings.spellwindow
         spellwindow.row_sort = self._row_sort_combo.currentData()
         spellwindow.you_only_spells = self._you_only.isChecked()
@@ -2096,6 +2130,10 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             self._on_audio_changed()  # live-swap the shared TTS speaker
         if self._on_dps_changed is not None:
             self._on_dps_changed()  # push the counting rules onto the tracker
+        if self._on_mobinfo_changed is not None:
+            # Builds the wiki client/worker if the lookup was just turned on,
+            # then re-renders the window for the picture toggle.
+            self._on_mobinfo_changed()
         if self._on_overlay_timing_changed is not None:
             self._on_overlay_timing_changed()  # alert duration + CH lane retention
         if self._on_sharing_changed is not None:

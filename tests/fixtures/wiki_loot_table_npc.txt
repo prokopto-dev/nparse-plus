@@ -1,0 +1,50 @@
+{{Classic Era}}
+{{Namedmobpage
+
+| imagefilename     = a_shady_goblin.png
+
+| emu_id            = 30044
+| illia_id          = 1234
+
+| name              = a shady goblin
+| race              = Goblin
+| class             = [[Warrior]]
+| level             = 12
+| agro_radius       = 40
+| run_speed         = 1.25
+
+| zone              = [[Runnyeye]]
+| location          = 100% @ (12, -340)
+| respawn_time      = 6 minutes 40 seconds
+
+| AC                = 80
+| HP                = 300
+| HP_regen          = 1
+| mana_regen        = 1
+
+| attacks_per_round = 1
+| attack_speed      = 100%
+| damage_per_hit    = 5  - 18
+| special           = None
+
+| description = Wanders the upper level. Drops are listed below rather than in the template.
+
+}}
+
+== Loot ==
+
+{| class="wikitable sortable"
+! Item !! Slot !! Rarity
+|-
+| [[Rusty Short Sword]] || Primary || Common
+|-
+| [[Goblin Gazughi Ring]] || Finger || Rare
+|-
+| [[Tarnished Bronze Mask]] || Head || Uncommon
+|}
+
+== Related quests ==
+
+* [[Ring of the Ancients]]
+
+[[Category:Runnyeye]]

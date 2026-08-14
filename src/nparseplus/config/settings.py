@@ -412,6 +412,21 @@ class DumpsSettings(BaseModel):
     upload_target: Literal["off", "pigparse", "p99planner"] = "off"
 
 
+class MobInfoSettings(BaseModel):
+    """What the Mob Info window looks up for the mob you considered (#113).
+
+    Both default on: the lookup is one request per mob to a public wiki page
+    the window already links to, and the picture is the reason the window is
+    worth opening. They are separate toggles because they cost different
+    things — ``wiki_details`` is whether nParse+ contacts
+    wiki.project1999.com at all, ``show_image`` is bandwidth and screen
+    space on top of that.
+    """
+
+    wiki_details: bool = True
+    show_image: bool = True
+
+
 class DiscordSettings(BaseModel):
     """Discord relay config carried by migration but not yet read at runtime.
 
@@ -668,6 +683,7 @@ class Settings(BaseModel):
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     dps: DpsSettings = Field(default_factory=DpsSettings)
     dumps: DumpsSettings = Field(default_factory=DumpsSettings)
+    mobinfo: MobInfoSettings = Field(default_factory=MobInfoSettings)
     pigparse_account: PigParseAccountSettings = Field(default_factory=PigParseAccountSettings)
     plugins: PluginsSettings = Field(default_factory=PluginsSettings)
     windows: dict[str, WindowState] = Field(default_factory=dict)

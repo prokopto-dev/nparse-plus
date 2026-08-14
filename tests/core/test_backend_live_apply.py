@@ -246,9 +246,23 @@ def test_the_parse_does_not_run_on_the_driver_thread(tmp_path) -> None:
 
     threads: list[str] = []
     backend.spell_reload._book = _Recorder(book, threads)  # type: ignore[assignment]
+
+    # Hold the spawn rather than racing it. `tick` starts the parse and then
+    # adopts in the same call, so a one-spell database can finish on its
+    # daemon thread in the microseconds between the two — which made
+    # "threads == []" a coin flip on a fast machine rather than a claim about
+    # the driver thread. Capturing the work proves what the test is for: the
+    # starting tick SUBMITS and returns, having parsed and adopted nothing.
+    spawned: list[tuple[str, object]] = []
+    backend.spell_reload._job._spawn = lambda name, work: spawned.append((name, work))
     backend.spell_reload.tick(datetime.now())
     assert threads == []  # the starting tick adopted nothing
+    assert spawned, "the tick submitted the parse instead of running it"
 
+    name, work = spawned[0]
+    worker = threading.Thread(target=work, name=name)  # type: ignore[arg-type]
+    worker.start()
+    worker.join(timeout=10.0)
     assert backend.spell_reload.wait()
     backend.spell_reload.tick(datetime.now())
     assert threads == ["MainThread"]  # ...the adopting one did, here
@@ -302,3 +316,72 @@ def test_a_second_request_waits_for_the_one_in_flight(tmp_path, monkeypatch) -> 
 
     assert started == ["spell-reload"]
     assert backend.spell_reload.pending == other / "spells_us.txt"  # kept, not dropped
+
+
+# --- Mob Info's wiki lookup (#113) ----------------------------------------------
+
+
+def mobinfo_backend(*, wiki_details: bool):
+    settings = Settings()
+    settings.sharing.mode = "off"
+    settings.mobinfo.wiki_details = wiki_details
+    return build_backend(settings, speaker=StubSpeaker())
+
+
+def test_turning_the_wiki_lookup_on_builds_what_the_fetch_needs() -> None:
+    """The handler reads the setting live; the client and the thread it
+    fetches on were decided at launch, so this is the half that has to move."""
+    backend = mobinfo_backend(wiki_details=False)
+    assert backend.wiki is None and backend.net_worker is None
+    con = backend.con_handler
+    assert con is not None and con.wiki is None and con.wiki_submit is None
+
+    backend.settings.mobinfo.wiki_details = True
+    backend.apply_mobinfo_settings()
+
+    assert backend.wiki is not None
+    assert con.wiki is backend.wiki
+    assert con.wiki_submit is not None
+    backend.stop()
+
+
+def test_turning_it_off_stops_the_fetch_without_tearing_anything_down() -> None:
+    backend = mobinfo_backend(wiki_details=True)
+    client, worker = backend.wiki, backend.net_worker
+    con = backend.con_handler
+    assert client is not None and worker is not None and con is not None
+
+    backend.settings.mobinfo.wiki_details = False
+    backend.apply_mobinfo_settings()
+
+    assert con.wiki is None and con.wiki_submit is None  # nothing can fetch
+    assert backend.wiki is client and backend.net_worker is worker  # still idle
+    backend.stop()
+
+
+def test_reapplying_does_not_build_a_second_client() -> None:
+    backend = mobinfo_backend(wiki_details=True)
+    client, worker = backend.wiki, backend.net_worker
+    backend.apply_mobinfo_settings()
+    assert backend.wiki is client and backend.net_worker is worker
+    backend.stop()
+
+
+def test_the_wiki_lookup_needs_no_sharing_and_grants_none() -> None:
+    """wiki.project1999.com is not pigparse's API: the lookup brings its own
+    worker with sharing off, and that worker is not permission to publish."""
+    backend = mobinfo_backend(wiki_details=True)
+    assert backend.net_worker is not None
+    assert backend.sharing_client is None
+    assert backend.pigparse_api is None
+    assert backend.sharing.pigparse_rest_allowed() is False
+    backend.stop()
+
+
+def test_the_picture_toggle_reaches_a_running_handler() -> None:
+    backend = mobinfo_backend(wiki_details=True)
+    con = backend.con_handler
+    assert con is not None and con.want_image() is True
+    backend.settings.mobinfo.show_image = False
+    assert con.want_image() is False  # read at fetch time, not at construction
+    backend.stop()

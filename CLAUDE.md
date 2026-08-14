@@ -1041,6 +1041,43 @@ does both halves for anyone with no driver thread to protect.
 install with no `spells_us.txt` resolves back to the bundled copy, and
 re-parsing to arrive where we already are is pure cost.
 
+**Mob Info renders the whole wiki page** (post-2.9.2, #113): `net/p99wiki.py`
+parsed nine template fields and `ui/mobinfo.py` consumed **none** of them —
+the window showed name, zone, a respawn figure and a loot list that only
+existed with sharing on. It now ports EQTool's `MobInfoViewModel` field set:
+the stat block (HP/AC/damage per hit/attacks per round/attack speed/run
+speed/aggro radius), the **whole** `location` text (P99 lists several spawn
+points; `location` keeps the first pair for the map and is the wrong answer
+for a human), respawn, specials, factions, opposing factions, related quests,
+the drop table, and the page picture. **Drops parse from two shapes**: the
+`known_loot` field (`{{:Item}}`/`[[Item]]` per `<li>`, `drare` rarity kept —
+EQTool strips it) and, only on a page whose template says it is an NPC's, a
+body wikitable or `== Loot ==` list. That gate is what stops "Cazic Thule"
+redirecting to the ZONE article and the god's drops reading `Feerrott`.
+**The image resolves through the MediaWiki API** — EQTool builds
+`/images/<file>` by hand, which misses the hash fan-out and can never ask for
+a thumbnail. Two fetch legs on the same NetWorker, deliberately separate:
+the PigParse pricing leg keeps the sharing-GATED submit, the wiki leg takes
+the raw one, because wiki.project1999.com is not pigparse's API — so a
+player who shares nothing still gets the drop table. `merge_loot` is the
+rule: case-folded name is identity, **PigParse pricing wins and the wiki
+contributes rarity**, wiki-only drops fill the gaps, priced rows sort first
+(the window clips the list, so ordering decides what survives). Fetching
+lands in `net/`, the QPixmap is built in `ui/` from a file the client
+already cached under `platformdirs.user_cache_dir` — that split is why
+net/ still imports no Qt. Everything wiki-derived is `html.escape`d and
+non-http URLs are dropped before they reach a RichText label (#102's class).
+`mobinfo.wiki_details` (whether nParse+ contacts the wiki at all) and
+`mobinfo.show_image` are both on by default and both live via
+`Backend.apply_mobinfo_settings`; the first is also a third reason
+composition builds a `NetWorker`, which is why two tests that assert "no
+feature asked for network" now turn it off. Fixed en route, both found
+against live pages: `_FIELD_RE`'s `\s*` after the `=` crossed the newline of
+an empty field and captured the NEXT field's line as its value, and the
+respawn line now shows the zone database's figure AND the wiki's, because
+`ZoneDatabase.spawn_time` always answers (global 6:40 fallback) and so
+cannot say it has never heard of this NPC.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).
