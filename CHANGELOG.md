@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.9.2 (2026-08-14)
+
+### Bug Fixes
+
+- **overlay**: Charge the alert floor for a kicker that has text
+  ([#108](https://github.com/prokopto-dev/nparse-plus/pull/108),
+  [`be1a9b1`](https://github.com/prokopto-dev/nparse-plus/commit/be1a9b160ec7023aade59ed72ca7fa8a34f7a526))
+
+- **overlay**: Stop laying the alert viewport out zero pixels wide
+  ([#108](https://github.com/prokopto-dev/nparse-plus/pull/108),
+  [`be1a9b1`](https://github.com/prokopto-dev/nparse-plus/commit/be1a9b160ec7023aade59ed72ca7fa8a34f7a526))
+
+
 ## v2.9.1 (2026-08-13)
 
 ### Bug Fixes
