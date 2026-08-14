@@ -6,6 +6,21 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.11.0 (2026-08-14)
+
+### Features
+
+- **mobinfo**: Render the whole P99 wiki page
+  ([#117](https://github.com/prokopto-dev/nparse-plus/pull/117),
+  [`ff7401e`](https://github.com/prokopto-dev/nparse-plus/commit/ff7401e589a1ffe1cff1c2d6c61ab5a723d11625))
+
+### Testing
+
+- **spells**: Stop the reload thread test racing its own daemon
+  ([#117](https://github.com/prokopto-dev/nparse-plus/pull/117),
+  [`ff7401e`](https://github.com/prokopto-dev/nparse-plus/commit/ff7401e589a1ffe1cff1c2d6c61ab5a723d11625))
+
+
 ## v2.10.0 (2026-08-14)
 
 ### Documentation
