@@ -27,7 +27,12 @@ versioning.
    no-ops — no version bump, no release — but CI still builds it.
 2. **Release workflow** (`release.yml`) verifies the tag matches both
    version files, then builds in parallel:
-   - macOS DMG (ad-hoc signed)
+   - macOS DMG (ad-hoc signed), plus a `.app` zip of the same bundle beside
+     it — packed with `ditto`, not `zip`, because the signature seals over
+     resource forks and extended attributes that `zip` drops; the job
+     extracts the zip and re-verifies the seal to prove it. The DMG is the
+     human download; the zip exists for code that has to unpack a bundle
+     without mounting a disk image (see [the self-updater](../features/updater.md))
    - Windows zip
    - Linux tarball **and** Flatpak bundle (GPG-signed; smoke-tested
      headless inside the sandbox)

@@ -28,6 +28,26 @@ default. What it's still missing:
   into the plugins folder) runs plugin code before you approve it — see
   [Plugin security & trust](plugins/security.md).
 
+## Updating in one click
+
+Today the [self-updater](features/updater.md) downloads the right artifact
+for your platform, [verifies it against the checksum the release
+publishes](features/updater.md#verified-downloads), and hands it to you to
+install. The [remaining
+half](https://github.com/prokopto-dev/nparse-plus/issues/72) is doing the
+install for you:
+
+- **[Swap and relaunch](https://github.com/prokopto-dev/nparse-plus/issues/76)**
+  for the macOS app, the Windows folder and the Linux tarball — with the
+  pre-flight checks that decide when it *can't* (an install directory it
+  cannot write, not enough disk, a translocated bundle) and degrades to
+  today's download-and-open with the reason
+- **[One-click update inside the Flatpak](https://github.com/prokopto-dev/nparse-plus/issues/74)**
+  through the portal's update monitor, instead of sending you to the host
+  tools
+- **[Rolling back](https://github.com/prokopto-dev/nparse-plus/issues/77)**
+  an update that installs but won't start
+
 ## Distribution & platform
 
 Longer-horizon packaging work, waiting on time (and in some cases, money):

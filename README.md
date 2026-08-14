@@ -66,7 +66,7 @@ from the tray, and you're parsing —
 ```bash
 uv sync                                   # deps (incl. dev group); resolves
                                           # the workspace, so sdk/ comes too
-uv run pytest                             # ~1460 tests (incl. sdk/tests)
+uv run pytest                             # ~2500 tests (incl. sdk/tests)
 uv run ruff check . && uv run ruff format .
 QT_QPA_PLATFORM=offscreen uv run pytest   # headless (CI does this)
 ```
