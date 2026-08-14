@@ -16,14 +16,23 @@ sidebar pages, documented one-per-page here, mirroring the app:
 | [Maps](maps.md) | Line widths, label size, other players, backdrop, z-fade |
 | [Windows](windows.md) | Per-window on-top / opacity / click-through |
 | [Audio & Overlays](audio-overlays.md) | TTS voice/volume, alert durations |
-| [Sharing](sharing.md) | Network mode, pigparse.org account, inventory upload |
+| [Sharing](sharing.md) | Network mode, pigparse.org account, character dump upload |
 | [Advanced](advanced.md) | Log archiving, macro sync, add-ons switch, Night Vision fix |
 | [Plugins](plugins.md) | Optional, off by default — only appears once add-ons are enabled in Advanced |
 
 **Apply & Save** writes everything to disk; **Close** discards pending
-edits. A few settings note that they apply after restart (TTS engine,
-sharing mode). The overlay skin previews as soon as you pick it, and the
-UI/overlay font size applies to open overlays when you save.
+edits. Almost everything then applies to the running app — voices, alert
+durations, counting rules, the dump destination, the spell database behind
+your EQ install directory. The overlay skin previews as soon as you pick it,
+and the UI/overlay font size applies to open overlays when you save.
+
+Two things still need a restart, and the page says so where you set them:
+
+- **Turning location sharing on**, or switching between the pigparse and
+  nparse networks ([Sharing](sharing.md)). Turning it *off* applies
+  immediately.
+- **Enabling add-ons**, and any install, uninstall or enable/disable of one
+  ([Advanced](advanced.md), [Plugins](plugins.md)).
 
 Settings persist to `settings.json` in your
 [platform config directory](../getting-started/first-run.md#where-settings-live).

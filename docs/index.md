@@ -37,9 +37,9 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 | Area | What you get |
 |---|---|
 | **[Spell timers](windows/spell-timers.md)** | Per-target buff/debuff countdowns from the real spell DB (durations by your level/class), gem icons, per-class spell filters, worn-off removal, cooldowns, self-buffs restored across camps |
-| **[Triggers](features/triggers.md)** | 65 built-in triggers (raid AOEs with countdown bars, invis/levitate fading, failed feign, charm break, death touch, …) plus custom triggers with `{name}`/`{c}`/`{COUNTER}` tokens, zone gating, text-to-speech, timers, and counters. Start ad-hoc timers from chat: `StartTimer-45-Label` |
+| **[Triggers](features/triggers.md)** | 67 built-in triggers (raid AOEs with countdown bars, invis/levitate fading, failed feign, charm break, death touch, …) plus custom triggers with `{name}`/`{c}`/`{COUNTER}` tokens, zone gating, text-to-speech, timers, and counters. Right-click a log line in the Console to build one from it; GINA `.gtp` packages import directly. Start ad-hoc timers from chat: `StartTimer-45-Label` |
 | **[Maps](windows/maps.md)** | Brewall map set, player marker with direction arrow via `/loc`, tracking-skill radius circle (Druid/Ranger/Bard), smooth z-axis fading tuned per zone, spawn-point timers, waypoints, path recording, and NPC search with live P99-wiki lookup |
-| **[DPS meter](windows/dps-meter.md)** | Per-fight attacker breakdown, 12-second trailing DPS, session best/current/last |
+| **[DPS meter](windows/dps-meter.md)** | Per-fight attacker breakdown, 12-second trailing DPS, session best/current/last; your own spell damage is attributed from your casting, and your pet gets its own marked row |
 | **[Combat tracking](features/combat.md)** | Respawn timers on kill (per-NPC times for 121 zones), faction/exp kill guessing, random-roll tracking, quake/Ring War/FTE alerts, death-loop detection, pet tracking |
 | **[CH chains](features/ch-chains.md)** | `CA 001 CH -- Target` calls render as chips sliding across an 11-second lane per heal target; voice and on-screen warning when your slot is next |
 | **[Event overlay](windows/event-overlay.md)** | Full-screen click-through alerts and countdown bars; position it over your game window from the tray |
@@ -48,6 +48,7 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 | **[Night Vision fix](features/night-vision.md)** | One click applies the community shader/sky fix over your EQ install (with backups) — and one click reverts it |
 | **[Friends sync](features/friends-sync.md)** | Merge every character's in-game friends list on a server and push it back to all of them (originals backed up) |
 | **[Macro editor](windows/macro-editor.md)** | Edit your in-game macros, copy a set onto your alts, and export/import macro packs to share (originals backed up) |
+| **[Character dumps](windows/character-dumps.md)** | A library of `/outputfile inventory` and `/outputfile spellbook` snapshots per character — the game keeps one copy and overwrites it; this keeps a history, with a diff against the previous one |
 | **[Boats](features/boats.md)** | Boat schedule tracking synced from sightings, yours or shared over the network |
 | **[Plugins](plugins/index.md)** | Optional, off by default: a documented SDK so others can add their own windows, parsers, and alerts. Nothing above needs one — turn add-ons on in Settings → Advanced only if you want them |
 

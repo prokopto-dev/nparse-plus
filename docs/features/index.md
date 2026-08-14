@@ -7,7 +7,7 @@ out of your log and what it does with it.
 
 - [Triggers](triggers.md) — the full trigger model: search text, regex,
   tokens, zone gating, outputs
-- [Built-in triggers](builtin-triggers.md) — the shipped library of ~65
+- [Built-in triggers](builtin-triggers.md) — the shipped library of 67
   raid/combat/utility triggers
 - [Chat-command timers](chat-timers.md) — `StartTimer-45-Label` from any
   chat channel

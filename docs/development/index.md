@@ -17,7 +17,7 @@ uv run python -m nparseplus
 ## Development commands
 
 ```bash
-uv run pytest                             # ~770 tests, a few seconds
+uv run pytest                             # ~2500 tests, a few seconds
 uv run pytest --cov=nparseplus --cov-branch --cov-report=term-missing
 uv run ruff check . && uv run ruff format .
 QT_QPA_PLATFORM=offscreen uv run pytest   # headless (CI does this)
