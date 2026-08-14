@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, Qt, QTimer
+from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
@@ -27,13 +27,19 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QSizeGrip,
+    QSizePolicy,
     QStyle,
     QStyleOption,
     QVBoxLayout,
     QWidget,
 )
 
-from nparseplus.config.settings import OverlayRegion, WindowState
+from nparseplus.config.settings import (
+    MIN_REGION_HEIGHT,
+    MIN_REGION_WIDTH,
+    OverlayRegion,
+    WindowState,
+)
 from nparseplus.core.events import (
     CompleteHealCadenceEvent,
     CompleteHealEvent,
@@ -112,9 +118,11 @@ EDIT_HINT_HEIGHT = 56
 # The empty ``Qt.Edge`` flag — a module singleton because ruff (B008)
 # rightly refuses a constructor call in an argument default.
 NO_EDGES = Qt.Edge(0)
-# Smallest a region may be dragged to in position mode.
-MIN_REGION_WIDTH = 120
-MIN_REGION_HEIGHT = 32
+# Smallest a region may be dragged to in position mode: MIN_REGION_WIDTH /
+# MIN_REGION_HEIGHT, imported above from the model that persists them. They
+# live there because the settings layer is the one that has to repair a
+# hand-edited size and may not import Qt to learn the number (#107); one
+# definition means the drag floor and the load-time bound cannot drift apart.
 # The stacked layout's outer margins (mirrors the main QVBoxLayout margins);
 # region-mode anchors measure from these lines.
 REGION_MARGIN_TOP = 40
@@ -355,11 +363,32 @@ class _AlertViewport(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("EventOverlayAlertViewport")
+        # Fill the alert host's width. Stated as a policy rather than left to
+        # the layout's default because the whole alert once vanished for want
+        # of it: see ``sizeHint`` (#107).
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._label = label
         label.setParent(self)
         self._natural_height = 0
         self._offset = 0.0
         self._pad = 0
+
+    def sizeHint(self) -> QSize:
+        """A real width, so this can never be laid out zero pixels wide.
+
+        Qt answers ``QSize(-1, -1)`` for a widget with no layout of its own,
+        which ``QWidgetItem`` resolves to width 0 — and a layout item carrying
+        a horizontal alignment flag is clamped to its hint width instead of
+        being stretched to the cell. Together those laid the entire alert out
+        at zero width: the headline was there, styled, correctly sized, and
+        one pixel wide inside a parent that clipped it (#107). The alignment
+        flag is off this item now (``apply_skin``), and this hint is the
+        second lock — a width nothing can silently collapse.
+
+        Height is not this hint's business: ``apply_text_layout`` and
+        ``collapse`` set it outright with ``setFixedHeight``.
+        """
+        return QSize(MIN_REGION_WIDTH, self.height())
 
     def apply_text_layout(self, natural_height: int, budget: int) -> int:
         """Size to a headline ``natural_height`` px tall inside ``budget``.
@@ -401,8 +430,15 @@ class _AlertViewport(QWidget):
         self._place_label()
 
     def _place_label(self) -> None:
+        # The label spans the viewport EXACTLY — that is what centers the
+        # headline (the label's own AlignHCenter) and what makes the width the
+        # text was measured against the width it is drawn at. Deliberately not
+        # ``max(1, self.width())``: flooring it at one pixel is what turned a
+        # zero-width viewport into a legal-looking label that drew nothing, so
+        # every height-and-text assertion in the suite still passed (#107). A
+        # zero here now shows as a zero.
         self._label.setGeometry(
-            0, self._pad - round(self._offset), max(1, self.width()), self._natural_height
+            0, self._pad - round(self._offset), self.width(), self._natural_height
         )
 
     def resizeEvent(self, event) -> None:
@@ -418,6 +454,16 @@ class _Hairline(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._color = ""
         self.setFixedHeight(1)
+
+    def sizeHint(self) -> QSize:
+        """The height ``_alert_chrome_height`` charges the region for.
+
+        A widget with no layout of its own answers ``QSize(-1, -1)``, and that
+        -1 was being *subtracted* from the alert's height budget — crediting
+        the headline with two pixels the region does not have, on the one
+        function whose whole job is that the two agree (#107).
+        """
+        return QSize(self.minimumWidth(), self.minimumHeight())
 
     def apply_skin(self, skin: skins.Skin) -> None:
         self._color = skin.alert_rule_color
@@ -797,6 +843,9 @@ class EventOverlayWindow(QWidget):
         if self._region_mode():
             self._activate_region_layout()
 
+        # Also where a loaded region too short to hold a headline is repaired:
+        # apply_skin clamps it, and it has to be the skin that does so, since
+        # the floor is not knowable until the kicker and rule know their font.
         self.apply_skin()
         self.hide()
 
@@ -865,10 +914,16 @@ class EventOverlayWindow(QWidget):
         align = Qt.AlignmentFlag.AlignHCenter
         for widget in (self._alert_kicker, self._center_text):
             widget.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
-        # The headline is centered inside its viewport, which is itself the
-        # full-width layout item — the alert panel stays centered in its
-        # region under every skin (the deliberate exception, unchanged).
-        for widget in (self._alert_kicker, self._alert_viewport, self._alert_rule):
+        # The kicker and the rule are centered as layout items; the headline is
+        # centered INSIDE its viewport, by the label's own AlignHCenter above.
+        # The viewport itself must take the full host width and so must carry
+        # NO horizontal alignment flag: Qt clamps an aligned item to its size
+        # hint, and this one is a bare QWidget whose hint width was 0, which
+        # laid every alert out zero pixels wide (#107). Pre-#103 this loop
+        # named the label — a QLabel with a real hint — which is why passing a
+        # widget swap through it broke silently. The alert panel still stays
+        # centered in its region under every skin (the deliberate exception).
+        for widget in (self._alert_kicker, self._alert_rule):
             self._alert_layout.setAlignment(widget, align)
         kicker_role = skins.TypographyRole(
             skin.alert_kicker_scale, "bold", skin.alert_kicker_tracking
@@ -907,6 +962,12 @@ class EventOverlayWindow(QWidget):
         for label in self._utility_lines.values():
             label.setStyleSheet(self._utility_line_style(label.property("line_color")))
         self._alert_rule.apply_skin(skin)
+        # The floor is font-relative — it is the kicker's height plus the
+        # rule's — so raising the base font in Settings can put a region that
+        # was legal when it was drawn back under it, live and silently. Only
+        # ever grows, and only to the size the drag would now enforce anyway.
+        if self._region_mode():
+            self._clamp_alert_region()
         self._restyle_alert()
         for entry in self._bars.values():
             self._style_bar(entry.widget)
@@ -1096,10 +1157,42 @@ class EventOverlayWindow(QWidget):
         and rule — the budget then had to overrun the region to stay
         readable. Derived from the same two numbers the budget is, so the two
         cannot drift apart.
+
+        Against WORST-CASE chrome, which is the whole guarantee: this is
+        evaluated in position mode, where no alert is live and the kicker is
+        hidden, so charging live chrome floored the region at a number the
+        very next ``"Gorenaire — ENRAGED"`` overran (#107).
         """
         if key != "alert":
             return MIN_REGION_HEIGHT
-        return max(MIN_REGION_HEIGHT, MIN_ALERT_BUDGET + self._alert_chrome_height())
+        return max(MIN_REGION_HEIGHT, MIN_ALERT_BUDGET + self._alert_chrome_height(worst_case=True))
+
+    def _clamp_alert_region(self) -> None:
+        """Bring a loaded Alerts region up to the floor the drag enforces.
+
+        The drag floor cannot police a settings.json — a file written before
+        that floor existed, or edited by hand, or saved at a smaller font than
+        the one now configured, can all name a height with no room for a
+        headline. ``_alert_budget_height`` honors the drawn box EXACTLY (and
+        should: clamping the BUDGET up made the headline taller than the
+        region, which is the clipping that path exists to stop), so the
+        terminal form of that was a 1px viewport and an alert nobody saw
+        (#107). The floor therefore lands on the region, once, here.
+
+        Widening rather than shrinking is the safe direction: the region only
+        grows toward the size the user could have dragged it to anyway.
+        ``config.settings`` has already repaired anything structurally
+        impossible; this is the part of the floor that needs a font to know.
+        """
+        regions = self._state.overlay_regions if self._state is not None else None
+        region = regions.get("alert") if regions else None
+        if region is None or not region.height:
+            return  # None = content-driven, which is never too small
+        floor = self._min_region_height("alert")
+        if region.height >= floor:
+            return
+        region.height = floor
+        self._layout_regions()
 
     def _apply_region_resize(self, delta: QPoint) -> None:
         """Turn an edge drag into the region's new size and offsets.
@@ -1674,22 +1767,31 @@ class EventOverlayWindow(QWidget):
         """
         return max(MIN_REGION_HEIGHT, region.height or 0)
 
-    def _alert_chrome_height(self) -> int:
+    def _alert_chrome_height(self, *, worst_case: bool = False) -> int:
         """What the kicker, the rule and the gaps cost inside that region.
 
-        Also one number with two callers that must agree: the budget
-        subtracts it from the region height, and the region's resize floor
-        adds it back on, so a region can never be dragged smaller than the
-        budget it is then asked to honor.
+        Two callers that must agree, asking in different tenses. The budget
+        subtracts what the chrome costs RIGHT NOW, because that is what is
+        sharing the region with this headline. The region's resize floor adds
+        back the most it could EVER cost (``worst_case``), because the floor is
+        evaluated in position mode — where no alert is live, so the kicker is
+        hidden and costs nothing. Reading the live number there promised a
+        floor the next alert with a kicker broke by the kicker's own height:
+        measured, a region dragged to 47 answered a 29px budget against a
+        ``MIN_ALERT_BUDGET`` of 40 (#107).
+
+        A skin with no rule still costs nothing in the worst case — a hidden
+        ``_Hairline`` is sized (0, 0) — so this is worst case over what the
+        ALERT can do, not over what the skin might have been.
 
         ``isHidden`` not ``isVisible``: this runs while the overlay itself is
         still hidden (it is shown once there is something to show), and a
         child of a hidden window is never "visible".
         """
         chrome = self._alert_layout.spacing() * 2
-        if not self._alert_kicker.isHidden():
+        if worst_case or not self._alert_kicker.isHidden():
             chrome += self._alert_kicker.sizeHint().height()
-        if not self._alert_rule.isHidden():
+        if worst_case or not self._alert_rule.isHidden():
             chrome += self._alert_rule.sizeHint().height()
         return chrome
 
@@ -1703,7 +1805,10 @@ class EventOverlayWindow(QWidget):
         """
         # The host's width, not the viewport's: the viewport is the host's
         # only full-width layout item, and the host is the one that has a
-        # real width before the first layout pass.
+        # real width before the first layout pass. That equality is asserted
+        # rather than assumed now — it was false for the whole of #103, and
+        # measuring against the host is exactly why nothing here looked wrong
+        # while the text was being drawn one pixel wide (#107).
         width = max(80, (self._alert_host.width() or self.width()) - 8)
         font = QFont(self._center_text.font())
         font.setPixelSize(size)

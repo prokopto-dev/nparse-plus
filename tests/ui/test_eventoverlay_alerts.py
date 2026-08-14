@@ -16,7 +16,8 @@ from datetime import datetime
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QColor, QMouseEvent
+from PySide6.QtWidgets import QApplication
 
 from nparseplus.config.settings import OverlayRegion, WindowState
 from nparseplus.core.events import OverlayEvent
@@ -595,3 +596,277 @@ def test_every_label_that_shows_event_text_is_plain_text(qtbot) -> None:
     # And it survives the round trip: the tag is still in the text.
     assert overlay._center_text.text() == "<b>ENRAGED</b>"
     assert overlay.current_utility_texts() == ["Rebuff: <i>Clarity</i>"]
+
+
+# -- #107: the alert is actually on screen --------------------------------------
+#
+# Every widget assertion above this line is about HEIGHT or TEXT. #103 laid the
+# viewport out zero pixels wide on every alert on every path, and not one of
+# them noticed, because ``_place_label`` set the label's height itself and
+# floored its width at one pixel. So these ask the two questions that were
+# never asked: how wide is it, and does anything reach the screen.
+
+
+def _painted_columns(widget) -> tuple[int, int, int]:
+    """(first x, last x, count) of the alert-colored pixels a widget renders.
+
+    ``grab()`` renders the widget and its children exactly as a paint event
+    would, so this is the closest a test gets to "the user can see it". The
+    alerts here are fired ``foreground="Red"``; the overlay's own chrome is
+    tan/gold/grey, so red-dominant pixels are the headline and the headline
+    only.
+    """
+    image = widget.grab().toImage()
+    first, last, count = image.width(), -1, 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = QColor(image.pixel(x, y))
+            red = color.red()
+            if red > 90 and red > color.green() + 40 and red > color.blue() + 40:
+                first, last, count = min(first, x), max(last, x), count + 1
+    return first, last, count
+
+
+def _settle() -> None:
+    """Deliver the pending LayoutRequests, without waiting on a clock.
+
+    Every assertion below is about a real layout result rather than a size
+    hint — which is the entire point, since the hints were the part that lied
+    (#107) — and a QVBoxLayout re-lays out only when the LayoutRequest posted
+    to its widget is delivered. The app has an event loop; a test has to pump
+    one. ``qtbot.wait(1)`` does pump it, but a millisecond of wall clock is a
+    race under a loaded full-suite run, and ``layout().activate()`` alone is
+    not enough — the request has not reached the widget yet. Draining the
+    posted queue is the part that is actually deterministic.
+    """
+    for _ in range(3):
+        QApplication.sendPostedEvents()
+        QApplication.processEvents()
+
+
+def _shown(qtbot, state=None, size=(1200, 800)) -> EventOverlayWindow:
+    overlay = EventOverlayWindow(state=state)
+    qtbot.addWidget(overlay)
+    overlay.resize(*size)
+    overlay.show()
+    _settle()
+    return overlay
+
+
+def _fire(qtbot, overlay: EventOverlayWindow, text: str) -> None:
+    _alert(overlay, text)
+    _settle()
+
+
+@pytest.mark.parametrize(
+    ("label", "text"),
+    [
+        # Unsplit text — most triggers, and what showed literally nothing.
+        ("plain", "ENRAGED"),
+        # Splits: the kicker is a real QLabel and kept rendering, so the user
+        # saw the tiny gold cap and no headline under it.
+        ("kicker", "Gorenaire — ENRAGED"),
+        # Long enough to overflow and crawl.
+        ("paragraph", PARAGRAPH),
+    ],
+)
+@pytest.mark.parametrize("region_mode", [False, True])
+def test_a_fired_alert_paints_pixels(qtbot, label, text, region_mode) -> None:
+    """The whole bug in one assertion: firing an alert must put something on
+    the screen. Nothing else in the suite renders anything (#107)."""
+    state = _region_state() if region_mode else WindowState()
+    overlay = _shown(qtbot, state)
+
+    assert _painted_columns(overlay)[2] == 0  # nothing before the alert
+    _fire(qtbot, overlay, text)
+    first, last, count = _painted_columns(overlay)
+
+    assert count > 0, f"{label} alert rendered no pixels"
+    # And it is spread across the window, not crushed into a 1px column.
+    assert last - first > 20
+
+
+@pytest.mark.parametrize("region_mode", [False, True])
+def test_the_headline_spans_its_host_and_stays_inside_the_window(qtbot, region_mode) -> None:
+    """The acceptance criterion: a real width, in both layout modes.
+
+    Measured on master: ``viewport QRect(580, 15, 0, 98)`` and
+    ``center_text QRect(0, 30, 1, 38)`` — a legal-looking label one pixel wide
+    inside a parent that clips it.
+    """
+    state = _region_state() if region_mode else WindowState()
+    overlay = _shown(qtbot, state)
+    _fire(qtbot, overlay, "ENRAGED")
+
+    host = overlay._alert_host
+    viewport = overlay._alert_viewport
+    label = overlay._center_text
+
+    assert host.width() > 0
+    # The invariant ``_measure_headline`` rests on when it measures against the
+    # host: the viewport IS the host's full-width layout item. It said so in a
+    # comment while being 0 wide.
+    assert viewport.width() == host.width()
+    assert label.width() == viewport.width()
+    assert label.width() > 0
+
+    # ...and the label's rect really lands inside the window.
+    top_left = label.mapTo(overlay, QPoint(0, 0))
+    assert top_left.x() >= 0
+    assert top_left.x() + label.width() <= overlay.width()
+
+
+def test_the_viewport_carries_no_horizontal_alignment(qtbot) -> None:
+    """The mechanism itself, pinned. Qt clamps an aligned layout item to its
+    size hint width; a bare QWidget's is 0. The kicker and rule keep the flag
+    (they have real hints and are narrower than the panel)."""
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    layout = overlay._alert_layout
+
+    viewport_item = layout.itemAt(layout.indexOf(overlay._alert_viewport))
+    assert not bool(viewport_item.alignment() & Qt.AlignmentFlag.AlignHorizontal_Mask)
+    for widget in (overlay._alert_kicker, overlay._alert_rule):
+        item = layout.itemAt(layout.indexOf(widget))
+        assert bool(item.alignment() & Qt.AlignmentFlag.AlignHCenter)
+
+
+def test_the_viewport_reports_a_real_width_hint(qtbot) -> None:
+    """The second lock: even if something re-aligns that item, the hint it
+    would be clamped to is a width, not a zero."""
+    overlay = EventOverlayWindow()
+    qtbot.addWidget(overlay)
+    assert overlay._alert_viewport.sizeHint().width() >= MIN_REGION_WIDTH
+
+
+def test_the_label_is_not_floored_to_one_pixel(qtbot) -> None:
+    """``max(1, self.width())`` is what made a zero-width viewport look legal
+    to every height-and-text assertion in this file."""
+    overlay = _shown(qtbot)
+    _fire(qtbot, overlay, "ENRAGED")
+
+    overlay._alert_viewport.setFixedWidth(0)
+    overlay._alert_viewport._place_label()
+    assert overlay._center_text.width() == 0  # a zero shows as a zero
+
+
+# -- #107, cause 2: the minimum alert budget is guaranteed ----------------------
+
+
+def test_the_floor_is_computed_against_worst_case_chrome(qtbot) -> None:
+    """The floor is evaluated in position mode, where no alert is live and the
+    kicker is hidden — so it has to charge for the kicker anyway.
+
+    Measured on master: floor 47 (chrome 7), and a live "Gorenaire — ENRAGED"
+    then made the chrome 18 and the budget 29 against MIN_ALERT_BUDGET 40.
+    """
+    overlay = _shown(qtbot)
+
+    idle_floor = overlay._min_region_height("alert")
+    assert idle_floor >= MIN_ALERT_BUDGET + overlay._alert_chrome_height(worst_case=True)
+
+    _fire(qtbot, overlay, "Gorenaire — ENRAGED")
+    assert not overlay._alert_kicker.isHidden()  # the expensive case is live
+    # The floor did not move when the kicker appeared: it already paid for it.
+    assert overlay._min_region_height("alert") == idle_floor
+    assert idle_floor >= MIN_ALERT_BUDGET + overlay._alert_chrome_height()
+
+
+def test_the_minimum_budget_holds_for_a_headline_with_a_kicker(qtbot) -> None:
+    """The lower-bound tests above use kicker-free text, which is how an 11px
+    shortfall shipped. At the smallest region the UI permits, WITH a kicker,
+    the promised budget is still there."""
+    floor = _shown(qtbot)._min_region_height("alert")
+
+    state = _region_state()
+    state.overlay_regions["alert"] = OverlayRegion(anchor="center", width=520, height=floor)
+    overlay = _shown(qtbot, state)
+    _fire(qtbot, overlay, "Gorenaire — ENRAGED")
+
+    assert overlay._alert_budget_height() >= MIN_ALERT_BUDGET
+    # ...and the region still honors the drawn box exactly.
+    assert overlay._alert_budget_height() + overlay._alert_chrome_height() <= floor
+    # ...and something is on screen at that size.
+    assert _painted_columns(overlay)[2] > 0
+
+
+@pytest.mark.parametrize("stored", [MIN_REGION_HEIGHT, 33, 40])
+def test_a_region_loaded_below_the_floor_is_clamped_up(qtbot, stored) -> None:
+    """The drag floor cannot police a settings.json written before it existed,
+    edited by hand, or saved at a smaller font. ``max(1, ...)`` in the budget
+    is the terminal form of that: a 1px viewport (#107)."""
+    state = _region_state()
+    state.overlay_regions["alert"] = OverlayRegion(anchor="center", width=520, height=stored)
+    overlay = _shown(qtbot, state)
+
+    floor = overlay._min_region_height("alert")
+    assert stored < floor  # the case under test
+    assert state.overlay_regions["alert"].height == floor
+    _fire(qtbot, overlay, "Gorenaire — ENRAGED")
+    assert overlay._alert_budget_height() >= MIN_ALERT_BUDGET
+    assert _painted_columns(overlay)[2] > 0
+
+
+def test_a_region_above_the_floor_is_left_exactly_as_drawn(qtbot) -> None:
+    """The clamp only ever widens, and only what it must: the drawn box is
+    still the contract everywhere else."""
+    state = _region_state()
+    state.overlay_regions["alert"] = OverlayRegion(anchor="center", width=520, height=300)
+    overlay = _shown(qtbot, state)
+
+    assert state.overlay_regions["alert"].height == 300
+    assert overlay._alert_host.height() == 300
+
+
+# -- #107: #102/#103 are not regressed ------------------------------------------
+
+
+def test_a_long_alert_still_scrolls_and_completes_in_its_own_lifetime(qtbot) -> None:
+    """#103's guarantee, re-asserted now that the viewport has a real width —
+    which is what the overflow was always supposed to be measured against."""
+    overlay = EventOverlayWindow(clear_after_s=4.0)
+    qtbot.addWidget(overlay)
+    overlay.resize(400, 200)
+    overlay.show()
+    _fire(qtbot, overlay, PARAGRAPH)
+
+    assert overlay.is_scrolling()
+    ticks = round(4000 / SCROLL_TICK_MS)
+    for _ in range(ticks):
+        overlay._advance_scroll()
+    assert not overlay.is_scrolling()
+    assert overlay.scroll_offset() == pytest.approx(overlay._scroll_travel)
+    # The reset match still sees the whole string, split or not.
+    assert overlay.current_text() == PARAGRAPH
+
+
+def test_splitting_still_only_fires_on_a_short_head(qtbot) -> None:
+    """The reporter's line from #102 must still be one headline at one size."""
+    overlay = _shown(qtbot)
+    _fire(qtbot, overlay, REPORTED_ALERT)
+
+    assert overlay._alert_kicker.isHidden()
+    assert overlay._center_text.text() == REPORTED_ALERT
+
+
+def test_raising_the_base_font_re_clamps_the_region_live(qtbot) -> None:
+    """The floor is font-relative — kicker height plus rule — so a region that
+    was legal when it was drawn goes under it the moment Settings raises the
+    base font, live and with nothing to tell the user. Only ever grows."""
+    state = _region_state()
+    small = _shown(qtbot)
+    state.overlay_regions["alert"] = OverlayRegion(
+        anchor="center", width=520, height=small._min_region_height("alert")
+    )
+    overlay = _shown(qtbot, state)
+    drawn = state.overlay_regions["alert"].height
+
+    overlay.apply_skin(font_size=40)
+    qtbot.wait(1)
+    grown = state.overlay_regions["alert"].height
+
+    assert grown > drawn  # the case under test: the old box is now too short
+    assert grown == overlay._min_region_height("alert")
+    _fire(qtbot, overlay, "Gorenaire — ENRAGED")
+    assert overlay._alert_budget_height() >= MIN_ALERT_BUDGET
+    assert _painted_columns(overlay)[2] > 0
