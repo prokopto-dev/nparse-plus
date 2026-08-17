@@ -6,6 +6,15 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.12.0 (2026-08-17)
+
+### Features
+
+- **timers**: Save, hide and restore a character's timers across camping
+  ([#121](https://github.com/prokopto-dev/nparse-plus/pull/121),
+  [`12f1b59`](https://github.com/prokopto-dev/nparse-plus/commit/12f1b5964a40b46f4b0ad6d36d49209d92dbee85))
+
+
 ## v2.11.1 (2026-08-14)
 
 ### Bug Fixes
