@@ -41,8 +41,8 @@ Spell rows show their **gem icon** from the spell data.
 
 ## Useful behaviors
 
-- **Self-buffs survive camping** — your own buffs are saved per character
-  and restored (with the elapsed time subtracted) when you log back in.
+- **Your timers survive camping** — see [Camping and logging back
+  in](#camping-and-logging-back-in) below.
 - **Buff-fade warnings** — get a color change and optional spoken warning
   N seconds before a buff drops
   ([Settings → Spell Timers](../settings/spell-timers.md)).
@@ -94,6 +94,39 @@ A buff flagged *Flash on expiry* stays on screen flashing **REBUFF** until you
 left-click to dismiss it:
 
 ![A post-expiry rebuff prompt flashing in the Spell Timers window](../assets/screenshots/feature--rebuff-flash.png)
+
+## Camping and logging back in
+
+When a camp completes, the rows that belong to *you* come off the window and
+are saved to that character's profile. Camping with 20 minutes of Clarity no
+longer means coming back to nothing, and a character who is not logged in no
+longer leaves timers on your screen.
+
+| | While camped | When you log back in |
+|---|---|---|
+| **Your buffs** | frozen and hidden | back with the **same** time remaining |
+| **Your cooldowns** (Lay on Hands, Harm Touch, mend, disciplines, spell recast, memorize) and bard counters | hidden, still counting | back with the real elapsed time deducted — or gone, if they came up while you were away |
+| **Boats, roll windows, custom/shared timers, mob respawns** | untouched, still visible and counting | unchanged |
+
+Buffs freeze and cooldowns don't because that is what the game does: a reuse
+timer runs in the real world whether or not you are logged in, and a buff on a
+character sitting at the character-select screen does not tick.
+
+Everything is saved **per character**, so camping one character and logging in
+another brings back *that* character's timers and leaves the first one's saved
+where they are. Abandoning a camp (`You abandon your preparations to camp.`)
+before it completes changes nothing at all.
+
+Two things worth knowing:
+
+- **Log out with `/camp` or `/quit`, not by pulling the plug.** Both write the
+  camp countdown to the log, which is nParse+'s cue to save. A **link death**
+  writes nothing, so nParse+ can only fall back on the last thing your log
+  said: your timers are saved as of the last line the game wrote, which is
+  usually within a second or two of when you dropped, but can be minutes stale
+  if you went link dead while idle in a silent zone.
+- The save happens **when the camp completes**, so buffs that would have
+  expired during the countdown are already gone from it.
 
 ## Related
 

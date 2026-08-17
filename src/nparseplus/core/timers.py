@@ -191,6 +191,42 @@ class RespawnTimerSnapshot(BaseModel):
     total_duration_s: float
 
 
+class SelfCooldownSnapshot(BaseModel):
+    """Persisted YOU_GROUP reuse timer (#120).
+
+    Lay-on-Hands, Harm Touch, mend, disciplines, spell-recast and memorize
+    cooldowns run in the real world whether or not you are logged in, so —
+    unlike a buff's seconds-left — the absolute (naive local) end is stored
+    and anything that came up while away is dropped on restore.
+
+    ``spell_name`` is the spell a recast row belongs to, so it is rebuilt as
+    the ``SpellRow`` it was rather than a bare countdown; empty for the
+    ability/mend/discipline ``TimerRow``s, which have no spell.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    ends_at: datetime
+    total_duration_s: float
+    spell_name: str = ""
+
+
+class SelfCounterSnapshot(BaseModel):
+    """Persisted YOU_GROUP tally (bard song counts) for camp/login restore.
+
+    A counter has no end time; what runs in the real world is its idle
+    expiry, so the last-updated stamp is stored and a counter whose
+    ``COUNTER_IDLE_EXPIRY`` window elapsed while away is dropped on restore.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    count: int
+    updated_at: datetime
+
+
 class TimersService:
     def __init__(self) -> None:
         self._rows: list[Row] = []
@@ -346,6 +382,31 @@ class TimersService:
         self._rows = [row for row in self._rows if row.group != YOU_GROUP]
         self._notify()
 
+    def remove_self_rows(self) -> int:
+        """Drop the rows that belong to the logged-in character (#120).
+
+        Exactly the three kinds ``export_you_spells`` /
+        ``export_self_cooldowns`` / ``export_self_counters`` cover, so camping
+        hides nothing it cannot bring back — and nothing outside YOU_GROUP,
+        which is why boats, roll windows, custom/shared timers and mob
+        respawns survive a camp untouched (they are world state, not this
+        character's). ``RollRow``s never land in YOU_GROUP (they carry their
+        own ``Random -- N`` group), so naming the three kinds costs nothing
+        today and keeps a future YOU_GROUP row type from being destroyed with
+        no restore path — the exact defect that makes ``clear_you_spells``
+        unusable here.
+        """
+        before = len(self._rows)
+        self._rows = [
+            row
+            for row in self._rows
+            if not (row.group == YOU_GROUP and isinstance(row, SpellRow | TimerRow | CounterRow))
+        ]
+        removed = before - len(self._rows)
+        if removed:
+            self._notify()
+        return removed
+
     def clear_all_other_spells(self) -> None:
         """ClearAllOtherSpells: drop player-target spell rows except your own.
 
@@ -445,6 +506,99 @@ class TimersService:
                 )
             )
         if saved:
+            self._notify()
+
+    def export_self_cooldowns(self, now: datetime) -> list[SelfCooldownSnapshot]:
+        """Still-running YOU_GROUP reuse timers, with absolute ends (#120).
+
+        Both shapes a self cooldown takes: the ability/mend/discipline/memorize
+        ``TimerRow``s and the spell-recast ``SpellRow``s (``is_cooldown``),
+        which ``export_you_spells`` deliberately skips because they are not
+        buffs and must not come back frozen.
+        """
+        out: list[SelfCooldownSnapshot] = []
+        for row in self._rows:
+            if row.group != YOU_GROUP or isinstance(row, CounterRow) or row.ends_at <= now:
+                continue
+            if isinstance(row, TimerRow):
+                out.append(
+                    SelfCooldownSnapshot(
+                        name=row.name,
+                        ends_at=row.ends_at,
+                        total_duration_s=row.total_duration_s,
+                    )
+                )
+            elif isinstance(row, SpellRow) and row.is_cooldown:
+                out.append(
+                    SelfCooldownSnapshot(
+                        name=row.name,
+                        ends_at=row.ends_at,
+                        total_duration_s=row.total_duration_s,
+                        spell_name=row.spell.name,
+                    )
+                )
+        return out
+
+    def restore_self_cooldowns(
+        self, saved: Sequence[SelfCooldownSnapshot], now: datetime, book: SpellBook
+    ) -> None:
+        """Rebuild saved YOU_GROUP cooldowns; anything that came up while away
+        is dropped (same rule as ``restore_respawn_timers``)."""
+        restored = False
+        for item in saved:
+            if item.ends_at <= now:
+                continue
+            spell = book.spell_by_name(item.spell_name) if item.spell_name else None
+            row: Row
+            if spell is not None:
+                row = SpellRow(
+                    name=item.name,
+                    group=YOU_GROUP,
+                    updated_at=now,
+                    spell=spell,
+                    ends_at=item.ends_at,
+                    total_duration_s=item.total_duration_s,
+                    detrimental=spell.is_detrimental,
+                    is_cooldown=True,
+                )
+            else:
+                row = TimerRow(
+                    name=item.name,
+                    group=YOU_GROUP,
+                    updated_at=now,
+                    ends_at=item.ends_at,
+                    total_duration_s=item.total_duration_s,
+                )
+            self._rows.append(row)
+            restored = True
+        if restored:
+            self._notify()
+
+    def export_self_counters(self) -> list[SelfCounterSnapshot]:
+        """YOU_GROUP tallies (bard song counts) with their last-updated stamp."""
+        return [
+            SelfCounterSnapshot(name=row.name, count=row.count, updated_at=row.updated_at)
+            for row in self._rows
+            if isinstance(row, CounterRow) and row.group == YOU_GROUP
+        ]
+
+    def restore_self_counters(self, saved: Sequence[SelfCounterSnapshot], now: datetime) -> None:
+        """Rebuild saved YOU_GROUP tallies; one whose idle window elapsed while
+        away is dropped, exactly as ``tick`` would have dropped it."""
+        restored = False
+        for item in saved:
+            if now - item.updated_at > COUNTER_IDLE_EXPIRY:
+                continue
+            self._rows.append(
+                CounterRow(
+                    name=item.name,
+                    group=YOU_GROUP,
+                    updated_at=item.updated_at,
+                    count=item.count,
+                )
+            )
+            restored = True
+        if restored:
             self._notify()
 
     def export_respawn_timers(self, group: str, now: datetime) -> list[RespawnTimerSnapshot]:

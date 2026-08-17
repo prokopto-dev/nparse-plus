@@ -531,6 +531,35 @@ class SavedTimer(BaseModel):
     total_duration_s: float
 
 
+class SavedCooldown(SavedTimer):
+    """A persisted YOU_GROUP reuse timer (#120).
+
+    Same absolute-end storage as SavedTimer, and for the same reason: a reuse
+    timer (LoH, Harm Touch, mend, a discipline, a spell recast, memorize) runs
+    in the real world whether or not you are logged in, so camping deducts
+    real elapsed time and a cooldown that came up while away is simply gone.
+
+    ``spell_name`` names the spell a recast row belongs to so it is rebuilt as
+    the SpellRow it was; empty for the cooldowns that have no spell.
+    """
+
+    spell_name: str = ""
+
+
+class SavedCounter(BaseModel):
+    """A persisted YOU_GROUP tally (bard song counts) (#120).
+
+    A counter has no end time; what runs in the real world is its idle
+    expiry, so the last-updated stamp is stored and a counter whose idle
+    window elapsed while away is dropped on restore. Naive local datetime,
+    like every other stamp in the pipeline.
+    """
+
+    name: str
+    count: int
+    updated_at: datetime
+
+
 class PlayerInfo(BaseModel):
     name: str
     server: str
@@ -549,6 +578,11 @@ class PlayerInfo(BaseModel):
     show_spells_for_classes: list[int] | None = None
     you_spells: list[YouSpell] = Field(default_factory=list)
     respawn_timers: list[SavedTimer] = Field(default_factory=list)
+    # The rest of this character's own rows (#120): YOU_GROUP reuse timers and
+    # tallies, hidden while camped like the buffs above but counting in real
+    # time, so they are stored as absolute ends rather than seconds-left.
+    you_cooldowns: list[SavedCooldown] = Field(default_factory=list)
+    you_counters: list[SavedCounter] = Field(default_factory=list)
 
 
 class PluginEntry(BaseModel):

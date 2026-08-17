@@ -17,7 +17,11 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
 
 - **Timers survive camping.** Respawn timers are saved per character and
   restored (elapsed time subtracted) when you log back in — a 6-hour named
-  camp doesn't reset because you took a break.
+  camp doesn't reset because you took a break. Unlike your own buffs and
+  cooldowns, respawn rows are **not** hidden while you are camped: a mob's
+  spawn clock is the world's, not your character's, so it stays on screen and
+  keeps counting. See [Camping and logging back
+  in](../windows/spell-timers.md#camping-and-logging-back-in).
 - **Duplicate kills get numbered.** Killing two of the same mob while both
   timers run gives the second a `_1` suffix (`--Dead-- a bat`, then
   `--Dead-- a bat_1`); further kills take the smallest free number. Once a

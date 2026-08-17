@@ -1078,6 +1078,65 @@ respawn line now shows the zone database's figure AND the wiki's, because
 `ZoneDatabase.spawn_time` always answers (global 6:40 fallback) and so
 cannot say it has never heard of this NPC.
 
+**Camping saves, hides and restores the character's own timers** (post-2.11,
+#120). Four pieces, and the first one is a prerequisite rather than a feature.
+
+*The camp event moved onto the driver tick.* `CampParser` published
+`CampEvent` from a `threading.Timer` daemon thread, so every subscriber ran off
+the driver thread — already a latent race for `FightTracker.clear` and the
+sharing keepalive state, and a hard blocker for a subscriber that touches
+`TimersService` (not thread-safe; driver tick only). The start line now records
+a wall-clock deadline, the abandon line clears it, and `CampParser.tick` —
+registered on `driver.on_tick` from composition, which is the one reason the app
+holds a handle on a parser — publishes it. Same 6 s delay, same abandon
+semantics, one thread. The deadline is wall-clock, not log time, so a catch-up
+read of a backlog does not fire it instantly.
+
+*Buffs freeze, cooldowns don't.* That split is the whole design: a reuse timer
+runs in the real world whether or not you are logged in, so `you_cooldowns`
+(YOU_GROUP `TimerRow`s **and** the spell-recast `SpellRow`s `export_you_spells`
+deliberately skips) store absolute ends and drop what came up while away, the
+way `respawn_timers` always has; `you_spells` keeps storing seconds-left.
+`you_counters` is the third store — a bard tally has no end time, so what runs
+in the real world is its `COUNTER_IDLE_EXPIRY`, and the last-updated stamp is
+what is stored. A cooldown snapshot carries `spell_name` so a recast row is
+rebuilt as the `SpellRow` it was, gem and all, falling back to a `TimerRow` when
+the loaded database no longer has the spell.
+
+*Removal is narrower than `clear_you_spells`.* That method drops every YOU_GROUP
+row while `restore_you_spells` only re-adds buffs, so using it here would
+destroy cooldowns and counters with no restore path. `remove_self_rows` removes
+exactly the three kinds the three exports cover and nothing outside YOU_GROUP —
+boats, roll windows, custom/shared timers and mob respawns are world state and
+stay visible and counting through a camp.
+
+*`_camped` suppresses export, for the same reason `_restoring` does.* Export
+runs on **every** `TimersService` change, so removing the rows on camp would
+re-export an empty set over the snapshot just taken. The guard lives inside
+`export_now`, so `BeforePlayerChangedEvent` and `Backend.stop` respect it too —
+camp-then-quit must not lose the buffs. `WelcomeEvent` is the counterpart and
+does **not** gate on `_camped`: whatever YOU_GROUP rows are on screen at a login
+belong to a session that ended, so they are dropped and the stores restored,
+re-anchored at the login moment. That is also what covers the app running
+straight through a link death and relog. A different character logging in still
+comes through `After/BeforePlayerChangedEvent` (the log path changes), which
+clears the flag and restores that character's stores.
+
+**Seconds-left is measured against the last log line, not the wall clock**, and
+that is what makes link death survivable. Link death emits nothing — the client
+just stops writing — so with a wall-clock anchor the app kept draining the rows,
+kept exporting, and erased the buffs it exists to save. `LogPipeline.last_entry_time`
+already existed; `TimerPersistenceHandler` takes it as `log_clock` and, on top
+of that, an `on_change` export whose anchor has not advanced since the last one
+does not write at all: a change the log did not explain is the wall clock
+draining rows out from under a client that may not be there. Harmless during
+play (the store is a full snapshot, so the next line re-exports the second), and
+`export_now` is still authoritative for camp/quit/player-change. Known limit,
+stated in the docs: a player idle in a silent zone has a stale anchor, so a link
+death after long silence restores slightly generously — bounded by the silence,
+and erring in the right direction. Deliberately **no** silence-based
+"presumed gone" heuristic; that is a separate decision.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).
