@@ -9,10 +9,13 @@ from tests.core.spells.conftest import T0
 
 from nparseplus.core.spells.spells_us import SpellBook
 from nparseplus.core.timers import (
+    COUNTER_IDLE_EXPIRY,
     TRIGGER_TIMER_GROUP,
     YOU_GROUP,
     CounterRow,
     RollRow,
+    SelfCooldownSnapshot,
+    SelfCounterSnapshot,
     SpellRow,
     TimerRow,
     TimersService,
@@ -546,3 +549,177 @@ def test_fraction_remaining_survives_a_zero_duration_row() -> None:
         name="t", group=TRIGGER_TIMER_GROUP, updated_at=T0, ends_at=T0, total_duration_s=0.0
     )
     assert fraction_remaining(row, T0) == 0.0
+
+
+# -- the character's own rows (#120) -------------------------------------------
+
+
+def _self_rows(timers: TimersService, spell_book: SpellBook) -> None:
+    """One row of each kind camping hides, plus the world rows it must not."""
+    timers.add_spell(_spell_row(spell_book, name="Clarity", group=YOU_GROUP, seconds=120))
+    timers.add_spell(
+        _spell_row(
+            spell_book,
+            name="Harvest Cooldown",
+            spell_name="Harvest",
+            group=YOU_GROUP,
+            seconds=600,
+            is_cooldown=True,
+        )
+    )
+    timers.add_timer(
+        TimerRow(
+            name="Lay on Hands",
+            group=YOU_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=3600),
+            total_duration_s=3600.0,
+        )
+    )
+    timers.add_counter(CounterRow(name="Selo's casts", group=YOU_GROUP, updated_at=T0))
+    # World state: another player's buff, a custom timer, a roll window.
+    timers.add_spell(_spell_row(spell_book, name="Aegolism", group="Joe", seconds=500))
+    timers.add_timer(
+        TimerRow(
+            name="Custom",
+            group=TRIGGER_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=90),
+            total_duration_s=90.0,
+        )
+    )
+    timers.add_roll(
+        RollRow(
+            name="Tester",
+            group=" Random -- 100",
+            updated_at=T0,
+            roll=42,
+            max_roll=100,
+            ends_at=T0 + timedelta(seconds=180),
+            total_duration_s=180.0,
+        )
+    )
+
+
+def test_remove_self_rows_spares_everything_outside_you_group(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    _self_rows(timers, spell_book)
+    calls: list[int] = []
+    timers.on_change.append(lambda: calls.append(1))
+
+    assert timers.remove_self_rows() == 4
+    assert sorted(row.name for row in timers.snapshot()) == ["Aegolism", "Custom", "Tester"]
+    assert calls == [1]
+    # Nothing left to remove: no notification either.
+    assert timers.remove_self_rows() == 0
+    assert calls == [1]
+
+
+def test_export_self_cooldowns_covers_both_row_shapes(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    _self_rows(timers, spell_book)
+    saved = timers.export_self_cooldowns(T0)
+    assert [(s.name, s.spell_name) for s in saved] == [
+        ("Harvest Cooldown", "Harvest"),
+        ("Lay on Hands", ""),
+    ]
+    # Absolute ends, not seconds-left: a reuse timer runs while you are away.
+    assert saved[1].ends_at == T0 + timedelta(seconds=3600)
+
+
+def test_export_self_cooldowns_skips_buffs_and_other_groups(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    _self_rows(timers, spell_book)
+    names = [s.name for s in timers.export_self_cooldowns(T0)]
+    assert "Clarity" not in names  # a buff belongs to you_spells (frozen)
+    assert "Custom" not in names  # a custom timer is world state
+
+
+def test_export_self_cooldowns_drops_what_already_came_up(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    _self_rows(timers, spell_book)
+    assert timers.export_self_cooldowns(T0 + timedelta(seconds=1200)) == [
+        SelfCooldownSnapshot(
+            name="Lay on Hands", ends_at=T0 + timedelta(seconds=3600), total_duration_s=3600.0
+        )
+    ]
+
+
+def test_restore_self_cooldowns_rebuilds_the_shape_it_saved(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    _self_rows(timers, spell_book)
+    saved = timers.export_self_cooldowns(T0)
+
+    fresh = TimersService()
+    fresh.restore_self_cooldowns(saved, T0 + timedelta(seconds=300), spell_book)
+    rows = fresh.snapshot()
+    assert [type(r).__name__ for r in rows] == ["SpellRow", "TimerRow"]
+    assert isinstance(rows[0], SpellRow) and rows[0].is_cooldown
+    # Absolute ends survive the round trip: the 300 s came off both.
+    assert rows[0].ends_at == T0 + timedelta(seconds=600)
+    assert rows[1].ends_at == T0 + timedelta(seconds=3600)
+    assert {r.group for r in rows} == {YOU_GROUP}
+
+
+def test_restore_self_cooldowns_drops_what_came_up_while_away(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    saved = [
+        SelfCooldownSnapshot(
+            name="Harm Touch", ends_at=T0 + timedelta(seconds=60), total_duration_s=4320.0
+        )
+    ]
+    calls: list[int] = []
+    timers.on_change.append(lambda: calls.append(1))
+    timers.restore_self_cooldowns(saved, T0 + timedelta(seconds=120), spell_book)
+    assert timers.snapshot() == []
+    assert calls == []
+
+
+def test_restore_self_cooldown_falls_back_to_a_timer_row_for_an_unknown_spell(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    """A spell the loaded database no longer has must not lose the countdown."""
+    timers.restore_self_cooldowns(
+        [
+            SelfCooldownSnapshot(
+                name="Gate Cooldown",
+                ends_at=T0 + timedelta(seconds=60),
+                total_duration_s=60.0,
+                spell_name="No Such Spell",
+            )
+        ],
+        T0,
+        spell_book,
+    )
+    rows = timers.snapshot()
+    assert [type(r).__name__ for r in rows] == ["TimerRow"]
+    assert rows[0].name == "Gate Cooldown"
+
+
+def test_export_and_restore_self_counters(timers: TimersService, spell_book: SpellBook) -> None:
+    _self_rows(timers, spell_book)
+    timers.add_counter(CounterRow(name="Selo's casts", group=YOU_GROUP, updated_at=T0))
+    # Another target's counter is not this character's row.
+    timers.add_counter(CounterRow(name="Resisted", group="Joe", updated_at=T0))
+
+    saved = timers.export_self_counters()
+    assert saved == [SelfCounterSnapshot(name="Selo's casts", count=2, updated_at=T0)]
+
+    fresh = TimersService()
+    fresh.restore_self_counters(saved, T0 + timedelta(minutes=5))
+    rows = fresh.rows_of(CounterRow)
+    assert [(r.name, r.count, r.group) for r in rows] == [("Selo's casts", 2, YOU_GROUP)]
+    # The stamp is preserved, so tick() ages it exactly as it would have.
+    assert rows[0].updated_at == T0
+
+
+def test_restore_self_counters_drops_an_idle_expired_one(timers: TimersService) -> None:
+    saved = [SelfCounterSnapshot(name="Selo's casts", count=3, updated_at=T0)]
+    timers.restore_self_counters(saved, T0 + COUNTER_IDLE_EXPIRY + timedelta(seconds=1))
+    assert timers.snapshot() == []

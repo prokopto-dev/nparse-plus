@@ -55,6 +55,7 @@ from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
 from nparseplus.core.logarchive import LogArchiveService
 from nparseplus.core.parsers.base import ParseContext
+from nparseplus.core.parsers.camp import CampParser
 from nparseplus.core.parsers.registry import build_parser_chain
 from nparseplus.core.pets import PlayerPet, load_pets
 from nparseplus.core.pipeline import LogPipeline
@@ -429,6 +430,8 @@ class Backend:
         if self.timer_persistence is not None:
             # After the driver thread is joined: quit-time seconds-left for the
             # you_spells store (the app's aboutToQuit save flush runs next).
+            # A no-op if the character camped — that snapshot was taken then,
+            # and the rows are already off screen (#120).
             self.timer_persistence.export_now()
         if self.sharing_client is not None:
             self.sharing_client.stop()
@@ -475,8 +478,13 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     timers = TimersService()
 
     ctx = ParseContext(bus=bus, player=player, spells=spells, zones=zones, settings=settings)
-    pipeline = LogPipeline(build_parser_chain(), ctx)
+    parsers = build_parser_chain()
+    pipeline = LogPipeline(parsers, ctx)
     driver = LogDriver(Path(settings.general.eq_log_dir), pipeline, bus, player)
+    # The one parser the app has to hold a handle on: its 6 s camp delay is
+    # resolved on the driver tick (see core/parsers/camp.py) so that CampEvent
+    # subscribers may touch TimersService.
+    camp_parser = next(p for p in parsers if isinstance(p, CampParser))
 
     if speaker is None:
         from nparseplus.audio.tts import default_speaker
@@ -625,7 +633,16 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     # Constructed (= subscribed) after PlayerProfileHandler: restore-on-player-
     # change needs the profile's class/level already loaded into ActivePlayer.
     timer_persistence = TimerPersistenceHandler(
-        bus, player, settings, timers, spells, request_save=request_save
+        bus,
+        player,
+        settings,
+        timers,
+        spells,
+        request_save=request_save,
+        # Seconds-left is measured against the log's own clock, so a client
+        # that stopped writing (linkdead) freezes the snapshot instead of
+        # letting the wall clock drain it to nothing (#120).
+        log_clock=lambda: pipeline.last_entry_time,
     )
     handlers: list[object] = [
         YouZonedHandler(bus, player),
@@ -723,6 +740,9 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
     # First: a reload asked for by the last Apply lands before this tick's
     # handlers read the book.
     driver.on_tick.append(spell_reload.tick)
+    # Before timers.tick: a completed camp hides this character's rows, and the
+    # countdown pass should run on what is left.
+    driver.on_tick.append(camp_parser.tick)
     driver.on_tick.append(timers.tick)
     driver.on_tick.append(buff_warner.tick)
     driver.on_tick.append(engine.tick)
