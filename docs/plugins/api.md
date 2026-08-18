@@ -47,6 +47,22 @@ implements it in `nparseplus.core.plugins.context.HostPluginContext`,
 | `logger` | `logging.Logger` named `nparseplus.plugins.<your-id>` (lands in `nparseplus.log`) |
 | `storage` | per-plugin persistence (below) |
 
+**The EQ install** *(SDK 1.2+)*
+
+| Member | Meaning |
+| --- | --- |
+| `eq_dir` | `pathlib.Path` of the user's EverQuest directory, or `None` when they have not set one. Read **live** from the app's settings — do not cache it at `activate` time |
+| `eq_is_running()` | best-effort "is the client up?", for the *restart EQ for this to take effect* warning. **Spawns a process (~18 ms): never call it from a tick.** Answers `False` on failure, and always on Windows |
+
+`None` is the normal first-run state, not an error — the app works with only
+a log directory set. Treat it as "not available yet".
+
+Writing into `eq_dir` is a promise to the user. Use
+[`nparseplus_sdk.eqfiles`](#host-re-export-modules-lazy) rather than plain
+`open()`: it carries the app's own preflight / backup-first / splice-one-section
+cycle, and it is the difference between an edit the user can undo and one they
+cannot.
+
 **Backend access** *(driver-thread objects — touch only inside your
 subscriptions/ticks)*
 
@@ -141,6 +157,13 @@ plugin stays possible in Qt-free/host-free environments:
 - **`nparseplus_sdk.ui`** — `PluginWindow`, forwarded from
   `nparseplus.ui.pluginwindow` (needs PySide6; keep it out of your plugin's
   top-level module — see [Windows](developing.md#windows)).
+- **`nparseplus_sdk.eqfiles`** *(SDK 1.2+)* — EQ install-file plumbing,
+  forwarded from `nparseplus.core.eqini`: `preflight` (is this really an
+  install?), `backup_once` (keeps only the *first* copy, so re-applying never
+  overwrites the pristine original), `read_lines` / `write_lines` /
+  `detect_newline`, and the ini section splice `section_bounds` /
+  `section_body` / `replace_section` / `split_key_value`. The forwarded set is
+  the explicit `EXPORTS` allowlist; anything else raises `AttributeError`.
 
 Outside the app these raise `ImportError` with a message telling you to
 install `nparseplus` from source.
@@ -148,12 +171,14 @@ install `nparseplus` from source.
 ## Testing & validation helpers
 
 - **`nparseplus_sdk.testing.FakePluginContext(meta=None, *, app_version,
-  sdk_version, storage, timers, player)`** — records `subscriptions` /
+  sdk_version, storage, timers, player, eq_dir, eq_running)`** — records `subscriptions` /
   `parsers` / `ticks` / `windows` / `settings_pages` / `submitted`;
   `publish(event)` drives subscriptions by exact type, `run_submitted()`
   executes and clears queued fetch/apply pairs; fake `storage`
   (`FakeStorage`, with `.data` and `.save_count`), `speaker`
-  (`.spoken`), and `pigparse` (`RecordingApi`, with `.calls`).
+  (`.spoken`), and `pigparse` (`RecordingApi`, with `.calls`). `eq_dir` is
+  whatever you pass; `eq_is_running()` returns the `eq_running` flag and never
+  spawns a process.
 - **`nparseplus_sdk.validate.validate_plugin(path, *, app_version=None) ->
   ValidationReport`** — the engine behind the `nparseplus-plugin validate`
   CLI. `app_version` is **keyword-only**. The report carries `ok`, `errors`,

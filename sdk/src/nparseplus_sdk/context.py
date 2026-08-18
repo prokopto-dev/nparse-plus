@@ -106,6 +106,42 @@ class PluginContext(Protocol):
     @property
     def storage(self) -> PluginStorage: ...
 
+    # --- the EQ install ----------------------------------------------------
+    @property
+    def eq_dir(self) -> Path | None:
+        """The user's EverQuest install directory, or None if unset.
+
+        Read live from the app's settings, so a user who points nParse+ at a
+        different install mid-session moves this too — do not cache it at
+        activate() time.
+
+        None is the normal first-run state, not an error: the app is usable
+        with only a log directory configured. Treat it as "this feature is
+        not available yet" rather than raising.
+
+        Editing anything under here is a promise to the user. Use
+        ``nparseplus_sdk.eqfiles`` — it carries the app's own preflight,
+        backup-first and splice-one-section helpers — and tell them how to
+        undo whatever you did.
+        """
+        ...
+
+    def eq_is_running(self) -> bool:
+        """Whether the EverQuest client appears to be running.
+
+        Worth asking before writing into the install: the client rewrites a
+        character's ``.ini`` wholesale on camp/logout, and files it reads at
+        startup (``eqhost.txt``) will not be re-read until it restarts. Warn
+        the user; do not block on it.
+
+        **Spawns a process (~18 ms).** Call it from a settings-page button or
+        your own thread, never from an ``add_tick`` callback — the driver
+        supervises plugin ticks against a 0.25 s budget and evicts repeat
+        offenders. Best-effort: any failure answers False rather than
+        raising, and it cannot detect anything on Windows (no ``pgrep``).
+        """
+        ...
+
     # --- backend capabilities (driver-thread objects) ---------------------
     @property
     def timers(self) -> Any:

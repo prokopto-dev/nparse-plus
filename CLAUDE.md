@@ -1144,6 +1144,40 @@ death after long silence restores slightly generously — bounded by the silence
 and erring in the right direction. Deliberately **no** silence-based
 "presumed gone" heuristic; that is a separate decision.
 
+**The SDK learned about the EQ install** (SDK 1.2, #123): `ctx.eq_dir` +
+`ctx.eq_is_running()` and the `nparseplus_sdk.eqfiles` re-export — the
+prerequisite for offering the P99 login middleman (#114) as an add-on instead
+of a core feature. Three additive names, so no `check_compat` fallout; a
+plugin that touches the install declares `requires_sdk=">=1.2,<2"`, since on
+an older host the attribute is simply absent and there is nothing to degrade
+to.
+
+**`eq_dir` grants no capability that was not already reachable** — and that
+is the argument for it, not against. `pluginbootstrap.py` already hands every
+plugin *window factory* a `PluginWindowContext(settings=...)` carrying the
+whole mutable `Settings` root, so `general.eq_install_dir` was reachable by
+any plugin willing to declare a window it did not want. A scoped property is
+strictly narrower than that leak and puts the value where `activate()` can
+use it. (The leak itself is a wart to narrow later, not a precedent to
+extend — which is why there is deliberately no `ctx.settings`.) It is a
+**property, re-read per access**: #70 made that setting live for every other
+consumer, and a plugin caching it at activate time would be the one thing
+left pointing at the old install.
+
+`eqfiles` is a lazy host re-export of `core/eqini.py`'s pure plumbing on the
+`nparseplus_sdk.events` pattern, and exists so CLAUDE.md's "do not invent a
+second way to touch the install" survives a second party touching it —
+without it every install-editing plugin reinvents backup-first and does it
+worse. The forwarded set is an **explicit `EXPORTS` allowlist** rather than
+blanket attribute forwarding, so the additive-only 1.x promise covers names
+we chose rather than everything that happens to live in `eqini`.
+`eq_is_running()` is exposed for the "restart EQ for this to take effect"
+warning an install edit owes the user, and is exposed *because* #88 was that
+`pgrep` landing on the wrong thread: one docstring saying "never from a tick"
+beats every plugin rolling its own. The host imports the probe inside the
+method, so `core.plugins.context` — which is on the activate path — does not
+pull subprocess plumbing in for a capability most plugins never touch.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).

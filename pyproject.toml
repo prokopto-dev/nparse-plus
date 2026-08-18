@@ -40,7 +40,13 @@ dependencies = [
   # The plugin contract package. Published on PyPI, but resolved from sdk/ as
   # a uv workspace member ([tool.uv.sources]) until it moves to its own repo,
   # so an SDK edit is immediately visible to the app's tests (see sdk/README.md).
-  "nparseplus-sdk>=1.1,<2",
+  # Floor tracks the SDK version this host is developed against: the app
+  # implements that contract (ctx.eq_dir, eq_is_running, nparseplus_sdk.eqfiles)
+  # and reports whatever is installed through SDK_VERSION, so resolving an older
+  # SDK would advertise a contract narrower than the one this host implements
+  # and refuse plugins it can actually run. The uv workspace hides that locally;
+  # a plain pip/source install does not. tests/test_sdk_floor.py guards it.
+  "nparseplus-sdk>=1.2,<2",
 ]
 
 [project.urls]
