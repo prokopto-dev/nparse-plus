@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from nparseplus_sdk import PluginMeta
 from nparseplus_sdk.testing import FakePluginContext
@@ -123,3 +124,125 @@ def test_fake_timers_records_the_ordinary_adds_too() -> None:
     assert timers.snapshot() == [row]
     assert timers.remove_row(row) is True
     assert timers.remove_row(row) is False
+
+
+# -- the fake store mirrors the host's replacement rules -----------------------
+
+
+def _timer(name: str, group: str = "g"):
+    from dataclasses import make_dataclass
+
+    row = make_dataclass("Row", [("name", str), ("group", str)])
+    return row(name, group)
+
+
+def test_add_timer_replaces_the_same_name_and_group_by_default() -> None:
+    """The host drops an existing TimerRow with the same (name, group); a
+    plugin test that adds twice must see one row, as the app would show."""
+    from nparseplus_sdk.testing import FakeTimers
+
+    timers = FakeTimers()
+    first = timers.add_timer(_timer("Trakanon"))
+    second = timers.add_timer(_timer("trakanon"))  # casefold identity, like the host
+    assert timers.snapshot() == [second]
+    assert first not in timers.snapshot()
+
+
+def test_add_timer_keeps_both_when_duplicates_are_allowed() -> None:
+    from nparseplus_sdk.testing import FakeTimers
+
+    timers = FakeTimers()
+    first = timers.add_timer(_timer("Trakanon"))
+    second = timers.add_timer(_timer("Trakanon"), allow_duplicates=True)
+    assert timers.snapshot() == [first, second]
+
+
+def test_replacement_only_matches_rows_added_the_same_way() -> None:
+    """Stands in for the host's isinstance check: a spell and a timer sharing
+    a name are different rows there, and must be here too."""
+    from nparseplus_sdk.testing import FakeTimers
+
+    timers = FakeTimers()
+    spell = timers.add_spell(_timer("Trakanon"))
+    timer = timers.add_timer(_timer("Trakanon"))
+    assert timers.snapshot() == [spell, timer]
+
+
+def test_add_spell_overwrites_unless_told_not_to() -> None:
+    from nparseplus_sdk.testing import FakeTimers
+
+    timers = FakeTimers()
+    timers.add_spell(_timer("Clarity"))
+    second = timers.add_spell(_timer("Clarity"))
+    assert timers.snapshot() == [second]
+
+    third = timers.add_spell(_timer("Clarity"), overwrite=False)
+    assert timers.snapshot() == [second, third]
+
+
+def test_find_is_casefold_like_the_host() -> None:
+    from nparseplus_sdk.testing import FakeTimers
+
+    timers = FakeTimers()
+    row = timers.add_timer(_timer("Trakanon", "  Mob Timers"))
+    assert timers.find("trakanon") is row
+    assert timers.find("TRAKANON", "  mob timers") is row
+    assert timers.find("Trakanon", "elsewhere") is None
+
+
+def test_add_window_timer_goes_through_the_store_not_around_it() -> None:
+    """Regression: it used to record the row and append straight into
+    FakeTimers.rows, so an injected double never saw it and allow_duplicates
+    was silently dropped."""
+    from datetime import datetime
+
+    calls: list[tuple[Any, bool]] = []
+
+    class RecordingTimers:
+        def add_timer(self, row, allow_duplicates=False):
+            calls.append((row, allow_duplicates))
+            return row
+
+    ctx = FakePluginContext(timers=RecordingTimers())
+    row = ctx.add_window_timer(
+        "Trakanon",
+        group="g",
+        started_at=datetime(2026, 7, 15, 12, 0, 0),
+        base_seconds=10,
+        window_seconds=20,
+        allow_duplicates=True,
+    )
+    assert calls == [(row, True)]
+    assert ctx.window_timers == [row]
+
+
+def test_add_window_timer_replaces_by_default_through_the_store() -> None:
+    from datetime import datetime
+
+    tod = datetime(2026, 7, 15, 12, 0, 0)
+    ctx = FakePluginContext()
+    ctx.add_window_timer("Trakanon", group="g", started_at=tod, base_seconds=10, window_seconds=20)
+    second = ctx.add_window_timer(
+        "Trakanon", group="g", started_at=tod, base_seconds=10, window_seconds=20
+    )
+    # Two recorded arms, but the store shows one row — what the app would show.
+    assert len(ctx.window_timers) == 2
+    assert ctx.timers.snapshot() == [second]
+
+
+def test_add_window_timer_rejects_a_store_that_cannot_participate() -> None:
+    """Better than silently recording a row the store never saw."""
+    from datetime import datetime
+
+    import pytest
+
+    ctx = FakePluginContext(timers=object())
+    with pytest.raises(TypeError, match="add_timer"):
+        ctx.add_window_timer(
+            "Trakanon",
+            group="g",
+            started_at=datetime(2026, 7, 15, 12, 0, 0),
+            base_seconds=10,
+            window_seconds=20,
+        )
+    assert ctx.window_timers == []

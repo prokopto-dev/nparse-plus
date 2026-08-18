@@ -93,39 +93,79 @@ class FakeWindowTimer:
     total_duration_s: float = 0.0
 
 
+def _eq(a: str, b: str) -> bool:
+    """Casefold comparison — the host's own (name, group) identity rule."""
+    return str(a).casefold() == str(b).casefold()
+
+
+def _same_row(a: Any, b: Any) -> bool:
+    return _eq(getattr(a, "name", ""), getattr(b, "name", "")) and _eq(
+        getattr(a, "group", ""), getattr(b, "group", "")
+    )
+
+
 class FakeTimers:
     """In-memory stand-in for the host TimersService.
 
-    Records rather than executes, like the rest of this module — nothing here
-    counts down, and ``tick`` does not exist. It is enough for a plugin to
-    call ``ctx.timers.add_timer(...)`` at activate time without the app, which
-    is what ``FakePluginContext`` needs it for.
+    Records rather than executes: nothing counts down, and there is no
+    ``tick``. What it *does* reproduce is the host's **replacement rules**,
+    because a plugin test that adds the same timer twice should see what the
+    app would show — one row, not two:
+
+    * ``add_timer(row, allow_duplicates=False)`` drops an existing timer with
+      the same (name, group), casefolded, exactly like ``TimersService``.
+    * ``add_spell(row, overwrite=True)`` does the same for spells.
+
+    Kinds are tracked per row so replacement matches only rows added the same
+    way — the stand-in for the host's ``isinstance`` check, without importing
+    the host row classes.
+
+    What it does **not** reproduce, said out loud rather than diverged from
+    silently: ``add_counter`` does not increment an existing tally (the host
+    bumps ``count`` and re-stamps ``updated_at``), and ``add_roll`` does not
+    reset the window of the other rolls in its group. Both are stateful
+    behaviours a recorder has no business guessing at — assert on ``rows``.
     """
 
     def __init__(self) -> None:
         self.rows: list[Any] = []
+        # id(row) -> which add_* put it here. Safe as a key: the row stays
+        # referenced by self.rows for exactly as long as the entry lives.
+        self._kinds: dict[int, str] = {}
+
+    def _record(self, row: Any, kind: str) -> Any:
+        self.rows.append(row)
+        self._kinds[id(row)] = kind
+        return row
+
+    def _replace(self, row: Any, kind: str) -> None:
+        for existing in list(self.rows):
+            if self._kinds.get(id(existing)) == kind and _same_row(existing, row):
+                self.rows.remove(existing)
+                self._kinds.pop(id(existing), None)
 
     def add_timer(self, row: Any, allow_duplicates: bool = False) -> Any:
-        self.rows.append(row)
-        return row
+        if not allow_duplicates:
+            self._replace(row, "timer")
+        return self._record(row, "timer")
 
     def add_spell(self, row: Any, overwrite: bool = True) -> Any:
-        self.rows.append(row)
-        return row
+        if overwrite:
+            self._replace(row, "spell")
+        return self._record(row, "spell")
 
     def add_counter(self, row: Any) -> Any:
-        self.rows.append(row)
-        return row
+        return self._record(row, "counter")
 
     def add_roll(self, row: Any) -> Any:
-        self.rows.append(row)
-        return row
+        return self._record(row, "roll")
 
     def remove_row(self, row: Any) -> bool:
         try:
             self.rows.remove(row)
         except ValueError:
             return False
+        self._kinds.pop(id(row), None)
         return True
 
     def snapshot(self) -> list[Any]:
@@ -133,8 +173,9 @@ class FakeTimers:
 
     def find(self, name: str, group: str | None = None) -> Any:
         for row in self.rows:
-            same_group = group is None or getattr(row, "group", None) == group
-            if getattr(row, "name", None) == name and same_group:
+            if not _eq(getattr(row, "name", ""), name):
+                continue
+            if group is None or _eq(getattr(row, "group", ""), group):
                 return row
         return None
 
@@ -277,10 +318,21 @@ class FakePluginContext:
             window_ends_at=ends_at + timedelta(seconds=window_seconds),
             total_duration_s=float(base_seconds),
         )
+        # Through the store, exactly as HostPluginContext does — never around
+        # it. Recording the row while skipping ``ctx.timers`` would hide it
+        # from a test that asks the store, and would drop ``allow_duplicates``
+        # on the floor, so a plugin arming the same window twice would look
+        # like two rows here and one row in the app.
+        add_timer = getattr(self._timers, "add_timer", None)
+        if not callable(add_timer):
+            raise TypeError(
+                "ctx.timers must provide add_timer(row, allow_duplicates=False) for "
+                "add_window_timer(); the host TimersService and FakeTimers both do. "
+                "Inject a double with that method, or leave timers unset to get a "
+                "FakeTimers."
+            )
+        add_timer(row, allow_duplicates=allow_duplicates)
         self.window_timers.append(row)
-        if isinstance(self._timers, FakeTimers):
-            # So ctx.timers.snapshot()/find() see it too, like the host store.
-            self._timers.rows.append(row)
         return row
 
     # --- test drivers ------------------------------------------------------
