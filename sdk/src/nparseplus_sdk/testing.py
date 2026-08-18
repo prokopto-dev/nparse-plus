@@ -87,6 +87,8 @@ class FakePluginContext:
         storage: FakeStorage | None = None,
         timers: Any = None,
         player: Any = None,
+        eq_dir: Path | None = None,
+        eq_running: bool = False,
     ) -> None:
         self._meta = meta or _FAKE_META
         self._app_version = app_version
@@ -94,6 +96,9 @@ class FakePluginContext:
         self._storage = storage or FakeStorage()
         self._timers = timers
         self._player = player
+        self._eq_dir = eq_dir
+        #: Flip in a test to exercise the "EQ is running" warning path.
+        self.eq_running = eq_running
         self._speaker = FakeSpeaker()
         self._pigparse = RecordingApi()
         self.subscriptions: list[tuple[type[Any], Callable[[Any], None]]] = []
@@ -123,6 +128,14 @@ class FakePluginContext:
     @property
     def storage(self) -> FakeStorage:
         return self._storage
+
+    @property
+    def eq_dir(self) -> Path | None:
+        return self._eq_dir
+
+    def eq_is_running(self) -> bool:
+        """The ``eq_running`` flag — never spawns a process, unlike the host."""
+        return self.eq_running
 
     @property
     def timers(self) -> Any:
