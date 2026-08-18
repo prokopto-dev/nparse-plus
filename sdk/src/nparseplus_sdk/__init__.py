@@ -9,6 +9,8 @@ Submodules:
 
 - ``nparseplus_sdk.events`` — the typed bus event classes (host re-export).
 - ``nparseplus_sdk.ui`` — the ``PluginWindow`` Qt base (host re-export).
+- ``nparseplus_sdk.eqfiles`` — EQ install-file helpers (host re-export):
+  preflight, backup-first, splice one ini section.
 - ``nparseplus_sdk.testing`` — ``FakePluginContext`` for plugin unit tests.
 - ``nparseplus_sdk.validate`` / the ``nparseplus-plugin`` CLI — developer
   validation.
@@ -49,7 +51,7 @@ from nparseplus_sdk.plugin import (
 # refusing plugins that declared a newer requires_sdk range — a bug invisible
 # in CI and only reproducible from a release artifact. A plain literal has no
 # such second code path. Bump this, tag `sdk-v<X.Y.Z>` (see sdk/README.md).
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 SDK_VERSION = __version__
 

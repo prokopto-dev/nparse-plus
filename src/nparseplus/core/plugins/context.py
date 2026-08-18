@@ -19,6 +19,7 @@ import logging
 import threading
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nparseplus.core.parsers.base import LineParser
@@ -137,6 +138,35 @@ class HostPluginContext:
     @property
     def storage(self) -> JsonPluginStorage:
         return self._storage
+
+    # --- the EQ install ----------------------------------------------------
+    @property
+    def eq_dir(self) -> Path | None:
+        """The configured EQ install directory, or None when unset.
+
+        Read through to the settings on every access rather than captured at
+        construction: every other consumer of ``general.eq_install_dir`` went
+        live in #70, and a plugin holding a launch-time snapshot would be the
+        one thing still pointing at the old install after the user changes it.
+
+        Narrower than what plugins can already reach — ``PluginWindowContext``
+        hands window factories the whole mutable ``Settings`` root — so this
+        is the same capability through a door ``activate()`` can use, not a
+        new one (#123).
+        """
+        configured = self._backend.settings.general.eq_install_dir
+        return Path(configured) if configured else None
+
+    def eq_is_running(self) -> bool:
+        """Whether the EQ client appears to be running (best effort).
+
+        Spawns ``pgrep`` (~18 ms), so the SDK docstring tells plugins to keep
+        it off their ticks; exposed rather than left to each plugin precisely
+        because #88 was this call landing on the wrong thread.
+        """
+        from nparseplus.core.eqprocess import eq_is_running
+
+        return eq_is_running()
 
     # --- backend capabilities ---------------------------------------------
     @property

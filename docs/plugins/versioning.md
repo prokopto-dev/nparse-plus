@@ -6,7 +6,7 @@ exactly one job.
 | Coordinate | Owner | Job |
 | --- | --- | --- |
 | **App version** (`nparseplus`, e.g. `1.18.0`) | semantic-release on the app repo | The product. Each release bundles exactly **one** SDK version. |
-| **SDK version** (`nparseplus-sdk`, currently `1.0.0`) | the SDK package (own semver, own `sdk-v*` tags) | **The contract.** The only number plugins and the app negotiate over. |
+| **SDK version** (`nparseplus-sdk`, currently `1.2.0`) | the SDK package (own semver, own `sdk-v*` tags) | **The contract.** The only number plugins and the app negotiate over. |
 | **Plugin version** (`PluginMeta.version`) | the plugin author | The plugin's own releases; drives registry update detection. |
 
 The SDK version has exactly one source: the `__version__` literal in
@@ -59,6 +59,7 @@ always true inside the app and optional for `nparseplus-plugin validate`
 | SDK | Added |
 | --- | --- |
 | **1.1** | `PluginMeta.update_url` — an optional https index the app polls to offer in-place updates for a plugin distributed outside any registry ([Shipping updates](developing.md#shipping-updates-without-a-registry)). Declare `requires_sdk=">=1.1,<2"` only if your plugin is *useless* without it; a 1.0-declaring plugin loaded by an older app simply gets no update offers. |
+| **1.2** | `ctx.eq_dir` + `ctx.eq_is_running()`, and the `nparseplus_sdk.eqfiles` re-export — enough for a plugin to edit a file in the EverQuest install the way the app does it (preflight, backup-first, splice one section). Declare `requires_sdk=">=1.2,<2"` if you touch the install: there is no graceful degradation, since on an older host the attribute is simply absent. |
 
 What the promise does *not* cover: host objects reached through the context
 (`ctx.timers`, `ctx.player`, `ctx.pigparse`, the classes behind
