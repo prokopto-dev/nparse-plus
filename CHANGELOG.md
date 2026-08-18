@@ -6,6 +6,24 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.14.0 (2026-08-18)
+
+### Bug Fixes
+
+- **packaging**: Raise the app's SDK floor to 1.2 so the contract cannot narrow
+  ([`2521bc6`](https://github.com/prokopto-dev/nparse-plus/commit/2521bc62d42ef904f474c8444ae5bef4d4624ad2))
+
+### Features
+
+- **sdk**: Expose the EQ install directory, install-file helpers and the EQ probe
+  ([`3ecd99c`](https://github.com/prokopto-dev/nparse-plus/commit/3ecd99c653e05ac3ff5dba8c706be5d8d4912c91))
+
+### Testing
+
+- **sdk**: Write the eqfiles fixtures as bytes so Windows sees real CRLF
+  ([`d16717d`](https://github.com/prokopto-dev/nparse-plus/commit/d16717d7d7338a3c1f000ce16daed98004a915cb))
+
+
 ## v2.13.0 (2026-08-18)
 
 ### Documentation
