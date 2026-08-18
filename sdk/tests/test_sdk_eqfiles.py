@@ -66,10 +66,15 @@ def test_the_round_trip_the_docstring_promises(tmp_path):
     (install / "eqgame.exe").write_text("stub")
     (install / "uifiles").mkdir()
     host_file = install / "eqhost.txt"
-    host_file.write_text(
-        "[LoginServer]\r\nHost=login.eqemulator.net:5998\r\n\r\n[Other]\r\nKeep=me\r\n"
+    # Bytes, not write_text: on Windows the default newline translation turns a
+    # literal \r\n into \r\r\n, which splitlines() then reads as an extra blank
+    # line — a fixture artefact that looks exactly like the bug this asserts is
+    # absent.
+    host_file.write_bytes(
+        b"[LoginServer]\r\nHost=login.eqemulator.net:5998\r\n\r\n[Other]\r\nKeep=me\r\n"
     )
 
+    assert b"\r\r" not in host_file.read_bytes()  # the fixture is really CRLF
     assert eqfiles.preflight(install) is None
     newline = eqfiles.detect_newline(host_file)
     eqfiles.backup_once(host_file, "loginproxy_backup")
@@ -93,7 +98,7 @@ def test_backup_once_keeps_the_pristine_copy(tmp_path):
     install = tmp_path / "EverQuest"
     install.mkdir()
     host_file = install / "eqhost.txt"
-    host_file.write_text("[LoginServer]\nHost=login.eqemulator.net:5998\n")
+    host_file.write_bytes(b"[LoginServer]\nHost=login.eqemulator.net:5998\n")
 
     eqfiles.backup_once(host_file, "b")
     host_file.write_text("[LoginServer]\nHost=127.0.0.1:5998\n")
