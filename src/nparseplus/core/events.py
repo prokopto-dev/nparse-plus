@@ -362,6 +362,61 @@ class WindowCommandEvent(LogEvent):
     action: str  # "show" | "hide" | "toggle"
 
 
+# --- timer events -------------------------------------------------------------
+
+
+class TimerWindowEvent(RemoteEvent):
+    """A variable respawn ("pop") window on a timer row changed phase (#125).
+
+    A ``RemoteEvent`` because these fire from a driver tick and have no source
+    log line of their own — the row they describe was armed by one, minutes or
+    days ago.
+
+    Plain scalars, deliberately no ``Row`` field: a mutable model inside a
+    frozen event is a lie, and it would create an ``events -> timers`` import
+    edge that does not exist today. A subscriber that wants the live row calls
+    ``timers.find(name, group)``.
+
+    ``opens_at`` / ``closes_at`` are the row's own anchors (its ``ends_at`` and
+    ``window_ends_at``), so both events describe the whole window whichever end
+    of it you were told about.
+
+    Never published itself — subscribe to one of the two subclasses.
+    """
+
+    name: str
+    group: str
+    opens_at: datetime  # the base end: when the mob became poppable
+    closes_at: datetime  # the latest possible pop
+
+
+class TimerWindowOpenedEvent(TimerWindowEvent):
+    """The base respawn ran out; the row is now inside its pop window.
+
+    ``opened_at`` is the tick that observed the crossover, which may sit a
+    little after ``opens_at`` (the driver polls at 100 ms, and a catch-up read
+    of a backlog can cross the boundary long after the fact).
+    """
+
+    opened_at: datetime
+
+
+class TimerWindowClosedEvent(TimerWindowEvent):
+    """The latest possible pop passed; the row is gone from the window.
+
+    Fires only for rows that *had* a window, not for every expiry: ``publish``
+    dispatches inline and then feeds ``subscribe_all`` -> the Qt bridge's queued
+    signal, so a generic per-row expiry event would push a cross-thread signal
+    for every buff that drops in a raid.
+
+    ``closed_at`` is the moment the window closed, which is by definition
+    ``closes_at`` — ``TimersService.on_expired`` carries rows, not the tick's
+    clock, and the row's own anchor is the truthful answer either way.
+    """
+
+    closed_at: datetime
+
+
 # --- character dump events ----------------------------------------------------
 
 

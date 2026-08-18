@@ -524,11 +524,22 @@ class SavedTimer(BaseModel):
     Unlike YouSpell's seconds-left (buff clocks freeze while camped), respawns
     keep counting in real time, so the absolute end is stored. Naive local
     datetime — the whole pipeline compares naive.
+
+    A variable respawn ("pop") window (#125) adds two more absolute times, for
+    the same reason: the window runs in the real world too. For such a row
+    ``ends_at`` is when the window *opens* and ``window_ends_at`` is the latest
+    possible pop, so the row is only dropped once the window has closed;
+    ``window_opened_at`` is restored as saved, never re-stamped, or every
+    character swap would re-announce an opening that already happened. Both are
+    optional, so an existing settings.json loads unmigrated. SavedCooldown
+    inherits them and never sets them — no self cooldown has a pop window.
     """
 
     name: str
     ends_at: datetime
     total_duration_s: float
+    window_ends_at: datetime | None = None
+    window_opened_at: datetime | None = None
 
 
 class SavedCooldown(SavedTimer):

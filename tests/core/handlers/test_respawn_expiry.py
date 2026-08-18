@@ -64,3 +64,59 @@ def test_non_respawn_rows_silent(timers: TimersService, speaker: FakeSpeaker) ->
     add_timer(timers, "--Dead-- a gnoll", group="Somewhere Else")
     timers.tick(T0 + timedelta(seconds=61))
     assert speaker.spoken == []
+
+
+# -- variable respawn ("pop") windows (#125) -----------------------------------
+
+
+def add_window_timer(
+    timers: TimersService, name: str, base_s: float = 60.0, window_s: float = 120.0
+) -> None:
+    ends_at = T0 + timedelta(seconds=base_s)
+    timers.add_timer(
+        TimerRow(
+            name=name,
+            group=MOB_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=ends_at,
+            total_duration_s=base_s,
+            window_ends_at=ends_at + timedelta(seconds=window_s),
+        ),
+        allow_duplicates=True,
+    )
+
+
+def test_window_open_speaks(timers: TimersService, speaker: FakeSpeaker) -> None:
+    """Without this the only announcement lands at window *close* — the least
+    useful moment, hours after the mob became poppable."""
+    RespawnExpiryNotifier(timers, speaker, SpellWindowSettings(respawn_expiry_audio=True))
+    add_window_timer(timers, "--Dead-- Trakanon")
+    timers.tick(T0 + timedelta(seconds=61))
+    assert speaker.spoken == ["Trakanon spawn window open"]
+
+
+def test_window_close_still_speaks_the_expiry(timers: TimersService, speaker: FakeSpeaker) -> None:
+    RespawnExpiryNotifier(timers, speaker, SpellWindowSettings(respawn_expiry_audio=True))
+    add_window_timer(timers, "--Dead-- Trakanon")
+    timers.tick(T0 + timedelta(seconds=61))
+    timers.tick(T0 + timedelta(seconds=181))
+    assert speaker.spoken == [
+        "Trakanon spawn window open",
+        "Trakanon spawn timer expired",
+    ]
+
+
+def test_window_open_respects_the_same_setting(timers: TimersService, speaker: FakeSpeaker) -> None:
+    RespawnExpiryNotifier(timers, speaker, SpellWindowSettings())
+    add_window_timer(timers, "--Dead-- Trakanon")
+    timers.tick(T0 + timedelta(seconds=61))
+    assert speaker.spoken == []
+
+
+def test_window_open_respects_the_same_name_gate(
+    timers: TimersService, speaker: FakeSpeaker
+) -> None:
+    RespawnExpiryNotifier(timers, speaker, SpellWindowSettings(respawn_expiry_audio=True))
+    add_window_timer(timers, "A plugin's own window timer")
+    timers.tick(T0 + timedelta(seconds=61))
+    assert speaker.spoken == []

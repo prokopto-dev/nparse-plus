@@ -108,6 +108,21 @@ class Env:
             allow_duplicates=True,
         )
 
+    def add_pop_window(self, name: str, base_s: float, window_s: float) -> TimerRow:
+        """A TOD-anchored respawn (#125): base countdown, then a pop window."""
+        ends_at = self.now + timedelta(seconds=base_s)
+        return self.timers.add_timer(
+            TimerRow(
+                name=name,
+                group=MOB_TIMER_GROUP,
+                updated_at=self.now,
+                ends_at=ends_at,
+                total_duration_s=base_s,
+                window_ends_at=ends_at + timedelta(seconds=window_s),
+            ),
+            allow_duplicates=True,
+        )
+
     def add_buff(self, seconds: int = 300) -> SpellRow:
         return self.timers.add_spell(buff_row(self.spell_book, self.now, seconds))
 
@@ -524,3 +539,97 @@ def test_no_profile_is_a_noop(spell_book: SpellBook) -> None:
     )
     bus.publish(AfterPlayerChangedEvent(timestamp=T0, line="", line_number=1))
     assert settings.players == []
+
+
+# -- variable respawn ("pop") windows (#125) -----------------------------------
+
+
+def test_a_window_row_round_trips_before_it_opens(env: Env) -> None:
+    row = env.add_pop_window("--Dead-- Trakanon", 400.0, 900.0)
+    saved = env.profile.respawn_timers
+    assert saved == [
+        SavedTimer(
+            name="--Dead-- Trakanon",
+            ends_at=row.ends_at,
+            total_duration_s=400.0,
+            window_ends_at=row.window_ends_at,
+            window_opened_at=None,
+        )
+    ]
+
+    env.advance(60)
+    env.bus.publish(env.event(AfterPlayerChangedEvent))
+    rows = [r for r in env.timers.snapshot() if isinstance(r, TimerRow)]
+    assert [r.name for r in rows] == ["--Dead-- Trakanon"]
+    assert rows[0].ends_at == row.ends_at
+    assert rows[0].window_ends_at == row.window_ends_at
+    assert rows[0].window_opened_at is None
+    # The re-sync export after the restore keeps the window intact.
+    assert env.profile.respawn_timers[0].window_ends_at == row.window_ends_at
+
+
+def test_camping_mid_window_brings_the_row_back_still_in_its_window(env: Env) -> None:
+    """The old ends_at filter dropped the row at exactly the moment it matters
+    most: its base end is in the past for the whole window."""
+    row = env.add_pop_window("--Dead-- Trakanon", 400.0, 900.0)
+    env.advance(460)
+    env.timers.tick(env.now)  # the crossover: the window opened 60 s ago
+    opened_at = row.window_opened_at
+    assert opened_at == row.ends_at + timedelta(seconds=60)
+
+    env.bus.publish(env.event(CampEvent))
+    assert env.profile.respawn_timers[0].window_opened_at == opened_at
+    # Mob respawns are world state — camping never takes them off screen.
+    assert [r.name for r in env.timers.snapshot()] == ["--Dead-- Trakanon"]
+
+    env.advance(120)
+    env.bus.publish(env.event(AfterPlayerChangedEvent))
+    rows = [r for r in env.timers.snapshot() if isinstance(r, TimerRow)]
+    assert [r.name for r in rows] == ["--Dead-- Trakanon"]
+    assert rows[0].window_ends_at == row.window_ends_at
+    # Preserved, not re-stamped.
+    assert rows[0].window_opened_at == opened_at
+
+
+def test_a_character_swap_does_not_re_announce_an_open_window(env: Env) -> None:
+    opened: list[str] = []
+    env.timers.on_window_open.append(lambda rows: opened.extend(r.name for r in rows))
+    env.add_pop_window("--Dead-- Trakanon", 400.0, 900.0)
+    env.advance(400)
+    env.timers.tick(env.now)
+    assert opened == ["--Dead-- Trakanon"]
+
+    for _ in range(3):
+        env.advance(30)
+        env.bus.publish(env.event(AfterPlayerChangedEvent))
+        env.timers.tick(env.now)
+    assert opened == ["--Dead-- Trakanon"]
+
+
+def test_a_window_that_closed_while_away_is_dropped(env: Env) -> None:
+    env.profile.respawn_timers = [
+        SavedTimer(
+            name="--Dead-- Trakanon",
+            ends_at=T0 + timedelta(seconds=400),
+            total_duration_s=400.0,
+            window_ends_at=T0 + timedelta(seconds=1300),
+            window_opened_at=T0 + timedelta(seconds=400),
+        )
+    ]
+    env.now = T0 + timedelta(seconds=1301)
+    env.bus.publish(env.event(AfterPlayerChangedEvent))
+    assert env.timers.snapshot() == []
+    assert env.profile.respawn_timers == []
+
+
+def test_an_old_store_without_the_window_fields_still_loads(env: Env) -> None:
+    """The fields are optional precisely so no migration is needed."""
+    env.profile.respawn_timers = [
+        SavedTimer(
+            name="--Dead-- a gnoll", ends_at=T0 + timedelta(seconds=90), total_duration_s=400.0
+        )
+    ]
+    env.bus.publish(env.event(AfterPlayerChangedEvent))
+    rows = [r for r in env.timers.snapshot() if isinstance(r, TimerRow)]
+    assert [r.name for r in rows] == ["--Dead-- a gnoll"]
+    assert rows[0].window_ends_at is None
