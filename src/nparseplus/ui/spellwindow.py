@@ -42,8 +42,11 @@ from nparseplus.core.timers import (
     RollRow,
     Row,
     SpellRow,
+    countdown_target,
     fraction_remaining,
     group_rows_for_display,
+    in_pop_window,
+    series_label,
 )
 from nparseplus.ui import appquit, chrome, skins, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
@@ -69,6 +72,12 @@ COLOR_DETRIMENTAL = chrome.BAD
 COLOR_COOLDOWN = chrome.COOLDOWN
 COLOR_TIMER = chrome.TIMER
 COLOR_ROLL = chrome.ROLL
+COLOR_POP_WINDOW = chrome.POP_WINDOW
+
+# Prefixed to the countdown of a respawn row inside its pop window (#125), so
+# the digits say what they are counting: "POP 11:59:58" is time left to the
+# LATEST possible spawn, not time until one.
+POP_WINDOW_PREFIX = "POP "
 
 BAR_MAX = 1000
 
@@ -109,20 +118,36 @@ def row_sort_key(row: Row, now: datetime, mode: str) -> tuple:
     orders by name and ``"time_remaining"`` (default) orders soonest-to-expire
     first; counters have no ``ends_at`` so they sort last under the time mode,
     name-tiebroken. All keys are ``(number, str)`` tuples so they compare.
+
+    The time-remaining key is ``countdown_target``, not ``ends_at``: a respawn
+    row inside its pop window (#125) has ``ends_at`` in the past, so sorting on
+    it would pin the row to the top of its section for the whole window — the
+    one place a raid least wants a fixed row. Phase 1 is byte-identical, since
+    ``countdown_target`` returns ``ends_at`` there. Deliberately NOT extended to
+    a post-expiry REBUFF ``SpellRow``, whose ``ends_at`` is also past: that row
+    is a flashing prompt and floating it is arguably the point.
     """
     name_key = row.name.casefold()
     if isinstance(row, RollRow):
         return (-row.roll, name_key)
     if mode == "alphabetical":
         return (0, name_key)
-    ends_at = getattr(row, "ends_at", None)
-    if ends_at is None:
+    target = countdown_target(row, now)
+    if target is None:
         return (float("inf"), name_key)
-    return ((ends_at - now).total_seconds(), name_key)
+    return ((target - now).total_seconds(), name_key)
 
 
-def bar_color(row: Row) -> str:
-    """The row's base color at full duration (its type coding)."""
+def bar_color(row: Row, now: datetime | None = None) -> str:
+    """The row's base color at full duration (its type coding).
+
+    ``now`` is optional so every existing call site keeps working; pass it and
+    a respawn row inside its pop window (#125) reads as its own colour. Checked
+    FIRST — the phase is a stronger statement about the row than its type is,
+    and a window row is always a plain ``TimerRow`` underneath.
+    """
+    if now is not None and in_pop_window(row, now):
+        return COLOR_POP_WINDOW
     if isinstance(row, SpellRow):
         if row.is_cooldown:
             return COLOR_COOLDOWN
@@ -183,9 +208,9 @@ def _fades(row: Row) -> bool:
     return not isinstance(row, RollRow)
 
 
-def row_bar_color(row: Row, fraction: float, fade: bool) -> str:
+def row_bar_color(row: Row, fraction: float, fade: bool, now: datetime | None = None) -> str:
     """The chunk color to paint: the base color, faded toward red if enabled."""
-    base = bar_color(row)
+    base = bar_color(row, now)
     if not fade or not _fades(row):
         return base
     return fade_color(base, fraction)
@@ -327,7 +352,11 @@ class _RowWidget(QFrame):
         """
         self.row_name = row.name
         self.row = row
-        self._name.setText(label if label is not None else row.name)
+        # Candidate windows of one spawn share a name, so the label is what
+        # tells them apart: "Lodizal  (2 of 3)" (#125).
+        display = label if label is not None else row.name
+        series = series_label(row)
+        self._name.setText(f"{display}  ({series})" if series else display)
         self._update_icon(row)
         expired = isinstance(row, SpellRow) and row.expired_at is not None
         if expired != self.expired:
@@ -353,16 +382,26 @@ class _RowWidget(QFrame):
             self._fraction = 0.0
             self.update()
             return
-        remaining = max(0.0, (row.ends_at - now).total_seconds())
+        # countdown_target, not ends_at: inside a pop window (#125) the row is
+        # counting to the LATEST possible pop, not to an end that has passed.
+        # The phase comes from ``now`` and never from ``window_opened_at`` —
+        # the driver ticks at 100 ms and this repaints at 250 ms, so the stamp
+        # and this frame's clock disagree by up to a quarter second, and only
+        # deriving from ``now`` keeps digits, bar and colour on the same side
+        # of the crossover.
+        target = countdown_target(row, now) or row.ends_at
+        remaining = max(0.0, (target - now).total_seconds())
         if isinstance(row, RollRow):
             self._value.setText(f"{row.roll}/{row.max_roll}  {format_mmss(remaining)}")
+        elif in_pop_window(row, now):
+            self._value.setText(f"{POP_WINDOW_PREFIX}{format_mmss(remaining)}")
         else:
             self._value.setText(format_mmss(remaining))
         self._update_warning(row, remaining)
         fraction = fraction_remaining(row, now)
         self._bar.setValue(int(fraction * BAR_MAX))
         self._bar.setVisible(not full)
-        color = row_bar_color(row, fraction, self._fade_enabled())
+        color = row_bar_color(row, fraction, self._fade_enabled(), now)
         if color != self._color:
             self._color = color
             if not full:
@@ -913,6 +952,10 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend.timers.remove_row(row)
         self.refresh()
 
+    def _clear_series(self, series: str) -> None:
+        self._backend.timers.remove_series(series)
+        self.refresh()
+
     def _clear_group(self, group: str) -> None:
         self._backend.timers.remove_group(group)
         self.refresh()
@@ -955,6 +998,14 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if row is not None:
             menu.addAction(f"Clear '{row.name}'", lambda r=row: self._clear_row(r))
+        series = getattr(row, "window_series", "") if row is not None else ""
+        if series:
+            # When the mob finally pops, its other candidate windows are
+            # answered too; clearing them one row at a time is busywork.
+            menu.addAction(
+                f"Clear all {row.window_count} windows for '{row.name}'",
+                lambda s=series: self._clear_series(s),
+            )
         if isinstance(row, SpellRow) and not row.is_cooldown:
             spell_name = row.spell.name
             flash_action = menu.addAction(

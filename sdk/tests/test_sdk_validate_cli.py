@@ -33,6 +33,29 @@ def create_plugin():
     return Demo()
 """
 
+TIMER_PLUGIN = """
+from datetime import datetime
+
+from nparseplus_sdk import NParsePlugin, PluginMeta
+
+
+class Popper(NParsePlugin):
+    meta = PluginMeta(id="popper", name="Popper", requires_sdk=">=1.3,<2")
+
+    def activate(self, ctx):
+        ctx.add_window_timer(
+            "Trakanon",
+            group="  Mob Timers",
+            started_at=datetime(2026, 7, 15, 12, 0, 0),
+            base_seconds=400,
+            window_seconds=900,
+        )
+
+
+def create_plugin():
+    return Popper()
+"""
+
 SUSPICIOUS_PLUGIN = """
 import subprocess
 
@@ -185,3 +208,11 @@ def test_cli_json_output(tmp_path: Path, capsys) -> None:
     assert payload["ok"] is True
     assert payload["meta"]["id"] == "demo"
     assert payload["windows"] == 1
+
+
+def test_a_plugin_that_arms_a_window_timer_validates(tmp_path: Path) -> None:
+    """Validation activates the candidate for real, so this only passes because
+    FakePluginContext.timers stopped defaulting to None (#125)."""
+    report = validate_plugin(write_plugin(tmp_path, TIMER_PLUGIN))
+    assert report.ok, report.errors
+    assert report.meta is not None and report.meta.id == "popper"

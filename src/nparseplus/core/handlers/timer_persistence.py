@@ -13,7 +13,10 @@ the clock behind the row keeps running while the character is not logged in:
 * ``you_counters`` — YOU_GROUP tallies (bard song counts, #120). No end time;
   their idle expiry runs in real time, so the last-updated stamp is stored.
 * ``respawn_timers`` — nparseplus addition (nparse #57; EQTool loses these).
-  Respawns keep counting, so absolute ends are stored.
+  Respawns keep counting, so absolute ends are stored. A variable respawn
+  ("pop") window (#125) rides in the same store: both of its anchors are
+  absolute too, and ``window_opened_at`` comes back exactly as saved, since
+  the restore below runs on every character swap.
 
 Camping (#120) exports, then **removes only this character's rows** — never
 via ``clear_you_spells``, which drops every YOU_GROUP row while
@@ -167,7 +170,16 @@ class TimerPersistenceHandler:
             for snap in self.timers.export_self_counters()
         ]
         info.respawn_timers = [
-            SavedTimer(name=snap.name, ends_at=snap.ends_at, total_duration_s=snap.total_duration_s)
+            SavedTimer(
+                name=snap.name,
+                ends_at=snap.ends_at,
+                total_duration_s=snap.total_duration_s,
+                window_ends_at=snap.window_ends_at,
+                window_opened_at=snap.window_opened_at,
+                window_series=snap.window_series,
+                window_index=snap.window_index,
+                window_count=snap.window_count,
+            )
             for snap in self.timers.export_respawn_timers(MOB_TIMER_GROUP, now)
         ]
         self._last_export_anchor = self._export_anchor()
@@ -267,6 +279,13 @@ class TimerPersistenceHandler:
                         name=item.name,
                         ends_at=item.ends_at,
                         total_duration_s=item.total_duration_s,
+                        # Carried across as saved — a pop window that opened
+                        # before the swap must not open again after it (#125).
+                        window_ends_at=item.window_ends_at,
+                        window_opened_at=item.window_opened_at,
+                        window_series=item.window_series,
+                        window_index=item.window_index,
+                        window_count=item.window_count,
                     )
                     for item in info.respawn_timers
                 ],

@@ -23,7 +23,7 @@ Threading contract (the part that matters):
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -49,6 +49,39 @@ class LineInfoLike(Protocol):
     def timestamp(self) -> datetime: ...
     @property
     def line_number(self) -> int: ...
+
+
+@runtime_checkable
+class WindowTimerLike(Protocol):
+    """Structural view of a host ``TimerRow`` carrying a pop window (#125).
+
+    A big mob does not respawn on a fixed clock: after time-of-death a base
+    time elapses (``ends_at`` — when the window OPENS, not when the row is
+    done) and the mob may then spawn at any moment until ``window_ends_at``.
+
+    ``window_opened_at`` is stamped once, by the host, on the driver tick that
+    first observed the crossover; it is None until then. Derive "is it in its
+    window" from the current time against ``ends_at``, not from this stamp —
+    the host ticks at ~100 ms and any UI repaints on its own schedule, so the
+    two disagree briefly at the boundary.
+    """
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def group(self) -> str: ...
+    @property
+    def ends_at(self) -> datetime: ...
+    @property
+    def window_ends_at(self) -> datetime | None: ...
+    @property
+    def window_opened_at(self) -> datetime | None: ...
+    @property
+    def window_series(self) -> str: ...
+    @property
+    def window_index(self) -> int: ...
+    @property
+    def window_count(self) -> int: ...
 
 
 @runtime_checkable
@@ -186,3 +219,71 @@ class PluginContext(Protocol):
     def add_window(self, spec: PluginWindowSpec) -> None: ...
 
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None: ...
+
+    # --- timers -----------------------------------------------------------
+    def add_window_timer(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        base_seconds: float,
+        window_seconds: float,
+        allow_duplicates: bool = False,
+    ) -> WindowTimerLike:
+        """Arm a variable respawn ("pop") window timer and return its row.
+
+        Durations from an anchor rather than two absolute datetimes, because
+        that is the domain shape: a time of death, a base respawn, then a
+        window. ``started_at`` is the TOD; the window opens at
+        ``started_at + base_seconds`` and the row expires at
+        ``+ window_seconds`` beyond that. Trakanon is TOD + 4.5 days, then a
+        12-hour window.
+
+        The host publishes ``TimerWindowOpenedEvent`` when the window opens
+        and ``TimerWindowClosedEvent`` when it closes — reach them through
+        ``nparseplus_sdk.events``. Both are driver-thread, like every bus
+        event.
+
+        Only ``core.timers.MOB_TIMER_GROUP`` survives camping, so a row in
+        your own group is session-only (the same rule trigger timers follow).
+
+        Raises if ``window_seconds`` is not positive — an empty window is a
+        plain timer, and the host row model rejects it. Call during
+        ``activate`` or from a subscription/tick; driver thread only.
+
+        Keyword-only after ``name`` so later parameters stay additive.
+        """
+        ...
+
+    def add_window_series(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        windows: Sequence[tuple[float, float]],
+    ) -> list[WindowTimerLike]:
+        """Arm SEVERAL candidate windows for one spawn; returns a row each.
+
+        Some mobs have more than one possible window and nobody knows which
+        the spawn will use — Lodizal has three. ``windows`` is one
+        ``(base_seconds, window_seconds)`` pair per candidate, each measured
+        from the same ``started_at`` time of death.
+
+        Each candidate is its own row, because that is what a raid tracks:
+        they open, lapse and announce independently, and once the first has
+        passed without a pop you can see the chances that remain. What ties
+        them together is a shared series key, which the host generates — the
+        rows share ``name`` and are told apart by "2 of 3" in the window, and
+        the whole set can be cleared in one action when the mob finally pops.
+
+        Duplicates are always allowed within the series (the rows share a
+        name by design), so this never silently replaces a sibling the way a
+        second bare ``add_window_timer`` call would.
+
+        Raises if ``windows`` is empty, if any window length is not positive,
+        or if the candidates are not in ascending order — an out-of-order
+        series is a bug in the caller's table, not a shape to render.
+        """
+        ...

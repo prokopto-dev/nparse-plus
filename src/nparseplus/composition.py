@@ -51,6 +51,7 @@ from nparseplus.core.handlers.root_break import RootBreakHandler
 from nparseplus.core.handlers.spawn_timer import SpawnTimerHandler
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.handlers.timer_persistence import TimerPersistenceHandler
+from nparseplus.core.handlers.timer_window import TimerWindowNotifier
 from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.handlers.zone_activity import ZoneActivityHandler
 from nparseplus.core.logarchive import LogArchiveService
@@ -660,6 +661,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         DpsHandler(bus, player, fights, player_pet=player_pet),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
+        TimerWindowNotifier(bus, timers),
         CorpseWaypointHandler(bus, player),
         RandomRollHandler(bus, player, timers),
         FTEHandler(bus, player, timers, speaker=speaker, api=pigparse_api, submit=sharing_submit),

@@ -92,6 +92,8 @@ worker shared by all plugins, so `ctx.pigparse` and `ctx.submit` are never
 | `submit(fetch, apply=None)` | `fetch()` on a worker thread; `apply(result)` back on the driver thread. A raise in `fetch` is logged and drops the `apply` |
 | `add_window(PluginWindowSpec)` | declare an overlay window |
 | `add_settings_page(PluginSettingsPageSpec)` | declare a Settings page |
+| `add_window_timer(name, *, group, started_at, base_seconds, window_seconds, allow_duplicates=False)` | arm a variable respawn ("pop") window and return the row (`WindowTimerLike`). See [Pop windows](../features/respawn-timers.md#pop-windows). SDK 1.3 |
+| `add_window_series(name, *, group, started_at, windows)` | arm **several** candidate windows for one spawn (`windows` = `(base_seconds, window_seconds)` pairs) and return a row each, sharing a series key. For mobs with more than one possible window. SDK 1.3 |
 
 ## PluginStorage
 
@@ -150,8 +152,9 @@ plugin stays possible in Qt-free/host-free environments:
 
 - **`nparseplus_sdk.events`** — the typed event catalogue (`LineEvent` — the
   every-line firehose, `CommsEvent` + `CommsChannel`, `YouZonedEvent`,
-  `DeathEvent`, …), forwarded from `nparseplus.core.events`. Subscribe with
-  the exact class.
+  `DeathEvent`, `TimerWindowOpenedEvent` / `TimerWindowClosedEvent` — a pop
+  window opening and closing, …), forwarded from `nparseplus.core.events`.
+  Subscribe with the exact class.
 - **`nparseplus_sdk.timers`** — `TimerRow`, `CounterRow`, `SpellRow`,
   `RollRow` and group constants, forwarded from `nparseplus.core.timers`.
 - **`nparseplus_sdk.ui`** — `PluginWindow`, forwarded from

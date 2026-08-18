@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from nparseplus.core import driver as driver_module
@@ -255,3 +255,120 @@ def test_pigparse_prefers_backend_client(backend, tmp_path) -> None:
     backend.pigparse_api = sentinel
     ctx = make_ctx(backend, tmp_path)
     assert ctx.pigparse is sentinel
+
+
+# -- pop-window timers (#125) --------------------------------------------------
+
+TOD = datetime(2026, 7, 15, 12, 0, 0)
+
+
+def test_add_window_timer_builds_the_expected_row(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    row = ctx.add_window_timer(
+        "Trakanon",
+        group="  Mob Timers",
+        started_at=TOD,
+        base_seconds=400,
+        window_seconds=900,
+    )
+    assert row.name == "Trakanon"
+    assert row.group == "  Mob Timers"
+    # Durations from the anchor: the window OPENS at base, closes a window later.
+    assert row.ends_at == TOD + timedelta(seconds=400)
+    assert row.window_ends_at == TOD + timedelta(seconds=1300)
+    assert row.total_duration_s == 400.0
+    # Not stamped: only a driver tick that observes the crossover does that.
+    assert row.window_opened_at is None
+    # And it really is in the host store.
+    assert backend.timers.find("Trakanon", "  Mob Timers") is row
+
+
+def test_add_window_timer_satisfies_the_sdk_protocol(backend, tmp_path) -> None:
+    from nparseplus_sdk import WindowTimerLike
+
+    ctx = make_ctx(backend, tmp_path)
+    row = ctx.add_window_timer(
+        "Trakanon", group="g", started_at=TOD, base_seconds=10, window_seconds=20
+    )
+    assert isinstance(row, WindowTimerLike)
+
+
+def test_add_window_timer_raises_through_rather_than_swallowing(backend, tmp_path) -> None:
+    """Not _guarded: this is the plugin calling in, already inside its own
+    guarded subscription or tick, so the error belongs in its frame."""
+    import pytest
+    from pydantic import ValidationError
+
+    ctx = make_ctx(backend, tmp_path)
+    with pytest.raises(ValidationError):
+        ctx.add_window_timer("Bad", group="g", started_at=TOD, base_seconds=100, window_seconds=0)
+    assert backend.timers.find("Bad", "g") is None
+
+
+def test_unwind_leaves_the_timer_row(backend, tmp_path) -> None:
+    """Asserted so nobody "fixes" it later: unwind reverses registrations, and
+    a timer row is data the plugin put in a user-visible store — same as
+    ctx.timers.add_timer today. remove_row is the way back out."""
+    ctx = make_ctx(backend, tmp_path)
+    row = ctx.add_window_timer(
+        "Trakanon", group="g", started_at=TOD, base_seconds=400, window_seconds=900
+    )
+    ctx.unwind()
+    assert backend.timers.find("Trakanon", "g") is row
+
+
+# -- several candidate windows for one spawn (#125) ----------------------------
+
+LODIZAL_WINDOWS = [(12 * 3600, 4 * 3600), (20 * 3600, 4 * 3600), (30 * 3600, 6 * 3600)]
+
+
+def test_add_window_series_arms_every_candidate(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    rows = ctx.add_window_series(
+        "--Dead-- Lodizal",
+        group="  Mob Timers",
+        started_at=TOD,
+        windows=LODIZAL_WINDOWS,
+    )
+    assert len(rows) == 3
+    assert [(r.window_index, r.window_count) for r in rows] == [(1, 3), (2, 3), (3, 3)]
+    assert len({r.window_series for r in rows}) == 1
+    assert rows[0].ends_at == TOD + timedelta(hours=12)
+    assert rows[2].window_ends_at == TOD + timedelta(hours=36)
+    # They share a name on purpose and must NOT have replaced one another.
+    assert len(backend.timers.snapshot()) == 3
+
+
+def test_the_series_key_is_derived_so_it_survives_a_rebuild(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    first = ctx.add_window_series(
+        "--Dead-- Lodizal", group="g", started_at=TOD, windows=LODIZAL_WINDOWS
+    )
+    backend.timers.remove_series(first[0].window_series)
+    again = ctx.add_window_series(
+        "--Dead-- Lodizal", group="g", started_at=TOD, windows=LODIZAL_WINDOWS
+    )
+    assert again[0].window_series == first[0].window_series
+
+
+def test_remove_series_clears_the_whole_set(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    rows = ctx.add_window_series(
+        "--Dead-- Lodizal", group="g", started_at=TOD, windows=LODIZAL_WINDOWS
+    )
+    assert backend.timers.remove_series(rows[0].window_series) == 3
+    assert backend.timers.snapshot() == []
+
+
+def test_add_window_series_rejects_a_malformed_table(backend, tmp_path) -> None:
+    """Rules about the SET, which no single row can check."""
+    import pytest
+
+    ctx = make_ctx(backend, tmp_path)
+    with pytest.raises(ValueError, match="at least one"):
+        ctx.add_window_series("x", group="g", started_at=TOD, windows=[])
+    with pytest.raises(ValueError, match="positive span"):
+        ctx.add_window_series("x", group="g", started_at=TOD, windows=[(100, 0)])
+    with pytest.raises(ValueError, match="ascending"):
+        ctx.add_window_series("x", group="g", started_at=TOD, windows=[(100, 50), (120, 50)])
+    assert backend.timers.snapshot() == []

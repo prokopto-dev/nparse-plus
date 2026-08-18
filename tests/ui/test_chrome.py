@@ -93,7 +93,14 @@ def test_every_chrome_token_is_filled_for_every_skin() -> None:
 def test_semantic_tokens_are_distinct() -> None:
     """They may coincide with an unrelated surface's literal; they must not
     coincide with each other, or two meanings become unreadable as one."""
-    tokens = (chrome.GOOD, chrome.BAD, chrome.COOLDOWN, chrome.TIMER, chrome.ROLL)
+    tokens = (
+        chrome.GOOD,
+        chrome.BAD,
+        chrome.COOLDOWN,
+        chrome.TIMER,
+        chrome.ROLL,
+        chrome.POP_WINDOW,
+    )
     assert len(set(tokens)) == len(tokens)
 
 
@@ -103,6 +110,7 @@ def test_the_spell_window_reads_its_bar_colors_from_the_tokens() -> None:
     assert spellwindow.COLOR_BENEFICIAL == chrome.GOOD
     assert spellwindow.COLOR_DETRIMENTAL == chrome.BAD
     assert spellwindow.COLOR_ROLL == chrome.ROLL
+    assert spellwindow.COLOR_POP_WINDOW == chrome.POP_WINDOW
 
 
 # -- window_style ---------------------------------------------------------------

@@ -2,27 +2,36 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 from tests.core.spells.conftest import T0
 
 from nparseplus.core.spells.spells_us import SpellBook
 from nparseplus.core.timers import (
     COUNTER_IDLE_EXPIRY,
+    MOB_TIMER_GROUP,
     TRIGGER_TIMER_GROUP,
     YOU_GROUP,
     CounterRow,
+    RespawnTimerSnapshot,
     RollRow,
+    Row,
     SelfCooldownSnapshot,
     SelfCounterSnapshot,
     SpellRow,
     TimerRow,
     TimersService,
     YouSpellSnapshot,
+    countdown_target,
+    expires_at,
     fraction_remaining,
     group_rows_for_display,
+    has_pop_window,
+    in_pop_window,
     seconds_left,
+    series_label,
     snap_to_second,
 )
 
@@ -723,3 +732,565 @@ def test_restore_self_counters_drops_an_idle_expired_one(timers: TimersService) 
     saved = [SelfCounterSnapshot(name="Selo's casts", count=3, updated_at=T0)]
     timers.restore_self_counters(saved, T0 + COUNTER_IDLE_EXPIRY + timedelta(seconds=1))
     assert timers.snapshot() == []
+
+
+# -- variable respawn ("pop") windows (#125) -----------------------------------
+
+BASE_S = 400.0
+WINDOW_S = 900.0
+
+
+def _window_row(
+    name: str = "--Dead-- Trakanon",
+    base_s: float = BASE_S,
+    window_s: float = WINDOW_S,
+    started_at: datetime = T0,
+    **kwargs: object,
+) -> TimerRow:
+    """A TOD-anchored respawn row: base countdown, then a pop window."""
+    ends_at = started_at + timedelta(seconds=base_s)
+    return TimerRow(
+        name=name,
+        group=MOB_TIMER_GROUP,
+        updated_at=started_at,
+        ends_at=ends_at,
+        total_duration_s=base_s,
+        window_ends_at=ends_at + timedelta(seconds=window_s),
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_window_row_opens_at_its_base_end_without_expiring(timers: TimersService) -> None:
+    """The crossover is an opening, not an expiry: the row stays on screen."""
+    opened: list[list[Row]] = []
+    expired: list[list[Row]] = []
+    timers.on_window_open.append(opened.append)
+    timers.on_expired.append(expired.append)
+    row = timers.add_timer(_window_row())
+
+    assert timers.tick(T0 + timedelta(seconds=BASE_S - 1)) == []
+    assert opened == []
+    assert row.window_opened_at is None
+
+    at_open = T0 + timedelta(seconds=BASE_S)
+    assert timers.tick(at_open) == []
+    assert [[r.name for r in batch] for batch in opened] == [["--Dead-- Trakanon"]]
+    assert expired == []
+    assert row.window_opened_at == at_open
+    assert timers.snapshot() == [row]
+
+
+def test_window_opens_exactly_once(timers: TimersService) -> None:
+    opened: list[Row] = []
+    timers.on_window_open.append(opened.extend)
+    row = timers.add_timer(_window_row())
+    for elapsed in range(int(BASE_S), int(BASE_S) + 5):
+        timers.tick(T0 + timedelta(seconds=elapsed))
+    assert opened == [row]
+    assert row.window_opened_at == T0 + timedelta(seconds=BASE_S)
+
+
+def test_window_row_expires_when_the_window_closes(timers: TimersService) -> None:
+    expired: list[Row] = []
+    timers.on_expired.append(expired.extend)
+    row = timers.add_timer(_window_row())
+    timers.tick(T0 + timedelta(seconds=BASE_S))
+
+    # Inside the window: still present, still not expired.
+    assert timers.tick(T0 + timedelta(seconds=BASE_S + WINDOW_S - 1)) == []
+    assert expired == []
+    assert timers.snapshot() == [row]
+
+    at_close = T0 + timedelta(seconds=BASE_S + WINDOW_S)
+    assert timers.tick(at_close) == [row]
+    assert expired == [row]
+    assert timers.snapshot() == []
+
+
+def test_a_row_created_past_both_times_opens_then_expires_in_one_tick(
+    timers: TimersService,
+) -> None:
+    order: list[str] = []
+    timers.on_window_open.append(lambda rows: order.append(f"open:{rows[0].name}"))
+    timers.on_expired.append(lambda rows: order.append(f"expire:{rows[0].name}"))
+    row = timers.add_timer(_window_row(name="--Dead-- Faydedar"))
+
+    assert timers.tick(T0 + timedelta(seconds=BASE_S + WINDOW_S + 60)) == [row]
+    assert order == ["open:--Dead-- Faydedar", "expire:--Dead-- Faydedar"]
+    assert row.window_opened_at is not None
+
+
+def test_the_crossover_notifies_even_though_nothing_was_dropped(timers: TimersService) -> None:
+    """The row changed (it is now in its window) and the UI has to repaint."""
+    changes: list[int] = []
+    timers.add_timer(_window_row())
+    timers.on_change.append(lambda: changes.append(1))
+    timers.tick(T0 + timedelta(seconds=BASE_S))
+    assert changes == [1]
+    # A later tick inside the window changes nothing.
+    timers.tick(T0 + timedelta(seconds=BASE_S + 1))
+    assert changes == [1]
+
+
+def test_a_plain_timer_row_is_untouched_by_the_window_branch(timers: TimersService) -> None:
+    opened: list[Row] = []
+    timers.on_window_open.append(opened.extend)
+    row = timers.add_timer(
+        TimerRow(
+            name="Custom",
+            group=TRIGGER_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=30),
+            total_duration_s=30.0,
+        )
+    )
+    assert timers.tick(T0 + timedelta(seconds=31)) == [row]
+    assert opened == []
+
+
+def test_a_persisting_spell_and_a_window_timer_coexist(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    """Regression: the window branch sits between the ends_at guard and the
+    post-expiry persist branch and must disturb neither."""
+    opened: list[Row] = []
+    expired: list[Row] = []
+    timers.on_window_open.append(opened.extend)
+    timers.on_expired.append(expired.extend)
+    spell = timers.add_spell(_spell_row(spell_book, seconds=BASE_S, post_expiry_persist_s=30.0))
+    window = timers.add_timer(_window_row())
+
+    # Both cross their ends_at on the same tick: the spell "expires" (and
+    # lingers as a rebuff prompt), the window row merely opens.
+    at_open = T0 + timedelta(seconds=BASE_S)
+    assert timers.tick(at_open) == [spell]
+    assert opened == [window]
+    assert expired == [spell]
+    assert spell.expired_at == at_open
+    assert window.window_opened_at == at_open
+    assert [r.name for r in timers.snapshot()] == [spell.name, window.name]
+
+    # The spell's persist window elapses first; the pop window outlives it.
+    timers.tick(T0 + timedelta(seconds=BASE_S + 31))
+    assert timers.snapshot() == [window]
+    assert expired == [spell]
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected"),
+    [
+        (0, 1.0),  # phase 1: the base respawn is the whole bar
+        (200, 0.5),
+        (399, pytest.approx(0.0025)),
+        (400, 1.0),  # phase 2 opens: the bar refills over the window itself
+        (400 + 450, 0.5),
+        (400 + 900, 0.0),  # window closed
+        (400 + 5000, 0.0),  # clamped
+    ],
+)
+def test_fraction_remaining_is_phase_aware(elapsed: float, expected: float) -> None:
+    row = _window_row()
+    assert fraction_remaining(row, T0 + timedelta(seconds=elapsed)) == pytest.approx(expected)
+
+
+def test_countdown_target_and_expires_at_follow_the_phase() -> None:
+    row = _window_row()
+    opens_at = T0 + timedelta(seconds=BASE_S)
+    closes_at = opens_at + timedelta(seconds=WINDOW_S)
+
+    assert countdown_target(row, T0) == opens_at
+    assert countdown_target(row, opens_at - timedelta(seconds=1)) == opens_at
+    assert countdown_target(row, opens_at) == closes_at
+    assert countdown_target(row, closes_at + timedelta(minutes=1)) == closes_at
+    # expires_at has no phase: a window row is done when its window closes.
+    assert expires_at(row) == closes_at
+
+
+def test_the_helpers_are_inert_for_rows_without_a_window(spell_book: SpellBook) -> None:
+    plain = TimerRow(
+        name="Custom",
+        group=TRIGGER_TIMER_GROUP,
+        updated_at=T0,
+        ends_at=T0 + timedelta(seconds=30),
+        total_duration_s=30.0,
+    )
+    counter = CounterRow(name="Resisted", group=YOU_GROUP, updated_at=T0)
+    for row in (plain, _spell_row(spell_book), counter):
+        assert has_pop_window(row) is False
+        assert in_pop_window(row, T0 + timedelta(days=1)) is False
+    assert expires_at(plain) == plain.ends_at
+    assert countdown_target(plain, T0 + timedelta(days=1)) == plain.ends_at
+    assert expires_at(counter) is None
+    assert countdown_target(counter, T0) is None
+
+
+def test_in_pop_window_stays_true_for_the_frame_after_it_closes() -> None:
+    """So a closing row renders 00:00 in its window presentation rather than
+    snapping back to phase 1 on its way off the screen."""
+    row = _window_row()
+    closes_at = T0 + timedelta(seconds=BASE_S + WINDOW_S)
+    assert in_pop_window(row, closes_at) is True
+    assert in_pop_window(row, closes_at + timedelta(seconds=5)) is True
+
+
+def test_window_ends_at_is_snapped_on_construction_and_assignment() -> None:
+    row = TimerRow(
+        name="--Dead-- Trakanon",
+        group=MOB_TIMER_GROUP,
+        updated_at=T0,
+        ends_at=T0 + timedelta(seconds=400),
+        total_duration_s=400.0,
+        window_ends_at=T0 + timedelta(seconds=1300, microseconds=742_000),
+    )
+    assert row.window_ends_at == T0 + timedelta(seconds=1300)
+    row.window_ends_at = T0 + timedelta(seconds=900, microseconds=999_999)
+    assert row.window_ends_at == T0 + timedelta(seconds=900)
+
+
+def test_window_ends_at_can_be_cleared() -> None:
+    """The validator has to pass None through, or validate_assignment raises
+    the moment a caller drops the window."""
+    row = _window_row()
+    row.window_ends_at = None
+    assert row.window_ends_at is None
+    assert has_pop_window(row) is False
+
+
+def test_the_window_must_follow_the_base_end() -> None:
+    with pytest.raises(ValidationError):
+        TimerRow(
+            name="--Dead-- Trakanon",
+            group=MOB_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=400),
+            total_duration_s=400.0,
+            window_ends_at=T0 + timedelta(seconds=400),
+        )
+    row = _window_row()
+    with pytest.raises(ValidationError):
+        row.window_ends_at = T0
+
+
+def test_the_window_stamp_is_not_snapped() -> None:
+    """It is an observation of tick time, like SpellRow.expired_at — not an
+    anchor anything counts down to."""
+    row = _window_row()
+    at_open = T0 + timedelta(seconds=BASE_S, microseconds=613_000)
+    TimersService().add_timer(row)
+    row.window_opened_at = at_open
+    assert row.window_opened_at == at_open
+
+
+def test_export_keeps_a_row_whose_window_is_open(timers: TimersService) -> None:
+    """Camping mid-window used to drop the row: its ends_at is in the past."""
+    row = timers.add_timer(_window_row())
+    opens_at = T0 + timedelta(seconds=BASE_S)
+    mid_window = opens_at + timedelta(seconds=60)
+    timers.tick(opens_at)
+    timers.tick(mid_window)
+
+    saved = timers.export_respawn_timers(MOB_TIMER_GROUP, mid_window)
+    assert saved == [
+        RespawnTimerSnapshot(
+            name="--Dead-- Trakanon",
+            ends_at=row.ends_at,
+            total_duration_s=BASE_S,
+            window_ends_at=row.window_ends_at,
+            window_opened_at=opens_at,
+        )
+    ]
+    # And is dropped once the window has actually closed.
+    closed = T0 + timedelta(seconds=BASE_S + WINDOW_S)
+    assert timers.export_respawn_timers(MOB_TIMER_GROUP, closed) == []
+
+
+def test_restore_preserves_the_window_stamp_instead_of_re_stamping(
+    timers: TimersService,
+) -> None:
+    """A character swap does remove_group + restore; re-stamping would re-fire
+    on_window_open — and its event and its speech — every single time."""
+    opened: list[Row] = []
+    timers.on_window_open.append(opened.extend)
+    opens_at = T0 + timedelta(seconds=BASE_S)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Trakanon",
+                ends_at=opens_at,
+                total_duration_s=BASE_S,
+                window_ends_at=opens_at + timedelta(seconds=WINDOW_S),
+                window_opened_at=opens_at,
+            )
+        ],
+        MOB_TIMER_GROUP,
+        opens_at + timedelta(seconds=60),
+    )
+    rows = timers.rows_of(TimerRow)
+    assert len(rows) == 1
+    assert isinstance(rows[0], TimerRow)
+    assert rows[0].window_opened_at == opens_at
+
+    timers.tick(opens_at + timedelta(seconds=61))
+    assert opened == []
+
+
+def test_restore_drops_a_window_that_closed_while_away(timers: TimersService) -> None:
+    opens_at = T0 + timedelta(seconds=BASE_S)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Trakanon",
+                ends_at=opens_at,
+                total_duration_s=BASE_S,
+                window_ends_at=opens_at + timedelta(seconds=WINDOW_S),
+                window_opened_at=opens_at,
+            )
+        ],
+        MOB_TIMER_GROUP,
+        opens_at + timedelta(seconds=WINDOW_S + 1),
+    )
+    assert timers.snapshot() == []
+
+
+def test_restore_keeps_a_row_whose_base_end_passed_but_window_has_not(
+    timers: TimersService,
+) -> None:
+    """The plain-timer rule (ends_at <= now -> drop) would throw this away."""
+    opens_at = T0 + timedelta(seconds=BASE_S)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Trakanon",
+                ends_at=opens_at,
+                total_duration_s=BASE_S,
+                window_ends_at=opens_at + timedelta(seconds=WINDOW_S),
+                window_opened_at=opens_at,
+            )
+        ],
+        MOB_TIMER_GROUP,
+        opens_at + timedelta(seconds=60),
+    )
+    assert [r.name for r in timers.snapshot()] == ["--Dead-- Trakanon"]
+
+
+def test_restore_degrades_an_inconsistent_saved_window_instead_of_raising(
+    timers: TimersService,
+) -> None:
+    """settings.json is user-editable; one bad pair must not abort the restore
+    of every entry behind it."""
+    ends_at = T0 + timedelta(seconds=BASE_S)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Bad",
+                ends_at=ends_at,
+                total_duration_s=BASE_S,
+                # Before the base end — the row model rejects it outright.
+                window_ends_at=ends_at - timedelta(seconds=30),
+                window_opened_at=T0,
+            ),
+            RespawnTimerSnapshot(name="--Dead-- Good", ends_at=ends_at, total_duration_s=BASE_S),
+        ],
+        MOB_TIMER_GROUP,
+        T0,
+    )
+    rows = timers.rows_of(TimerRow)
+    assert [r.name for r in rows] == ["--Dead-- Bad", "--Dead-- Good"]
+    bad = rows[0]
+    assert isinstance(bad, TimerRow)
+    assert bad.window_ends_at is None
+    assert bad.window_opened_at is None
+
+
+def test_restore_degrades_a_window_that_snaps_onto_the_base_end(
+    timers: TimersService,
+) -> None:
+    """Sub-second apart in the file, equal on the one-second grid the row uses."""
+    ends_at = T0 + timedelta(seconds=BASE_S)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Trakanon",
+                ends_at=ends_at,
+                total_duration_s=BASE_S,
+                window_ends_at=ends_at + timedelta(microseconds=400_000),
+            )
+        ],
+        MOB_TIMER_GROUP,
+        T0,
+    )
+    rows = timers.rows_of(TimerRow)
+    assert len(rows) == 1
+    assert isinstance(rows[0], TimerRow)
+    assert rows[0].window_ends_at is None
+
+
+# -- several candidate windows for one spawn (#125, Lodizal) -------------------
+
+LODIZAL = [(12 * 3600, 4 * 3600), (20 * 3600, 4 * 3600), (30 * 3600, 6 * 3600)]
+
+
+def _series_rows(timers: TimersService, name: str = "--Dead-- Lodizal") -> list[TimerRow]:
+    series = f"{MOB_TIMER_GROUP}|{name}|{T0.isoformat()}"
+    out = []
+    for index, (base_s, window_s) in enumerate(LODIZAL, start=1):
+        ends_at = T0 + timedelta(seconds=base_s)
+        out.append(
+            timers.add_timer(
+                TimerRow(
+                    name=name,
+                    group=MOB_TIMER_GROUP,
+                    updated_at=T0,
+                    ends_at=ends_at,
+                    total_duration_s=float(base_s),
+                    window_ends_at=ends_at + timedelta(seconds=window_s),
+                    window_series=series,
+                    window_index=index,
+                    window_count=len(LODIZAL),
+                ),
+                allow_duplicates=True,
+            )
+        )
+    return out
+
+
+def test_candidate_windows_open_and_lapse_in_turn(timers: TimersService) -> None:
+    """The uncertainty models itself: each chance opens, then lapses, leaving
+    the ones still to come."""
+    opened: list[int] = []
+    timers.on_window_open.append(lambda rows: opened.extend(r.window_index for r in rows))
+    _series_rows(timers)
+
+    def live(hours: float) -> int:
+        timers.tick(T0 + timedelta(hours=hours))
+        return len(timers.snapshot())
+
+    assert live(0) == 3
+    assert live(13) == 3 and opened == [1]  # first window open, none lost
+    assert live(17) == 2  # it lapsed without a pop
+    assert live(22) == 2 and opened == [1, 2]
+    assert live(26) == 1
+    assert live(33) == 1 and opened == [1, 2, 3]
+    assert live(37) == 0  # every chance is spent
+
+
+def test_series_label_names_the_candidate(timers: TimersService) -> None:
+    rows = _series_rows(timers)
+    assert [series_label(r) for r in rows] == ["1 of 3", "2 of 3", "3 of 3"]
+
+
+def test_series_label_is_empty_for_a_lone_window() -> None:
+    assert series_label(_window_row()) == ""
+    assert (
+        series_label(
+            TimerRow(
+                name="Custom",
+                group=TRIGGER_TIMER_GROUP,
+                updated_at=T0,
+                ends_at=T0 + timedelta(seconds=30),
+                total_duration_s=30.0,
+            )
+        )
+        == ""
+    )
+
+
+def test_the_index_keeps_its_original_denominator_as_candidates_lapse(
+    timers: TimersService,
+) -> None:
+    """Stored, not derived: after the first chance passes you still want to
+    read "2 of 3", not "1 of 2"."""
+    _series_rows(timers)
+    timers.tick(T0 + timedelta(hours=17))
+    assert [series_label(r) for r in timers.snapshot()] == ["2 of 3", "3 of 3"]
+
+
+def test_remove_series_clears_every_candidate_at_once(timers: TimersService) -> None:
+    rows = _series_rows(timers)
+    # An unrelated row must survive.
+    timers.add_timer(
+        TimerRow(
+            name="--Dead-- a gnoll",
+            group=MOB_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=400),
+            total_duration_s=400.0,
+        )
+    )
+    assert timers.remove_series(rows[0].window_series) == 3
+    assert [r.name for r in timers.snapshot()] == ["--Dead-- a gnoll"]
+    # Idempotent, and an empty key is never a wildcard.
+    assert timers.remove_series(rows[0].window_series) == 0
+    assert timers.remove_series("") == 0
+    assert len(timers.snapshot()) == 1
+
+
+def test_a_series_member_must_be_internally_consistent() -> None:
+    base = dict(
+        name="--Dead-- Lodizal",
+        group=MOB_TIMER_GROUP,
+        updated_at=T0,
+        ends_at=T0 + timedelta(hours=12),
+        total_duration_s=43200.0,
+    )
+    # A series member with no window at all.
+    with pytest.raises(ValidationError):
+        TimerRow(**base, window_series="s", window_index=1, window_count=3)
+    # An index outside its own denominator.
+    with pytest.raises(ValidationError):
+        TimerRow(
+            **base,
+            window_ends_at=T0 + timedelta(hours=16),
+            window_series="s",
+            window_index=4,
+            window_count=3,
+        )
+
+
+def test_a_series_survives_export_and_restore(timers: TimersService) -> None:
+    _series_rows(timers)
+    mid = T0 + timedelta(hours=13)
+    timers.tick(mid)
+
+    saved = timers.export_respawn_timers(MOB_TIMER_GROUP, mid)
+    assert [(s.window_index, s.window_count) for s in saved] == [(1, 3), (2, 3), (3, 3)]
+
+    fresh = TimersService()
+    opened: list[int] = []
+    fresh.on_window_open.append(lambda rows: opened.extend(r.window_index for r in rows))
+    fresh.restore_respawn_timers(saved, MOB_TIMER_GROUP, mid)
+    restored = fresh.rows_of(TimerRow)
+    assert [series_label(r) for r in restored] == ["1 of 3", "2 of 3", "3 of 3"]
+    assert len({r.window_series for r in restored}) == 1
+    # The open candidate came back open, and does not announce itself again.
+    fresh.tick(mid + timedelta(seconds=1))
+    assert opened == []
+
+
+def test_restore_degrades_an_inconsistent_series_rather_than_raising(
+    timers: TimersService,
+) -> None:
+    """A hand-edited settings.json must not cost the timer itself — losing the
+    "2 of 3" label is the far smaller loss."""
+    ends_at = T0 + timedelta(hours=12)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Lodizal",
+                ends_at=ends_at,
+                total_duration_s=43200.0,
+                window_ends_at=ends_at + timedelta(hours=4),
+                window_series="s",
+                window_index=9,  # outside its denominator
+                window_count=3,
+            )
+        ],
+        MOB_TIMER_GROUP,
+        T0,
+    )
+    rows = timers.rows_of(TimerRow)
+    assert len(rows) == 1
+    assert isinstance(rows[0], TimerRow)
+    assert rows[0].window_ends_at is not None  # the timer survived
+    assert rows[0].window_series == ""  # only the label was dropped
+    assert series_label(rows[0]) == ""
