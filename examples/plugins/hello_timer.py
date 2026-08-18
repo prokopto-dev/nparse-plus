@@ -1,7 +1,7 @@
 """Hello Timer — the smallest useful nParse+ plugin.
 
 Say ``hello nparse`` in game and it starts a 30-second timer row in the
-spell-timer window and speaks a greeting. This file is the reference for the
+Timers window and speaks a greeting. This file is the reference for the
 plugin anatomy: a ``PluginMeta``, an ``NParsePlugin`` subclass, and a
 module-level ``create_plugin()`` factory.
 

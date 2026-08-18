@@ -448,7 +448,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._state = state
 
         self.setObjectName("SpellTimerWindow")
-        self.setWindowTitle("Spell Timers")
+        self.setWindowTitle("Timers")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._apply_flags()
         self.setGeometry(*(state.geometry or DEFAULT_GEOMETRY))
@@ -458,7 +458,7 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._font_size = max(6, backend.settings.general.font_size)
 
         # Skinned title bar: the gem mark + the window's caps.
-        self._title_bar = SkinTitleBar(self._skin, "SPELL TIMERS", count=True, parent=self)
+        self._title_bar = SkinTitleBar(self._skin, "TIMERS", count=True, parent=self)
         self._title_count = self._title_bar.count
 
         self._rows_layout = QVBoxLayout()

@@ -20,9 +20,9 @@ PigTimer-<duration>[-<label>]
 | `PigTimer-1:02:00-LongTimer` | A 1 h 2 m timer named "LongTimer" |
 
 Timers appear as rows in the **Custom Timers** section of
-[Spell Timers](../windows/spell-timers.md). Right-click one to clear it
+[Timers](../windows/timers.md). Right-click one to clear it
 early; hide the section entirely with "Show custom timers" in
-[Settings → Spell Timers](../settings/spell-timers.md).
+[Settings → Timers](../settings/timers.md).
 
 ## The group-coordination trick
 

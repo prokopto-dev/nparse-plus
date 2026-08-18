@@ -90,7 +90,7 @@ Everything a plugin may touch arrives through the
 | Periodic work | `ctx.add_tick(fn)` | ~100 ms, driver thread, **250 ms budget** |
 | Network fetches | `ctx.submit(fetch, apply)` | never block a tick/handler |
 | PigParse REST | `ctx.pigparse` | e.g. `item_prices(server, names)` |
-| Timer rows | `ctx.timers` + `nparseplus_sdk.timers` | spell-timer window sections |
+| Timer rows | `ctx.timers` + `nparseplus_sdk.timers` | Timers window sections |
 | Text-to-speech | `ctx.speaker.speak("text")` | the app's shared voice |
 | Persistent data | `ctx.storage` | JSON dict + a private data dir |
 | Overlay windows | `ctx.add_window(PluginWindowSpec(...))` | see below |

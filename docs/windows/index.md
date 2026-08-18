@@ -16,7 +16,7 @@ Click the tray icon to open the menu. Top to bottom:
 | **Check for updates** | Checks GitHub for a newer release on demand and reports back either way — the update dialog if one is found, or a "you're on the latest version" notification. |
 | **Sharing: …** | A read-only line showing your current [location-sharing](../features/sharing.md) state (`off` until you enable it). |
 | **Select EQ Logs Directory** | Point nParse+ at the folder EQ writes logs to (same as [Settings → General](../settings/general.md)). |
-| **Maps · Discord · Spell Timers · Settings · DPS Meter · Mob Info · Console · Trigger Editor · Macro Editor · Character Dumps** | One checkable toggle per window — a check means the window is shown. These are the windows detailed below. |
+| **Maps · Discord · Timers · Settings · DPS Meter · Mob Info · Console · Trigger Editor · Macro Editor · Character Dumps** | One checkable toggle per window — a check means the window is shown. These are the windows detailed below. |
 | **Position Event Overlay** | Enters the [Event Overlay](event-overlay.md)'s drag-and-resize [positioning mode](event-overlay.md#positioning-it) so you can line it up over the game. |
 | **UI Skin ▸** | Pick the [skin](../settings/appearance.md#skins) every window and overlay wears — Duxa, Velious plate, or Ledger. Applies live, so you can change one mid-fight; **Appearance…** at the bottom of the submenu opens the full page. |
 | **Window Layouts ▸** | Save, apply, and manage named position/size [presets](#window-layout-presets) (Save Current Layout, Reset Window Positions, and per-layout Apply / Replace / Rename / Delete). |
@@ -28,7 +28,7 @@ Click the tray icon to open the menu. Top to bottom:
 
 | Window | What it shows |
 |---|---|
-| [Spell Timers](spell-timers.md) | Buff/debuff/song countdowns, grouped per target |
+| [Timers](timers.md) | Buff/debuff/song countdowns, grouped per target |
 | [DPS Meter](dps-meter.md) | Per-fight damage breakdown and trailing DPS |
 | [Maps](maps.md) | Zone map, your position, other players, NPC search, spawn timers |
 | [Mob Info](mob-info.md) | The last-considered mob: respawn, loot, prices |
@@ -74,9 +74,10 @@ toggle_dps        show_maps        hide_console
 ```
 
 The pattern is `show_`, `hide_`, or `toggle_` plus the window key: `maps`,
-`spells`, `dps`, `mobinfo`, `console`, `discord`, `triggereditor`, or
-`dumps`. Only messages *you* send count — a groupmate can't blank your
-overlays.
+`spells` (the [Timers](timers.md) window — the key predates the rename and
+stays put so existing macros keep working), `dps`, `mobinfo`, `console`,
+`discord`, `triggereditor`, or `dumps`. Only messages *you* send count — a
+groupmate can't blank your overlays.
 
 The Macro Editor and any plugin windows are
 [not reachable this way yet](https://github.com/prokopto-dev/nparse-plus/issues/50).

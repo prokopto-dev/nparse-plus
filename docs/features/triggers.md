@@ -69,7 +69,7 @@ Each trigger can combine any of:
   announcement so this one is heard right away ([TTS](tts.md)).
 - **Timer** — a **CountDown** or **CountUp** bar on the Event Overlay (and
   a row in the **Custom Timers** section of
-  [Spell Timers](../windows/spell-timers.md)), with:
+  [Timers](../windows/timers.md)), with:
   - duration and bar color
   - **restart behavior** when the trigger fires again mid-timer: start a
     second timer, restart the running one, or do nothing

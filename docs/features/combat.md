@@ -34,12 +34,12 @@ as camps.
 ## Random rolls
 
 `/random` results are tracked in a rolling window — amber rows in
-[Spell Timers](../windows/spell-timers.md) show each roller's result during
+[Timers](../windows/timers.md) show each roller's result during
 loot rolls, so nobody "forgets" the order. Toggle with "Show random rolls"
-in [Settings → Spell Timers](../settings/spell-timers.md). Roll feeds are
+in [Settings → Timers](../settings/timers.md). Roll feeds are
 also shared over the [PigParse network](sharing.md).
 
-![Random-roll rows (highest first) and a resist counter in Spell Timers](../assets/screenshots/feature--roll-rows.png)
+![Random-roll rows (highest first) and a resist counter in Timers](../assets/screenshots/feature--roll-rows.png)
 
 ## Faction and exp guessing
 

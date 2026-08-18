@@ -191,9 +191,9 @@ def _spell(backend, name: str):
 def seed_spell_timers(backend) -> None:
     """Populate TimersService with the canonical spell-timer sample.
 
-    Split out of ``cap_spell_timers`` so the README product shot (phase B,
+    Split out of ``cap_timers`` so the README product shot (phase B,
     a different process and a different window instance) shows the SAME rows
-    as ``window--spell-timers.png``. Two hand-kept copies of this data would
+    as ``window--timers.png``. Two hand-kept copies of this data would
     drift the moment one was edited.
     """
     from nparseplus.core.timers import (
@@ -263,7 +263,7 @@ def seed_spell_timers(backend) -> None:
     )
 
 
-def cap_spell_timers(backend) -> None:
+def cap_timers(backend) -> None:
     from nparseplus.ui.spellwindow import SpellTimerWindow
 
     seed_spell_timers(backend)
@@ -271,7 +271,7 @@ def cap_spell_timers(backend) -> None:
     w._refresh_timer.stop()
     w._flash_timer.stop()
     w.refresh(now=NOW)
-    capture(w, "window--spell-timers", size=(250, 430))
+    capture(w, "window--timers", size=(250, 430))
 
 
 def seed_fights(backend) -> None:
@@ -667,7 +667,7 @@ SETTINGS_PAGES = [
     ("Appearance", "settings--appearance"),
     ("Character", "settings--character"),
     ("Friends", "settings--friends"),
-    ("Spell Timers", "settings--spell-timers"),
+    ("Timers", "settings--timers"),
     ("DPS Meter", "settings--dps-meter"),
     ("Maps", "settings--maps"),
     ("Windows", "settings--windows"),
@@ -743,7 +743,7 @@ def _spell_window(backend):
     return w
 
 
-def cap_spell_timers_raid(backend) -> None:
+def cap_timers_raid(backend) -> None:
     from nparseplus.core.timers import YOU_GROUP, SpellRow
 
     t = backend.timers
@@ -778,7 +778,7 @@ def cap_spell_timers_raid(backend) -> None:
     try:
         w = _spell_window(backend)
         w.refresh(now=NOW)
-        capture(w, "window--spell-timers-raid", size=(250, 300))
+        capture(w, "window--timers-raid", size=(250, 300))
     finally:
         sw.raid_group_by_spell = previous
 
@@ -960,8 +960,8 @@ def cap_overlay_utility() -> None:
 
 
 PHASE_A = {
-    "window--spell-timers": lambda b, s: cap_spell_timers(b),
-    "window--spell-timers-raid": lambda b, s: cap_spell_timers_raid(b),
+    "window--timers": lambda b, s: cap_timers(b),
+    "window--timers-raid": lambda b, s: cap_timers_raid(b),
     "feature--respawn-timers": lambda b, s: cap_respawn_timers(b),
     "feature--boats": lambda b, s: cap_boats(b),
     "feature--roll-rows": lambda b, s: cap_roll_rows(b),
@@ -1116,11 +1116,11 @@ def _restore_legacy(had: bool, backup: Path, legacy: Path) -> None:
 PRODUCT_SHOT = "readme--product-shot"
 
 # Layout. The alert banner spans the top (that is where an event overlay
-# actually sits over the game); maps, spell timers and the DPS meter share one
+# actually sits over the game); maps, timers and the DPS meter share one
 # row beneath it at a common height, which is what keeps the canvas wide rather
 # than tall — a README renders it at roughly 900px, so height is the scarce
 # axis. Sizes are the panels' own natural framings where they have one
-# (spell timers 250 wide, DPS 300) so the product shot and the individual shots
+# (timers 250 wide, DPS 300) so the product shot and the individual shots
 # show the same windows at the same proportions.
 #
 # Each window gets its own natural height and the row is TOP-aligned rather
