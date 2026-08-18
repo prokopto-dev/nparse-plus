@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.13.0 (2026-08-18)
+
+### Documentation
+
+- **screenshots**: Regenerate the shots the window rename changed
+  ([`a9735ab`](https://github.com/prokopto-dev/nparse-plus/commit/a9735ab404c15bbe4f4102694a838af013682e3e))
+
+### Features
+
+- **ui**: Rename the Spell Timers window to Timers
+  ([`b31c5eb`](https://github.com/prokopto-dev/nparse-plus/commit/b31c5eb001a5b397f906d37472fd32d5a15aa4ce))
+
+
 ## v2.12.0 (2026-08-17)
 
 ### Features
