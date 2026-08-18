@@ -29,7 +29,11 @@ class RecordingSpeaker:
 
 
 def test_examples_pass_validation() -> None:
-    for path in (EXAMPLES / "hello_timer.py", EXAMPLES / "merchant_prices"):
+    for path in (
+        EXAMPLES / "hello_timer.py",
+        EXAMPLES / "merchant_prices",
+        EXAMPLES / "tod_window.py",
+    ):
         report = validate_plugin(path)
         assert report.ok, (path, report.errors)
 

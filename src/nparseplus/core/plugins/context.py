@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -251,6 +251,47 @@ class HostPluginContext:
 
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None:
         self.page_specs.append(spec)
+
+    # --- timers -----------------------------------------------------------
+    def add_window_timer(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        base_seconds: float,
+        window_seconds: float,
+        allow_duplicates: bool = False,
+    ) -> Any:
+        """Arm a variable respawn ("pop") window timer (#125); returns the row.
+
+        The return type stays ``Any`` on purpose: the host must not import
+        ``WindowTimerLike``, so it keeps running against an installed SDK 1.1
+        that has no such name.
+
+        Deliberately NOT ``_guarded``. ``subscribe``/``add_tick`` wrap
+        callbacks the *host* later invokes, where an exception has no plugin
+        frame to land in; this is the plugin calling in, already inside its own
+        guarded subscription or tick, so a ValidationError belongs in its
+        frame where its traceback is useful.
+
+        Deliberately NOT tracked in ``unwind()``. That reverses *registrations*;
+        a timer row is data the plugin put in a user-visible store, exactly like
+        ``ctx.timers.add_timer`` today. The plugin gets the row back, so
+        ``ctx.timers.remove_row(row)`` is the way to take it out again.
+        """
+        from nparseplus.core.timers import TimerRow
+
+        ends_at = started_at + timedelta(seconds=base_seconds)
+        row = TimerRow(
+            name=name,
+            group=group,
+            updated_at=started_at,
+            ends_at=ends_at,
+            total_duration_s=float(base_seconds),
+            window_ends_at=ends_at + timedelta(seconds=window_seconds),
+        )
+        return self._backend.timers.add_timer(row, allow_duplicates=allow_duplicates)
 
     # --- host-side lifecycle ----------------------------------------------
     def unwind(self) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from nparseplus.core import driver as driver_module
@@ -255,3 +255,63 @@ def test_pigparse_prefers_backend_client(backend, tmp_path) -> None:
     backend.pigparse_api = sentinel
     ctx = make_ctx(backend, tmp_path)
     assert ctx.pigparse is sentinel
+
+
+# -- pop-window timers (#125) --------------------------------------------------
+
+TOD = datetime(2026, 7, 15, 12, 0, 0)
+
+
+def test_add_window_timer_builds_the_expected_row(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    row = ctx.add_window_timer(
+        "Trakanon",
+        group="  Mob Timers",
+        started_at=TOD,
+        base_seconds=400,
+        window_seconds=900,
+    )
+    assert row.name == "Trakanon"
+    assert row.group == "  Mob Timers"
+    # Durations from the anchor: the window OPENS at base, closes a window later.
+    assert row.ends_at == TOD + timedelta(seconds=400)
+    assert row.window_ends_at == TOD + timedelta(seconds=1300)
+    assert row.total_duration_s == 400.0
+    # Not stamped: only a driver tick that observes the crossover does that.
+    assert row.window_opened_at is None
+    # And it really is in the host store.
+    assert backend.timers.find("Trakanon", "  Mob Timers") is row
+
+
+def test_add_window_timer_satisfies_the_sdk_protocol(backend, tmp_path) -> None:
+    from nparseplus_sdk import WindowTimerLike
+
+    ctx = make_ctx(backend, tmp_path)
+    row = ctx.add_window_timer(
+        "Trakanon", group="g", started_at=TOD, base_seconds=10, window_seconds=20
+    )
+    assert isinstance(row, WindowTimerLike)
+
+
+def test_add_window_timer_raises_through_rather_than_swallowing(backend, tmp_path) -> None:
+    """Not _guarded: this is the plugin calling in, already inside its own
+    guarded subscription or tick, so the error belongs in its frame."""
+    import pytest
+    from pydantic import ValidationError
+
+    ctx = make_ctx(backend, tmp_path)
+    with pytest.raises(ValidationError):
+        ctx.add_window_timer("Bad", group="g", started_at=TOD, base_seconds=100, window_seconds=0)
+    assert backend.timers.find("Bad", "g") is None
+
+
+def test_unwind_leaves_the_timer_row(backend, tmp_path) -> None:
+    """Asserted so nobody "fixes" it later: unwind reverses registrations, and
+    a timer row is data the plugin put in a user-visible store — same as
+    ctx.timers.add_timer today. remove_row is the way back out."""
+    ctx = make_ctx(backend, tmp_path)
+    row = ctx.add_window_timer(
+        "Trakanon", group="g", started_at=TOD, base_seconds=400, window_seconds=900
+    )
+    ctx.unwind()
+    assert backend.timers.find("Trakanon", "g") is row

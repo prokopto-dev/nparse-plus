@@ -12,7 +12,8 @@ from __future__ import annotations
 import logging
 import tempfile
 from collections.abc import Callable
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +76,69 @@ class RecordingApi:
         return _record
 
 
+@dataclass
+class FakeWindowTimer:
+    """A recorded pop-window timer; satisfies ``WindowTimerLike``.
+
+    ``window_opened_at`` stays None: the host stamps it on the driver tick
+    that observes the crossover, and this fake never ticks. Set it by hand if
+    a test needs the post-crossover shape.
+    """
+
+    name: str
+    group: str
+    ends_at: datetime
+    window_ends_at: datetime | None = None
+    window_opened_at: datetime | None = None
+    total_duration_s: float = 0.0
+
+
+class FakeTimers:
+    """In-memory stand-in for the host TimersService.
+
+    Records rather than executes, like the rest of this module — nothing here
+    counts down, and ``tick`` does not exist. It is enough for a plugin to
+    call ``ctx.timers.add_timer(...)`` at activate time without the app, which
+    is what ``FakePluginContext`` needs it for.
+    """
+
+    def __init__(self) -> None:
+        self.rows: list[Any] = []
+
+    def add_timer(self, row: Any, allow_duplicates: bool = False) -> Any:
+        self.rows.append(row)
+        return row
+
+    def add_spell(self, row: Any, overwrite: bool = True) -> Any:
+        self.rows.append(row)
+        return row
+
+    def add_counter(self, row: Any) -> Any:
+        self.rows.append(row)
+        return row
+
+    def add_roll(self, row: Any) -> Any:
+        self.rows.append(row)
+        return row
+
+    def remove_row(self, row: Any) -> bool:
+        try:
+            self.rows.remove(row)
+        except ValueError:
+            return False
+        return True
+
+    def snapshot(self) -> list[Any]:
+        return list(self.rows)
+
+    def find(self, name: str, group: str | None = None) -> Any:
+        for row in self.rows:
+            same_group = group is None or getattr(row, "group", None) == group
+            if getattr(row, "name", None) == name and same_group:
+                return row
+        return None
+
+
 class FakePluginContext:
     """Implements the PluginContext protocol entirely in memory."""
 
@@ -94,7 +158,10 @@ class FakePluginContext:
         self._app_version = app_version
         self._sdk_version = sdk_version
         self._storage = storage or FakeStorage()
-        self._timers = timers
+        # Defaults to a FakeTimers rather than None: a plugin that touches
+        # ctx.timers during activate() could not be exercised at all while
+        # this was None, which is exactly what `validate_plugin` does.
+        self._timers = FakeTimers() if timers is None else timers
         self._player = player
         self._eq_dir = eq_dir
         #: Flip in a test to exercise the "EQ is running" warning path.
@@ -107,6 +174,7 @@ class FakePluginContext:
         self.submitted: list[tuple[Callable[[], Any], Callable[[Any], None] | None]] = []
         self.windows: list[PluginWindowSpec] = []
         self.settings_pages: list[PluginSettingsPageSpec] = []
+        self.window_timers: list[FakeWindowTimer] = []
 
     # --- identity / environment -------------------------------------------
     @property
@@ -182,6 +250,38 @@ class FakePluginContext:
 
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None:
         self.settings_pages.append(spec)
+
+    def add_window_timer(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        base_seconds: float,
+        window_seconds: float,
+        allow_duplicates: bool = False,
+    ) -> FakeWindowTimer:
+        """Record the row the host would build, and return it.
+
+        The one rule the host enforces that is worth enforcing here too: an
+        empty window is not a pop window, and the host row model rejects it.
+        Everything else records without validating — this is a recorder.
+        """
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+        ends_at = started_at + timedelta(seconds=base_seconds)
+        row = FakeWindowTimer(
+            name=name,
+            group=group,
+            ends_at=ends_at,
+            window_ends_at=ends_at + timedelta(seconds=window_seconds),
+            total_duration_s=float(base_seconds),
+        )
+        self.window_timers.append(row)
+        if isinstance(self._timers, FakeTimers):
+            # So ctx.timers.snapshot()/find() see it too, like the host store.
+            self._timers.rows.append(row)
+        return row
 
     # --- test drivers ------------------------------------------------------
     def run_submitted(self) -> None:

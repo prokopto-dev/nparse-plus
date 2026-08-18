@@ -52,6 +52,33 @@ class LineInfoLike(Protocol):
 
 
 @runtime_checkable
+class WindowTimerLike(Protocol):
+    """Structural view of a host ``TimerRow`` carrying a pop window (#125).
+
+    A big mob does not respawn on a fixed clock: after time-of-death a base
+    time elapses (``ends_at`` — when the window OPENS, not when the row is
+    done) and the mob may then spawn at any moment until ``window_ends_at``.
+
+    ``window_opened_at`` is stamped once, by the host, on the driver tick that
+    first observed the crossover; it is None until then. Derive "is it in its
+    window" from the current time against ``ends_at``, not from this stamp —
+    the host ticks at ~100 ms and any UI repaints on its own schedule, so the
+    two disagree briefly at the boundary.
+    """
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def group(self) -> str: ...
+    @property
+    def ends_at(self) -> datetime: ...
+    @property
+    def window_ends_at(self) -> datetime | None: ...
+    @property
+    def window_opened_at(self) -> datetime | None: ...
+
+
+@runtime_checkable
 class LineParser(Protocol):
     """A log-line parser: return True to consume the line.
 
@@ -186,3 +213,39 @@ class PluginContext(Protocol):
     def add_window(self, spec: PluginWindowSpec) -> None: ...
 
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None: ...
+
+    # --- timers -----------------------------------------------------------
+    def add_window_timer(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        base_seconds: float,
+        window_seconds: float,
+        allow_duplicates: bool = False,
+    ) -> WindowTimerLike:
+        """Arm a variable respawn ("pop") window timer and return its row.
+
+        Durations from an anchor rather than two absolute datetimes, because
+        that is the domain shape: a time of death, a base respawn, then a
+        window. ``started_at`` is the TOD; the window opens at
+        ``started_at + base_seconds`` and the row expires at
+        ``+ window_seconds`` beyond that. Trakanon is TOD + 4.5 days, then a
+        12-hour window.
+
+        The host publishes ``TimerWindowOpenedEvent`` when the window opens
+        and ``TimerWindowClosedEvent`` when it closes — reach them through
+        ``nparseplus_sdk.events``. Both are driver-thread, like every bus
+        event.
+
+        Only ``core.timers.MOB_TIMER_GROUP`` survives camping, so a row in
+        your own group is session-only (the same rule trigger timers follow).
+
+        Raises if ``window_seconds`` is not positive — an empty window is a
+        plain timer, and the host row model rejects it. Call during
+        ``activate`` or from a subscription/tick; driver thread only.
+
+        Keyword-only after ``name`` so later parameters stay additive.
+        """
+        ...
