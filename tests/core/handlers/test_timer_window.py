@@ -160,3 +160,36 @@ def test_removing_a_window_row_by_hand_publishes_nothing(env: Env) -> None:
     assert env.timers.remove_row(row) is True
     assert len(env.opened()) == 1
     assert env.closed() == []
+
+
+def test_the_events_name_the_candidate_window(env: Env) -> None:
+    """A subscriber has to be able to say "2 of 3" without re-deriving it."""
+    ends_at = T0 + timedelta(seconds=BASE_S)
+    env.timers.add_timer(
+        TimerRow(
+            name="--Dead-- Lodizal",
+            group=MOB_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=ends_at,
+            total_duration_s=BASE_S,
+            window_ends_at=ends_at + timedelta(seconds=WINDOW_S),
+            window_series="lodizal",
+            window_index=2,
+            window_count=3,
+        ),
+        allow_duplicates=True,
+    )
+    env.timers.tick(ends_at)
+    opened = env.opened()[0]
+    assert (opened.series, opened.index, opened.count) == ("lodizal", 2, 3)
+
+    env.timers.tick(ends_at + timedelta(seconds=WINDOW_S))
+    closed = env.closed()[0]
+    assert (closed.series, closed.index, closed.count) == ("lodizal", 2, 3)
+
+
+def test_a_lone_window_reports_no_series(env: Env) -> None:
+    env.timers.add_timer(_window_row())
+    env.timers.tick(OPENS_AT)
+    opened = env.opened()[0]
+    assert (opened.series, opened.index, opened.count) == ("", 0, 0)

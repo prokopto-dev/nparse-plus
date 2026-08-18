@@ -633,3 +633,36 @@ def test_an_old_store_without_the_window_fields_still_loads(env: Env) -> None:
     rows = [r for r in env.timers.snapshot() if isinstance(r, TimerRow)]
     assert [r.name for r in rows] == ["--Dead-- a gnoll"]
     assert rows[0].window_ends_at is None
+
+
+def test_a_candidate_window_series_survives_a_camp(env: Env) -> None:
+    """All three of Lodizal's chances come back, still knowing they are one
+    mob and which chance each was."""
+    series = "lodizal"
+    for index, hours in enumerate((12, 20, 30), start=1):
+        ends_at = env.now + timedelta(hours=hours)
+        env.timers.add_timer(
+            TimerRow(
+                name="--Dead-- Lodizal",
+                group=MOB_TIMER_GROUP,
+                updated_at=env.now,
+                ends_at=ends_at,
+                total_duration_s=hours * 3600.0,
+                window_ends_at=ends_at + timedelta(hours=4),
+                window_series=series,
+                window_index=index,
+                window_count=3,
+            ),
+            allow_duplicates=True,
+        )
+    saved = env.profile.respawn_timers
+    assert [(t.window_index, t.window_count) for t in saved] == [(1, 3), (2, 3), (3, 3)]
+    assert {t.window_series for t in saved} == {series}
+
+    env.advance(60)
+    env.bus.publish(env.event(AfterPlayerChangedEvent))
+    rows = [r for r in env.timers.snapshot() if isinstance(r, TimerRow)]
+    assert [(r.window_index, r.window_count) for r in rows] == [(1, 3), (2, 3), (3, 3)]
+    assert {r.window_series for r in rows} == {series}
+    # And the set can still be cleared as one.
+    assert env.timers.remove_series(series) == 3

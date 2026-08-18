@@ -1100,3 +1100,66 @@ def test_the_phase_comes_from_now_not_from_the_stamp(qtbot):
     widget = next(w for w in window._row_widgets.values() if w.row_name == "--Dead-- Trakanon")
     assert widget._value.text().startswith("POP ")
     assert widget._color == COLOR_POP_WINDOW
+
+
+def _candidate_row(index: int, count: int = 3, base_s: float = 400.0) -> TimerRow:
+    ends_at = NOW + timedelta(seconds=base_s * index)
+    return TimerRow(
+        name="--Dead-- Lodizal",
+        group=MOB_TIMER_GROUP,
+        updated_at=NOW,
+        ends_at=ends_at,
+        total_duration_s=base_s * index,
+        window_ends_at=ends_at + timedelta(seconds=200),
+        window_series="lodizal",
+        window_index=index,
+        window_count=count,
+    )
+
+
+def test_candidate_windows_are_labelled_in_the_row(qtbot):
+    """They share a name by design, so the label is what tells them apart."""
+    backend = make_backend()
+    for index in (1, 2, 3):
+        backend.timers.add_timer(_candidate_row(index), allow_duplicates=True)
+    window = _shown_window(qtbot, backend)
+    window.refresh(now=NOW)
+
+    labels = sorted(
+        w._name.text() for w in window._row_widgets.values() if "Lodizal" in w._name.text()
+    )
+    assert labels == [
+        "--Dead-- Lodizal  (1 of 3)",
+        "--Dead-- Lodizal  (2 of 3)",
+        "--Dead-- Lodizal  (3 of 3)",
+    ]
+
+
+def test_a_lone_window_row_is_not_labelled(qtbot):
+    backend = make_backend()
+    backend.timers.add_timer(_pop_row())
+    window = _shown_window(qtbot, backend)
+    window.refresh(now=NOW)
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "--Dead-- Trakanon")
+    assert widget._name.text() == "--Dead-- Trakanon"
+
+
+def test_clearing_the_series_removes_every_candidate(qtbot):
+    backend = make_backend()
+    for index in (1, 2, 3):
+        backend.timers.add_timer(_candidate_row(index), allow_duplicates=True)
+    backend.timers.add_timer(
+        TimerRow(
+            name="--Dead-- a gnoll",
+            group=MOB_TIMER_GROUP,
+            updated_at=NOW,
+            ends_at=NOW + timedelta(seconds=90),
+            total_duration_s=90.0,
+        )
+    )
+    window = _shown_window(qtbot, backend)
+    window.refresh(now=NOW)
+
+    window._clear_series("lodizal")
+    mob_rows = [r.name for r in backend.timers.snapshot() if r.group == MOB_TIMER_GROUP]
+    assert mob_rows == ["--Dead-- a gnoll"]

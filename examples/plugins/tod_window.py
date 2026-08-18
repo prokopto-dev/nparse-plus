@@ -11,6 +11,13 @@ The row counts down to the window opening, then flips **in place** to an
 orange ``POP hh:mm:ss`` counting to the latest possible pop, and disappears
 when the window closes.
 
+``tod lodizal`` shows the other shape: some mobs have SEVERAL candidate
+windows and nobody knows which the spawn will use. One
+``ctx.add_window_series`` call arms them all; each is its own row, labelled
+"1 of 3", "2 of 3", "3 of 3", and they open and lapse in turn so you can
+always see how many chances are left. Right-click any of them to clear the
+whole set once the mob pops.
+
 The two events are the point of the seam: ``TimerWindowOpenedEvent`` fires
 on the driver tick that crosses ``ends_at`` (once — a restore after camping
 preserves the stamp rather than re-firing it), and ``TimerWindowClosedEvent``
@@ -35,12 +42,19 @@ from nparseplus_sdk import NParsePlugin, PluginContext, PluginMeta
 TRIGGER_PREFIX = "tod "
 MOB_TIMER_GROUP = "  Mob Timers"  # the one group that survives camping
 
-#: mob -> (base seconds before the window opens, window length in seconds).
-#: Real P99 figures; shrink them if you want to watch the crossover happen.
-RESPAWNS: dict[str, tuple[float, float]] = {
-    "trakanon": (4.5 * 24 * 3600, 12 * 3600),
-    "faydedar": (3.5 * 24 * 3600, 8 * 3600),
-    "severilous": (4.5 * 24 * 3600, 12 * 3600),
+HOUR = 3600.0
+DAY = 24 * HOUR
+
+#: mob -> the candidate windows, each (seconds until it opens, how long it
+#: lasts), measured from the time of death. Most mobs have exactly one. Some
+#: have SEVERAL and nobody knows which the spawn will use — Lodizal has three
+#: — so every candidate is armed and they lapse in turn until one delivers.
+#: Real P99 figures; shrink them if you want to watch a crossover happen.
+RESPAWNS: dict[str, list[tuple[float, float]]] = {
+    "trakanon": [(4.5 * DAY, 12 * HOUR)],
+    "faydedar": [(3.5 * DAY, 8 * HOUR)],
+    "severilous": [(4.5 * DAY, 12 * HOUR)],
+    "lodizal": [(3 * DAY, 12 * HOUR), (4 * DAY, 12 * HOUR), (5 * DAY, 12 * HOUR)],
 }
 
 
@@ -80,21 +94,34 @@ class TodWindowPlugin(NParsePlugin):
             if respawn is None:
                 ctx.speaker.speak(f"I do not know {mob}")
                 return
-            base_seconds, window_seconds = respawn
-            ctx.add_window_timer(
-                f"--Dead-- {mob.title()}",
-                group=MOB_TIMER_GROUP,
-                # The log line's own clock, not the wall clock: the whole
-                # pipeline is anchored to the log.
-                started_at=event.timestamp,
-                base_seconds=base_seconds,
-                window_seconds=window_seconds,
+            name = f"--Dead-- {mob.title()}"
+            # The log line's own clock, not the wall clock: the whole pipeline
+            # is anchored to the log.
+            tod = event.timestamp
+            if len(respawn) == 1:
+                base_seconds, window_seconds = respawn[0]
+                ctx.add_window_timer(
+                    name,
+                    group=MOB_TIMER_GROUP,
+                    started_at=tod,
+                    base_seconds=base_seconds,
+                    window_seconds=window_seconds,
+                )
+                ctx.speaker.speak(f"{mob} time of death recorded")
+                return
+            # Several candidate windows: one call arms them all with a shared
+            # identity, so the window can label them "2 of 3" and clear the
+            # whole set in one action once the mob finally pops.
+            rows = ctx.add_window_series(
+                name, group=MOB_TIMER_GROUP, started_at=tod, windows=respawn
             )
-            ctx.speaker.speak(f"{mob} time of death recorded")
+            ctx.speaker.speak(f"{mob} time of death recorded, {len(rows)} possible windows")
 
         def on_open(event: Any) -> None:
-            ctx.logger.info("%s pop window open until %s", event.name, event.closes_at)
-            ctx.speaker.speak(f"{event.name} window is open")
+            # A candidate window says which chance this is; a lone one does not.
+            which = f" ({event.index} of {event.count})" if event.series else ""
+            ctx.logger.info("%s%s pop window open until %s", event.name, which, event.closes_at)
+            ctx.speaker.speak(f"{event.name}{which} window is open")
 
         def on_close(event: Any) -> None:
             ctx.logger.info("%s pop window closed at %s", event.name, event.closed_at)

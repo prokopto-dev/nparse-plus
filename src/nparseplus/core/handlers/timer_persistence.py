@@ -176,6 +176,9 @@ class TimerPersistenceHandler:
                 total_duration_s=snap.total_duration_s,
                 window_ends_at=snap.window_ends_at,
                 window_opened_at=snap.window_opened_at,
+                window_series=snap.window_series,
+                window_index=snap.window_index,
+                window_count=snap.window_count,
             )
             for snap in self.timers.export_respawn_timers(MOB_TIMER_GROUP, now)
         ]
@@ -280,6 +283,9 @@ class TimerPersistenceHandler:
                         # before the swap must not open again after it (#125).
                         window_ends_at=item.window_ends_at,
                         window_opened_at=item.window_opened_at,
+                        window_series=item.window_series,
+                        window_index=item.window_index,
+                        window_count=item.window_count,
                     )
                     for item in info.respawn_timers
                 ],

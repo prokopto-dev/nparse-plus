@@ -315,3 +315,60 @@ def test_unwind_leaves_the_timer_row(backend, tmp_path) -> None:
     )
     ctx.unwind()
     assert backend.timers.find("Trakanon", "g") is row
+
+
+# -- several candidate windows for one spawn (#125) ----------------------------
+
+LODIZAL_WINDOWS = [(12 * 3600, 4 * 3600), (20 * 3600, 4 * 3600), (30 * 3600, 6 * 3600)]
+
+
+def test_add_window_series_arms_every_candidate(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    rows = ctx.add_window_series(
+        "--Dead-- Lodizal",
+        group="  Mob Timers",
+        started_at=TOD,
+        windows=LODIZAL_WINDOWS,
+    )
+    assert len(rows) == 3
+    assert [(r.window_index, r.window_count) for r in rows] == [(1, 3), (2, 3), (3, 3)]
+    assert len({r.window_series for r in rows}) == 1
+    assert rows[0].ends_at == TOD + timedelta(hours=12)
+    assert rows[2].window_ends_at == TOD + timedelta(hours=36)
+    # They share a name on purpose and must NOT have replaced one another.
+    assert len(backend.timers.snapshot()) == 3
+
+
+def test_the_series_key_is_derived_so_it_survives_a_rebuild(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    first = ctx.add_window_series(
+        "--Dead-- Lodizal", group="g", started_at=TOD, windows=LODIZAL_WINDOWS
+    )
+    backend.timers.remove_series(first[0].window_series)
+    again = ctx.add_window_series(
+        "--Dead-- Lodizal", group="g", started_at=TOD, windows=LODIZAL_WINDOWS
+    )
+    assert again[0].window_series == first[0].window_series
+
+
+def test_remove_series_clears_the_whole_set(backend, tmp_path) -> None:
+    ctx = make_ctx(backend, tmp_path)
+    rows = ctx.add_window_series(
+        "--Dead-- Lodizal", group="g", started_at=TOD, windows=LODIZAL_WINDOWS
+    )
+    assert backend.timers.remove_series(rows[0].window_series) == 3
+    assert backend.timers.snapshot() == []
+
+
+def test_add_window_series_rejects_a_malformed_table(backend, tmp_path) -> None:
+    """Rules about the SET, which no single row can check."""
+    import pytest
+
+    ctx = make_ctx(backend, tmp_path)
+    with pytest.raises(ValueError, match="at least one"):
+        ctx.add_window_series("x", group="g", started_at=TOD, windows=[])
+    with pytest.raises(ValueError, match="positive span"):
+        ctx.add_window_series("x", group="g", started_at=TOD, windows=[(100, 0)])
+    with pytest.raises(ValueError, match="ascending"):
+        ctx.add_window_series("x", group="g", started_at=TOD, windows=[(100, 50), (120, 50)])
+    assert backend.timers.snapshot() == []

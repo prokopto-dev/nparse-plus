@@ -540,6 +540,11 @@ class SavedTimer(BaseModel):
     total_duration_s: float
     window_ends_at: datetime | None = None
     window_opened_at: datetime | None = None
+    # Candidate-window identity (#125): which of a spawn's several possible
+    # windows this row is. Empty/0 for an ordinary timer.
+    window_series: str = ""
+    window_index: int = 0
+    window_count: int = 0
 
 
 class SavedCooldown(SavedTimer):

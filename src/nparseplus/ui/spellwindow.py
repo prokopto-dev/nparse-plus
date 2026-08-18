@@ -46,6 +46,7 @@ from nparseplus.core.timers import (
     fraction_remaining,
     group_rows_for_display,
     in_pop_window,
+    series_label,
 )
 from nparseplus.ui import appquit, chrome, skins, theme
 from nparseplus.ui.overlaybase import EdgeResizeMixin, format_mmss, start_second_aligned
@@ -351,7 +352,11 @@ class _RowWidget(QFrame):
         """
         self.row_name = row.name
         self.row = row
-        self._name.setText(label if label is not None else row.name)
+        # Candidate windows of one spawn share a name, so the label is what
+        # tells them apart: "Lodizal  (2 of 3)" (#125).
+        display = label if label is not None else row.name
+        series = series_label(row)
+        self._name.setText(f"{display}  ({series})" if series else display)
         self._update_icon(row)
         expired = isinstance(row, SpellRow) and row.expired_at is not None
         if expired != self.expired:
@@ -947,6 +952,10 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend.timers.remove_row(row)
         self.refresh()
 
+    def _clear_series(self, series: str) -> None:
+        self._backend.timers.remove_series(series)
+        self.refresh()
+
     def _clear_group(self, group: str) -> None:
         self._backend.timers.remove_group(group)
         self.refresh()
@@ -989,6 +998,14 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if row is not None:
             menu.addAction(f"Clear '{row.name}'", lambda r=row: self._clear_row(r))
+        series = getattr(row, "window_series", "") if row is not None else ""
+        if series:
+            # When the mob finally pops, its other candidate windows are
+            # answered too; clearing them one row at a time is busywork.
+            menu.addAction(
+                f"Clear all {row.window_count} windows for '{row.name}'",
+                lambda s=series: self._clear_series(s),
+            )
         if isinstance(row, SpellRow) and not row.is_cooldown:
             spell_name = row.spell.name
             flash_action = menu.addAction(

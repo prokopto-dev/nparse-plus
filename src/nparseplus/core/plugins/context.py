@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -292,6 +292,56 @@ class HostPluginContext:
             window_ends_at=ends_at + timedelta(seconds=window_seconds),
         )
         return self._backend.timers.add_timer(row, allow_duplicates=allow_duplicates)
+
+    def add_window_series(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        windows: Sequence[tuple[float, float]],
+    ) -> list[Any]:
+        """Arm every candidate window of one spawn (#125); returns the rows.
+
+        Validated here rather than in the row model because these are rules
+        about the SET, which no single row can see: at least one candidate,
+        each window a real span, and the candidates in ascending order. An
+        out-of-order table is a caller bug, and rendering it would silently
+        mislabel which chance is which.
+
+        The series key is derived, not random, so it is stable across a
+        restore: the same call after a camp rebuilds the same identity.
+        """
+        from nparseplus.core.timers import TimerRow
+
+        if not windows:
+            raise ValueError("a window series needs at least one candidate window")
+        previous_end: float | None = None
+        for base_seconds, window_seconds in windows:
+            if window_seconds <= 0:
+                raise ValueError("every candidate window must be a positive span")
+            if previous_end is not None and base_seconds < previous_end:
+                raise ValueError("candidate windows must be in ascending, non-overlapping order")
+            previous_end = base_seconds + window_seconds
+        series = f"{group}|{name}|{started_at.isoformat()}"
+        rows: list[Any] = []
+        for index, (base_seconds, window_seconds) in enumerate(windows, start=1):
+            ends_at = started_at + timedelta(seconds=base_seconds)
+            row = TimerRow(
+                name=name,
+                group=group,
+                updated_at=started_at,
+                ends_at=ends_at,
+                total_duration_s=float(base_seconds),
+                window_ends_at=ends_at + timedelta(seconds=window_seconds),
+                window_series=series,
+                window_index=index,
+                window_count=len(windows),
+            )
+            # Always duplicates-allowed: the candidates share a name by
+            # design, so the default would make each one destroy the last.
+            rows.append(self._backend.timers.add_timer(row, allow_duplicates=True))
+        return rows
 
     # --- host-side lifecycle ----------------------------------------------
     def unwind(self) -> None:

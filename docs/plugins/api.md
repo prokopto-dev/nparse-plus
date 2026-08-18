@@ -93,6 +93,7 @@ worker shared by all plugins, so `ctx.pigparse` and `ctx.submit` are never
 | `add_window(PluginWindowSpec)` | declare an overlay window |
 | `add_settings_page(PluginSettingsPageSpec)` | declare a Settings page |
 | `add_window_timer(name, *, group, started_at, base_seconds, window_seconds, allow_duplicates=False)` | arm a variable respawn ("pop") window and return the row (`WindowTimerLike`). See [Pop windows](../features/respawn-timers.md#pop-windows). SDK 1.3 |
+| `add_window_series(name, *, group, started_at, windows)` | arm **several** candidate windows for one spawn (`windows` = `(base_seconds, window_seconds)` pairs) and return a row each, sharing a series key. For mobs with more than one possible window. SDK 1.3 |
 
 ## PluginStorage
 

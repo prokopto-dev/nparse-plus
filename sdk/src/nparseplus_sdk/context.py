@@ -23,7 +23,7 @@ Threading contract (the part that matters):
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -76,6 +76,12 @@ class WindowTimerLike(Protocol):
     def window_ends_at(self) -> datetime | None: ...
     @property
     def window_opened_at(self) -> datetime | None: ...
+    @property
+    def window_series(self) -> str: ...
+    @property
+    def window_index(self) -> int: ...
+    @property
+    def window_count(self) -> int: ...
 
 
 @runtime_checkable
@@ -247,5 +253,37 @@ class PluginContext(Protocol):
         ``activate`` or from a subscription/tick; driver thread only.
 
         Keyword-only after ``name`` so later parameters stay additive.
+        """
+        ...
+
+    def add_window_series(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        windows: Sequence[tuple[float, float]],
+    ) -> list[WindowTimerLike]:
+        """Arm SEVERAL candidate windows for one spawn; returns a row each.
+
+        Some mobs have more than one possible window and nobody knows which
+        the spawn will use — Lodizal has three. ``windows`` is one
+        ``(base_seconds, window_seconds)`` pair per candidate, each measured
+        from the same ``started_at`` time of death.
+
+        Each candidate is its own row, because that is what a raid tracks:
+        they open, lapse and announce independently, and once the first has
+        passed without a pop you can see the chances that remain. What ties
+        them together is a shared series key, which the host generates — the
+        rows share ``name`` and are told apart by "2 of 3" in the window, and
+        the whole set can be cleared in one action when the mob finally pops.
+
+        Duplicates are always allowed within the series (the rows share a
+        name by design), so this never silently replaces a sibling the way a
+        second bare ``add_window_timer`` call would.
+
+        Raises if ``windows`` is empty, if any window length is not positive,
+        or if the candidates are not in ascending order — an out-of-order
+        series is a bug in the caller's table, not a shape to render.
         """
         ...

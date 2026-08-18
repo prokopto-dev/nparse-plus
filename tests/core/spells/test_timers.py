@@ -31,6 +31,7 @@ from nparseplus.core.timers import (
     has_pop_window,
     in_pop_window,
     seconds_left,
+    series_label,
     snap_to_second,
 )
 
@@ -1122,3 +1123,174 @@ def test_restore_degrades_a_window_that_snaps_onto_the_base_end(
     assert len(rows) == 1
     assert isinstance(rows[0], TimerRow)
     assert rows[0].window_ends_at is None
+
+
+# -- several candidate windows for one spawn (#125, Lodizal) -------------------
+
+LODIZAL = [(12 * 3600, 4 * 3600), (20 * 3600, 4 * 3600), (30 * 3600, 6 * 3600)]
+
+
+def _series_rows(timers: TimersService, name: str = "--Dead-- Lodizal") -> list[TimerRow]:
+    series = f"{MOB_TIMER_GROUP}|{name}|{T0.isoformat()}"
+    out = []
+    for index, (base_s, window_s) in enumerate(LODIZAL, start=1):
+        ends_at = T0 + timedelta(seconds=base_s)
+        out.append(
+            timers.add_timer(
+                TimerRow(
+                    name=name,
+                    group=MOB_TIMER_GROUP,
+                    updated_at=T0,
+                    ends_at=ends_at,
+                    total_duration_s=float(base_s),
+                    window_ends_at=ends_at + timedelta(seconds=window_s),
+                    window_series=series,
+                    window_index=index,
+                    window_count=len(LODIZAL),
+                ),
+                allow_duplicates=True,
+            )
+        )
+    return out
+
+
+def test_candidate_windows_open_and_lapse_in_turn(timers: TimersService) -> None:
+    """The uncertainty models itself: each chance opens, then lapses, leaving
+    the ones still to come."""
+    opened: list[int] = []
+    timers.on_window_open.append(lambda rows: opened.extend(r.window_index for r in rows))
+    _series_rows(timers)
+
+    def live(hours: float) -> int:
+        timers.tick(T0 + timedelta(hours=hours))
+        return len(timers.snapshot())
+
+    assert live(0) == 3
+    assert live(13) == 3 and opened == [1]  # first window open, none lost
+    assert live(17) == 2  # it lapsed without a pop
+    assert live(22) == 2 and opened == [1, 2]
+    assert live(26) == 1
+    assert live(33) == 1 and opened == [1, 2, 3]
+    assert live(37) == 0  # every chance is spent
+
+
+def test_series_label_names_the_candidate(timers: TimersService) -> None:
+    rows = _series_rows(timers)
+    assert [series_label(r) for r in rows] == ["1 of 3", "2 of 3", "3 of 3"]
+
+
+def test_series_label_is_empty_for_a_lone_window() -> None:
+    assert series_label(_window_row()) == ""
+    assert (
+        series_label(
+            TimerRow(
+                name="Custom",
+                group=TRIGGER_TIMER_GROUP,
+                updated_at=T0,
+                ends_at=T0 + timedelta(seconds=30),
+                total_duration_s=30.0,
+            )
+        )
+        == ""
+    )
+
+
+def test_the_index_keeps_its_original_denominator_as_candidates_lapse(
+    timers: TimersService,
+) -> None:
+    """Stored, not derived: after the first chance passes you still want to
+    read "2 of 3", not "1 of 2"."""
+    _series_rows(timers)
+    timers.tick(T0 + timedelta(hours=17))
+    assert [series_label(r) for r in timers.snapshot()] == ["2 of 3", "3 of 3"]
+
+
+def test_remove_series_clears_every_candidate_at_once(timers: TimersService) -> None:
+    rows = _series_rows(timers)
+    # An unrelated row must survive.
+    timers.add_timer(
+        TimerRow(
+            name="--Dead-- a gnoll",
+            group=MOB_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=400),
+            total_duration_s=400.0,
+        )
+    )
+    assert timers.remove_series(rows[0].window_series) == 3
+    assert [r.name for r in timers.snapshot()] == ["--Dead-- a gnoll"]
+    # Idempotent, and an empty key is never a wildcard.
+    assert timers.remove_series(rows[0].window_series) == 0
+    assert timers.remove_series("") == 0
+    assert len(timers.snapshot()) == 1
+
+
+def test_a_series_member_must_be_internally_consistent() -> None:
+    base = dict(
+        name="--Dead-- Lodizal",
+        group=MOB_TIMER_GROUP,
+        updated_at=T0,
+        ends_at=T0 + timedelta(hours=12),
+        total_duration_s=43200.0,
+    )
+    # A series member with no window at all.
+    with pytest.raises(ValidationError):
+        TimerRow(**base, window_series="s", window_index=1, window_count=3)
+    # An index outside its own denominator.
+    with pytest.raises(ValidationError):
+        TimerRow(
+            **base,
+            window_ends_at=T0 + timedelta(hours=16),
+            window_series="s",
+            window_index=4,
+            window_count=3,
+        )
+
+
+def test_a_series_survives_export_and_restore(timers: TimersService) -> None:
+    _series_rows(timers)
+    mid = T0 + timedelta(hours=13)
+    timers.tick(mid)
+
+    saved = timers.export_respawn_timers(MOB_TIMER_GROUP, mid)
+    assert [(s.window_index, s.window_count) for s in saved] == [(1, 3), (2, 3), (3, 3)]
+
+    fresh = TimersService()
+    opened: list[int] = []
+    fresh.on_window_open.append(lambda rows: opened.extend(r.window_index for r in rows))
+    fresh.restore_respawn_timers(saved, MOB_TIMER_GROUP, mid)
+    restored = fresh.rows_of(TimerRow)
+    assert [series_label(r) for r in restored] == ["1 of 3", "2 of 3", "3 of 3"]
+    assert len({r.window_series for r in restored}) == 1
+    # The open candidate came back open, and does not announce itself again.
+    fresh.tick(mid + timedelta(seconds=1))
+    assert opened == []
+
+
+def test_restore_degrades_an_inconsistent_series_rather_than_raising(
+    timers: TimersService,
+) -> None:
+    """A hand-edited settings.json must not cost the timer itself — losing the
+    "2 of 3" label is the far smaller loss."""
+    ends_at = T0 + timedelta(hours=12)
+    timers.restore_respawn_timers(
+        [
+            RespawnTimerSnapshot(
+                name="--Dead-- Lodizal",
+                ends_at=ends_at,
+                total_duration_s=43200.0,
+                window_ends_at=ends_at + timedelta(hours=4),
+                window_series="s",
+                window_index=9,  # outside its denominator
+                window_count=3,
+            )
+        ],
+        MOB_TIMER_GROUP,
+        T0,
+    )
+    rows = timers.rows_of(TimerRow)
+    assert len(rows) == 1
+    assert isinstance(rows[0], TimerRow)
+    assert rows[0].window_ends_at is not None  # the timer survived
+    assert rows[0].window_series == ""  # only the label was dropped
+    assert series_label(rows[0]) == ""

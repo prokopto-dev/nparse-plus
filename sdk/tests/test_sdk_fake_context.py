@@ -246,3 +246,41 @@ def test_add_window_timer_rejects_a_store_that_cannot_participate() -> None:
             window_seconds=20,
         )
     assert ctx.window_timers == []
+
+
+def test_add_window_series_records_every_candidate() -> None:
+    from datetime import datetime
+
+    from nparseplus_sdk import WindowTimerLike
+
+    tod = datetime(2026, 7, 15, 12, 0, 0)
+    ctx = FakePluginContext()
+    rows = ctx.add_window_series(
+        "--Dead-- Lodizal",
+        group="  Mob Timers",
+        started_at=tod,
+        windows=[(12 * 3600, 4 * 3600), (20 * 3600, 4 * 3600), (30 * 3600, 6 * 3600)],
+    )
+    assert len(rows) == 3
+    assert all(isinstance(r, WindowTimerLike) for r in rows)
+    assert [(r.window_index, r.window_count) for r in rows] == [(1, 3), (2, 3), (3, 3)]
+    assert len({r.window_series for r in rows}) == 1
+    # Recorded, and in the store — sharing a name without replacing each other.
+    assert ctx.window_timers == rows
+    assert len(ctx.timers.snapshot()) == 3
+
+
+def test_add_window_series_rejects_a_malformed_table() -> None:
+    from datetime import datetime
+
+    import pytest
+
+    tod = datetime(2026, 7, 15, 12, 0, 0)
+    ctx = FakePluginContext()
+    with pytest.raises(ValueError, match="at least one"):
+        ctx.add_window_series("x", group="g", started_at=tod, windows=[])
+    with pytest.raises(ValueError, match="positive span"):
+        ctx.add_window_series("x", group="g", started_at=tod, windows=[(100, 0)])
+    with pytest.raises(ValueError, match="ascending"):
+        ctx.add_window_series("x", group="g", started_at=tod, windows=[(100, 50), (120, 50)])
+    assert ctx.window_timers == []

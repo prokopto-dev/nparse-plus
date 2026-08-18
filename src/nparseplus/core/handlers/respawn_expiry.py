@@ -16,7 +16,13 @@ from __future__ import annotations
 import re
 
 from nparseplus.config.settings import SpellWindowSettings
-from nparseplus.core.timers import MOB_TIMER_GROUP, Row, TimerRow, TimersService
+from nparseplus.core.timers import (
+    MOB_TIMER_GROUP,
+    Row,
+    TimerRow,
+    TimersService,
+    series_label,
+)
 from nparseplus.core.triggers.engine import Speaker
 
 _DEAD_PREFIX = "--Dead-- "
@@ -34,12 +40,12 @@ class RespawnExpiryNotifier:
         timers.on_window_open.append(self._on_window_open)
 
     def _on_expired(self, rows: list[Row]) -> None:
-        self._announce(rows, "spawn timer expired")
+        self._announce(rows, "spawn timer", "expired")
 
     def _on_window_open(self, rows: list[Row]) -> None:
-        self._announce(rows, "spawn window open")
+        self._announce(rows, "spawn window", "open")
 
-    def _announce(self, rows: list[Row], phrase: str) -> None:
+    def _announce(self, rows: list[Row], subject: str, verb: str) -> None:
         speaker = self.speaker
         if speaker is None or not self.settings.respawn_expiry_audio:
             return
@@ -50,4 +56,11 @@ class RespawnExpiryNotifier:
                 and row.name.startswith(_DEAD_PREFIX)
             ):
                 victim = _DUP_SUFFIX.sub("", row.name[len(_DEAD_PREFIX) :])
-                speaker.speak(f"{victim} {phrase}")
+                # "Lodizal spawn window 2 of 3 open" — with several candidate
+                # windows a bare announcement cannot say which chance just
+                # came up, or how many are left after it (#125). The subject
+                # and verb are split precisely so the label lands between
+                # them; a lone window keeps its original wording exactly.
+                which = series_label(row)
+                middle = f"{subject} {which}" if which else subject
+                speaker.speak(f"{victim} {middle} {verb}")

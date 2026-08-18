@@ -388,6 +388,13 @@ class TimerWindowEvent(RemoteEvent):
     group: str
     opens_at: datetime  # the base end: when the mob became poppable
     closes_at: datetime  # the latest possible pop
+    # When the spawn has SEVERAL candidate windows and nobody knows which it
+    # will use (#125), these say which one this is: a shared series key and a
+    # 1-based position among ``count``. Empty/0 for a lone window, so a
+    # subscriber that does not care never has to look.
+    series: str = ""
+    index: int = 0
+    count: int = 0
 
 
 class TimerWindowOpenedEvent(TimerWindowEvent):

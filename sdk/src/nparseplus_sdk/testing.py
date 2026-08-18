@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -91,6 +91,9 @@ class FakeWindowTimer:
     window_ends_at: datetime | None = None
     window_opened_at: datetime | None = None
     total_duration_s: float = 0.0
+    window_series: str = ""
+    window_index: int = 0
+    window_count: int = 0
 
 
 def _eq(a: str, b: str) -> bool:
@@ -334,6 +337,54 @@ class FakePluginContext:
         add_timer(row, allow_duplicates=allow_duplicates)
         self.window_timers.append(row)
         return row
+
+    def add_window_series(
+        self,
+        name: str,
+        *,
+        group: str,
+        started_at: datetime,
+        windows: Sequence[tuple[float, float]],
+    ) -> list[FakeWindowTimer]:
+        """Record every candidate window of one spawn, and return the rows.
+
+        The same set-level rules the host enforces, since a caller that gets
+        them wrong should hear about it in a test rather than in game.
+        """
+        if not windows:
+            raise ValueError("a window series needs at least one candidate window")
+        previous_end: float | None = None
+        for base_seconds, window_seconds in windows:
+            if window_seconds <= 0:
+                raise ValueError("every candidate window must be a positive span")
+            if previous_end is not None and base_seconds < previous_end:
+                raise ValueError("candidate windows must be in ascending, non-overlapping order")
+            previous_end = base_seconds + window_seconds
+        series = f"{group}|{name}|{started_at.isoformat()}"
+        rows: list[FakeWindowTimer] = []
+        for index, (base_seconds, window_seconds) in enumerate(windows, start=1):
+            ends_at = started_at + timedelta(seconds=base_seconds)
+            row = FakeWindowTimer(
+                name=name,
+                group=group,
+                ends_at=ends_at,
+                window_ends_at=ends_at + timedelta(seconds=window_seconds),
+                total_duration_s=float(base_seconds),
+                window_series=series,
+                window_index=index,
+                window_count=len(windows),
+            )
+            # Duplicates always allowed: the candidates share a name.
+            add_timer = getattr(self._timers, "add_timer", None)
+            if not callable(add_timer):
+                raise TypeError(
+                    "ctx.timers must provide add_timer(row, allow_duplicates=False) for "
+                    "add_window_series(); leave timers unset to get a FakeTimers."
+                )
+            add_timer(row, allow_duplicates=True)
+            self.window_timers.append(row)
+            rows.append(row)
+        return rows
 
     # --- test drivers ------------------------------------------------------
     def run_submitted(self) -> None:

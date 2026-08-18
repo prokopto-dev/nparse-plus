@@ -146,6 +146,18 @@ def countdown_target(row: Row, now: datetime) -> datetime | None:
     return getattr(row, "ends_at", None)
 
 
+def series_label(row: Row) -> str:
+    """``"2 of 3"`` for a candidate window, else ``""``.
+
+    Pure, so the window can render the affordance without knowing how a series
+    is built — and so the phrasing lives in one place for the UI, the speech
+    and the bus events.
+    """
+    if not getattr(row, "window_series", ""):
+        return ""
+    return f"{row.window_index} of {row.window_count}"
+
+
 def fraction_remaining(row: Row, now: datetime) -> float:
     """How much of ``row``'s duration is still to run, clamped to 0.0-1.0.
 
@@ -246,6 +258,22 @@ class TimerRow(CountdownRow):
     # anchor anything counts down to.
     window_opened_at: datetime | None = None
 
+    # Some mobs have SEVERAL candidate windows and nobody knows which one the
+    # spawn will use — Lodizal has three. Each candidate is its own row (they
+    # open, lapse and are announced independently, which is what a raid
+    # actually tracks), and these three fields are what say the rows are one
+    # mob: a shared ``window_series`` key, plus this candidate's 1-based
+    # position among the ``window_count`` that were armed.
+    #
+    # ``window_index``/``window_count`` are STORED, not derived from the rows
+    # still on screen: once the first candidate lapses you still want to read
+    # "2 of 3", not "1 of 2". (The opposite call from ``group_rows_for_display``,
+    # which recomputes orientation every render — there the current row set is
+    # the truth; here the original plan is.)
+    window_series: str = ""
+    window_index: int = 0  # 1-based; 0 when this row is not part of a series
+    window_count: int = 0
+
     @field_validator("window_ends_at")
     @classmethod
     def _snap_window_ends_at(cls, value: datetime | None) -> datetime | None:
@@ -259,6 +287,11 @@ class TimerRow(CountdownRow):
         # re-runs this on every field set, so assigning here would recurse.
         if self.window_ends_at is not None and self.window_ends_at <= self.ends_at:
             raise ValueError("window_ends_at must be after ends_at")
+        if self.window_series:
+            if self.window_ends_at is None:
+                raise ValueError("a window series member must carry a window_ends_at")
+            if not 1 <= self.window_index <= self.window_count:
+                raise ValueError("window_index must be within 1..window_count")
         return self
 
 
@@ -305,6 +338,11 @@ class RespawnTimerSnapshot(BaseModel):
     total_duration_s: float
     window_ends_at: datetime | None = None
     window_opened_at: datetime | None = None
+    # Which candidate window of one spawn this is (#125), so a camp restores
+    # the whole set still knowing they are one mob.
+    window_series: str = ""
+    window_index: int = 0
+    window_count: int = 0
 
 
 class SelfCooldownSnapshot(BaseModel):
@@ -477,6 +515,22 @@ class TimersService:
         if len(matches) == 1:
             self._rows.remove(matches[0])
             removed = True
+        if removed:
+            self._notify()
+        return removed
+
+    def remove_series(self, series: str) -> int:
+        """Drop every candidate window of one spawn (#125). Returns the count.
+
+        The counterpart to arming N candidates at once: when the mob finally
+        pops, the other candidates are answered too, and clearing them one row
+        at a time is busywork the user should not have to do.
+        """
+        if not series:
+            return 0
+        before = len(self._rows)
+        self._rows = [row for row in self._rows if getattr(row, "window_series", "") != series]
+        removed = before - len(self._rows)
         if removed:
             self._notify()
         return removed
@@ -767,6 +821,9 @@ class TimersService:
                     total_duration_s=row.total_duration_s,
                     window_ends_at=row.window_ends_at,
                     window_opened_at=row.window_opened_at,
+                    window_series=row.window_series,
+                    window_index=row.window_index,
+                    window_count=row.window_count,
                 )
             )
         return out
@@ -786,6 +843,7 @@ class TimersService:
         for item in saved:
             window_ends_at = item.window_ends_at
             window_opened_at = item.window_opened_at
+            series, index, count = item.window_series, item.window_index, item.window_count
             if window_ends_at is not None and snap_to_second(window_ends_at) <= snap_to_second(
                 item.ends_at
             ):
@@ -795,6 +853,12 @@ class TimersService:
                 # would abandon every later entry.
                 window_ends_at = None
                 window_opened_at = None
+                series, index, count = "", 0, 0
+            if series and not 1 <= index <= count:
+                # Same defence as the window pair above: a hand-edited store
+                # must not raise inside this unguarded loop. Losing the "2 of
+                # 3" label is a far smaller loss than losing the timer.
+                series, index, count = "", 0, 0
             if (window_ends_at or item.ends_at) <= now:
                 continue
             self._rows.append(
@@ -806,6 +870,9 @@ class TimersService:
                     total_duration_s=item.total_duration_s,
                     window_ends_at=window_ends_at,
                     window_opened_at=window_opened_at,
+                    window_series=series,
+                    window_index=index,
+                    window_count=count,
                 )
             )
             restored = True

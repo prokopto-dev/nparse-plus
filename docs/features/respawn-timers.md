@@ -78,10 +78,32 @@ the base time runs out.
   spawn window open") as well as when it closes. Same setting, no new
   option.
 
+### When a mob has more than one possible window
+
+Some spawns have **several** candidate windows and nobody knows which one
+they will use — Lodizal has three. Each candidate gets its own row, sharing
+the mob's name and labelled `(1 of 3)`, `(2 of 3)`, `(3 of 3)`.
+
+They behave the way the uncertainty does: every candidate counts down to its
+own opening, opens, and lapses if the mob does not appear, leaving only the
+chances still to come. So the list always answers "is a window open right
+now, and how many chances are left?" without any arithmetic.
+
+- **Announcements name the chance.** "Lodizal spawn window 2 of 3 open" — a
+  bare announcement could not say which one came up, nor how many remain.
+- **Clear the whole set in one action.** When the mob finally pops, its other
+  candidate windows are answered too: right-click any of its rows and choose
+  *Clear all 3 windows*, rather than clearing them one at a time.
+- **The label keeps its original denominator.** After the first chance
+  lapses the second still reads "2 of 3", not "1 of 2" — you are being told
+  which candidate this was, not how many are left.
+
 !!! note "Where the numbers come from"
 
     nParse+ ships the mechanism but **no per-mob window data**, and there is
     no way to type a time of death in yet — both are planned. Until then a
     plugin supplies the figures through
-    [`ctx.add_window_timer()`](../plugins/api.md) (SDK 1.3); see
-    `examples/plugins/tod_window.py` in the repository for a working one.
+    [`ctx.add_window_timer()`](../plugins/api.md) — or
+    `ctx.add_window_series()` for a mob with several candidate windows (SDK
+    1.3). See `examples/plugins/tod_window.py` in the repository for a
+    working one covering both shapes.

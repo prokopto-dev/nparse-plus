@@ -50,6 +50,9 @@ class TimerWindowNotifier:
                     group=row.group,
                     opens_at=row.ends_at,
                     closes_at=closes_at,
+                    series=row.window_series,
+                    index=row.window_index,
+                    count=row.window_count,
                     # The tick that observed the crossover; tick() has just
                     # stamped it, so the fallback is unreachable in practice.
                     opened_at=row.window_opened_at or row.ends_at,
@@ -65,6 +68,9 @@ class TimerWindowNotifier:
                     group=row.group,
                     opens_at=row.ends_at,
                     closes_at=closes_at,
+                    series=row.window_series,
+                    index=row.window_index,
+                    count=row.window_count,
                     closed_at=closes_at,
                 )
             )
