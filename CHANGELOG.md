@@ -6,6 +6,25 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.15.0 (2026-08-18)
+
+### Bug Fixes
+
+- **sdk**: Route FakePluginContext.add_window_timer through ctx.timers
+  ([`58888fc`](https://github.com/prokopto-dev/nparse-plus/commit/58888fc4ca64e56026e6ed6a635bd5094ebc1e42))
+
+### Features
+
+- **sdk**: Let a plugin arm a pop-window timer (SDK 1.3)
+  ([`2910d4c`](https://github.com/prokopto-dev/nparse-plus/commit/2910d4c0568147c3085890fbfbda2c567e52b0e4))
+
+- **timers**: Track several candidate pop windows for one spawn
+  ([`a5ff29b`](https://github.com/prokopto-dev/nparse-plus/commit/a5ff29b4421edeb1576fc9c975441c47e60649b0))
+
+- **ui**: Render variable respawn (pop) windows in the Timers window
+  ([`f847127`](https://github.com/prokopto-dev/nparse-plus/commit/f8471277e5a35de4b0bf94d64a2d6055b27b4bdb))
+
+
 ## v2.14.0 (2026-08-18)
 
 ### Bug Fixes
