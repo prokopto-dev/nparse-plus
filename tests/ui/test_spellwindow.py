@@ -25,6 +25,7 @@ from nparseplus.ui.overlaybase import format_mmss
 from nparseplus.ui.spellwindow import (
     COLOR_BENEFICIAL,
     COLOR_DETRIMENTAL,
+    COLOR_POP_WINDOW,
     COLOR_ROLL,
     COLOR_TIMER,
     FADE_STEPS,
@@ -976,3 +977,126 @@ def test_fade_does_not_restyle_every_tick(qtbot):
         window.refresh(now=NOW + timedelta(milliseconds=250 * tick))
         seen.append(_bar_color_of(window, "Clarity"))
     assert len(set(seen)) == 1
+
+
+# -- variable respawn ("pop") windows (#125) -----------------------------------
+
+POP_BASE_S = 400.0
+POP_WINDOW_S = 900.0
+POP_OPENS_AT = NOW + timedelta(seconds=POP_BASE_S)
+POP_CLOSES_AT = POP_OPENS_AT + timedelta(seconds=POP_WINDOW_S)
+
+
+def _pop_row(name: str = "--Dead-- Trakanon") -> TimerRow:
+    return TimerRow(
+        name=name,
+        group=MOB_TIMER_GROUP,
+        updated_at=NOW,
+        ends_at=POP_OPENS_AT,
+        total_duration_s=POP_BASE_S,
+        window_ends_at=POP_CLOSES_AT,
+    )
+
+
+def test_a_row_in_its_window_does_not_sort_to_the_top_of_its_section():
+    """The bug this fixes: a phase-2 row's ends_at is in the past, so the old
+    key pinned it above everything for the whole window."""
+    pop = _pop_row()
+    sooner = TimerRow(
+        name="--Dead-- a gnoll",
+        group=MOB_TIMER_GROUP,
+        updated_at=NOW,
+        ends_at=POP_OPENS_AT + timedelta(seconds=60),
+        total_duration_s=60.0,
+    )
+    later = TimerRow(
+        name="--Dead-- a bat",
+        group=MOB_TIMER_GROUP,
+        updated_at=NOW,
+        ends_at=POP_OPENS_AT + timedelta(seconds=5000),
+        total_duration_s=5000.0,
+    )
+    # Mid-window: 840 s of window left, so it belongs BETWEEN the two.
+    mid = POP_OPENS_AT + timedelta(seconds=60)
+    ordered = sorted([later, pop, sooner], key=lambda r: row_sort_key(r, mid, "time_remaining"))
+    assert [r.name for r in ordered] == ["--Dead-- a gnoll", "--Dead-- Trakanon", "--Dead-- a bat"]
+
+
+def test_row_sort_key_is_unchanged_before_the_window_opens():
+    """Phase 1 must be byte-identical to the old behaviour."""
+    pop = _pop_row()
+    assert row_sort_key(pop, NOW, "time_remaining") == (POP_BASE_S, "--dead-- trakanon")
+    assert row_sort_key(pop, NOW, "alphabetical") == (0, "--dead-- trakanon")
+
+
+def test_bar_color_reads_the_pop_window_first():
+    pop = _pop_row()
+    # No ``now`` -> the old type coding, so every existing call site is intact.
+    assert bar_color(pop) == COLOR_TIMER
+    assert bar_color(pop, NOW) == COLOR_TIMER
+    assert bar_color(pop, POP_OPENS_AT) == COLOR_POP_WINDOW
+    assert row_bar_color(pop, 1.0, False, POP_OPENS_AT) == COLOR_POP_WINDOW
+    assert row_bar_color(pop, 1.0, False, NOW) == COLOR_TIMER
+
+
+def test_a_window_row_still_fades_and_the_faded_color_differs():
+    """_fades stays true for a Mob Timers row: its phase-2 ratio is honest, so
+    the red fade should visibly run across the window."""
+    pop = _pop_row()
+    full = row_bar_color(pop, 1.0, True, POP_OPENS_AT)
+    nearly_gone = row_bar_color(pop, 0.05, True, POP_CLOSES_AT - timedelta(seconds=45))
+    assert full == COLOR_POP_WINDOW
+    assert nearly_gone != full
+
+
+def test_window_row_renders_phase_one_then_pop(qtbot):
+    backend = make_backend()
+    # Fade off, so _color is the base colour and this test is about the phase
+    # rather than about how far the red fade has run.
+    backend.settings.spellwindow.bar_fade_to_red = False
+    backend.timers.add_timer(_pop_row())
+    window = _shown_window(qtbot, backend)
+
+    window.refresh(now=NOW + timedelta(seconds=100))
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "--Dead-- Trakanon")
+    # Phase 1: plain countdown to the window opening, ordinary timer colour.
+    assert widget._value.text() == format_mmss(300.0)
+    assert widget._color == COLOR_TIMER
+
+    window.refresh(now=POP_OPENS_AT + timedelta(seconds=60))
+    # Phase 2: counting to the LATEST possible pop, and it says so.
+    assert widget._value.text() == f"POP {format_mmss(POP_WINDOW_S - 60)}"
+    assert widget._color == COLOR_POP_WINDOW
+
+
+def test_the_same_row_widget_survives_the_crossover(qtbot):
+    """The no-subclass decision, pinned: refresh() keys widget reuse on
+    type(row).__name__, so a WindowTimerRow subclass would rebuild the row at
+    the exact moment the user is watching it flip."""
+    backend = make_backend()
+    backend.timers.add_timer(_pop_row())
+    window = _shown_window(qtbot, backend)
+
+    window.refresh(now=POP_OPENS_AT - timedelta(seconds=1))
+    before = next(w for w in window._row_widgets.values() if w.row_name == "--Dead-- Trakanon")
+    window.refresh(now=POP_OPENS_AT + timedelta(seconds=1))
+    after = next(w for w in window._row_widgets.values() if w.row_name == "--Dead-- Trakanon")
+    assert before is after
+
+
+def test_the_phase_comes_from_now_not_from_the_stamp(qtbot):
+    """The driver ticks at 100 ms and this window repaints at 250 ms, so a
+    frame can land either side of tick(). Rendering must follow the frame's
+    clock, or digits, bar and colour disagree for up to a quarter second."""
+    backend = make_backend()
+    backend.settings.spellwindow.bar_fade_to_red = False
+    row = backend.timers.add_timer(_pop_row())
+    window = _shown_window(qtbot, backend)
+
+    # tick() has NOT run, so window_opened_at is unset — yet this frame is
+    # inside the window and must render as such.
+    assert row.window_opened_at is None
+    window.refresh(now=POP_OPENS_AT + timedelta(seconds=30))
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "--Dead-- Trakanon")
+    assert widget._value.text().startswith("POP ")
+    assert widget._color == COLOR_POP_WINDOW

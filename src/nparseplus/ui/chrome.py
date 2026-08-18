@@ -105,6 +105,10 @@ BAD = "#c0392b"  # detrimental, failed
 COOLDOWN = "#3a7bd5"
 TIMER = "#8e5bd1"
 ROLL = "#d99b2b"  # a /random roll; also the "wants attention" badge
+# A respawn row inside its variable "pop" window (#125). Orange at hue ~25
+# deg sits far enough from FADE_TARGET that the red fade still visibly runs
+# across the window, and far enough from ROLL to stay a distinct meaning.
+POP_WINDOW = "#e07b39"
 LINK = "#9ecfff"  # a clickable URL in rendered HTML
 
 #: Text on a filled status pill. Every tone fill is a mid-to-dark saturated

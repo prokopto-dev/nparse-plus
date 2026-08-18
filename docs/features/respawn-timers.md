@@ -49,3 +49,39 @@ Right-click the map to place a spawn-point marker anywhere and start its
 timer by hand — useful for camps the database doesn't know or PH cycles you
 want to track visually. Markers persist across restarts. See
 [Maps](../windows/maps.md#spawn-points-waypoints-and-corpses).
+
+## Pop windows
+
+Big raid targets don't respawn on a fixed clock. After time-of-death a base
+time elapses, and only *then* does the mob become poppable — at any moment
+until a latest-possible time. Trakanon is TOD + 4.5 days, then a 12-hour
+window.
+
+A timer row can carry that shape. It counts down to the window **opening**
+in the ordinary timer colour, then flips **in place** — same row, same
+position in the list — to an orange countdown prefixed `POP`, running to the
+latest possible spawn. It leaves the window when the window closes, not when
+the base time runs out.
+
+- **The bar means the phase you're in.** Before the window it fills over the
+  base respawn; inside it, over the window itself. So a row that is 30
+  minutes into a 12-hour window reads as nearly full rather than parked on
+  empty.
+- **Sorting follows the window.** A row inside its window sorts on the time
+  left in the window, so it takes its honest place in the list instead of
+  pinning to the top for twelve hours.
+- **Camping keeps them, in either phase.** A window that opened while you
+  were away comes back open, without re-announcing itself; a window that
+  closed while you were away is dropped, like any expired timer.
+- **Expiry announcements say both ends.** With "Announce respawn-timer
+  expiry" on, a `--Dead--` row speaks when its window **opens** ("<mob>
+  spawn window open") as well as when it closes. Same setting, no new
+  option.
+
+!!! note "Where the numbers come from"
+
+    nParse+ ships the mechanism but **no per-mob window data**, and there is
+    no way to type a time of death in yet — both are planned. Until then a
+    plugin supplies the figures through
+    [`ctx.add_window_timer()`](../plugins/api.md) (SDK 1.3); see
+    `examples/plugins/tod_window.py` in the repository for a working one.
