@@ -88,7 +88,7 @@ nav:
       - From EQTool: migrating/from-eqtool.md
   - Windows & Overlays:
       - windows/index.md
-      - Spell Timers: windows/spell-timers.md
+      - Timers: windows/timers.md
       - DPS Meter: windows/dps-meter.md
       - Maps: windows/maps.md
       - Mob Info: windows/mob-info.md
@@ -119,7 +119,7 @@ nav:
       - Appearance: settings/appearance.md
       - Character: settings/character.md
       - Friends: settings/friends.md
-      - Spell Timers: settings/spell-timers.md
+      - Timers: settings/timers.md
       - DPS Meter: settings/dps-meter.md
       - Maps: settings/maps.md
       - Windows: settings/windows.md

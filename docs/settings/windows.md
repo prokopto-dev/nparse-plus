@@ -1,6 +1,6 @@
 # Settings → Windows
 
-A grid with one row per window — Maps, Discord, Spell Timers, DPS Meter,
+A grid with one row per window — Maps, Discord, Timers, DPS Meter,
 Mob Info, Console, Trigger Editor, Macro Editor — and three columns:
 
 ![Windows settings](../assets/screenshots/settings--windows.png)

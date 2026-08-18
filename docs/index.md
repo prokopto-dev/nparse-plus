@@ -36,7 +36,7 @@ See [Why nParse+](comparison.md) for how the feature sets compare, and
 
 | Area | What you get |
 |---|---|
-| **[Spell timers](windows/spell-timers.md)** | Per-target buff/debuff countdowns from the real spell DB (durations by your level/class), gem icons, per-class spell filters, worn-off removal, cooldowns, self-buffs restored across camps |
+| **[Timers](windows/timers.md)** | Per-target buff/debuff countdowns from the real spell DB (durations by your level/class), gem icons, per-class spell filters, worn-off removal, cooldowns, self-buffs restored across camps |
 | **[Triggers](features/triggers.md)** | 67 built-in triggers (raid AOEs with countdown bars, invis/levitate fading, failed feign, charm break, death touch, …) plus custom triggers with `{name}`/`{c}`/`{COUNTER}` tokens, zone gating, text-to-speech, timers, and counters. Right-click a log line in the Console to build one from it; GINA `.gtp` packages import directly. Start ad-hoc timers from chat: `StartTimer-45-Label` |
 | **[Maps](windows/maps.md)** | Brewall map set, player marker with direction arrow via `/loc`, tracking-skill radius circle (Druid/Ranger/Bard), smooth z-axis fading tuned per zone, spawn-point timers, waypoints, path recording, and NPC search with live P99-wiki lookup |
 | **[DPS meter](windows/dps-meter.md)** | Per-fight attacker breakdown, 12-second trailing DPS, session best/current/last; your own spell damage is attributed from your casting, and your pet gets its own marked row |

@@ -132,7 +132,7 @@ the first launch. The honest version of all this is in
 ## Can I write my own add-on?
 
 Yes. `nparseplus-sdk` is a documented, semantically-versioned contract:
-subscribe to parsed events, add your own log parsers, own spell-timer rows,
+subscribe to parsed events, add your own log parsers, own timer rows,
 speak through the TTS engine, and add your own overlay windows and settings
 pages. Start at [Developing plugins](plugins/developing.md); the
 [API reference](plugins/api.md) lists everything the SDK exports.

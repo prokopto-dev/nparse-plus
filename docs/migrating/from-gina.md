@@ -3,7 +3,7 @@
 [GINA](https://eq.gimasoft.com/gina/) defined what an EQ trigger tool
 should be, and nParse+'s trigger engine covers the same core workflow —
 match a log line, show text, speak, start timers — plus everything GINA
-never did (maps, spell timers, DPS, the network). It also runs on macOS
+never did (maps, timers, DPS, the network). It also runs on macOS
 and Linux, where GINA can't follow you.
 
 !!! success "Your triggers come with you"
@@ -58,7 +58,7 @@ Most triggers take under a minute once you've done two or three.
 
 ## What you gain
 
-Beyond triggers: [spell timers](../windows/spell-timers.md) that know real
+Beyond triggers: [timers](../windows/timers.md) that know real spell
 durations (GINA users typically maintained timer triggers per buff — you
 can delete that whole category), the [maps](../windows/maps.md), the
 [DPS meter](../windows/dps-meter.md),

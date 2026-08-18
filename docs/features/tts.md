@@ -33,4 +33,4 @@ alert is heard immediately (GINA's "interrupt speech" imports carry over).
 What gets spoken is decided per feature: each
 [trigger](triggers.md) has its own TTS text and toggle; buff-fade warnings
 have a speak toggle in
-[Settings → Spell Timers](../settings/spell-timers.md).
+[Settings → Timers](../settings/timers.md).

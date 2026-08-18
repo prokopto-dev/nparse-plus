@@ -1,10 +1,10 @@
-# Settings → Spell Timers
+# Settings → Timers
 
-Behavior toggles for the [Spell Timers overlay](../windows/spell-timers.md)
+Behavior toggles for the [Timers overlay](../windows/timers.md)
 and timer engine. (Per-class spell filters live on the
 [Character](character.md) page.)
 
-![Spell Timers settings](../assets/screenshots/settings--spell-timers.png)
+![Timers settings](../assets/screenshots/settings--timers.png)
 
 | Setting | What it does |
 |---|---|
@@ -30,6 +30,6 @@ brings its rows straight back.
 
 The per-spell post-expiry allowlist (`post_expiry_flash_spells`) is built
 from the row context menu rather than a settings field — see
-[Spell Timers window](../windows/spell-timers.md). Click-to-dismiss needs the
+[Timers window](../windows/timers.md). Click-to-dismiss needs the
 spell window out of click-through mode (click-through means the OS delivers no
 clicks).

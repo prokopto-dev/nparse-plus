@@ -318,7 +318,7 @@ class NomnsParse(QApplication):
 
         spell_timers_action = None
         if self._spell_window is not None:
-            spell_timers_action = menu.addAction("Spell Timers")
+            spell_timers_action = menu.addAction("Timers")
             spell_timers_action.setCheckable(True)
             spell_timers_action.setChecked(self._spell_window.isVisible())
 

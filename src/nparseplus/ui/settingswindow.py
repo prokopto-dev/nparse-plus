@@ -107,7 +107,7 @@ MIN_SIZE = (420, 320)
 # directly on their handle when applied.
 LEGACY_WINDOW_ROWS = [("Maps", "maps"), ("Discord", "discord")]
 NEW_WINDOW_ROWS = [
-    ("Spell Timers", "spells"),
+    ("Timers", "spells"),
     ("DPS Meter", "dps"),
     ("Mob Info", "mobinfo"),
     ("Console", "console"),
@@ -355,7 +355,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             ("Appearance", self._build_appearance),
             ("Character", self._build_character),
             ("Friends", self._build_friends),
-            ("Spell Timers", self._build_spell_timers),
+            ("Timers", self._build_spell_timers),
             ("DPS Meter", self._build_dps),
             ("Maps", self._build_maps),
             ("Windows", self._build_windows_grid),
@@ -1068,7 +1068,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                 f"Pushed {len(friends.normalize_names(names))} friends to {len(files)} file(s)."
             )
 
-    # -- Spell Timers -------------------------------------------------------------------
+    # -- Timers -------------------------------------------------------------------------
 
     def _build_spell_timers(self) -> QWidget:
         spellwindow = self._settings.spellwindow

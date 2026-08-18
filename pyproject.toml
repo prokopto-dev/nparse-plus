@@ -12,7 +12,7 @@ name = "nparseplus"
 # uv omits that field entirely for dynamic-version packages, so this makes
 # the drift impossible rather than merely automating the repair.
 dynamic = ["version"]
-description = "nParse+ — EverQuest Project 1999 log parser: maps, spell timers, triggers, DPS, and sharing. A modernized fork of nomns/nparse with EQTool feature parity."
+description = "nParse+ — EverQuest Project 1999 log parser: maps, timers, triggers, DPS, and sharing. A modernized fork of nomns/nparse with EQTool feature parity."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.12"

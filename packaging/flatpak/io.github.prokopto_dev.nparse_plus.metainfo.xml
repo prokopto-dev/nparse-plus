@@ -8,8 +8,8 @@
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>
-      nParse+ tails your EverQuest log file and shows spell timers, DPS,
-      spawn timers, maps with shared player dots, triggers with text-to-speech,
+      nParse+ tails your EverQuest log file and shows spell and spawn timers,
+      DPS, maps with shared player dots, triggers with text-to-speech,
       and more — as always-on-top overlays while you play on Project 1999.
     </p>
   </description>

@@ -45,8 +45,8 @@ captures are fine. PNG only.
 
 | File | Used on | What to capture |
 |---|---|---|
-| `readme--product-shot.png` | README.md | **Automated.** Four windows composed on one canvas: the Event Overlay alert banner, maps, spell timers, DPS meter. |
-| ⌨ `home--overview.png` | Docs home | **Manual.** EQ windowed with Spell Timers, DPS Meter, Maps and an Event Overlay alert visible at once, mid-fight. |
+| `readme--product-shot.png` | README.md | **Automated.** Four windows composed on one canvas: the Event Overlay alert banner, maps, timers, DPS meter. |
+| ⌨ `home--overview.png` | Docs home | **Manual.** EQ windowed with Timers, DPS Meter, Maps and an Event Overlay alert visible at once, mid-fight. |
 
 These two are **not interchangeable** — do not "fix" one with the other.
 `readme--product-shot` is a *product shot*: no game behind it, composed
@@ -65,7 +65,7 @@ live client, which is the one claim a composed image cannot make.
 
 | File | Used on | What to capture |
 |---|---|---|
-| `window--spell-timers.png` | Spell Timers | Several rows across kinds: your buffs (green), a debuff on a target (red), a purple timer — gem icons visible. |
+| `window--timers.png` | Timers | Several rows across kinds: your buffs (green), a debuff on a target (red), a purple timer — gem icons visible. |
 | `window--dps-meter.png` | DPS Meter | A fight with 3+ attackers and the session footer; your row highlighted; the damage-source mode badge in the title bar. |
 | `window--maps.png` | Maps | A busy zone map: your marker with direction arrow, another player's dot, a spawn-point countdown, the hover chrome visible. |
 | `window--mob-info.png` | Mob Info | After considering a named mob with loot data: respawn time, notable flag, loot prices. |
@@ -75,7 +75,7 @@ live client, which is the one claim a composed image cannot make.
 | `window--trigger-activity.png` | Trigger Editor, Migrating from GINA | The Activity tab with a handful of fires: a match, a muted timer follow-up, nested GINA folder paths in the Group column. |
 | `window--macro-editor.png` | Macro Editor, Macros & socials | A character loaded with a populated Page 1 grid (origin badges visible), one macro selected showing the name/colour/line form. |
 | `window--character-dumps.png` | Character Dumps | Two characters in the tree, one with both Inventory and Spellbook plus history behind it; a spellbook snapshot selected, showing its entries and the "since the last one" change line. |
-| `window--spell-timers-raid.png` | Spell Timers | Raid mode (group buffs by spell): one spell header with a row per target. |
+| `window--timers-raid.png` | Timers | Raid mode (group buffs by spell): one spell header with a row per target. |
 | `window--update-available.png` | Self-updater, Updating | The update dialog: version heading, per-version release notes, View on GitHub / Later / Download buttons. |
 | ⌨ `window--discord.png` | Discord Overlay | **Manual.** The Discord voice overlay over the game with 2+ users, one speaking. |
 
@@ -85,10 +85,10 @@ live client, which is the one claim a composed image cannot make.
 |---|---|---|
 | `feature--ch-chain.png` | CH chains | The Event Overlay with a CH lane and 2–3 chips in flight. |
 | `feature--sharing-dots.png` | Sharing | The map with several shared player dots (a raid or busy zone). |
-| `feature--boats.png` | Boats | The Boats section of Spell Timers with a few boat-route countdowns. |
+| `feature--boats.png` | Boats | The Boats section of Timers with a few boat-route countdowns. |
 | `feature--respawn-timers.png` | Respawn timers | The Mob Timers section with `--Dead--` respawn countdowns (incl. a numbered duplicate). |
 | `feature--roll-rows.png` | Combat | Amber `/random` roll rows (highest first) plus an `xN` resist counter. |
-| `feature--rebuff-flash.png` | Spell Timers | A flagged self-buff that expired, lingering as a flashing **REBUFF** prompt. |
+| `feature--rebuff-flash.png` | Timers | A flagged self-buff that expired, lingering as a flashing **REBUFF** prompt. |
 | `feature--overlay-utility.png` | Event Overlay | The overlay's Utility header section with rebuff / out-of-mana lines. |
 
 ## Settings pages
@@ -105,7 +105,7 @@ by page title.
 | `settings--appearance.png` | Appearance |
 | `settings--character.png` | Character (with a real character profile loaded) |
 | `settings--friends.png` | Friends (ideally after Load, with names in the box) |
-| `settings--spell-timers.png` | Spell Timers |
+| `settings--timers.png` | Timers |
 | `settings--dps-meter.png` | DPS Meter |
 | `settings--maps.png` | Maps |
 | `settings--windows.png` | Windows |

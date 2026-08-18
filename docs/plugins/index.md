@@ -26,7 +26,7 @@ loads from, and `create_app` calls it only when that returns true.
 
 Why it ships off: add-ons are third-party code running with the same access
 to your computer as nParse+ itself, and nParse+ needs none of them — maps,
-spell timers, triggers, DPS and sharing are all built in. A default-on
+timers, triggers, DPS and sharing are all built in. A default-on
 plugin loader would be an attack surface every user carries for a feature
 most users never use.
 

@@ -7,7 +7,7 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
 ## Where timers show up
 
 - As purple rows in the **Mob Timers** section of
-  [Spell Timers](../windows/spell-timers.md), named `--Dead-- <mob>`.
+  [Timers](../windows/timers.md), named `--Dead-- <mob>`.
 - On the [map](../windows/maps.md), when the kill matches a spawn point —
   the countdown draws at the spawn location.
 
@@ -21,7 +21,7 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
   cooldowns, respawn rows are **not** hidden while you are camped: a mob's
   spawn clock is the world's, not your character's, so it stays on screen and
   keeps counting. See [Camping and logging back
-  in](../windows/spell-timers.md#camping-and-logging-back-in).
+  in](../windows/timers.md#camping-and-logging-back-in).
 - **Duplicate kills get numbered.** Killing two of the same mob while both
   timers run gives the second a `_1` suffix (`--Dead-- a bat`, then
   `--Dead-- a bat_1`); further kills take the smallest free number. Once a
@@ -29,7 +29,7 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
   instead of climbing forever.
 - **Expiry announcements** — optionally get an on-screen and spoken
   announcement when a respawn timer hits zero ("Announce respawn-timer
-  expiry" in [Settings → Spell Timers](../settings/spell-timers.md)).
+  expiry" in [Settings → Timers](../settings/timers.md)).
 - **Shared timers** — with [sharing](sharing.md) on and "Share timers"
   enabled for your character, kill timers flow to your groupmates on the
   PigParse network (and theirs to you), so the whole group sees the same
@@ -39,7 +39,7 @@ zones, ported from EQTool), or the zone's default respawn time otherwise.
   [Mob Info](../windows/mob-info.md) before you commit to the camp.
 - **Don't want them on screen?** Hide the whole **Mob Timers** section with
   "Show mob timers" in
-  [Settings → Spell Timers](../settings/spell-timers.md) (timers keep
+  [Settings → Timers](../settings/timers.md) (timers keep
   running, expiry announcements still fire) — or right-click a wrong
   timer in the overlay to clear it by hand.
 
