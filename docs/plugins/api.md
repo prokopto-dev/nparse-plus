@@ -57,7 +57,7 @@ installed:
 
 | Member | Concrete type | Meaning |
 | --- | --- | --- |
-| `timers` | `nparseplus.core.timers.TimersService` | the spell-timer window's row store; row classes via `nparseplus_sdk.timers` |
+| `timers` | `nparseplus.core.timers.TimersService` | the Timers window's row store; row classes via `nparseplus_sdk.timers` |
 | `player` | `nparseplus.core.player.ActivePlayer` | the active character (`name`, `server`, `player_class`, …) — read-only by convention |
 | `speaker` | satisfies `nparseplus.audio.tts.Speaker` | text-to-speech: `speak(text)`. The app hands you a swappable holder, so voice/volume changes follow automatically |
 | `pigparse` | `nparseplus.net.pigparse_api.PigParseApiClient`, satisfying the Qt-free `nparseplus.core.pigparse.PigParseApi` protocol | PigParse REST client (`item_prices`, `item_wiki`, `boat_activity`, …). Reading the property is thread-safe; its **methods block on HTTP**, so call them only inside a `submit` fetch |

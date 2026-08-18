@@ -24,7 +24,7 @@ same network, so your raid sees no difference.
 |---|---|
 | Settings window tabs | One [Settings window](../settings/index.md) with sidebar pages |
 | Trigger window | [Trigger Editor](../windows/trigger-editor.md) — same folder tree, same built-ins, editable with Revert |
-| Spell timers (DPS window's buff panel) | [Spell Timers overlay](../windows/spell-timers.md) with gem icons and class filters |
+| Spell timers (DPS window's buff panel) | [Timers overlay](../windows/timers.md) with gem icons and class filters |
 | DPS meter | [DPS Meter](../windows/dps-meter.md) — same 12 s trailing window, session best/current/last |
 | Map window | [Maps](../windows/maps.md) — Brewall set, NPC search, spawn points, plus per-zone z-fade tuning |
 | Mob info | [Mob Info](../windows/mob-info.md) — same respawn/notable/loot-price data |

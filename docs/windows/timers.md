@@ -1,17 +1,17 @@
-# Spell Timers
+# Timers
 
-The Spell Timers overlay lists every active spell, buff, debuff, cooldown,
+The Timers overlay lists every active spell, buff, debuff, cooldown,
 counter, and ad-hoc timer as a row with a name, remaining time, and a thin
 progress bar — grouped by target, with your own buffs (**You**) always first.
 
 Within each group, rows are ordered by **time remaining** (soonest-to-expire
 first) by default; switch to **alphabetical** with the *Sort timers by*
-dropdown in [Settings → Spell Timers](../settings/spell-timers.md). Counters
+dropdown in [Settings → Timers](../settings/timers.md). Counters
 (which have no countdown) always sort last under time remaining.
 
-![Spell Timers overlay](../assets/screenshots/window--spell-timers.png)
+![Timers overlay](../assets/screenshots/window--timers.png)
 
-Open it from the tray → **Spell Timers**.
+Open it from the tray → **Timers**.
 
 ## How rows get there
 
@@ -35,7 +35,7 @@ Each bar also **shifts toward red as its timer runs down**, so a buff that is
 about to drop stands out without reading the digits. Boat and roll timers keep
 their color — their bars measure a schedule, not a countdown you started, so a
 fade would be misleading. Turn the fade off with **Fade timer bars to red** in
-[Settings → Spell Timers](../settings/spell-timers.md).
+[Settings → Timers](../settings/timers.md).
 
 Spell rows show their **gem icon** from the spell data.
 
@@ -45,7 +45,7 @@ Spell rows show their **gem icon** from the spell data.
   in](#camping-and-logging-back-in) below.
 - **Buff-fade warnings** — get a color change and optional spoken warning
   N seconds before a buff drops
-  ([Settings → Spell Timers](../settings/spell-timers.md)).
+  ([Settings → Timers](../settings/timers.md)).
 - **Stacked detrimentals** — recasting a debuff before it fades either
   restarts the row or stacks a new one, following EQTool's per-spell
   behavior (roots always refresh). Configurable per character (Timer
@@ -53,12 +53,12 @@ Spell rows show their **gem icon** from the spell data.
 - **Class filters** — hide spell rows that don't matter to your class
   ("Show spells for classes" in Settings → Character).
 - **Show only your own spells** and **guess ambiguous spells** toggles live
-  in [Settings → Spell Timers](../settings/spell-timers.md). Ambiguous
+  in [Settings → Timers](../settings/timers.md). Ambiguous
   casts (several spells share one cast message) show a best guess when
   enabled.
 - **Hide whole sections** — don't care about Boats, Mob Timers, Roll Timers,
   or Custom Timers? Each built-in section (and random rolls) has its own show/
-  hide toggle in [Settings → Spell Timers](../settings/spell-timers.md).
+  hide toggle in [Settings → Timers](../settings/timers.md).
   Hiding is display-only; the timers keep running underneath.
 - **Right-click to clear timers** — right-click a row for *Clear '(name)'*,
   a section header for *Clear group*, or anywhere for *Clear other players'
@@ -70,11 +70,11 @@ Spell rows show their **gem icon** from the spell data.
   flashing as a rebuff/recast prompt instead of disappearing. Left-click the
   flashing row to dismiss it. The context action adds the spell to the
   per-spell allowlist and turns on the global toggle; tune the flash time (and
-  turn the feature off) in [Settings → Spell Timers](../settings/spell-timers.md).
+  turn the feature off) in [Settings → Timers](../settings/timers.md).
   Click-to-dismiss needs click-through off (click-through means the OS delivers
   no clicks).
 - **Raid mode grouping** — with **Group buffs by spell (raid mode)** enabled
-  in [Settings → Spell Timers](../settings/spell-timers.md), the buffs you cast
+  in [Settings → Timers](../settings/timers.md), the buffs you cast
   on other players flip to spell-headed groups whenever they cover more
   distinct targets than distinct spells — one header per spell, one row per
   target — so a raid-wide buff reads as a single spell over many people. Your
@@ -88,12 +88,12 @@ Spell rows show their **gem icon** from the spell data.
 
 Raid mode turns a raid-wide buff into one spell header with a row per target:
 
-![Spell Timers in raid mode, grouping a buff by spell with a row per target](../assets/screenshots/window--spell-timers-raid.png)
+![Timers in raid mode, grouping a buff by spell with a row per target](../assets/screenshots/window--timers-raid.png)
 
 A buff flagged *Flash on expiry* stays on screen flashing **REBUFF** until you
 left-click to dismiss it:
 
-![A post-expiry rebuff prompt flashing in the Spell Timers window](../assets/screenshots/feature--rebuff-flash.png)
+![A post-expiry rebuff prompt flashing in the Timers window](../assets/screenshots/feature--rebuff-flash.png)
 
 ## Camping and logging back in
 

@@ -69,7 +69,7 @@ The map spends its pixels on the map. Everything else is summoned:
   find your way back. On the nparse sharing wire, corpse locations can be
   shared with your group.
 - Respawn countdowns also appear as rows in
-  [Spell Timers](spell-timers.md); see
+  [Timers](timers.md); see
   [Respawn & zone timers](../features/respawn-timers.md).
 
 ## Display options

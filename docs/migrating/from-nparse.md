@@ -30,7 +30,7 @@ unrecognized falls back to sensible defaults.
 |---|---|
 | `nparse.config.json` in the app folder | `settings.json` in the [platform config dir](../getting-started/first-run.md#where-settings-live) |
 | Maps window | The same [Maps window](../windows/maps.md), plus NPC search, spawn-point respawn timers, tracking radius, z-fade tuning |
-| Spells window | The new [Spell Timers overlay](../windows/spell-timers.md) — real spell DB durations by class/level instead of cast-time guesses |
+| Spells window | The new [Timers overlay](../windows/timers.md) — real spell DB durations by class/level instead of cast-time guesses |
 | Custom timers | [Triggers](../features/triggers.md) (your old ones land in "Legacy Custom Timers") |
 | Discord overlay | The same [Discord overlay](../windows/discord-overlay.md) |
 | Self-hosted locationserver sharing | The `nparse` [sharing mode](../features/sharing.md) — same wire protocol, your server keeps working |
@@ -38,7 +38,7 @@ unrecognized falls back to sensible defaults.
 ## What you gain
 
 Everything in the [EQTool column](../comparison.md) of the comparison:
-spell timers from the real spell DB, the trigger engine with TTS and
+spell durations from the real spell DB, the trigger engine with TTS and
 countdown bars, the DPS meter, CH chains, mob info with loot prices,
 respawn timers, death-loop detection, boats — and the
 [PigParse network](../features/sharing.md), where the map dots come from

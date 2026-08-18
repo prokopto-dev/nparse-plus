@@ -180,6 +180,13 @@ pyproject.toml) — keep NEW code clean even when touching them.
 - The spell DB path: user's EQ install `spells_us.txt` if configured, else the
   bundled `data/spells/spells_us.txt`. The tests use the pinned fixture at
   `tests/fixtures/spells_us.txt` — don't swap it.
+- The window is called **Timers** on screen, but everything persisted or
+  internal still says *spell*: `settings.json`'s `windows.spells` and top-level
+  `spellwindow`, `window_layouts.*.geometries.spells`, the `show_spells` /
+  `hide_spells` / `toggle_spells` chat commands, `ui/spellwindow.py`,
+  `SpellTimerWindow` and the `SpellTimer*` objectNames. That split is
+  deliberate (#126): renaming a key would orphan every existing settings file.
+  Grep for both names.
 - Background app processes started by tooling get reaped between commands —
   use `nohup ... & disown` when you need a demo instance to survive.
 - Git: commit with `git -c core.hooksPath=/dev/null commit` (hook friction),
@@ -398,7 +405,7 @@ corner, not just the one grip — `ui/overlaybase.py` grows pure `edge_at`/
 `cursor_for_edges` helpers and an `EdgeResizeMixin` (margin-band hit-test →
 `startSystemResize` + hover resize cursors), keeps the transparent
 `QSizeGrip`, and debounce-persists geometry (guarded so startup restore never
-rewrites settings). The spell-timer window (the headline complaint — only one
+rewrites settings). The Timers window (the headline complaint — only one
 resizable corner before) gains the mixin; DPS/mob-info get sensible minimums
 and the event overlay's lanes-host min width drops 520→200 so the overlay can
 narrow (lanes clip). A "Reset Window Positions" tray action

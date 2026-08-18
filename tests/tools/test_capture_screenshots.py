@@ -21,14 +21,14 @@ import capture_screenshots as cap  # noqa: E402
 pytestmark = pytest.mark.qt
 
 
-def test_spell_timers_capture(qapp, tmp_path, monkeypatch):
+def test_timers_capture(qapp, tmp_path, monkeypatch):
     from PySide6.QtGui import QImage
 
     monkeypatch.setattr(cap, "OUT_DIR", tmp_path)
     backend, _settings = cap._build_backend()
-    cap.cap_spell_timers(backend)
+    cap.cap_timers(backend)
 
-    out = tmp_path / "window--spell-timers.png"
+    out = tmp_path / "window--timers.png"
     assert out.exists()
     image = QImage(str(out))
     assert not image.isNull()

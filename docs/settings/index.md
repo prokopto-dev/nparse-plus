@@ -11,7 +11,7 @@ sidebar pages, documented one-per-page here, mirroring the app:
 | [Appearance](appearance.md) | Overlay skin, UI/overlay font size, and on-game alert styling |
 | [Character](character.md) | Per-character profiles: class, level, sharing, spell filters |
 | [Friends](friends.md) | Friends-list merge and push |
-| [Spell Timers](spell-timers.md) | Timer behavior toggles and buff-fade warnings |
+| [Timers](timers.md) | Timer behavior toggles and buff-fade warnings |
 | [DPS Meter](dps-meter.md) | What the meter counts: damage sources, pets, windows |
 | [Maps](maps.md) | Line widths, label size, other players, backdrop, z-fade |
 | [Windows](windows.md) | Per-window on-top / opacity / click-through |

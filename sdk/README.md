@@ -5,7 +5,7 @@ plugins: addon windows, log parsers, event subscribers, and network pollers
 that load into the app at runtime.
 
 nParse+ is a log-parsing overlay for the EverQuest emulator server
-[Project 1999](https://www.project1999.com/) — spell timers, DPS tracking,
+[Project 1999](https://www.project1999.com/) — timers, DPS tracking,
 maps, triggers, and shared raid information, driven entirely by reading the
 game's own log file. This package is how you extend it.
 
@@ -73,7 +73,7 @@ and publishing — is the **Plugins** section of the
 
 - **Add-ons are opt-in.** Users must tick *Settings > Advanced > Enable
   plugins (add-ons)* and restart before anything loads. A user who only wants
-  maps and spell timers never sees the feature at all.
+  maps and timers never sees the feature at all.
 - **Every plugin is consent-gated.** Yours does not run until the user
   approves it by name, and it runs with the same access to their machine as
   nParse+ itself. Write accordingly.
