@@ -206,16 +206,18 @@ class _SlowInbox:
     def get_nowait(self):
         return self._inner.get_nowait()
 
+    def empty(self) -> bool:
+        return self._inner.empty()
 
-def test_a_command_accepted_as_the_driver_stops_is_not_stranded(tmp_path: Path) -> None:
-    """Accepted by a live driver, enqueued after the loop has already gone.
 
-    The window a bare "is it running?" check leaves open: the answer is true,
-    then the loop runs its final drain and exits, and only then does the
-    command reach the queue — where nothing would ever read it again, and a
-    later ``start()`` would apply it at a moment nobody asked for. Real
-    ``start``/``stop`` here, with the enqueue itself parked to pin the
-    ordering: the loop is joined and confirmed dead before the command lands.
+def test_a_submit_in_flight_as_the_driver_exits_is_waited_for(tmp_path: Path) -> None:
+    """The loop cannot shut the gate while a submit is halfway through it.
+
+    The enqueue is parked mid-``put`` — the submitter is holding the gate
+    lock — so the exiting driver has already run its final drain on an empty
+    inbox and is blocked on that lock. Released, the command lands *after*
+    that drain: the close has to re-check, and the driver has to run it,
+    because by the time the gate shuts nothing else may touch the chain.
     """
     driver, _pipeline, _log = _make_driver(tmp_path)
     ran: list[str] = []
@@ -234,21 +236,14 @@ def test_a_command_accepted_as_the_driver_stops_is_not_stranded(tmp_path: Path) 
 
     stopper = threading.Thread(target=driver.stop, name="stopper")
     stopper.start()
-    assert driver._thread is not None
-    driver._thread.join(timeout=2)
-    assert not driver._thread.is_alive()  # loop gone, its last drain done
-
-    release.set()  # only NOW does the command reach the queue
+    release.set()  # the enqueue lands, behind the exiting loop's last drain
     submitter.join(timeout=2)
     stopper.join(timeout=2)
 
-    # stop() could not close the window until the submit in flight finished,
-    # so it is the one that runs it. Nothing is stranded and nothing is left
-    # for a later start() to apply out of nowhere.
-    assert ran == ["stopper"]
+    assert ran == ["log-driver"]  # applied where the chain is owned
     assert driver._accepting_commands is False
     with pytest.raises(Empty):
-        driver._inbox.get_nowait()
+        driver._inbox.get_nowait()  # nothing for a later start() to apply
 
 
 def test_a_stalled_driver_keeps_its_commands_instead_of_handing_them_over(
@@ -289,8 +284,47 @@ def test_a_stalled_driver_keeps_its_commands_instead_of_handing_them_over(
     driver._thread.join(timeout=2)
 
     assert ran == ["log-driver"]  # applied where the chain is owned
-    driver.stop()  # the join lands this time: the gate finally closes
-    assert driver._accepting_commands is False
+    assert driver._accepting_commands is False  # shut by the thread, on its way out
+
+
+def test_teardown_after_a_stalled_driver_finally_exits_is_not_stranded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """App quit, worst case: ``backend.stop`` gives up, then the loop exits.
+
+    ``plugin_host.shutdown`` runs *after* ``backend.stop`` and unwinds its
+    parsers and ticks through this seam. If the gate outlived the thread,
+    those commands would queue with nobody left to run them — stranded until
+    some later ``start()`` applied them out of nowhere. The thread shuts the
+    gate as it goes, so they run on their caller instead.
+    """
+    monkeypatch.setattr(driver_module, "STOP_JOIN_TIMEOUT_S", 0.05)
+    driver, _pipeline, _log = _make_driver(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+
+    def wedged(now: datetime) -> None:
+        entered.set()
+        release.wait(5)
+
+    driver.on_tick.append(wedged)
+    driver.start()
+    assert entered.wait(2)
+
+    driver.stop()  # the join gives up and returns; the loop is still in there
+    release.set()  # ...and only now does it unwind, closing the gate itself
+    assert driver._thread is not None
+    driver._thread.join(timeout=2)
+
+    ran: list[str] = []
+    off_thread(
+        lambda: driver.submit_to_driver(
+            lambda: ran.append(threading.current_thread().name), label="plugin teardown"
+        )
+    )
+
+    assert ran == ["submitter"]  # ran on its caller: no driver thread is left
+    with pytest.raises(Empty):
+        driver._inbox.get_nowait()
 
 
 def test_after_stop_a_command_runs_on_its_caller(tmp_path: Path) -> None:

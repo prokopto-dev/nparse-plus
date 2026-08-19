@@ -123,40 +123,36 @@ class LogDriver:
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the loop, then answer for the commands it did not drain.
+        """Stop the loop. The thread itself answers for the command inbox.
 
-        Order matters, and the pivot is whether the join actually landed.
-        Commands mutate the parser chain and the tick list, so running one
-        anywhere while that thread is alive is precisely the concurrent
-        mutation this inbox exists to prevent — being the only dequeuer is
-        not the same as being the only runner.
+        The gate belongs to whoever may run a command, and while that thread
+        lives it is the only one — so it is the thread, not this method, that
+        closes the gate and drains the last of the queue (see
+        ``_close_command_gate``). A join that lands therefore returns with the
+        inbox already empty and the gate already shut.
 
-        Joined: the thread is gone, so closing the gate under the lock (which
-        waits out any submit in flight) and draining here is safe, and it
-        catches the sliver a submit can land in between the loop's own last
-        drain and this line.
-
-        Timed out: the loop still owns the chain, so leave the gate OPEN —
-        later submits keep queueing for the thread that may still run them,
-        rather than executing on a caller beside a live driver — and let the
-        loop's exit drain apply them if it ever gets there. Unapplied is a
-        wedged driver's problem; applied concurrently would be corruption.
+        A join that gives up changes nothing about that: the loop still owns
+        the chain, so commands keep queueing for it and it applies them
+        whenever it finally unwinds. Running them here — beside a driver that
+        is still walking the parser chain — would be the concurrent mutation
+        this inbox exists to prevent.
         """
         self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=STOP_JOIN_TIMEOUT_S)
-            if self._thread.is_alive():
-                logger.error(
-                    "log driver did not stop within %.0fs — leaving queued "
-                    "registration changes for it rather than running them here",
-                    STOP_JOIN_TIMEOUT_S,
-                )
-                return
-        with self._command_lock:
-            self._accepting_commands = False
-        # Outside the lock: nothing can enqueue any more (the flag is the
-        # gate), and a command must not run holding it.
-        self._drain_commands()
+        if self._thread is None:
+            # Never started, so nobody owns the gate: shut it here, and a
+            # command left over from a driver that never ran is safe to run
+            # on this thread, there being no other.
+            with self._command_lock:
+                self._accepting_commands = False
+            self._drain_commands()
+            return
+        self._thread.join(timeout=STOP_JOIN_TIMEOUT_S)
+        if self._thread.is_alive():
+            logger.error(
+                "log driver did not stop within %.0fs — queued registration "
+                "changes stay queued for it rather than running here",
+                STOP_JOIN_TIMEOUT_S,
+            )
 
     def set_log_dir(self, log_dir: Path) -> None:
         self.log_dir = log_dir
@@ -203,9 +199,11 @@ class LogDriver:
         predicate for callers to branch on themselves. Split apart, the
         answer can go stale between the two: the loop runs its final drain
         and exits, and the command lands in a queue nobody will ever read
-        again. The gate opens in ``start`` and closes in ``stop`` only once
-        the driver thread is confirmed gone, so "runs on the caller" always
-        means "there is no driver thread to run it".
+        again. The gate opens in ``start`` and is closed by the driver
+        thread itself on its way out, so "runs on the caller" always means
+        "there is no driver thread left to run it". The lock is held across
+        the enqueue and nothing else — never across running a command — so
+        an exiting driver waits microseconds for a submit in flight.
 
         ``label`` names the change in the log if ``fn`` raises; a raising
         command is that command's problem and never the loop's.
@@ -287,11 +285,32 @@ class LogDriver:
                     logger.exception("log driver iteration failed")
                 self._stop.wait(POLL_INTERVAL_S)
         finally:
-            # The last drain, and the only one that can run a command accepted
-            # while this thread was on its way out — including everything
-            # queued during a stop() whose join gave up. Nobody else may touch
-            # the chain while this thread lives, so nobody else may run these.
+            self._close_command_gate()
+
+    def _close_command_gate(self) -> None:
+        """Drain to empty and stop accepting — atomically, as the last act.
+
+        Both halves belong here, on this thread, and in a loop:
+
+        * Closing first would leave callers running commands inline beside a
+          driver still inside its own final drain.
+        * Draining first and then closing blind strands whatever landed in
+          between — and at quit that is precisely ``plugin_host.shutdown``
+          unwinding its parsers and ticks after ``backend.stop`` gave up on
+          the join.
+
+        So drain outside the lock (a command may submit another, and must
+        never run holding it), then re-check under the lock. The gate shuts
+        only on an inbox observed empty at a moment nothing can enqueue, and
+        this thread runs nothing afterwards — which is what makes "the gate
+        is shut" mean "there is no thread left to run your command".
+        """
+        while True:
             self._drain_commands()
+            with self._command_lock:
+                if self._inbox.empty():
+                    self._accepting_commands = False
+                    return
 
     def _iterate(self) -> None:
         """One pass of the loop. Split out so tests can run exactly one."""
