@@ -405,12 +405,17 @@ class TestRegistrySettings:
 
 
 class TestBuiltInRegistryMoved:
-    """The provenance migration for #130 — the built-in registry's new home.
+    """Provenance after the built-in registry moved to its own server (#130).
 
-    A plugin installed before the move records the old URL, which after the
-    move names no configured registry at all: the manager reads that as a
-    third-party source and every offer from the new default becomes a
-    cross-source confirmation for what is the same catalogue.
+    A plugin installed before the move records the old URL, which now names
+    no registry the user has: the manager reads that as a third-party source
+    and every offer from the new default becomes a cross-source confirmation
+    for what is the same catalogue.
+
+    The condition is the user's own registry list, checked on every load. No
+    settings file says which era it was written in — the release that moved
+    the constant recorded no marker — so the answer is derived from what the
+    document says now.
     """
 
     def test_an_install_from_the_old_default_follows_it(self, tmp_path: Path) -> None:
@@ -447,21 +452,78 @@ class TestBuiltInRegistryMoved:
         )
         assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
-    def test_a_user_added_copy_of_the_old_url_is_left_alone(self) -> None:
-        """Still configured, still fetched — so the record is still true."""
+    def test_a_listed_old_url_keeps_everything_it_vouched_for(self) -> None:
+        """The registry is in the list, so the record naming it is true.
+
+        This is also what makes the old index safe to add deliberately now
+        that it is an ordinary third-party URL — including on the release
+        that moved the catalogue, which wrote no marker to recognise itself
+        by. Neither the row nor the records it owns are touched.
+        """
         plugins = PluginsSettings(
-            registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="Mine")],
+            registries=[
+                RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="The old index"),
+                RegistrySource(url="https://guild.example/index.json"),
+            ],
             entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
         )
+        assert [r.url for r in plugins.registries] == [
+            _LEGACY_DEFAULT_REGISTRY_URL,
+            "https://guild.example/index.json",
+        ]
+        assert plugins.registries[0].name == "The old index"
         assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
-        assert [r.url for r in plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
 
-    def test_a_legacy_override_of_the_old_url_counts_as_user_added(self) -> None:
-        """The deprecated single-registry override folds into the list first."""
+    def test_removing_that_row_is_the_way_back(self, tmp_path: Path) -> None:
+        """Documented recovery for a row that only ever duplicated the default.
+
+        Checked on every load rather than once, so the user's own action is
+        what decides — take the row out and the records it was holding in
+        place fold into the built-in catalogue on the next load.
+        """
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "plugins": {
+                        "registries": [{"url": _LEGACY_DEFAULT_REGISTRY_URL}],
+                        "entries": {"demo": {"registry_url": _LEGACY_DEFAULT_REGISTRY_URL}},
+                    }
+                }
+            )
+        )
+        listed = load_settings(path)
+        assert listed.plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+
+        listed.plugins.registries = []
+        save_settings(listed, path)
+        assert load_settings(path).plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+
+    def test_a_legacy_override_of_the_old_url_leaves_no_row_behind(self) -> None:
+        """The one row this touches, and only because it just made it.
+
+        Someone who set ``plugins.registry_url`` to the then-default on <=1.18
+        had it folded into ``registries`` by a later build. That value named
+        the built-in registry; it must not become a third-party row on the way
+        past, and it must not hold the rewrite back either.
+        """
         plugins = PluginsSettings(
             registry_url=_LEGACY_DEFAULT_REGISTRY_URL,
             entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
         )
+        assert plugins.registries == []
+        assert plugins.registry_url == ""
+        assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+
+    def test_a_legacy_override_beside_a_listed_copy_keeps_the_list_intact(self) -> None:
+        """The fold adds nothing, so there is no artifact to remove."""
+        plugins = PluginsSettings(
+            registry_url=_LEGACY_DEFAULT_REGISTRY_URL,
+            registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="Mine")],
+            entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
+        )
+        assert [r.url for r in plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
+        assert plugins.registries[0].name == "Mine"
         assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
 
     def test_other_provenance_is_never_rewritten(self) -> None:
@@ -498,7 +560,7 @@ class TestBuiltInRegistryMoved:
         assert loaded.plugins.entries["demo"].registry_url == "not a url at all"
         assert loaded.general.eq_log_dir == Path("/keep/me")
 
-    def test_the_migration_is_idempotent(self, tmp_path: Path) -> None:
+    def test_the_rewrite_is_idempotent(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         original = Settings()
         original.plugins.entries["demo"] = PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)

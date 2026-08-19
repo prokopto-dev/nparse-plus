@@ -1201,13 +1201,28 @@ pointed at a URL no longer configured anywhere: Source falls back to a bare
 host, Browse offers "Installed (other source)", and `best_update`'s rule that
 the installed-from registry wins turns the built-in registry's own offer into
 a cross-source confirmation between two names for one catalogue.
-`PluginsSettings._repoint_installs_at_the_moved_default` rewrites those
-records on load, inside the validator documented to never raise. Two guards,
-and the second is the one that matters: only a value normalizing to
-`_LEGACY_DEFAULT_REGISTRY_URL` **exactly** is touched (a fork's Pages URL is
-somebody else's registry), and nothing is touched while the user still lists
-that old URL as a registry of their own — then it is still configured, still
-fetched, and the record is still true.
+`PluginsSettings._follow_the_moved_default` rewrites those records inside the
+validator documented to never raise, and **the condition is the user's own
+registry list, re-checked on every load**: a record naming the old URL moves
+only while no row holds that URL. Then nothing else it could have meant is
+left — `add_registry` refused a URL equal to `DEFAULT_REGISTRY_URL` and
+`resolve_registries` collapsed a stored copy into the built-in row, so an
+install cannot have come through a copy. List it and both the row and its
+records stand untouched, which is what makes the old index safe to add
+deliberately now that it is an ordinary third-party URL; remove it and the
+next load folds those records into the built-in catalogue, which is the
+documented way back for a row that only ever duplicated the default.
+
+**Stateless on purpose.** A one-shot `plugins.registry_move_applied` marker
+was written and then removed: v2.16.0 moved the constant and introduced no
+marker, so "no marker" proves nothing about a document's era, and every
+derived era signal (e.g. "does any record name the NEW url") has the same
+hole — a user who added the old index on that release and installed only from
+it. Deciding from what the document says *now* has no hole to argue about.
+The list is edited in exactly one case: a row the same validation
+manufactured from the deprecated `plugins.registry_url` override, an artifact
+of the fold and never a list entry. Only an exact normalized match is ever
+touched; a fork's Pages URL is somebody else's registry.
 
 **One literal, and it lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
 sits beside `normalize_registry_url` for the reason that function is there:

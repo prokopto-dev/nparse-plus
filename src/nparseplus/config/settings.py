@@ -726,6 +726,7 @@ class PluginsSettings(BaseModel):
             seen.add(url)
             cleaned.append(source.model_copy(update={"url": url}))
 
+        folded_in = ""
         if self.registry_url:
             try:
                 legacy = normalize_registry_url(self.registry_url)
@@ -733,47 +734,73 @@ class PluginsSettings(BaseModel):
                 legacy = ""
             if legacy and legacy not in seen:
                 cleaned.append(RegistrySource(url=legacy))
-                seen.add(legacy)
+                folded_in = legacy
             self.registry_url = ""
 
         self.registries = cleaned
-        self._repoint_installs_at_the_moved_default(seen)
+        self._follow_the_moved_default(folded_in)
         return self
 
-    def _repoint_installs_at_the_moved_default(self, user_urls: set[str]) -> None:
-        """Follow the built-in registry when it moves (#130).
+    @staticmethod
+    def _recorded_registry(entry: PluginEntry) -> str:
+        """An install's provenance in comparable form, "" if unusable."""
+        try:
+            return normalize_registry_url(entry.registry_url)
+        except ValueError:
+            return ""
 
-        ``resolve_registries`` synthesizes the built-in row from a constant so
-        that moving it moves every user — but ``PluginEntry.registry_url`` is
-        a *record*, written once at install time, and nothing re-points it.
-        Left alone, every plugin installed before the move reads as "installed
-        from a registry that is no longer configured": the Source cell falls
-        back to a bare host name, Browse offers "Installed (other source)"
-        instead of an Update button, and taking the update demands a
-        cross-source confirmation naming two registries that are in fact the
-        same catalogue. The move is not a trust hop, so it must not look like
-        one.
+    def _follow_the_moved_default(self, folded_in: str = "") -> None:
+        """Keep an install's provenance pointing at the catalogue it came from.
 
-        Two guards, and the second is the one that matters. Only a value that
-        normalizes to the old default *exactly* is rewritten — a fork's Pages
-        URL, or the old one with a query string, is somebody else's registry.
-        And nothing is rewritten while the user still lists the old URL as a
-        registry of their own: that copy is still configured, still fetched,
-        and still genuinely where those bytes came from, so re-pointing the
-        record at the built-in row would falsify it.
+        The built-in registry moved to its own server (#130).
+        ``resolve_registries`` synthesizes that row from a constant so the
+        move carries every user across, but ``PluginEntry.registry_url`` is
+        written once at install time and nothing re-points it. Left alone,
+        anything installed before the move records a URL that names no
+        registry the user has: the Source cell falls back to a bare host,
+        Browse offers "Installed (other source)" instead of an Update button,
+        and taking the update demands a cross-source confirmation naming two
+        registries that are in fact one catalogue. The move is not a trust
+        hop and must not look like one.
+
+        **The condition is the user's own registry list, and it is checked on
+        every load rather than once.** A record naming the old URL is
+        rewritten only while that URL is in no row of ``registries``: then
+        nothing else it could mean is left, because back when that URL was
+        the default ``PluginHost.add_registry`` refused to add it and
+        ``resolve_registries`` collapsed any stored copy into the built-in
+        row — an install could not have come through a copy. List it, and the
+        record is true as written and is left exactly alone; that is what
+        makes it safe for someone to add the old index deliberately now that
+        it is an ordinary third-party URL. Remove it later and the next load
+        folds those records into the built-in catalogue, which is the
+        documented way back for a row that only ever duplicated it.
+
+        Deliberately stateless: no marker distinguishes a settings file
+        written before the move from one written by the release that made it
+        (v2.16.0 introduced none), so the answer is derived from what the
+        document says now rather than from when it was written.
+
+        The registry list itself is edited in exactly one case: a row this
+        same validation manufactured out of the deprecated
+        ``plugins.registry_url`` override, which is an artifact of folding a
+        field in and never a list entry the user built. Leaving it would turn
+        a value that named the built-in registry into a third-party row.
+
+        Only a value that normalizes to the old default *exactly* is touched.
+        A fork's Pages URL, or the old one carrying a query string, is
+        somebody else's registry and stays exactly as written.
 
         Called from the validator, and like it this never raises.
         """
-        if _LEGACY_DEFAULT_REGISTRY_URL in user_urls:
+        if folded_in == _LEGACY_DEFAULT_REGISTRY_URL:
+            self.registries = [
+                source for source in self.registries if source.url != _LEGACY_DEFAULT_REGISTRY_URL
+            ]
+        if any(source.url == _LEGACY_DEFAULT_REGISTRY_URL for source in self.registries):
             return
         for entry in self.entries.values():
-            if not entry.registry_url:
-                continue
-            try:
-                recorded = normalize_registry_url(entry.registry_url)
-            except ValueError:
-                continue  # unusable provenance; leave the record as written
-            if recorded == _LEGACY_DEFAULT_REGISTRY_URL:
+            if self._recorded_registry(entry) == _LEGACY_DEFAULT_REGISTRY_URL:
                 entry.registry_url = BUILTIN_REGISTRY_URL
 
 

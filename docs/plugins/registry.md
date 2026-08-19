@@ -194,15 +194,30 @@ setting they have ever configured.
 
 A plugin installed **before the built-in registry moved to its own server**
 recorded the old GitHub Pages URL as its provenance, and that URL now names
-no configured registry at all: the Source cell would fall back to a bare host
-name, Browse would offer *Installed (other source)* instead of an Update
-button, and taking the update would demand a confirmation naming two
-registries that are the same catalogue. So those records are re-pointed when
-settings load. The catalogue moved; the publisher did not, and the move is
-not a trust hop. Only an exact match to the old default is rewritten, and
-nothing is rewritten while you still list that old URL as a registry of your
-own — then it is still configured, still fetched, and the record is still
-true.
+no registry you have: the Source cell falls back to a bare host name, Browse
+offers *Installed (other source)* instead of an Update button, and taking the
+update demands a confirmation naming two registries that are the same
+catalogue. So a record naming that URL is re-pointed at the new one. The
+catalogue moved; the publisher did not, and the move is not a trust hop.
+
+**Unless you list that URL yourself.** The rule is your own registry list,
+re-checked on every load: while the old index is a row in **Plugin
+registries**, every record naming it is true as written and nothing is
+touched — not the row, not the records. That is what makes it safe to add the
+old index deliberately now that it is an ordinary third-party URL. Only when
+no row holds it is a record re-pointed, and then there is nothing else it
+could have meant: back when that URL was the built-in registry, nParse+
+refused to add it as a registry of your own and folded any stored copy into
+the built-in row, so an install could not have come through a copy.
+
+nParse+ does not edit your registry list to make this tidier. If a row
+holding the old URL appears after the upgrade, it was always in your settings,
+hidden behind the built-in row it duplicated; it is an ordinary third-party
+row now and **Remove** works on it. Take it out and the next load folds the
+records it was holding in place into the built-in catalogue. The single row
+nParse+ does drop is one it created in that same load out of the
+long-deprecated `plugins.registry_url` override — an artifact of folding a
+field in, never a list entry you built.
 
 ## Index format (schema 1)
 

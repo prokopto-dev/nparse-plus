@@ -485,8 +485,13 @@ class TestTheBuiltInRegistryMoved:
         assert action.kind == "update"
         assert action.enabled is True
 
-    def test_a_user_added_copy_of_the_old_url_still_asks(self, tmp_path: Path) -> None:
-        """Untouched by the migration, so the built-in offer is a real hop."""
+    def test_a_listed_old_url_still_asks(self, tmp_path: Path) -> None:
+        """Listing that URL is what separates this from the case above.
+
+        A registry in the list is a trust decision the user made and the
+        record naming it is true, so nothing is repointed and the built-in
+        registry's offer is a genuine source change.
+        """
         path = tmp_path / "settings.json"
         path.write_text(
             json.dumps(

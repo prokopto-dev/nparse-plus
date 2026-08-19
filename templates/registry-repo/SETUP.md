@@ -73,11 +73,19 @@ which did exactly this):
    re-point `PluginEntry.registry_url` in `PluginsSettings`. Without that,
    everything already installed reads as "from a registry that is no longer
    configured" and every update offer becomes a cross-source confirmation
-   between two names for the same catalogue. Rewrite only an exact match, and
-   only while the old URL is not one of the user's own registries.
-3. Regenerate the schema (its `$id` names the host) and copy the result to
+   between two names for the same catalogue. Rewrite only an exact normalized
+   match, and only while the outgoing URL is **not** a row in the user's own
+   `registries` — after the move it is an ordinary index somebody may add
+   deliberately, and no settings file records which era it was written in.
+3. Do **not** edit the registry list to tidy up. A stored row holding the
+   outgoing URL was inert (it collapsed into the built-in row) and will
+   un-collapse into a visible third-party row; leave it, let *Remove* work on
+   it, and document that removing it lets the records follow on the next
+   load. The one row worth dropping is one the same validation just
+   manufactured from the deprecated `plugins.registry_url` override.
+4. Regenerate the schema (its `$id` names the host) and copy the result to
    every consumer — see below.
-4. Update this file and `docs/plugins/registry.md`; the test named above
+5. Update this file and `docs/plugins/registry.md`; the test named above
    fails until both name the new URL.
 
 ## Keeping the schema in sync
