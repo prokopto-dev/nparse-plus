@@ -1,11 +1,15 @@
 """The plugin registry index — schema, fetching, and compatibility checks.
 
-The registry is deliberately static: a curated ``index.json`` published on
-GitHub Pages of the ``prokopto-dev/nparseplus-plugins`` repo, maintained by
-pull-request review. See docs/plugins/registry.md for the
-full specification. Trust comes from sha256 pinning: the index records the
-hash of each reviewed release artifact, and the installer refuses a
-download whose bytes don't match — the URL is transport, the hash is the
+The built-in registry is the curated catalogue served by the live registry
+server (``prokopto-dev/nparse-plugin-regserve``) at
+``https://nparseplugins.prokopto.dev/index.json``. What the client parses is
+unchanged by that move and deliberately so: one schema-1 ``index.json`` per
+registry, fetched with a single unconditional GET, at a path the server keeps
+outside its versioned API precisely so it never moves. See
+docs/plugins/registry.md for the full specification. Trust comes from sha256
+pinning: the index records the hash of each release artifact — computed by
+the server itself, never supplied by the author — and the installer refuses a
+download whose bytes don't match, so the URL is transport and the hash is the
 security boundary.
 
 Everything here is Qt-free and network-injectable; the manager UI runs
@@ -23,6 +27,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from nparseplus.config.settings import BUILTIN_REGISTRY_URL
 from nparseplus_sdk import PluginMeta, check_compat
 from nparseplus_sdk.plugin import PLUGIN_ID_RE
 
@@ -34,10 +39,14 @@ REGISTRY_SCHEMA_VERSION = 1
 # How many failing registries the status summary names before collapsing.
 _MAX_REPORTED_FAILURES = 5
 
-# GitHub Pages of the curated registry repo. Always offered, never stored:
-# resolve_registries synthesizes it so changing this constant moves every
-# user instead of stranding them on whatever a past release wrote to disk.
-DEFAULT_REGISTRY_URL = "https://prokopto-dev.github.io/nparseplus-plugins/index.json"
+# The curated catalogue. Always offered, never stored: resolve_registries
+# synthesizes it so changing where it lives moves every user instead of
+# stranding them on whatever a past release wrote to disk (#130 exercised
+# exactly that). The literal lives in config.settings — which owns the URL
+# plumbing and must be able to migrate an install's recorded provenance
+# without importing this subsystem — and this is the name everything else
+# uses, including the tests that monkeypatch the default away.
+DEFAULT_REGISTRY_URL = BUILTIN_REGISTRY_URL
 DEFAULT_REGISTRY_NAME = "nParse+ registry (built-in)"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

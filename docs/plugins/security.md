@@ -76,6 +76,14 @@ same document supplies the download URL *and* the hash it is checked
 against, so the guarantee is only ever as good as the registry it came
 from.
 
+That is true of the built-in catalogue as much as any other. It is served
+by a live registry server (<https://nparseplugins.prokopto.dev/index.json>)
+rather than the static file it began as, and that changes nothing about
+where the boundary sits: the app fetches over https, re-asserts it on every
+redirect hop, and checks the bytes against the digest that document carries.
+What a host can do is serve a different document; what it cannot do is make
+nParse+ accept an artifact that does not hash to what the document says.
+
 That matters because the registry list is yours to extend: nParse+ ships
 with one built-in catalogue and merges in any you add under **Settings >
 Plugins > Plugin registries**. Adding one is a trust decision a level above

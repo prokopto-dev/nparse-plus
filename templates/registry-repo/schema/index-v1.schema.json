@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prokopto-dev.github.io/nparseplus-plugins/schema/index-v1.schema.json",
+  "$id": "https://nparseplugins.prokopto.dev/schema/index-v1.schema.json",
   "title": "RegistryIndex",
   "description": "GENERATED FILE \u2014 do not edit by hand. Produced by tools/gen_registry_schema.py in prokopto-dev/nparse-plus from the pydantic models in nparseplus.core.plugins.registry, which are the source of truth for this wire format. Note that plugin-id uniqueness and ownership are NOT expressible here; the registry's validate-index workflow checks those in Python.",
   "$defs": {

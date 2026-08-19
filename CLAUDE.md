@@ -139,9 +139,11 @@ examples/plugins/       # reference add-ons (hello_timer.py, merchant_prices/);
                         # tests/core/plugins/test_examples.py keeps them loading
 templates/              # plugin-repo/ = ready-to-push content of the plugin
                         #   template repo (not created yet; see TEMPLATE_SETUP.md).
-                        #   registry-repo/ = the mirror of the LIVE curated index
-                        #   repo, kept here because tools/gen_registry_schema.py
-                        #   --check guards its schema against drift (see SETUP.md)
+                        #   registry-repo/ = the mirror of the curated index
+                        #   repo (the registry server is what the app fetches
+                        #   now), kept here because tools/gen_registry_schema.py
+                        #   --check guards its schema against drift — the
+                        #   server vendors that file verbatim (see SETUP.md)
 tools/                  # one-shot converters (Zones.cs -> zones.json etc.); outputs committed
 tests/                  # pytest; tests/fixtures = EQtoolsTests golden corpus
 ```
@@ -477,10 +479,10 @@ failure isolated per plugin), consent persisted per id in
 stranger it is, `context.py` (the SDK context impl + `unwind()` of partial
 registrations), `install.py` (zip-slip-safe member screen, staging +
 `validate_plugin` gate before the move, https re-asserted on every redirect
-hop, sha256 pinning, uninstall-to-`trash/`), `registry.py` (curated static
-index; `DEFAULT_REGISTRY_URL` points at the `nparseplus-plugins` Pages repo,
-live since 1.18 and serving an empty schema-1 index; Browse degrades to a
-"could not reach" status). `core/driver.py` grew `add_supervised_tick`: plugin
+hop, sha256 pinning, uninstall-to-`trash/`), `registry.py` (the curated
+schema-1 index; `DEFAULT_REGISTRY_URL` has pointed at the live registry
+server since #130 — see "The registry moved" below — and Browse degrades to
+a "could not reach" status). `core/driver.py` grew `add_supervised_tick`: plugin
 ticks are
 timed against `TICK_BUDGET_S` (0.25 s) and evicted after
 `TICK_BREACH_LIMIT` (2) consecutive breaches — the plugin stays active and
@@ -505,7 +507,8 @@ every other setting). The built-in registry is **never persisted**:
 `registry.resolve_registries` synthesizes it from `DEFAULT_REGISTRY_URL` on
 every read, so it can be unticked but never removed or edited (guarded twice
 — disabled button + `PluginHost.remove_registry` refusal) and changing that
-constant later moves every user instead of stranding them. `fetch_indexes`
+constant later moves every user instead of stranding them (#130 did exactly
+that, and found the one thing it does not cover — see below). `fetch_indexes`
 fans out over the enabled registries on a ThreadPoolExecutor and returns a
 `MultiFetchResult` of per-registry `RegistryFetchResult`s placed by index
 (deterministic order; a dead registry costs its timeout in parallel, not in
@@ -1177,6 +1180,48 @@ warning an install edit owes the user, and is exposed *because* #88 was that
 beats every plugin rolling its own. The host imports the probe inside the
 method, so `core.plugins.context` — which is on the activate path — does not
 pull subprocess plumbing in for a capability most plugins never touch.
+
+**The registry moved to a live server** (post-2.15, #130): the built-in
+catalogue is `https://nparseplugins.prokopto.dev/index.json` — one Go binary
+over SQLite (`prokopto-dev/nparse-plugin-regserve`) — instead of a static
+`index.json` on the curated repo's GitHub Pages, so that publishing can
+become a step in a plugin's own release pipeline with the server fetching and
+hashing the artifact itself rather than storing a digest its author supplied.
+**The client did not change and must not**: same schema-1 document, same
+single unconditional GET, and the server keeps `/index.json` and
+`/plugins/{id}/index.json` outside its `/api/v1` precisely so the path a
+released binary is compiled with never moves. No caching, no `ETag`, no
+`User-Agent` — those are their own decision, not a rider on this one.
+
+**The work was the provenance record, not the constant.** The registry *list*
+needed no migration — nothing about the built-in row is persisted, which is
+the whole anti-stranding design — but `PluginEntry.registry_url` is a record
+written once at install time, so every plugin installed before the move
+pointed at a URL no longer configured anywhere: Source falls back to a bare
+host, Browse offers "Installed (other source)", and `best_update`'s rule that
+the installed-from registry wins turns the built-in registry's own offer into
+a cross-source confirmation between two names for one catalogue.
+`PluginsSettings._repoint_installs_at_the_moved_default` rewrites those
+records on load, inside the validator documented to never raise. Two guards,
+and the second is the one that matters: only a value normalizing to
+`_LEGACY_DEFAULT_REGISTRY_URL` **exactly** is touched (a fork's Pages URL is
+somebody else's registry), and nothing is touched while the user still lists
+that old URL as a registry of their own — then it is still configured, still
+fetched, and the record is still true.
+
+**One literal, and it lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
+sits beside `normalize_registry_url` for the reason that function is there:
+settings has to migrate a stored URL without importing the plugin subsystem,
+because that import gate is what keeps a plugins-off launch from touching the
+SDK. `core.plugins.registry` re-exports it as `DEFAULT_REGISTRY_URL`, which
+stays the name everything else uses. The URL-pin test was **refocused, not
+deleted** — it now asserts the shape (`https://…/index.json`) and that
+`templates/registry-repo/SETUP.md` and `docs/plugins/registry.md` both name
+whatever the constant says, so moving the catalogue again is a one-line change
+plus the two documents that tell a human where it went. `SCHEMA_ID` in
+`tools/gen_registry_schema.py` names the new host too; the generated schema is
+vendored verbatim by the server (its `SCHEMA001` gate) and by the curated
+repo's CI, so a regeneration has to be copied to both.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

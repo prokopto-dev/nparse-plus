@@ -2,11 +2,12 @@
 """Generate the plugin-registry JSON Schema from the app's pydantic models.
 
 Produces templates/registry-repo/schema/index-v1.schema.json — the schema the
-curated registry repo (prokopto-dev/nparseplus-plugins) uses in CI to validate
-incoming submissions. Generating it means the registry can check PRs with
-nothing but `jsonschema` installed, while the app
-(src/nparseplus/core/plugins/registry.py) stays the single source of truth for
-the wire format.
+registry validates listings against, vendored verbatim by the registry server
+(prokopto-dev/nparse-plugin-regserve, whose SCHEMA001 gate diffs what it
+renders against this file) and by the curated repo's submission CI.
+Generating it means neither has to install nParse+ to know what a valid entry
+is, while the app (src/nparseplus/core/plugins/registry.py) stays the single
+source of truth for the wire format.
 
 `RegistryIndex.model_json_schema()` alone is NOT enough: the string
 constraints live in `field_validator`s (https-only urls, 64-hex sha256, the
@@ -47,9 +48,13 @@ OUTPUT_PATH = (
     / f"index-v{REGISTRY_SCHEMA_VERSION}.schema.json"
 )
 
+# Names the registry this document describes, on the host that now serves it
+# (#130). It is an identifier, not a fetch target: the app parses an index
+# with the pydantic models below, and every consumer of this schema reads a
+# committed copy of the file — the curated repo's CI and the registry
+# server's own SCHEMA001 gate, which vendors it verbatim.
 SCHEMA_ID = (
-    "https://prokopto-dev.github.io/nparseplus-plugins/"
-    f"schema/index-v{REGISTRY_SCHEMA_VERSION}.schema.json"
+    f"https://nparseplugins.prokopto.dev/schema/index-v{REGISTRY_SCHEMA_VERSION}.schema.json"
 )
 
 # https-only, mirroring RegistryRelease._https_only. That validator lowercases

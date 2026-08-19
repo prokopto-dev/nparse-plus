@@ -67,9 +67,10 @@ Longer-horizon packaging work, waiting on time (and in some cases, money):
 
 Recently off this list:
 
-- **A live plugin registry** — `prokopto-dev/nparseplus-plugins` publishes
-  the curated index, so **Browse registry…** works. The catalogue is empty
-  until the first submission; see [the registry](plugins/registry.md).
+- **A live plugin registry** — the curated index is served by the registry
+  server at <https://nparseplugins.prokopto.dev/index.json>, so **Browse
+  registry…** works and the app follows the catalogue wherever it lives; see
+  [the registry](plugins/registry.md).
 - **`nparseplus-sdk` on PyPI** — `pip install nparseplus-sdk` is all a
   plugin author needs; see [developing plugins](plugins/developing.md).
 

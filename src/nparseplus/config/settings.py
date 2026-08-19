@@ -626,6 +626,23 @@ class PluginEntry(BaseModel):
     update_url: str = ""
 
 
+# The built-in registry's index URL, served by the live registry server
+# (prokopto-dev/nparse-plugin-regserve). It lives here rather than in
+# ``core.plugins.registry`` for the same reason ``normalize_registry_url``
+# does: the provenance migration below has to compare against it, and
+# ``PluginsSettings`` must be able to run without importing the plugin
+# subsystem — every user constructs a ``Settings``, including the ones who
+# never turn add-ons on. ``core.plugins.registry`` re-exports it as
+# ``DEFAULT_REGISTRY_URL``, which stays the name the app and the docs use.
+BUILTIN_REGISTRY_URL = "https://nparseplugins.prokopto.dev/index.json"
+
+# Where the built-in registry lived before the move to that server (#130): a
+# static index.json published from the GitHub Pages of the curated repo. Kept
+# so the provenance migration in PluginsSettings is self-documenting — nothing
+# else may read it, and no new code should learn this URL.
+_LEGACY_DEFAULT_REGISTRY_URL = "https://prokopto-dev.github.io/nparseplus-plugins/index.json"
+
+
 def normalize_registry_url(url: str) -> str:
     """Canonical form of a registry index URL; raises ValueError if unusable.
 
@@ -690,7 +707,7 @@ class PluginsSettings(BaseModel):
 
     @model_validator(mode="after")
     def _fold_in_legacy_and_sanitize(self) -> PluginsSettings:
-        """Migrate `registry_url` and drop unusable registry entries.
+        """Migrate `registry_url`, drop unusable rows, follow a moved default.
 
         Deliberately never raises: ``load_settings`` treats a ValueError as a
         corrupt document and falls back to defaults, so raising here would
@@ -716,10 +733,48 @@ class PluginsSettings(BaseModel):
                 legacy = ""
             if legacy and legacy not in seen:
                 cleaned.append(RegistrySource(url=legacy))
+                seen.add(legacy)
             self.registry_url = ""
 
         self.registries = cleaned
+        self._repoint_installs_at_the_moved_default(seen)
         return self
+
+    def _repoint_installs_at_the_moved_default(self, user_urls: set[str]) -> None:
+        """Follow the built-in registry when it moves (#130).
+
+        ``resolve_registries`` synthesizes the built-in row from a constant so
+        that moving it moves every user — but ``PluginEntry.registry_url`` is
+        a *record*, written once at install time, and nothing re-points it.
+        Left alone, every plugin installed before the move reads as "installed
+        from a registry that is no longer configured": the Source cell falls
+        back to a bare host name, Browse offers "Installed (other source)"
+        instead of an Update button, and taking the update demands a
+        cross-source confirmation naming two registries that are in fact the
+        same catalogue. The move is not a trust hop, so it must not look like
+        one.
+
+        Two guards, and the second is the one that matters. Only a value that
+        normalizes to the old default *exactly* is rewritten — a fork's Pages
+        URL, or the old one with a query string, is somebody else's registry.
+        And nothing is rewritten while the user still lists the old URL as a
+        registry of their own: that copy is still configured, still fetched,
+        and still genuinely where those bytes came from, so re-pointing the
+        record at the built-in row would falsify it.
+
+        Called from the validator, and like it this never raises.
+        """
+        if _LEGACY_DEFAULT_REGISTRY_URL in user_urls:
+            return
+        for entry in self.entries.values():
+            if not entry.registry_url:
+                continue
+            try:
+                recorded = normalize_registry_url(entry.registry_url)
+            except ValueError:
+                continue  # unusable provenance; leave the record as written
+            if recorded == _LEGACY_DEFAULT_REGISTRY_URL:
+                entry.registry_url = BUILTIN_REGISTRY_URL
 
 
 class Settings(BaseModel):

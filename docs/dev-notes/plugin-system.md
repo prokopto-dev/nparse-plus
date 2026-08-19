@@ -66,10 +66,10 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
 11. **Registry = curated static index** (`core/plugins/registry.py`):
     pydantic schema (schema_version gate, https-only URLs, validated
     sha256), injectable fetch, `release_compat` reusing the SDK handshake,
-    `update_available` via packaging.version. Default URL points at
-    `prokopto-dev/nparseplus-plugins` GitHub Pages, live since 1.18 and
-    serving a (so far empty) schema-1 index; a failing registry degrades to
-    a "could not reach" line without hiding the ones that answered. Spec:
+    `update_available` via packaging.version. Live since 1.18; the default
+    URL pointed at `prokopto-dev/nparseplus-plugins` GitHub Pages until the
+    move to the registry server (item 29). A failing registry degrades to a
+    "could not reach" line without hiding the ones that answered. Spec:
     docs/plugins/registry.md. (The single-URL override this shipped with,
     `plugins.registry_url`, was superseded by the registry list — items
     24–28.)
@@ -240,6 +240,43 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     tooltip, and the add confirmation — where it is stacked with
     `CONSENT_WARNING` and defaults to Cancel. `add_registry` persists, so
     it is the last call in the flow, never the first.
+
+## Registry-server increment (#130)
+
+29. **The built-in registry moved to a live server.** `DEFAULT_REGISTRY_URL`
+    now names `https://nparseplugins.prokopto.dev/index.json`
+    (`prokopto-dev/nparse-plugin-regserve`, Go + SQLite) instead of the
+    curated repo's GitHub Pages. **No client change came with it**, and that
+    is the point: same schema-1 document, same single unconditional GET, and
+    the server keeps the index endpoints outside `/api/v1` so the path a
+    released binary is compiled with never moves. Caching, `ETag` and a
+    `User-Agent` were deliberately left out — the client sends the same
+    request it always did, and changing that is its own decision.
+30. **The move's real work was provenance, not the constant.** Item 24's
+    anti-stranding design covers the *registry list*: nothing is persisted,
+    so the new URL simply appears. But `PluginEntry.registry_url` is a
+    record written once at install time, so every plugin installed before
+    the move pointed at a URL that is no longer configured — Source falls
+    back to a bare host, Browse offers "Installed (other source)", and
+    `best_update`'s trust rule (item 27) turns the built-in registry's own
+    offer into a cross-source confirmation between two names for one
+    catalogue. `PluginsSettings._repoint_installs_at_the_moved_default`
+    rewrites those records on load, inside the validator that is documented
+    to never raise. Two guards: only a value normalizing to
+    `_LEGACY_DEFAULT_REGISTRY_URL` *exactly* is touched (a fork's Pages URL
+    is somebody else's registry), and nothing is touched while the user
+    still lists that old URL as a registry of their own — then it is still
+    configured, still fetched, and the record is still true.
+31. **The URL literal lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
+    is defined beside `normalize_registry_url` and re-exported as
+    `core.plugins.registry.DEFAULT_REGISTRY_URL`, for the reason that
+    function is there at all: settings must be able to migrate a stored URL
+    without importing the plugin subsystem (item 16's gate is what keeps a
+    plugins-off launch from touching the SDK). One literal, because the two
+    halves of a move disagreeing is exactly the bug. The URL-pin test was
+    refocused, not deleted: it now asserts the shape (`https://…/index.json`)
+    and that `templates/registry-repo/SETUP.md` and `docs/plugins/registry.md`
+    both name whatever the constant says.
 
 ## Follow-ups (open as issues)
 

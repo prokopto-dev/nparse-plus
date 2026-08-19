@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from nparseplus.config.settings import _LEGACY_DEFAULT_REGISTRY_URL, load_settings
 from nparseplus.core.plugins.registry import (
+    DEFAULT_REGISTRY_URL,
     MergedListing,
     RegistryPlugin,
     RegistryRelease,
@@ -430,3 +432,83 @@ class TestListingAction:
             installed_registry_url="",
         )
         assert action.kind in {"update", "installed"}
+
+
+class TestTheBuiltInRegistryMoved:
+    """#130 end to end: an install made before the move is not a source hop.
+
+    The provenance rewrite lives in ``PluginsSettings`` and everything that
+    reads it lives here, so the acceptance criterion — "an existing install
+    shows the built-in registry as its Source and its next update is a plain
+    Update" — is only really asserted by running both halves together.
+    """
+
+    @staticmethod
+    def _installed_from(settings_file: Path, recorded_url: str) -> InstalledPlugin:
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "plugins": {
+                        "entries": {
+                            "demo": {
+                                "approved": True,
+                                "last_version": "1.0.0",
+                                "registry_url": recorded_url,
+                                "sha256": SHA,
+                            }
+                        }
+                    }
+                }
+            )
+        )
+        entry = load_settings(settings_file).plugins.entries["demo"]
+        return InstalledPlugin(plugin_id="demo", version="1.0.0", registry_url=entry.registry_url)
+
+    def test_an_install_from_the_old_default_takes_a_plain_update(self, tmp_path: Path) -> None:
+        installed = self._installed_from(tmp_path / "settings.json", _LEGACY_DEFAULT_REGISTRY_URL)
+        offer = listing(DEFAULT_REGISTRY_URL, "2.0.0", registry_kind="default")
+
+        updates = pending_updates([installed], [offer], sdk_version=SDK, app_version=APP)
+        assert len(updates) == 1
+        assert updates[0].same_source is True
+        assert updates[0].needs_confirmation is False
+        assert same_source_updates(updates) == updates  # "Update all" takes it
+
+        action = listing_action(
+            offer,
+            installed_version="1.0.0",
+            installed_registry_url=installed.registry_url,
+            is_installed=True,
+            sdk_version=SDK,
+            app_version=APP,
+        )
+        assert action.kind == "update"
+        assert action.enabled is True
+
+    def test_a_user_added_copy_of_the_old_url_still_asks(self, tmp_path: Path) -> None:
+        """Untouched by the migration, so the built-in offer is a real hop."""
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "plugins": {
+                        "registries": [{"url": _LEGACY_DEFAULT_REGISTRY_URL}],
+                        "entries": {
+                            "demo": {"registry_url": _LEGACY_DEFAULT_REGISTRY_URL},
+                        },
+                    }
+                }
+            )
+        )
+        entry = load_settings(path).plugins.entries["demo"]
+        assert entry.registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+
+        action = listing_action(
+            listing(DEFAULT_REGISTRY_URL, "2.0.0", registry_kind="default"),
+            installed_version="1.0.0",
+            installed_registry_url=entry.registry_url,
+            is_installed=True,
+            sdk_version=SDK,
+            app_version=APP,
+        )
+        assert action.kind == "update_other_source"
