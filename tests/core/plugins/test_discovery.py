@@ -10,6 +10,7 @@ from nparseplus.core.plugins.discovery import (
     discover_dir_plugins,
     discover_entry_point_plugins,
     is_reserved_name,
+    source_for_path,
 )
 
 from .conftest import write_plugin
@@ -48,6 +49,32 @@ def test_reserved_dir_skipped_in_either_casing(tmp_path: Path) -> None:
         directory.mkdir(parents=True)
         write_plugin(directory, "__init__.py", plugin_id="old")
         assert discover_dir_plugins(root) == [], name
+
+
+def test_source_for_path_answers_the_sweeps_own_rules(tmp_path: Path) -> None:
+    """The one place "is this a plugin" is decided, for a mid-session install.
+
+    ``PluginHost.adopt_installed`` classifies against this, so a path the
+    startup sweep would have skipped must be skipped there too.
+    """
+    module = write_plugin(tmp_path, "fresh.py", plugin_id="fresh")
+    package = tmp_path / "boxed"
+    package.mkdir()
+    write_plugin(package, "__init__.py", plugin_id="boxed")
+    (tmp_path / "README.md").write_text("not a plugin", encoding="utf-8")
+    hidden = write_plugin(tmp_path, "_private.py", plugin_id="private")
+    trash = tmp_path / "trash"
+    trash.mkdir()
+    write_plugin(trash, "__init__.py", plugin_id="old")
+
+    fresh = source_for_path(module)
+    assert fresh is not None and (fresh.origin, fresh.name) == ("dir", "fresh")
+    boxed = source_for_path(package)
+    assert boxed is not None and (boxed.origin, boxed.name) == ("dir", "boxed")
+    assert source_for_path(tmp_path / "README.md") is None
+    assert source_for_path(hidden) is None
+    assert source_for_path(trash) is None
+    assert source_for_path(tmp_path / "gone.py") is None
 
 
 def test_is_reserved_name_is_case_insensitive() -> None:

@@ -43,31 +43,43 @@ class PluginSource:
     load: Callable[[], Callable[[], object]]  # -> the create_plugin factory; may raise
 
 
+def source_for_path(path: Path) -> PluginSource | None:
+    """The source ``path`` would load as, or None if it is not one.
+
+    The single answer to "is this a plugin the directory sweep would pick
+    up", so a plugin installed mid-session (``PluginHost.adopt_installed``)
+    is classified by exactly the rules that classified every other one —
+    including the ones that say no: dot/underscore prefixes and the
+    installer's own work areas.
+    """
+    if path.name.startswith(("_", ".")) or is_reserved_name(path.name):
+        return None
+    is_module = path.is_file() and path.suffix == ".py"
+    is_package = path.is_dir() and (path / "__init__.py").is_file()
+    if not (is_module or is_package):
+        return None
+
+    def _load() -> Callable[[], object]:
+        # The import only happens here, never during the sweep.
+        return load_plugin_factory(path)
+
+    return PluginSource(
+        origin="dir",
+        name=path.stem if is_module else path.name,
+        location=str(path),
+        load=_load,
+    )
+
+
 def discover_dir_plugins(plugins_dir: Path) -> list[PluginSource]:
     """Enumerate ``*.py`` files and package dirs in the plugins directory."""
     if not plugins_dir.is_dir():
         return []
     sources: list[PluginSource] = []
     for path in sorted(plugins_dir.iterdir(), key=lambda p: p.name):
-        if path.name.startswith(("_", ".")) or is_reserved_name(path.name):
-            continue
-        is_module = path.is_file() and path.suffix == ".py"
-        is_package = path.is_dir() and (path / "__init__.py").is_file()
-        if not (is_module or is_package):
-            continue
-
-        def _load(p: Path = path) -> Callable[[], object]:
-            # Default arg binds the loop variable; import only happens here.
-            return load_plugin_factory(p)
-
-        sources.append(
-            PluginSource(
-                origin="dir",
-                name=path.stem if is_module else path.name,
-                location=str(path),
-                load=_load,
-            )
-        )
+        source = source_for_path(path)
+        if source is not None:
+            sources.append(source)
     return sources
 
 

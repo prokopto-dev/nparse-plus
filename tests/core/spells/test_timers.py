@@ -235,6 +235,46 @@ def test_clear_all_empties_rows_and_notifies(timers: TimersService, spell_book: 
     assert calls == [1]
 
 
+def test_remove_owner_drops_only_that_plugins_rows(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    """Disabling a plugin has to take its countdowns with it (#45)."""
+    ours = timers.add_spell(_spell_row(spell_book, group=YOU_GROUP))
+    theirs = timers.add_timer(
+        TimerRow(
+            name="Add-on Countdown",
+            group=TRIGGER_TIMER_GROUP,
+            updated_at=T0,
+            ends_at=T0 + timedelta(minutes=5),
+            total_duration_s=300.0,
+            owner="merchant-mode",
+        )
+    )
+    somebody_else = timers.add_counter(
+        CounterRow(name="Casts", group="Joe", updated_at=T0, owner="other-addon")
+    )
+    calls: list[int] = []
+    timers.on_change.append(lambda: calls.append(1))
+
+    assert timers.remove_owner("merchant-mode") == 1
+    assert theirs not in timers.snapshot()
+    assert ours in timers.snapshot() and somebody_else in timers.snapshot()
+    assert calls == [1]
+
+    # Nothing left to remove: no notification either.
+    assert timers.remove_owner("merchant-mode") == 0
+    assert calls == [1]
+
+
+def test_remove_owner_of_nothing_never_means_everything(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    """The app's own rows carry no owner; "" must not match all of them."""
+    timers.add_spell(_spell_row(spell_book, group=YOU_GROUP))
+    assert timers.remove_owner("") == 0
+    assert len(timers.snapshot()) == 1
+
+
 def test_on_change_fires(timers: TimersService, spell_book: SpellBook) -> None:
     calls: list[int] = []
     timers.on_change.append(lambda: calls.append(1))

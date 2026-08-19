@@ -193,6 +193,14 @@ class BaseRow(BaseModel):
     group: str  # target group; YOU_GROUP for the player
     updated_at: datetime
     is_target_player: bool = True
+    # Which plugin put this row here, empty for every row the app itself owns
+    # (#45). Only a plugin needs an owner: disabling one has to take its
+    # countdowns off the screen with it — a disabled add-on still ticking in
+    # the Timers window is the one thing ``HostPluginContext.unwind`` cannot
+    # reverse that a user actually sees. On BaseRow rather than TimerRow
+    # because a plugin may add any of the four kinds, and stamped by the
+    # plugin context, not by the plugin (see ``core/plugins/context.py``).
+    owner: str = ""
 
 
 class CountdownRow(BaseRow):
@@ -530,6 +538,26 @@ class TimersService:
             return 0
         before = len(self._rows)
         self._rows = [row for row in self._rows if getattr(row, "window_series", "") != series]
+        removed = before - len(self._rows)
+        if removed:
+            self._notify()
+        return removed
+
+    def remove_owner(self, owner: str) -> int:
+        """Drop every row a plugin added (#45). Returns count removed.
+
+        Driver thread only, like every other mutation here — the host routes
+        this through ``LogDriver.submit_to_driver`` when a plugin is disabled
+        from the settings window.
+
+        An empty ``owner`` matches nothing rather than every app-owned row:
+        the argument is a plugin id, and answering "all of them" to a caller
+        that lost track of its id would clear the user's whole window.
+        """
+        if not owner:
+            return 0
+        before = len(self._rows)
+        self._rows = [row for row in self._rows if row.owner != owner]
         removed = before - len(self._rows)
         if removed:
             self._notify()

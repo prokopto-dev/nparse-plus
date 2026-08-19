@@ -14,11 +14,21 @@ Flow (all failures isolated per plugin; the app never crashes on a plugin):
 4. app.py materializes ``window_specs()`` / ``page_specs()``.
 5. ``shutdown()`` on app quit (after the driver joined): ``deactivate`` each
    active plugin, then release host-owned network resources.
+
+Steps 3-5 are also reachable one plugin at a time, while the app runs:
+``activate_one`` / ``deactivate_one`` (and ``adopt_installed`` for something
+installed this session) are what ``set_enabled`` drives, so enabling or
+disabling an add-on no longer costs a restart (#45). Live registration
+changes are safe because every one of them is routed onto the driver thread
+by ``LogDriver.submit_to_driver``; what is deliberately NOT live is
+re-importing a plugin whose code changed in place, and the master
+``plugins.enabled`` switch, which stays restart-only by design.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,6 +113,12 @@ class PluginHost:
         self._loaded: list[LoadedPlugin] = []
         # Latest update check, session-only. See cache_update_check.
         self._update_check: UpdateCheckResult | None = None
+        # Called with a plugin id when ``deactivate_one`` retires it, so
+        # whoever built that plugin's windows and settings pages can destroy
+        # them. A list on the ``TimersService.on_change`` pattern, and a bare
+        # id rather than a widget: core stays Qt-free, and the host never
+        # learns what a window is. Failures are logged, never propagated.
+        self.on_ui_teardown: list[Callable[[str], None]] = []
 
     @property
     def plugins_dir(self) -> Path:
@@ -194,21 +210,44 @@ class PluginHost:
     def pending_consent(self) -> list[LoadedPlugin]:
         return [p for p in self._loaded if p.status == "pending_consent"]
 
-    def record_consent(self, plugin_id: str, allowed: bool) -> None:
-        """Persist the first-load answer and reclassify the plugin."""
+    def record_consent(self, plugin_id: str, allowed: bool) -> LoadedPlugin | None:
+        """Persist the first-load answer and reclassify the plugin.
+
+        Answers a plugin awaiting consent — and also one already ``disabled``,
+        because a plugin installed during this session is consented from the
+        manager rather than from the startup sweep, and a user who declines,
+        thinks better of it and installs again would otherwise face a row that
+        cannot be re-approved without a restart. Nothing else is touched: a
+        row that is ``active``, ``incompatible``, ``error`` or ``duplicate``
+        has an answer already, or has a problem consent cannot fix.
+
+        Reclassifies only — the plugin is not activated here, so the startup
+        order (prompt every plugin, then ``activate_enabled``) is unchanged.
+        ``set_enabled`` is the live path.
+
+        The entry is *updated*, never replaced: ``record_install`` has already
+        written this plugin's provenance (source URL, sha256, the registry
+        that vouched for it) and replacing the entry would drop it, which is
+        what makes the built-in registry's next update offer look like it came
+        from a stranger.
+        """
         for loaded in self._loaded:
-            if loaded.plugin_id != plugin_id or loaded.status != "pending_consent":
+            if loaded.plugin_id != plugin_id or loaded.meta is None:
                 continue
-            assert loaded.meta is not None
-            self._settings.plugins.entries[plugin_id] = PluginEntry(
-                enabled=allowed,
-                approved=True,
-                last_version=loaded.meta.version,
-                update_url=loaded.meta.update_url,
-            )
+            if loaded.status not in ("pending_consent", "disabled"):
+                continue
+            entry = self._settings.plugins.entries.get(plugin_id)
+            if entry is None:
+                entry = PluginEntry()
+                self._settings.plugins.entries[plugin_id] = entry
+            entry.enabled = allowed
+            entry.approved = True
+            entry.last_version = loaded.meta.version
+            entry.update_url = loaded.meta.update_url
             loaded.status = "ready" if allowed else "disabled"
             self._save()
-            return
+            return loaded
+        return None
 
     def entry_for(self, plugin_id: str) -> PluginEntry | None:
         """The persisted consent/enable entry for a plugin id, if any."""
@@ -381,8 +420,28 @@ class PluginHost:
             )
         return installed
 
-    def set_enabled(self, plugin_id: str, enabled: bool) -> None:
-        """Enable/disable a known plugin (takes effect next launch)."""
+    def set_enabled(self, plugin_id: str, enabled: bool) -> LoadedPlugin | None:
+        """Enable/disable a known plugin, live — no restart (#45).
+
+        Persists the answer and then makes it true now: enabling activates the
+        plugin, disabling deactivates it, unwinds its registrations, drops its
+        timer rows and asks the UI to destroy its windows. Returns the row the
+        call acted on, or None when ``plugin_id`` is not installed; the caller
+        reads ``.status`` for the outcome, since a plugin that raises on the
+        way up lands in ``error`` rather than ``active``.
+
+        Enabling never stands in for consent. A plugin whose entry is not
+        ``approved`` stays where it is (``pending_consent``): the checkbox
+        records the wish, and the first-load dialog — ``record_consent`` —
+        is still what lets it run.
+
+        What is NOT live, deliberately: the master ``plugins.enabled`` switch
+        (restart-only by design — see ``pluginbootstrap``), and code that
+        changed on disk. Only a fresh install imports; an update in place
+        cannot be re-imported safely in-session, so it keeps its restart
+        notice (stale ``<stem>.helper`` submodules survive a top-level
+        re-import, and the old plugin's live objects keep the old globals).
+        """
         entry = self._settings.plugins.entries.get(plugin_id)
         if entry is None:
             # No entry means consent was never given (or was forgotten by an
@@ -391,29 +450,190 @@ class PluginHost:
             self._settings.plugins.entries[plugin_id] = entry
         entry.enabled = enabled
         self._save()
+        if not enabled:
+            return self.deactivate_one(plugin_id)
+        loaded = self._row_for(plugin_id)
+        if loaded is None or not entry.approved:
+            return loaded
+        if loaded.status == "disabled":
+            loaded.status = "ready"
+        return self.activate_one(plugin_id)
 
     # --- activation ---------------------------------------------------------
     def activate_enabled(self) -> None:
         for loaded in self._loaded:
-            if loaded.status != "ready" or loaded.plugin is None or loaded.meta is None:
+            self._activate(loaded)
+
+    def activate_one(self, plugin_id: str) -> LoadedPlugin | None:
+        """Activate one ``ready`` plugin now; returns its row (None: unknown).
+
+        The loop body of ``activate_enabled``, addressable — and callable
+        while the driver runs, which is the whole of #45's "a driver-thread-
+        safe way to add registrations": the context registers subscriptions,
+        parsers and ticks, and each of those is routed onto the driver thread
+        by ``LogDriver.submit_to_driver`` (the bus already tolerates it).
+
+        A row that is not ``ready`` is returned untouched, so activating an
+        already-active plugin is a no-op rather than a second ``activate()``.
+        Nothing here imports: every discovered plugin was imported and
+        constructed by ``discover_and_load`` regardless of consent, so
+        enabling one is only the call it never got.
+        """
+        loaded = self._row_for(plugin_id)
+        if loaded is not None:
+            self._activate(loaded)
+        return loaded
+
+    def deactivate_one(self, plugin_id: str) -> LoadedPlugin | None:
+        """Deactivate one plugin now; returns its row (None: unknown).
+
+        ``shutdown``'s loop body plus the three things it has no reason to do
+        at process exit, and which a live disable must: put the row back to
+        ``disabled``, drop its context, and take down what it built — its
+        timer rows here, its windows and settings pages through
+        ``on_ui_teardown`` (Qt lives on the other side of that callback).
+
+        Isolation runs the other way from ``activate_one``: a plugin that
+        raises on the way down does not get to keep its registrations, so the
+        unwind and the teardown happen either way and nothing propagates.
+        """
+        loaded = self._row_for(plugin_id)
+        if loaded is None:
+            return None
+        self._teardown(loaded, retire=True)
+        return loaded
+
+    def adopt_installed(self, path: Path) -> LoadedPlugin | None:
+        """Classify a plugin installed during this session; None if not one.
+
+        The missing half of a live install: the sweep that classifies plugins
+        runs once at startup, so an add-on installed afterwards is invisible
+        to the host until the next launch. Same ``_load_one`` as that sweep,
+        against the ids already claimed, so a new install that collides lands
+        in ``duplicate`` exactly as it would have.
+
+        A path already loaded returns its existing row, unchanged and
+        un-re-imported. That is the import-once-per-session rule, not an
+        optimisation: replacing a plugin's code in place and re-importing it
+        leaves the old module's objects live and its submodules stale, so an
+        update in place is the one plugin operation that still needs a
+        restart.
+
+        Consent is untouched: a brand-new plugin arrives ``pending_consent``,
+        which is what ``record_install`` set up by writing an unapproved
+        entry.
+        """
+        from nparseplus.core.plugins.discovery import source_for_path
+
+        target = _normalized(path)
+        for loaded in self._loaded:
+            if loaded.source.origin != "dir":
                 continue
-            storage = JsonPluginStorage(self._plugin_data_dir(loaded.meta.id))
-            ctx = HostPluginContext(
-                loaded.meta, self._backend, self._app_version, storage, self._owned_net
-            )
+            if _normalized(Path(loaded.source.location)) == target:
+                return loaded
+        source = source_for_path(path)
+        if source is None:
+            return None
+        loaded = self._load_one(source, self._claimed_ids())
+        self._loaded.append(loaded)
+        logger.info(
+            "plugin %s (%s) adopted mid-session: %s",
+            loaded.display_name,
+            loaded.source.location,
+            loaded.status,
+        )
+        return loaded
+
+    # --- lifecycle internals -------------------------------------------------
+    def _row_for(self, plugin_id: str) -> LoadedPlugin | None:
+        """The row that owns ``plugin_id`` — never one shadowed as a duplicate."""
+        return next(
+            (
+                loaded
+                for loaded in self._loaded
+                if loaded.plugin_id == plugin_id and loaded.status != "duplicate"
+            ),
+            None,
+        )
+
+    def _claimed_ids(self) -> set[str]:
+        """Ids already spoken for, as ``discover_and_load``'s sweep sees them."""
+        return {
+            loaded.plugin_id
+            for loaded in self._loaded
+            if loaded.plugin_id is not None and loaded.status != "duplicate"
+        }
+
+    def _activate(self, loaded: LoadedPlugin) -> None:
+        if loaded.status != "ready" or loaded.plugin is None or loaded.meta is None:
+            return
+        storage = JsonPluginStorage(self._plugin_data_dir(loaded.meta.id))
+        ctx = HostPluginContext(
+            loaded.meta, self._backend, self._app_version, storage, self._owned_net
+        )
+        try:
+            loaded.plugin.activate(ctx)
+        except Exception as exc:
+            logger.exception("plugin %s activate() failed; unwinding", loaded.meta.id)
+            ctx.unwind()
+            loaded.status = "error"
+            loaded.error = f"activate() raised: {exc!r}"
+            return
+        loaded.context = ctx
+        loaded.window_specs = list(ctx.window_specs)
+        loaded.page_specs = list(ctx.page_specs)
+        loaded.status = "active"
+        logger.info("plugin %s v%s activated", loaded.meta.id, loaded.meta.version)
+
+    def _teardown(self, loaded: LoadedPlugin, *, retire: bool) -> None:
+        """Deactivate + unwind; ``retire`` also puts the row back to disabled.
+
+        ``retire`` is what separates a live disable from process exit: at exit
+        there is nobody left to show a status to, no window to destroy and no
+        Timers window to clean up, so ``shutdown`` skips all of it.
+        """
+        if loaded.status == "active" and loaded.plugin is not None:
             try:
-                loaded.plugin.activate(ctx)
-            except Exception as exc:
-                logger.exception("plugin %s activate() failed; unwinding", loaded.meta.id)
-                ctx.unwind()
-                loaded.status = "error"
-                loaded.error = f"activate() raised: {exc!r}"
-                continue
-            loaded.context = ctx
-            loaded.window_specs = list(ctx.window_specs)
-            loaded.page_specs = list(ctx.page_specs)
-            loaded.status = "active"
-            logger.info("plugin %s v%s activated", loaded.meta.id, loaded.meta.version)
+                loaded.plugin.deactivate()
+            except Exception:
+                logger.exception("plugin %s deactivate() raised", loaded.plugin_id)
+        # Unwind after deactivate, so the plugin still has its registrations
+        # while it shuts down — and after the raise above, because a plugin
+        # that failed to stop is precisely one whose hooks must come out.
+        if loaded.context is not None:
+            loaded.context.unwind()
+        loaded.window_specs.clear()
+        loaded.page_specs.clear()
+        if not retire:
+            return
+        plugin_id = loaded.plugin_id
+        if plugin_id is not None:
+            self._drop_timer_rows(plugin_id)
+            self._teardown_ui(plugin_id)
+        loaded.context = None
+        if loaded.status in ("active", "ready"):
+            loaded.status = "disabled"
+
+    def _drop_timer_rows(self, plugin_id: str) -> None:
+        """Take a disabled plugin's countdowns off the Timers window.
+
+        Through the driver's command inbox because ``TimersService`` belongs
+        to the driver thread and this is called from the GUI thread; with no
+        driver running (tests, and the shutdown path) it applies inline.
+        """
+        timers = self._backend.timers
+
+        def drop() -> None:
+            timers.remove_owner(plugin_id)
+
+        self._backend.driver.submit_to_driver(drop, label=f"drop {plugin_id} timer rows")
+
+    def _teardown_ui(self, plugin_id: str) -> None:
+        for callback in list(self.on_ui_teardown):
+            try:
+                callback(plugin_id)
+            except Exception:
+                logger.exception("plugin %s UI teardown raised", plugin_id)
 
     # --- queries ------------------------------------------------------------
     def statuses(self) -> list[LoadedPlugin]:
@@ -437,24 +657,25 @@ class PluginHost:
 
     # --- shutdown -----------------------------------------------------------
     def shutdown(self) -> None:
-        """Deactivate active plugins; call after the driver thread has joined."""
+        """Deactivate active plugins; call after the driver thread has joined.
+
+        The same teardown ``deactivate_one`` runs, minus the retirement: at
+        process exit there is no row to re-label, no window to destroy and no
+        Timers window left to tidy. The shared net resources close last, and
+        only here — they belong to every plugin at once, so disabling one
+        must not take them from the rest.
+        """
         for loaded in self._loaded:
-            if loaded.status != "active" or loaded.plugin is None:
+            if loaded.status != "active":
                 continue
-            try:
-                loaded.plugin.deactivate()
-            except Exception:
-                logger.exception("plugin %s deactivate() raised", loaded.plugin_id)
-            # Unwind after deactivate, so the plugin still has its
-            # registrations while it shuts down. Harmless at process exit,
-            # but leaving the bus/tick/parser hooks behind is exactly what
-            # would break hot enable/disable.
-            if loaded.context is not None:
-                loaded.context.unwind()
-            loaded.window_specs.clear()
-            loaded.page_specs.clear()
+            self._teardown(loaded, retire=False)
         self._owned_net.close()
 
     def _save(self) -> None:
         if self._request_save is not None:
             self._request_save()
+
+
+def _normalized(path: Path) -> str:
+    """Path identity for "is this already loaded", Windows/macOS case included."""
+    return os.path.normcase(os.path.abspath(path))

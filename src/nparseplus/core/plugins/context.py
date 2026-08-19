@@ -90,6 +90,49 @@ class _OwnedNet:
             api.close()
 
 
+class _PluginTimers:
+    """``ctx.timers`` with every row this plugin adds stamped as its own.
+
+    A thin facade over the real ``TimersService``: unknown attributes pass
+    straight through (``snapshot``, ``remove_row``, ``tick``, the observer
+    lists), and the four ``add_*`` methods set ``row.owner`` on the way in.
+
+    That stamp is the whole point — it is what lets ``PluginHost`` take a
+    plugin's countdowns off the Timers window when the user disables it
+    (#45). ``unwind()`` reverses *registrations*; rows are data the plugin
+    put in a user-visible store, so nothing there could find them again.
+
+    Stamped here rather than asked of the plugin because a plugin cannot be
+    relied on to do it, and the row it hands over is the one moment the host
+    knows whose it is. ``add_counter`` deliberately only stamps the row
+    coming in: incrementing a counter the app (or another plugin) already
+    owns must not transfer it.
+    """
+
+    def __init__(self, timers: Any, plugin_id: str) -> None:
+        self._timers = timers
+        self._plugin_id = plugin_id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._timers, name)
+
+    def add_spell(self, row: Any, overwrite: bool = True) -> Any:
+        row.owner = self._plugin_id
+        return self._timers.add_spell(row, overwrite)
+
+    def add_timer(self, row: Any, allow_duplicates: bool = False) -> Any:
+        row.owner = self._plugin_id
+        return self._timers.add_timer(row, allow_duplicates)
+
+    def add_counter(self, row: Any) -> Any:
+        row.owner = self._plugin_id
+        return self._timers.add_counter(row)
+
+    def add_roll(self, row: Any) -> Any:
+        row.owner = self._plugin_id
+        return self._timers.add_roll(row)
+
+
 class HostPluginContext:
     """Capability object handed to ``NParsePlugin.activate`` (SDK protocol)."""
 
@@ -111,6 +154,9 @@ class HostPluginContext:
         self._unsubscribes: list[Unsubscribe] = []
         self._ticks: list[Callable[[datetime], None]] = []
         self._parsers: list[LineParser] = []
+        # Built on first use and kept, so a plugin that stores ctx.timers
+        # keeps one object (see _PluginTimers).
+        self._plugin_timers: _PluginTimers | None = None
         self.window_specs: list[PluginWindowSpec] = []
         self.page_specs: list[PluginSettingsPageSpec] = []
         # Set (on the driver thread) if the driver evicted one of this
@@ -171,7 +217,15 @@ class HostPluginContext:
     # --- backend capabilities ---------------------------------------------
     @property
     def timers(self) -> Any:
-        return self._backend.timers
+        """The host TimersService, wrapped so rows added here are tagged.
+
+        The wrapper is invisible to a plugin — everything it does not stamp
+        passes through — and it is what makes a plugin's countdowns go away
+        with the plugin when the user disables it (#45).
+        """
+        if self._plugin_timers is None:
+            self._plugin_timers = _PluginTimers(self._backend.timers, self._meta.id)
+        return self._plugin_timers
 
     @property
     def player(self) -> Any:
@@ -278,7 +332,9 @@ class HostPluginContext:
         Deliberately NOT tracked in ``unwind()``. That reverses *registrations*;
         a timer row is data the plugin put in a user-visible store, exactly like
         ``ctx.timers.add_timer`` today. The plugin gets the row back, so
-        ``ctx.timers.remove_row(row)`` is the way to take it out again.
+        ``ctx.timers.remove_row(row)`` is the way to take it out again — and,
+        since #45, the row carries this plugin's id, so disabling the plugin
+        takes it off the screen too (see ``_PluginTimers``).
         """
         from nparseplus.core.timers import TimerRow
 
@@ -291,7 +347,7 @@ class HostPluginContext:
             total_duration_s=float(base_seconds),
             window_ends_at=ends_at + timedelta(seconds=window_seconds),
         )
-        return self._backend.timers.add_timer(row, allow_duplicates=allow_duplicates)
+        return self.timers.add_timer(row, allow_duplicates=allow_duplicates)
 
     def add_window_series(
         self,
@@ -340,7 +396,7 @@ class HostPluginContext:
             )
             # Always duplicates-allowed: the candidates share a name by
             # design, so the default would make each one destroy the last.
-            rows.append(self._backend.timers.add_timer(row, allow_duplicates=True))
+            rows.append(self.timers.add_timer(row, allow_duplicates=True))
         return rows
 
     # --- host-side lifecycle ----------------------------------------------
@@ -362,3 +418,7 @@ class HostPluginContext:
         self._parsers.clear()
         self.window_specs.clear()
         self.page_specs.clear()
+        # The tick that earned this note is gone with the rest, so the note
+        # has to go too: a plugin re-enabled in the same session would
+        # otherwise inherit "tick disabled (too slow)" from the run before.
+        self.tick_dropped = None
