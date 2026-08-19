@@ -18,6 +18,7 @@ from queue import Empty
 
 import pytest
 
+from nparseplus.core import driver as driver_module
 from nparseplus.core.bus import EventBus
 from nparseplus.core.driver import LogDriver
 from nparseplus.core.parsers.base import LineInfo, ParseContext
@@ -248,6 +249,48 @@ def test_a_command_accepted_as_the_driver_stops_is_not_stranded(tmp_path: Path) 
     assert driver._accepting_commands is False
     with pytest.raises(Empty):
         driver._inbox.get_nowait()
+
+
+def test_a_stalled_driver_keeps_its_commands_instead_of_handing_them_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``stop`` gives up on the join — and must NOT run the queue itself.
+
+    Commands mutate the parser chain and the tick list, so a driver wedged in
+    a slow tick is still the thread that owns them: it can resume and process
+    a line while the stopping (GUI) thread is halfway through removing a
+    parser. Being the only dequeuer is not being the only runner. So the
+    queue stays put, the gate stays open, and the loop applies the work on
+    its way out.
+    """
+    monkeypatch.setattr(driver_module, "STOP_JOIN_TIMEOUT_S", 0.05)
+    driver, _pipeline, _log = _make_driver(tmp_path)
+    ran: list[str] = []
+    entered, release = threading.Event(), threading.Event()
+
+    def wedged(now: datetime) -> None:
+        entered.set()
+        release.wait(5)
+
+    driver.on_tick.append(wedged)
+    driver.start()
+    assert entered.wait(2), "the driver never reached the tick"
+
+    driver.submit_to_driver(lambda: ran.append(threading.current_thread().name), label="stranded")
+    with caplog.at_level("ERROR"):
+        driver.stop()  # the join gives up; the loop is still in the tick
+
+    assert ran == []  # not on this thread, beside a live driver
+    assert driver._accepting_commands is True  # still the driver's to take
+    assert "did not stop" in caplog.text
+
+    release.set()  # the tick returns, the loop notices _stop and unwinds
+    assert driver._thread is not None
+    driver._thread.join(timeout=2)
+
+    assert ran == ["log-driver"]  # applied where the chain is owned
+    driver.stop()  # the join lands this time: the gate finally closes
+    assert driver._accepting_commands is False
 
 
 def test_after_stop_a_command_runs_on_its_caller(tmp_path: Path) -> None:

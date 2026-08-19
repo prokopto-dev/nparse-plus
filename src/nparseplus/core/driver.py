@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_S = 0.1
 LOG_SWITCH_CHECK_S = 3.0
+# How long stop() waits for the loop to notice. Bounded so quitting can never
+# hang on a wedged tick — see stop() for what happens when it runs out.
+STOP_JOIN_TIMEOUT_S = 2.0
 
 # Everything the driver owns runs on one thread: log tailing, the parser
 # chain, timer countdowns, the DPS window's fight tracker and the sharing
@@ -120,25 +123,39 @@ class LogDriver:
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the loop, then answer for every command it did not drain.
+        """Stop the loop, then answer for the commands it did not drain.
 
-        Order matters. The loop exits after some final drain, and a submit
-        that was accepted before that drain — or while this method is joining
-        — has nowhere else to run. So: join, close the window under the lock
-        (later submits run on their caller), then drain what is left here.
-        A command accepted while the driver was alive always runs; that is the
-        promise the old synchronous mutation path made and this keeps.
+        Order matters, and the pivot is whether the join actually landed.
+        Commands mutate the parser chain and the tick list, so running one
+        anywhere while that thread is alive is precisely the concurrent
+        mutation this inbox exists to prevent — being the only dequeuer is
+        not the same as being the only runner.
+
+        Joined: the thread is gone, so closing the gate under the lock (which
+        waits out any submit in flight) and draining here is safe, and it
+        catches the sliver a submit can land in between the loop's own last
+        drain and this line.
+
+        Timed out: the loop still owns the chain, so leave the gate OPEN —
+        later submits keep queueing for the thread that may still run them,
+        rather than executing on a caller beside a live driver — and let the
+        loop's exit drain apply them if it ever gets there. Unapplied is a
+        wedged driver's problem; applied concurrently would be corruption.
         """
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=2)
+            self._thread.join(timeout=STOP_JOIN_TIMEOUT_S)
+            if self._thread.is_alive():
+                logger.error(
+                    "log driver did not stop within %.0fs — leaving queued "
+                    "registration changes for it rather than running them here",
+                    STOP_JOIN_TIMEOUT_S,
+                )
+                return
         with self._command_lock:
             self._accepting_commands = False
         # Outside the lock: nothing can enqueue any more (the flag is the
-        # gate), and a command must not run holding it. If the join above
-        # timed out the loop is still draining too — SimpleQueue hands each
-        # command to exactly one of us, which is the most that can be said
-        # for a driver thread that would not stop.
+        # gate), and a command must not run holding it.
         self._drain_commands()
 
     def set_log_dir(self, log_dir: Path) -> None:
@@ -186,8 +203,9 @@ class LogDriver:
         predicate for callers to branch on themselves. Split apart, the
         answer can go stale between the two: the loop runs its final drain
         and exits, and the command lands in a queue nobody will ever read
-        again. ``stop`` drains what it finds for the same reason, so a
-        command accepted while the driver was alive always runs.
+        again. The gate opens in ``start`` and closes in ``stop`` only once
+        the driver thread is confirmed gone, so "runs on the caller" always
+        means "there is no driver thread to run it".
 
         ``label`` names the change in the log if ``fn`` raises; a raising
         command is that command's problem and never the loop's.
@@ -261,12 +279,19 @@ class LogDriver:
     # -- internals -----------------------------------------------------------
 
     def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                self._iterate()
-            except Exception:
-                logger.exception("log driver iteration failed")
-            self._stop.wait(POLL_INTERVAL_S)
+        try:
+            while not self._stop.is_set():
+                try:
+                    self._iterate()
+                except Exception:
+                    logger.exception("log driver iteration failed")
+                self._stop.wait(POLL_INTERVAL_S)
+        finally:
+            # The last drain, and the only one that can run a command accepted
+            # while this thread was on its way out — including everything
+            # queued during a stop() whose join gave up. Nobody else may touch
+            # the chain while this thread lives, so nobody else may run these.
+            self._drain_commands()
 
     def _iterate(self) -> None:
         """One pass of the loop. Split out so tests can run exactly one."""
