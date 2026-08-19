@@ -4,8 +4,11 @@ Listing is optional. Users can always install your release zip through
 nParse+ → Settings → Plugins → *Install from URL*. Listing here adds one-click
 Browse installs, update notifications, and a reviewed sha256.
 
-Everything is a pull request against this repository. There is no form, no
-account and no API.
+Everything is a pull request against this repository. There is no form and
+no account to create: a maintainer reviews the PR and applies the merged
+entry to the live registry the app fetches. (Publishing from your own release
+pipeline, with the server hashing the artifact itself, is on its way — it
+will not change the JSON below.)
 
 ## Before you start
 
@@ -55,8 +58,9 @@ first if you have not built the plugin yet.
    the reviewer.
 
 5. **CI runs**, then a maintainer reviews. Curation means they will read your
-   source; be ready for questions. On merge, GitHub Pages republishes the
-   index within a minute or two and the app picks it up on the next Browse.
+   source; be ready for questions. On merge, the entry is applied to the live
+   registry at <https://nparseplugins.prokopto.dev/index.json> and the app
+   picks it up on the next Browse.
 
 ## Updating an existing plugin
 

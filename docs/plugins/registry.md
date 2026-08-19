@@ -1,10 +1,14 @@
 # Plugin registry
 
 The registry is the curated catalogue behind Settings > Plugins >
-*Browse registry…*: one reviewed `index.json`, published as a static file
-from the `prokopto-dev/nparseplus-plugins` repository via GitHub Pages.
-There is deliberately **no server** — submission is a pull request, review
-is a human merge, and trust is a pinned hash.
+*Browse registry…*: one reviewed `index.json`, served by the live registry
+server at <https://nparseplugins.prokopto.dev/index.json> — one Go binary and
+a SQLite database, [`prokopto-dev/nparse-plugin-regserve`](https://github.com/prokopto-dev/nparse-plugin-regserve).
+It began as a static file published from GitHub Pages and edited by pull
+request, and moved so that publishing can be a step in a plugin's own release
+pipeline instead of a second repository and a wait. What did **not** move is
+the part that carries the trust: a listing pins a sha256, and the installer
+refuses bytes that do not match it.
 
 That built-in catalogue is the one nParse+ ships with, but it is not the
 only one it will read: you can add registries of your own, and Browse
@@ -14,21 +18,27 @@ the canonical explanation of what you are agreeing to.
 
 !!! note "Status"
     The registry is **live**: the app fetches
-    [`index.json`](https://prokopto-dev.github.io/nparseplus-plugins/index.json)
-    and *Browse registry…* works. The catalogue itself is still empty —
-    nothing has been submitted yet — so the dialog lists no plugins until
-    the first entry is merged. Yours can be it; see
-    [Submitting a plugin](#submitting-a-plugin).
+    [`index.json`](https://nparseplugins.prokopto.dev/index.json) and
+    *Browse registry…* works.
 
-    This page is the specification the index and the app both implement.
-    The repository's contents are mirrored in the app repo at
-    [`templates/registry-repo/`](https://github.com/prokopto-dev/nparse-plus/tree/master/templates/registry-repo),
-    which is where the JSON Schema is generated (see below).
+    Nothing in the client changed when the catalogue moved off GitHub Pages
+    ([#130](https://github.com/prokopto-dev/nparse-plus/issues/130)). It is
+    the same schema-1 document fetched with the same single unconditional
+    GET, and the server keeps that path outside its versioned API precisely
+    so it never moves. Publishing *into* it straight from a plugin's release
+    pipeline is designed and not yet built; until it is, a maintainer applies
+    listings — see [Submitting a plugin](#submitting-a-plugin).
+
+    This page is the specification the index and the app both implement. The
+    JSON Schema the registry validates listings against is generated from the
+    app's own parser and committed at
+    [`templates/registry-repo/`](https://github.com/prokopto-dev/nparse-plus/tree/master/templates/registry-repo)
+    (see below).
 
 ## How the app consumes it
 
 - **Browse** fetches the index of every *enabled* registry — the built-in
-  `https://prokopto-dev.github.io/nparseplus-plugins/index.json` unless you
+  `https://nparseplugins.prokopto.dev/index.json` unless you
   untick it, plus anything you added — runs the same SDK/app compatibility
   handshake the loader uses over each listing, and offers one-click
   installs. The fetches run concurrently on a worker thread and each
@@ -182,6 +192,18 @@ it folded into `plugins.registries` and cleared on load. Unusable entries
 because a settings document that fails to parse costs the user every other
 setting they have ever configured.
 
+A plugin installed **before the built-in registry moved to its own server**
+recorded the old GitHub Pages URL as its provenance, and that URL now names
+no configured registry at all: the Source cell would fall back to a bare host
+name, Browse would offer *Installed (other source)* instead of an Update
+button, and taking the update would demand a confirmation naming two
+registries that are the same catalogue. So those records are re-pointed when
+settings load. The catalogue moved; the publisher did not, and the move is
+not a trust hop. Only an exact match to the old default is rewritten, and
+nothing is rewritten while you still list that old URL as a registry of your
+own — then it is still configured, still fetched, and the record is still
+true.
+
 ## Index format (schema 1)
 
 ```json
@@ -237,11 +259,13 @@ Any listed handle may submit changes to that plugin's entry. CI requires
 that every id in `index.json` has an owners entry, and that the PR author
 owns every entry they add or change. Adding the `owners.json` line for a
 brand-new plugin is a maintainer action in the same PR — that addition is
-the curation step.
+the curation step. On the server the same rule is a database row rather than
+a file: ownership rows are never deleted, and the file above is what seeds
+them.
 
-Delisting removes the entry from `index.json` but leaves the `owners.json`
-claim: ids are never recycled, so a delisted id cannot be reused by someone
-else to ship an "update" to your former users.
+Delisting removes the listing but leaves the ownership claim: ids are never
+recycled, so a delisted id cannot be reused by someone else to ship an
+"update" to your former users.
 
 That guarantee is **per registry**. This repo's `owners.json` binds ids in
 this index and nowhere else — another registry can list your id pointing at
@@ -261,12 +285,22 @@ app refuses to treat one as an update to the other
    A submission should touch only those two files.
 3. Registry CI checks the mechanical facts (below).
 4. A maintainer reviews (this is the curation step — expect them to look
-   at your source) and merges; GitHub Pages republishes the index.
+   at your source) and applies the merged entry to the live catalogue.
 
-Version updates are the same PR flow: bump `latest` (new version, new URL,
-new sha256). Because the hash pins the reviewed bytes, an author cannot
-swap the artifact behind an already-listed URL — changing the artifact
-means changing the index, which means another review.
+Version updates are the same flow: bump `latest` (new version, new URL, new
+sha256). Because the hash pins the reviewed bytes, an author cannot swap the
+artifact behind an already-listed URL — changing what users receive means
+changing the listing, which means another review.
+
+!!! info "This is the interim flow"
+    The reason the registry became a server is that a patch release should be
+    a step in *your* pipeline, not a pull request against someone else's
+    repository: `POST` the new release with a scoped token, and the server
+    downloads the artifact and hashes it **itself**, so an author-supplied
+    hash is never stored. A brand-new plugin id still waits for a human — that
+    is the review worth keeping — while version bumps from a trusted owner
+    publish on their own. That half is specified and not yet built, which is
+    why a person still applies your entry today.
 
 ### What CI checks
 
@@ -298,7 +332,10 @@ means changing the index, which means another review.
 
 ## Roadmap
 
+- **Publishing from your own release pipeline** — a scoped token, one
+  `POST` per release, and the server fetching and re-hashing the artifact
+  rather than believing a submitted digest. Tracked on the registry server's
+  own roadmap.
 - Optional index signing (minisign/ed25519, public key shipped in the app)
-  if the trust model ever needs to survive a GitHub Pages compromise.
-- Automated submission: a workflow in plugin repos that opens the index PR
-  on each release.
+  if the trust model ever needs to survive a compromise of the host serving
+  the index.

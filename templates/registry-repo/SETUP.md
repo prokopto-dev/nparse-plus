@@ -1,145 +1,84 @@
-# Standing up the registry repository (maintainer notes)
+# Standing up the registry (maintainer notes)
 
-`prokopto-dev/nparseplus-plugins` is live, and this directory is the copy of
-its content that stays in nparse-plus. It is kept here because
-`tools/gen_registry_schema.py --check` (run by
-`tests/core/plugins/test_registry_schema.py`) generates and diffs
-`schema/index-v1.schema.json` against it, so the app's pydantic parser and
-the registry's CI cannot drift apart. The notes below record how the
-repository was stood up — and what to re-check if it is ever rebuilt.
-
-## The name and the URL are load-bearing
-
-`DEFAULT_REGISTRY_URL` in `src/nparseplus/core/plugins/registry.py` is:
+The catalogue nParse+ fetches out of the box is served by the live registry
+server, [`prokopto-dev/nparse-plugin-regserve`](https://github.com/prokopto-dev/nparse-plugin-regserve)
+— one Go binary and a SQLite database, deployed on a droplet behind Traefik.
+The URL the app is compiled with is:
 
 ```
-https://prokopto-dev.github.io/nparseplus-plugins/index.json
+https://nparseplugins.prokopto.dev/index.json
 ```
 
-Every part of that is pinned by the app, so the repository must be created to
-match it exactly:
+`DEFAULT_REGISTRY_URL` (`src/nparseplus/core/plugins/registry.py`, whose
+literal lives in `config/settings.py` — the settings layer owns the URL
+plumbing and must not import the plugin subsystem) has to equal that exactly.
+`tests/core/plugins/test_registry_schema.py` asserts that this file and
+`docs/plugins/registry.md` both name whatever the constant currently says, so
+neither can drift from it quietly.
+
+## What this directory is
+
+Two things, and only the first is load-bearing today:
+
+1. **The generated JSON Schema and its drift guard.**
+   `schema/index-v1.schema.json` is produced by
+   `tools/gen_registry_schema.py` from the pydantic models a released client
+   actually parses the index with, and `--check` (run by the test above)
+   fails if the committed copy is stale. The registry server vendors this
+   file verbatim — its `SCHEMA001` gate diffs what it renders against it — so
+   the server and the client cannot disagree about what a valid entry is.
+2. **The mirror of `prokopto-dev/nparseplus-plugins`**, the curated repo that
+   *was* the registry: `index.json`, `owners.json`, the submission
+   instructions and the validate-index workflow. Server-side publishing is
+   specified and not yet built, so that repository is still where a listing
+   is proposed and reviewed; a maintainer then applies the merged entry to
+   the live catalogue.
+
+## The URL contract
 
 | URL part | Requirement |
 | --- | --- |
-| `prokopto-dev.github.io` | Owner account is `prokopto-dev`, and the repo is **public** (project Pages on a private repo needs a paid plan). |
-| `/nparseplus-plugins/` | Repo name is exactly `nparseplus-plugins`. |
-| `/index.json` | `index.json` sits at the **repository root**, and Pages is served from the root of the publishing branch. |
+| `https://` | The client refuses anything else, and re-asserts it on every redirect hop. A plain-http hop is a failed fetch, not a downgrade. |
+| `nparseplugins.prokopto.dev` | The deployment's single hostname — the same name for SSH and for HTTPS (see the server's `docs/operations/deployment.md`). Traefik terminates TLS; the service publishes no ports of its own. |
+| `/index.json` | A schema-1 document. The index endpoints sit **outside** `/api/v1` deliberately, so that versioning the product API never moves the path a released desktop client is compiled with. |
 
-⚠️ **The registry repo name has no hyphen in "nparseplus".** The app repo is
-`nparse-plus`; the registry repo is `nparseplus-plugins`. Creating
-`nparse-plus-plugins` produces a URL the app will never fetch, with no error
-beyond Browse permanently reporting it could not reach the built-in registry.
-
-Everything above is satisfiable with a stock "deploy from a branch" Pages
-configuration — no layout gymnastics and no build step required.
-
-## Create the repository
-
-```bash
-# From an nparse-plus checkout:
-mkdir /tmp/nparseplus-plugins && cp -R templates/registry-repo/. /tmp/nparseplus-plugins/
-cd /tmp/nparseplus-plugins
-
-git init -b main
-git add -A
-git commit -m "feat: seed the nParse+ plugin registry"
-
-gh repo create prokopto-dev/nparseplus-plugins --public \
-  --source . --push \
-  --description "Curated plugin index for nParse+"
-```
-
-Keep `SETUP.md` in the published repo (it documents the Pages contract) or
-delete it before the first commit — either is fine.
-
-## Enable GitHub Pages
-
-Classic branch-source Pages, branch `main`, folder `/` (root):
-
-```bash
-gh api -X POST repos/prokopto-dev/nparseplus-plugins/pages \
-  -f "source[branch]=main" \
-  -f "source[path]=/"
-```
-
-If Pages was already enabled, use `-X PUT` to change the source instead of
-`-X POST`. Check where it stands:
-
-```bash
-gh api repos/prokopto-dev/nparseplus-plugins/pages \
-  --jq '{status, html_url, source}'
-```
-
-Wait for `status` to become `built` (usually under a minute; the first build
-can take a few).
-
-### Verify the exact URL the app uses
+### Verify what the app actually fetches
 
 Do not skip this — it is the only step that proves the app can reach it:
 
 ```bash
-curl -fsSL -o /tmp/live-index.json \
-  https://prokopto-dev.github.io/nparseplus-plugins/index.json
-diff <(python -m json.tool index.json) <(python -m json.tool /tmp/live-index.json) \
-  && echo "OK: the published index matches the committed one"
+curl -fsS https://nparseplugins.prokopto.dev/index.json | python -m json.tool | head
+# The shape PluginMeta.update_url expects, for one plugin:
+curl -fsS https://nparseplugins.prokopto.dev/plugins/merchant-mode/index.json | python -m json.tool | head
+# Liveness, and readiness — which says *why* when it is not ready:
+curl -fsS https://nparseplugins.prokopto.dev/healthz
+curl -fsS https://nparseplugins.prokopto.dev/readyz
 ```
 
-Also confirm the schema is reachable, since the URL is baked into the
-schema's `$id`:
+`schema_version` must read `1`. A newer one makes every released client
+refuse the index and tell the user to update nParse+, which is a breaking
+change for the whole installed base rather than a regeneration.
 
-```bash
-curl -fsSI https://prokopto-dev.github.io/nparseplus-plugins/schema/index-v1.schema.json \
-  | head -1
-```
+## Moving it again
 
-### A note on Jekyll
+The built-in registry is synthesized from the constant on every read and
+**never written to `settings.json`**, so changing where the catalogue lives
+moves every existing user instead of stranding them on the URL whichever
+release first wrote it. That is the mechanism; the checklist below is what
+goes with it (see [#130](https://github.com/prokopto-dev/nparse-plus/issues/130),
+which did exactly this):
 
-Pages runs Jekyll by default. That is deliberate here: it renders `README.md`
-as the site's landing page, and copies `index.json` and `schema/` through
-verbatim (Jekyll does not process files without front matter). If a future
-Jekyll change ever mangles them, commit an empty `.nojekyll` at the root —
-`index.json` will then still serve correctly, at the cost of the rendered
-landing page (`/` will 404).
-
-## Protect the branch
-
-The index is only as trustworthy as the merges into it. Require review and a
-green validation run:
-
-```bash
-gh api -X PUT repos/prokopto-dev/nparseplus-plugins/branches/main/protection \
-  --input - <<'JSON'
-{
-  "required_status_checks": {
-    "strict": true,
-    "contexts": ["validate"]
-  },
-  "enforce_admins": false,
-  "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
-    "dismiss_stale_reviews": true
-  },
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
-JSON
-```
-
-Also turn off the settings that would let a fork PR do more than propose text:
-
-```bash
-# Fork PRs get a read-only token and no secrets by default; make sure
-# workflows cannot be approved automatically for first-time contributors.
-gh api -X PUT repos/prokopto-dev/nparseplus-plugins/actions/permissions/workflow \
-  -f default_workflow_permissions=read \
-  -F can_approve_pull_request_reviews=false
-```
-
-Note that `validate-index.yml` triggers on `pull_request`, so a PR can modify
-the workflow itself. That is expected and is why review, not CI, is the trust
-boundary — the job prints a reviewer notice whenever a PR touches anything
-other than `index.json` and `owners.json`.
+1. Point `BUILTIN_REGISTRY_URL` (`config/settings.py`) at the new index.
+2. Keep the outgoing URL as `_LEGACY_DEFAULT_REGISTRY_URL` beside it and
+   re-point `PluginEntry.registry_url` in `PluginsSettings`. Without that,
+   everything already installed reads as "from a registry that is no longer
+   configured" and every update offer becomes a cross-source confirmation
+   between two names for the same catalogue. Rewrite only an exact match, and
+   only while the old URL is not one of the user's own registries.
+3. Regenerate the schema (its `$id` names the host) and copy the result to
+   every consumer — see below.
+4. Update this file and `docs/plugins/registry.md`; the test named above
+   fails until both name the new URL.
 
 ## Keeping the schema in sync
 
@@ -152,18 +91,40 @@ uv run python tools/gen_registry_schema.py
 uv run python tools/gen_registry_schema.py --check   # what CI asserts
 ```
 
-When `nparseplus.core.plugins.registry` changes, regenerate there and copy the
-result into this repository. Never hand-edit it here: the whole point is that
-the registry's CI and the app cannot disagree about what a valid entry is.
+When `nparseplus.core.plugins.registry` changes, regenerate here and copy the
+result into the registry server (`internal/registry/testdata/`) and into the
+curated repo. Never hand-edit it anywhere: the whole point is that a
+generated file, and not three hand-maintained ones, decides what a valid
+entry is.
 
 A `schema_version` bump is a breaking change for every already-released
 nParse+ (older clients refuse the index and tell the user to update), so it
 needs a deprecation plan, not just a regeneration.
 
+## History: the GitHub Pages arrangement
+
+Until [#130](https://github.com/prokopto-dev/nparse-plus/issues/130) the
+registry *was* `prokopto-dev/nparseplus-plugins`: `index.json` at the
+repository root, served by classic branch-source Pages (branch `main`, folder
+`/`) at `https://prokopto-dev.github.io/nparseplus-plugins/index.json`, with
+`main` protected, review required, and the `validate` check as a merge gate.
+Nothing about that stopped working — it is still the repository submissions
+go through — but the app no longer fetches it, and the catalogue the server
+holds is the one users see.
+
+Two things about it are still worth knowing if it is ever rebuilt or
+re-pointed:
+
+- **The registry repo name has no hyphen in "nparseplus."** The app repo is
+  `nparse-plus`; the registry repo is `nparseplus-plugins`.
+- **Pages runs Jekyll by default**, which is fine here: it renders
+  `README.md` as the landing page and copies `index.json` and `schema/`
+  through verbatim (Jekyll does not process files without front matter). If
+  that ever changes, an empty `.nojekyll` at the root fixes the JSON at the
+  cost of the rendered landing page.
+
 ## Afterwards
 
-- ~~Update the "Status" admonition in `docs/plugins/registry.md` in the app
-  repo~~ — done; it now says the registry is live and links the index.
 - Point `CONTRIBUTING.md`'s template link at the real
   `prokopto-dev/nparseplus-plugin-template` repo once that exists (see
   `templates/plugin-repo/TEMPLATE_SETUP.md`). Still pending — that repo has
@@ -172,5 +133,4 @@ needs a deprecation plan, not just a regeneration.
   **not** done. The schema in here is generated from the app's models and
   guarded by `tools/gen_registry_schema.py --check` +
   `tests/core/plugins/test_registry_schema.py`; deleting it would remove the
-  drift guard. Regenerate here and copy the result into the registry repo
-  (see "Keeping the schema in sync" above).
+  drift guard for both the server and the curated repo.

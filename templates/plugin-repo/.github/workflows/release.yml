@@ -87,7 +87,7 @@ jobs:
               f"Install: nParse+ → Settings → Plugins → *Install from URL* with the "
               f"zip asset below, or wait for the registry listing.\n\n"
               f"`sha256: {digest}`\n\n"
-              "### Registry entry (for the nparseplus-plugins index PR)\n\n"
+              "### Registry entry (for the nParse+ plugin registry)\n\n"
               "```json\n" + json.dumps(entry, indent=2) + "\n```\n"
           )
           open("release-body.md", "w").write(body)

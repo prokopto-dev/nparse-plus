@@ -1,9 +1,13 @@
 """Guards for templates/registry-repo — the seed of the curated registry.
 
-The registry repo validates submissions with a JSON Schema *generated* from
-this app's pydantic models, so its CI never has to install nParse+. That only
-holds if the committed schema tracks the models, which is what these tests
-assert.
+The registry validates listings with a JSON Schema *generated* from this
+app's pydantic models, so neither its CI nor the registry server has to
+install nParse+ to know what a valid entry is. That only holds if the
+committed schema tracks the models, which is what these tests assert.
+
+They also pin the other thing a client cannot discover for itself: the URL of
+the built-in catalogue, and that the two documents telling a human where it
+lives say the same thing the constant does.
 """
 
 from __future__ import annotations
@@ -113,17 +117,56 @@ def test_registry_repo_is_complete() -> None:
         assert (REGISTRY_REPO / relative).is_file(), f"registry repo file missing: {relative}"
 
 
-def test_setup_instructions_match_default_registry_url() -> None:
-    """SETUP.md's Pages configuration has to produce DEFAULT_REGISTRY_URL.
+def test_the_default_registry_url_is_a_fetchable_index_url() -> None:
+    """The shape the whole client depends on, whoever is serving it.
 
-    Repo name, publishing branch and root path are all pinned by that URL; if
-    someone edits one side, this catches the drift.
+    Everything downstream — ``fetch_index``'s https gate, the installer's
+    hop-by-hop re-assertion, ``normalize_registry_url`` in settings — assumes
+    an https URL naming an index document. Pinned by shape rather than by
+    literal on purpose: this guards the contract, not the choice of host, so
+    moving the catalogue (#130 moved it off GitHub Pages to the registry
+    server) is a one-line change and not a test rewrite.
     """
     from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
 
-    assert DEFAULT_REGISTRY_URL == "https://prokopto-dev.github.io/nparseplus-plugins/index.json"
-    setup = (REGISTRY_REPO / "SETUP.md").read_text(encoding="utf-8")
-    assert DEFAULT_REGISTRY_URL in setup
-    assert "prokopto-dev/nparseplus-plugins" in setup
-    assert "source[branch]=main" in setup
-    assert "source[path]=/" in setup
+    assert DEFAULT_REGISTRY_URL.startswith("https://")
+    assert DEFAULT_REGISTRY_URL.endswith("/index.json")
+
+
+def test_the_url_has_exactly_one_definition() -> None:
+    """settings owns the literal; registry.py is where the app reads it.
+
+    The provenance migration in ``PluginsSettings`` has to compare against the
+    same URL ``resolve_registries`` synthesizes the built-in row from, and it
+    cannot import this subsystem to get it (that import gate is what keeps a
+    plugins-off launch from touching the SDK). Two literals would let the two
+    halves of the same move disagree, which is precisely the bug #130 fixed.
+    """
+    from nparseplus.config.settings import BUILTIN_REGISTRY_URL
+    from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+    assert DEFAULT_REGISTRY_URL == BUILTIN_REGISTRY_URL
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        REGISTRY_REPO / "SETUP.md",
+        REPO_ROOT / "docs" / "plugins" / "registry.md",
+    ],
+    ids=["registry-repo-setup", "registry-docs"],
+)
+def test_the_documents_that_name_the_registry_url_track_the_constant(document: Path) -> None:
+    """Where the built-in catalogue lives is documented, not folklore.
+
+    The URL is the one thing a user cannot change and the app cannot
+    discover: it is compiled in. So the maintainer runbook and the public
+    specification both have to name whatever the constant currently says, or
+    the first person to follow either one stands up a registry nothing
+    fetches. This is the hardest gate on the URL — refocus it, never delete
+    it.
+    """
+    from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
+
+    text = document.read_text(encoding="utf-8")
+    assert DEFAULT_REGISTRY_URL in text, f"{document.name} does not name the built-in registry URL"

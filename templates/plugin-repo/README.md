@@ -66,6 +66,12 @@ gives them one-click Browse installs and update notifications:
 2. Open a pull request adding/updating your entry in the
    `prokopto-dev/nparseplus-plugins` index.
 3. Registry CI re-validates your zip against the pinned sha256; a
-   maintainer review merges it.
+   maintainer reviews, merges, and applies the entry to the live registry
+   at <https://nparseplugins.prokopto.dev/index.json> — which is what the
+   app fetches.
+
+Publishing straight from this workflow (a scoped token, and the registry
+server hashing your artifact itself instead of trusting the digest above) is
+on its way; it will not change the entry JSON.
 
 See <https://prokopto-dev.github.io/nparse-plus/plugins/registry/>.

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from nparseplus.config.settings import (
+    _LEGACY_DEFAULT_REGISTRY_URL,
+    BUILTIN_REGISTRY_URL,
     MIN_REGION_HEIGHT,
     MIN_REGION_WIDTH,
     SCHEMA_VERSION,
@@ -400,6 +402,111 @@ class TestRegistrySettings:
         save_settings(original, path)
         entry = load_settings(path).plugins.entries["demo"]
         assert entry.registry_url == "https://a.example/index.json"
+
+
+class TestBuiltInRegistryMoved:
+    """The provenance migration for #130 — the built-in registry's new home.
+
+    A plugin installed before the move records the old URL, which after the
+    move names no configured registry at all: the manager reads that as a
+    third-party source and every offer from the new default becomes a
+    cross-source confirmation for what is the same catalogue.
+    """
+
+    def test_an_install_from_the_old_default_follows_it(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "plugins": {
+                        "entries": {
+                            "merchant-mode": {
+                                "approved": True,
+                                "registry_url": _LEGACY_DEFAULT_REGISTRY_URL,
+                                "sha256": "a" * 64,
+                            }
+                        }
+                    }
+                }
+            )
+        )
+        entry = load_settings(path).plugins.entries["merchant-mode"]
+        assert entry.registry_url == BUILTIN_REGISTRY_URL
+        # Consent and the recorded bytes are untouched: this repoints a
+        # record, it does not re-take a decision.
+        assert entry.approved is True
+        assert entry.sha256 == "a" * 64
+
+    def test_case_and_whitespace_spellings_still_match(self) -> None:
+        plugins = PluginsSettings(
+            entries={
+                "demo": PluginEntry(
+                    registry_url="  HTTPS://Prokopto-Dev.GitHub.IO/nparseplus-plugins/index.json  "
+                )
+            }
+        )
+        assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+
+    def test_a_user_added_copy_of_the_old_url_is_left_alone(self) -> None:
+        """Still configured, still fetched — so the record is still true."""
+        plugins = PluginsSettings(
+            registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="Mine")],
+            entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
+        )
+        assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+        assert [r.url for r in plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
+
+    def test_a_legacy_override_of_the_old_url_counts_as_user_added(self) -> None:
+        """The deprecated single-registry override folds into the list first."""
+        plugins = PluginsSettings(
+            registry_url=_LEGACY_DEFAULT_REGISTRY_URL,
+            entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
+        )
+        assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+
+    def test_other_provenance_is_never_rewritten(self) -> None:
+        plugins = PluginsSettings(
+            entries={
+                "sideloaded": PluginEntry(),
+                "elsewhere": PluginEntry(registry_url="https://other.example/index.json"),
+                "fork": PluginEntry(
+                    registry_url="https://someone-else.github.io/nparseplus-plugins/index.json"
+                ),
+                "querystring": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL + "?ref=x"),
+            }
+        )
+        assert plugins.entries["sideloaded"].registry_url == ""
+        assert plugins.entries["elsewhere"].registry_url == "https://other.example/index.json"
+        assert (
+            plugins.entries["fork"].registry_url
+            == "https://someone-else.github.io/nparseplus-plugins/index.json"
+        )
+        assert plugins.entries["querystring"].registry_url.endswith("?ref=x")
+
+    def test_a_malformed_provenance_record_is_survivable(self, tmp_path: Path) -> None:
+        """A raise here would cost the user every other setting they have."""
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "general": {"eq_log_dir": "/keep/me"},
+                    "plugins": {"entries": {"demo": {"registry_url": "not a url at all"}}},
+                }
+            )
+        )
+        loaded = load_settings(path)
+        assert loaded.plugins.entries["demo"].registry_url == "not a url at all"
+        assert loaded.general.eq_log_dir == Path("/keep/me")
+
+    def test_the_migration_is_idempotent(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        original = Settings()
+        original.plugins.entries["demo"] = PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)
+        save_settings(original, path)
+        once = load_settings(path)
+        assert once.plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+        save_settings(once, path)
+        assert load_settings(path).plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
 
 class TestNormalizeRegistryUrl:

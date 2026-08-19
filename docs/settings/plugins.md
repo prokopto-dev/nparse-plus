@@ -69,6 +69,16 @@ registry the cell falls back to its host name and the tooltip adds *"this
 registry is no longer configured"* — the record of what vouched for the
 install is never rewritten.
 
+The one exception is the built-in registry moving house. Plugins installed
+before the catalogue moved to
+<https://nparseplugins.prokopto.dev/index.json> recorded its previous URL,
+and left alone they would all read as that "no longer configured" case, with
+every update from the built-in registry demanding a source-change
+confirmation between two names for the same catalogue. Those records are
+re-pointed once, when settings load. If you have added the old URL as a
+registry of your own, nothing is rewritten — it is still configured, and the
+record is still true.
+
 ## The buttons
 
 **Check for updates** asks every ticked registry, plus the update feed of
