@@ -371,6 +371,40 @@ def test_a_raise_during_hot_activate_lands_in_error_unwound(
     assert registrations(backend) == baseline
 
 
+def test_a_failed_activation_can_be_retried_after_disabling(
+    make_host, plugins_dir: Path, settings: Settings, tmp_path: Path
+) -> None:
+    """An error row is not a dead end for the session.
+
+    The plugin is still imported and constructed, so the box is the retry:
+    unticking retires it to disabled, ticking runs activate() again — which
+    is the whole fix for a failure that was transient.
+    """
+    marker = tmp_path / "attempts.txt"
+    write_plugin(
+        plugins_dir,
+        "flaky.py",
+        plugin_id="flaky",
+        activate_body=(
+            f"        open({str(marker)!r}, 'a').write('x')\n"
+            f"        if open({str(marker)!r}).read() == 'x':\n"
+            "            raise RuntimeError('not yet')"
+        ),
+    )
+    approve(settings, "flaky")
+    host = make_host()
+    host.discover_and_load()
+    host.activate_enabled()
+    loaded = loaded_for(host, "flaky")
+    assert loaded.status == "error"
+
+    assert host.set_enabled("flaky", False) is loaded
+    assert loaded.status == "disabled"
+    assert host.set_enabled("flaky", True) is loaded
+    assert loaded.status == "active"
+    assert marker.read_text() == "xx"
+
+
 def test_a_raise_during_hot_deactivate_still_unwinds_and_tears_down(
     make_host, plugins_dir: Path, settings: Settings, backend
 ) -> None:

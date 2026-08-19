@@ -113,11 +113,15 @@ class PluginHost:
         self._loaded: list[LoadedPlugin] = []
         # Latest update check, session-only. See cache_update_check.
         self._update_check: UpdateCheckResult | None = None
-        # Called with a plugin id when ``deactivate_one`` retires it, so
-        # whoever built that plugin's windows and settings pages can destroy
-        # them. A list on the ``TimersService.on_change`` pattern, and a bare
-        # id rather than a widget: core stays Qt-free, and the host never
-        # learns what a window is. Failures are logged, never propagated.
+        # The two halves of "a plugin's surfaces follow the plugin", on the
+        # ``TimersService.on_change`` pattern. Core never learns what a
+        # window is: the build hook hands over the row (its ``window_specs``
+        # and ``page_specs`` are what the UI needs), the teardown hook a bare
+        # plugin id. Failures in a listener are logged, never propagated.
+        #
+        # Registered AFTER the startup sweep, so ``activate_enabled`` does
+        # not build the same windows the caller is about to build itself.
+        self.on_ui_build: list[Callable[[LoadedPlugin], None]] = []
         self.on_ui_teardown: list[Callable[[str], None]] = []
 
     @property
@@ -337,14 +341,22 @@ class PluginHost:
         self._save()
 
     def forget(self, plugin_id: str) -> None:
-        """Erase the persistent traces of an uninstalled plugin.
+        """Stop, drop and erase the persistent traces of an uninstalled plugin.
 
         Uninstalling only moves the code to the trash; the consent record and
         the plugin's private data would outlive it. That is a consent bypass:
         the next thing to claim id ``plugin_id`` — from any source — would
         load pre-approved and inherit the old plugin's storage. Both go with
         the code, so a re-install is treated as the stranger it is.
+
+        Since #45 an uninstall can happen while the plugin is *running*, so
+        this deactivates first — registrations, timer rows and windows all
+        come out — and then drops the row entirely. Leaving it would list a
+        plugin whose code is in the trash, and dropping it while it still had
+        hooks in the bus would strand them with nothing left to unwind them.
         """
+        self.deactivate_one(plugin_id)
+        self._loaded = [loaded for loaded in self._loaded if loaded.plugin_id != plugin_id]
         if self._settings.plugins.entries.pop(plugin_id, None) is not None:
             self._save()
         error = trash_plugin_data(self._plugin_data_dir(plugin_id), self._plugins_dir)
@@ -475,6 +487,9 @@ class PluginHost:
 
         A row that is not ``ready`` is returned untouched, so activating an
         already-active plugin is a no-op rather than a second ``activate()``.
+        A plugin that *failed* to activate is reachable again by disabling it
+        first — ``deactivate_one`` retires an ``error`` row to ``disabled``,
+        from which enabling retries it.
         Nothing here imports: every discovered plugin was imported and
         constructed by ``discover_and_load`` regardless of consent, so
         enabling one is only the call it never got.
@@ -584,6 +599,7 @@ class PluginHost:
         loaded.page_specs = list(ctx.page_specs)
         loaded.status = "active"
         logger.info("plugin %s v%s activated", loaded.meta.id, loaded.meta.version)
+        self._build_ui(loaded)
 
     def _teardown(self, loaded: LoadedPlugin, *, retire: bool) -> None:
         """Deactivate + unwind; ``retire`` also puts the row back to disabled.
@@ -612,7 +628,14 @@ class PluginHost:
             self._drop_timer_rows(plugin_id)
             self._teardown_ui(plugin_id, had_ui)
         loaded.context = None
-        if loaded.status in ("active", "ready"):
+        # ``error`` retires too, which is what makes a failed activation
+        # retryable: the plugin object is still imported and constructed, so
+        # unticking and re-ticking the box puts it back to ``ready`` and runs
+        # activate() again. Without it a plugin that raised once was stuck in
+        # ``error`` for the session with no way back but a restart — and the
+        # fix for a transient failure (a file it wanted, a login it needed) is
+        # usually just to try again.
+        if loaded.status in ("active", "ready", "error"):
             loaded.status = "disabled"
 
     def _drop_timer_rows(self, plugin_id: str) -> None:
@@ -628,6 +651,19 @@ class PluginHost:
             timers.remove_owner(plugin_id)
 
         self._backend.driver.submit_to_driver(drop, label=f"drop {plugin_id} timer rows")
+
+    def _build_ui(self, loaded: LoadedPlugin) -> None:
+        """Ask whoever owns the UI to materialize what this plugin declared.
+
+        Inert during the startup sweep — nothing is listening yet, because
+        the app registers here only after ``activate_enabled`` returns and it
+        has built that first batch itself.
+        """
+        for callback in list(self.on_ui_build):
+            try:
+                callback(loaded)
+            except Exception:
+                logger.exception("plugin %s UI build raised", loaded.plugin_id)
 
     def _teardown_ui(self, plugin_id: str, had_ui: bool) -> None:
         """Ask whoever built this plugin's surfaces to destroy them.
