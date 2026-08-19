@@ -1202,35 +1202,31 @@ host, Browse offers "Installed (other source)", and `best_update`'s rule that
 the installed-from registry wins turns the built-in registry's own offer into
 a cross-source confirmation between two names for one catalogue.
 `PluginsSettings._follow_the_moved_default` rewrites those records inside the
-validator documented to never raise, and drops a stored `RegistrySource`
-holding the old URL in the same pass. **That row was always inert** —
+validator documented to never raise. In a pre-move document that rewrite is
+**unambiguous**: back then the old URL *was* the built-in row —
 `add_registry` refused a URL equal to `DEFAULT_REGISTRY_URL` and
-`resolve_registries` collapsed a stored copy into the built-in row, so it
-never appeared in the registries table and was never separately fetched — so
-keeping it would un-collapse it into a third-party registry nobody added, and
-keying the rewrite off its presence would withhold the fix from the one
-population that most needs it (a `plugins.registry_url` override that a later
-build folded into `registries`, invisibly). Only an exact normalized match is
-touched; a fork's Pages URL is somebody else's registry. **It runs once**,
-recorded by `plugins.registry_move_applied`, because the URL's meaning
-changed with the move: before it a stored copy could only duplicate the
-built-in row, after it the same URL is an ordinary registry a user may
-deliberately add — and a rule that cannot tell those apart deletes their row
-on every launch.
+`resolve_registries` collapsed a stored copy into it — so no install can have
+come through a copy.
 
-**The marker cannot be the only test, because the release that moved the
-constant shipped without one.** v2.16.0 already repointed provenance and
-already let `add_registry` accept the old URL, so its documents are post-move
-*and* markerless — reading "no marker" as "pre-move" would delete exactly the
-trust decision the marker exists to protect. So
-`_predates_the_registry_move` also looks for the one artifact only post-move
-code can produce: a provenance record naming the **new** URL. That doubles as
-the idempotence guard — a migrated document leaves that evidence behind, so a
-lost marker cannot make it run twice. And nothing happens at all to a
-document with no stale provenance: the registry list is only touched while
-repairing records that name the old URL, so a row nothing was installed from
-is never deleted — there is nothing to repair, and that is the one reading
-where the two eras are genuinely indistinguishable.
+**The user's registry list is not edited, and that is the settled answer to a
+genuine conflict.** A stored row holding the old URL was inert and
+un-collapses into a visible third-party row on the upgrade, which argues for
+deleting it; but post-move that same URL is an index somebody may add on
+purpose, and **no settings file distinguishes the two eras** — v2.16.0 moved
+the constant without introducing a marker. Deleting would trade a trust
+decision for tidiness, so the row stays (and `remove_registry` now accepts
+it, since it is no longer the default) while the records are repaired
+regardless. The one row dropped is a row the same validation manufactured
+from the deprecated `plugins.registry_url` override: an artifact of folding a
+field in, never a list entry.
+
+**It runs once**, recorded by `plugins.registry_move_applied` — and the
+marker cannot be the only test, for the same v2.16.0 reason: its documents
+are post-move AND markerless. `_predates_the_registry_move` also reads the
+one artifact only post-move code can produce, a provenance record naming the
+**new** URL. That doubles as the idempotence guard, since the rewrite leaves
+exactly that evidence behind. Only an exact normalized match is ever touched;
+a fork's Pages URL is somebody else's registry.
 
 **One literal, and it lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
 sits beside `normalize_registry_url` for the reason that function is there:

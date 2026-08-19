@@ -197,26 +197,28 @@ recorded the old GitHub Pages URL as its provenance, and that URL now names
 no configured registry at all: the Source cell would fall back to a bare host
 name, Browse would offer *Installed (other source)* instead of an Update
 button, and taking the update would demand a confirmation naming two
-registries that are the same catalogue. So those records are re-pointed the
-first time settings load after the move. The catalogue moved; the publisher
-did not, and the move is not a trust hop.
+registries that are the same catalogue. So those records are re-pointed once,
+the first time settings load after the move. The catalogue moved; the
+publisher did not, and the move is not a trust hop. In a settings file
+written before the move that rewrite is unambiguous — back then this URL
+**was** the built-in registry, and a stored copy of it collapsed into that
+row rather than being fetched on its own, so nothing else it could have been.
 
-The same load drops a *registry* row holding that old URL. Such a row could
-only ever have been an inert duplicate of the built-in one — the app refused
-to add a registry equal to the built-in URL, and a stored copy collapsed into
-that row rather than appearing beside it, so it was never shown and never
-separately fetched. Keeping it would un-collapse it into a third-party
-registry you never added, pointing at a stale index.
+**Your registry list is never edited.** If a row holding the old URL appears
+after the upgrade, it is one that was there all along, hidden behind the
+built-in row it duplicated; it is now an ordinary third-party row and
+**Remove** works on it. nParse+ leaves it to you rather than deleting it,
+because after the move that same URL is an index somebody may add on
+purpose, and no settings file distinguishes the two cases. The one row it
+does drop is a row it created in that same load out of the long-deprecated
+`plugins.registry_url` override — an artifact of folding a field in, never a
+list entry you built.
 
-Both halves run **once**, recorded by `plugins.registry_move_applied`, because
-what that URL means changed with the move: it is now an ordinary index you
-may add deliberately. Do that and it stays — the row survives every reload
-and anything it vouches for keeps naming it. Settings written by the release
-that moved the catalogue carry no marker, so a second test backs it up: a
-provenance record naming the *new* URL can only have been written after the
-move, and one is enough to leave the document alone. A registry row that
-nothing is installed from is never touched either — there is nothing to
-repair, so nothing is.
+The rewrite runs **once**, recorded by `plugins.registry_move_applied`, with
+a second test behind it: a provenance record naming the *new* URL can only
+have been written after the move, and one is enough to leave the file alone.
+That covers the release that moved the catalogue and recorded no marker, and
+it makes the rewrite self-limiting — it leaves exactly that evidence behind.
 
 ## Index format (schema 1)
 

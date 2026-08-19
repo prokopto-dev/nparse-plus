@@ -453,15 +453,15 @@ class TestBuiltInRegistryMoved:
         )
         assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
-    def test_a_stored_copy_of_the_old_default_is_dropped_not_promoted(self) -> None:
-        """It was hidden behind the row it duplicated; it must not surface now.
+    def test_a_stored_row_survives_the_records_moving(self) -> None:
+        """Records are repaired; the registry list is never edited.
 
-        ``resolve_registries`` collapsed a stored copy of the then-default
-        into the built-in row and ``PluginHost.add_registry`` refused to
-        create one, so this row was never visible and never separately
-        fetched. Kept, it would un-collapse into a third-party registry the
-        user never added — *and* it would make the install below look like it
-        came from somewhere other than the built-in catalogue.
+        In a pre-move document the rewrite is unambiguous — back then that URL
+        *was* the built-in row, and a stored copy collapsed into it, so no
+        install can have come through the copy. The row itself is a different
+        question: post-move that URL is an index somebody may deliberately
+        add, and nothing in the file distinguishes the two eras, so it stays
+        and Settings > Plugins can remove it.
         """
         plugins = PluginsSettings(
             registries=[
@@ -470,15 +470,20 @@ class TestBuiltInRegistryMoved:
             ],
             entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
         )
-        assert [r.url for r in plugins.registries] == ["https://guild.example/index.json"]
+        assert [r.url for r in plugins.registries] == [
+            _LEGACY_DEFAULT_REGISTRY_URL,
+            "https://guild.example/index.json",
+        ]
+        assert plugins.registries[0].name == "Mine"
         assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
     def test_a_legacy_override_of_the_old_url_leaves_no_row_behind(self) -> None:
         """The deprecated single-registry override folds in, then drops out.
 
-        This is the population the guard has to reach: someone who set
-        ``plugins.registry_url`` to the then-default on <=1.18 had it folded
-        into ``registries`` by a later build, invisibly.
+        The one row this migration removes, and only because this same
+        validation manufactured it: a value naming the built-in registry must
+        not become a third-party row on the way past. A row already in the
+        list is left alone — see the test above.
         """
         plugins = PluginsSettings(
             registry_url=_LEGACY_DEFAULT_REGISTRY_URL,
@@ -609,11 +614,15 @@ class TestBuiltInRegistryMoved:
         )
         once = load_settings(path)
         assert once.plugins.registry_move_applied is True
-        assert once.plugins.registries == []
         assert once.plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+        assert [r.url for r in once.plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
 
-        # Saved and reloaded, the user may now add that index deliberately.
+        # Removing that row and adding it back are both the user's to make,
+        # and neither is undone on the next load.
+        once.plugins.registries = []
         save_settings(once, path)
+        assert load_settings(path).plugins.registries == []
+
         reloaded = load_settings(path)
         reloaded.plugins.registries = [RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL)]
         save_settings(reloaded, path)

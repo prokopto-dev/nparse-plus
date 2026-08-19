@@ -75,15 +75,14 @@ before the catalogue moved to
 and left alone they would all read as that "no longer configured" case, with
 every update from the built-in registry demanding a source-change
 confirmation between two names for the same catalogue. Those records are
-re-pointed once, on the first load after the move — as is the registry list,
-which drops any stored copy of the old URL, since that copy was hidden behind
-the built-in row it duplicated and would otherwise surface as a third-party
-registry you never added.
+re-pointed once, on the first load after the move.
 
-Afterwards that URL is an ordinary index like any other: add it under
-**Plugin registries** and it stays, and anything you install from it keeps
-naming it — including if you added it under the very release that moved the
-catalogue, which recorded no marker for nParse+ to read.
+Your **Plugin registries** list is not touched. If a row holding that old URL
+turns up after the upgrade it was always in your settings, hidden behind the
+built-in row it duplicated — it is an ordinary third-party row now, and
+**Remove** works on it. nParse+ will not delete it for you, because that same
+URL is an index you may have added on purpose, and nothing in the file tells
+the two apart. Anything you add there stays added.
 
 ## The buttons
 

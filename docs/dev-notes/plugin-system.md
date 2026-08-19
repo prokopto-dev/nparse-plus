@@ -262,28 +262,25 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     offer into a cross-source confirmation between two names for one
     catalogue. `PluginsSettings._follow_the_moved_default`
     rewrites those records inside the validator that is documented to never
-    raise, and drops a stored `RegistrySource` holding the old URL in the
-    same pass. That row was always inert — `add_registry` refused a URL
-    equal to `DEFAULT_REGISTRY_URL` and `resolve_registries` collapsed a
-    stored copy into the built-in row, so it never appeared in the
-    registries table and was never separately fetched — and keeping it would
-    un-collapse it into a third-party registry nobody added *and*, if the
-    rule keyed off it, withhold the rewrite from the one population (a
-    `plugins.registry_url` override folded in by a later build) that most
-    needs it. Only an exact normalized match is touched; a fork's Pages URL
-    is somebody else's registry. **One-shot**, recorded by
-    `plugins.registry_move_applied`, because the URL's meaning changed with
-    the move: before it, a stored copy could only be a duplicate of the
-    built-in row; after it, the same URL is an ordinary registry a user may
-    deliberately add, and a rule that could not tell those apart would
-    delete that row on every launch. The marker cannot be the only test —
-    v2.16.0 moved the constant and introduced none, so its (post-move)
-    documents look markerless too. `_predates_the_registry_move` therefore
-    also reads the one artifact only post-move code can write: a provenance
-    record naming the new URL. That is the idempotence guard as well, since
-    the rewrite leaves exactly that evidence. A document with no stale
-    provenance is left entirely alone — the registry list is only touched
-    while repairing records, so a row nothing depends on is never dropped.
+    raise. In a pre-move document the rewrite is unambiguous: back then that
+    URL *was* the built-in row — `add_registry` refused a URL equal to
+    `DEFAULT_REGISTRY_URL` and `resolve_registries` collapsed a stored copy
+    into it — so no install can have come through a copy. **The registry
+    list is not edited.** A stored row holding the old URL un-collapses into
+    a visible third-party row on this upgrade, which is untidy, but after
+    the move that URL is an index a user may add on purpose and no file
+    distinguishes the two eras; deleting it would trade a trust decision for
+    tidiness, so it stays and `remove_registry` now accepts it. The sole
+    exception is a row the same validation manufactured from the deprecated
+    `plugins.registry_url` override — an artifact of the fold, never a list
+    entry. **One-shot**, recorded by `plugins.registry_move_applied`, since
+    post-move that URL is ordinary; and the marker cannot be the only test,
+    because v2.16.0 moved the constant and introduced none, so its
+    (post-move) documents look markerless too.
+    `_predates_the_registry_move` therefore also reads the one artifact only
+    post-move code can write: a provenance record naming the new URL. That
+    is the idempotence guard as well, since the rewrite leaves exactly that
+    evidence.
 31. **The URL literal lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
     is defined beside `normalize_registry_url` and re-exported as
     `core.plugins.registry.DEFAULT_REGISTRY_URL`, for the reason that

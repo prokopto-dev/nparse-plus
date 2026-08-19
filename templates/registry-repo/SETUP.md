@@ -69,25 +69,25 @@ goes with it (see [#130](https://github.com/prokopto-dev/nparse-plus/issues/130)
 which did exactly this):
 
 1. Point `BUILTIN_REGISTRY_URL` (`config/settings.py`) at the new index.
-2. Keep the outgoing URL as `_LEGACY_DEFAULT_REGISTRY_URL` beside it, and in
-   `PluginsSettings` re-point `PluginEntry.registry_url` **and** drop any
-   stored `RegistrySource` holding it. Without the first, everything already
-   installed reads as "from a registry that is no longer configured" and
-   every update offer becomes a cross-source confirmation between two names
-   for the same catalogue; without the second, a stored copy of the outgoing
-   default — inert until now, collapsed into the built-in row — un-collapses
-   into a third-party registry the user never added. Rewrite only an exact
-   normalized match, and run the whole thing **once** against a persisted
-   marker: after the move that URL is an ordinary registry somebody may
-   deliberately add, and a rule that cannot tell those apart deletes their
-   row on every launch. Introduce that marker **in the same release as the
-   move** — #130 did not, so the release that moved the catalogue writes
-   documents indistinguishable from pre-move ones, and the code needs a
-   second test (a provenance record naming the new URL, which only post-move
-   code can write) to cover them.
-3. Regenerate the schema (its `$id` names the host) and copy the result to
+2. Keep the outgoing URL as `_LEGACY_DEFAULT_REGISTRY_URL` beside it and
+   re-point `PluginEntry.registry_url` in `PluginsSettings`. Without that,
+   everything already installed reads as "from a registry that is no longer
+   configured" and every update offer becomes a cross-source confirmation
+   between two names for the same catalogue. Rewrite only an exact normalized
+   match, and **do not edit the user's registry list** while you are there: a
+   stored row holding the outgoing URL was inert (it collapsed into the
+   built-in row) but after the move the same URL is an index somebody may add
+   on purpose, and no settings file distinguishes the two. Leave it and let
+   *Remove* work on it. The one row worth dropping is one the same validation
+   just manufactured from the deprecated `plugins.registry_url` override.
+3. Introduce the one-shot marker **in the same release as the move** — #130
+   did not, so the release that moved the catalogue writes documents
+   indistinguishable from pre-move ones, and the code needs a second test
+   (a provenance record naming the new URL, which only post-move code can
+   write) to recognise them.
+4. Regenerate the schema (its `$id` names the host) and copy the result to
    every consumer — see below.
-4. Update this file and `docs/plugins/registry.md`; the test named above
+5. Update this file and `docs/plugins/registry.md`; the test named above
    fails until both name the new URL.
 
 ## Keeping the schema in sync

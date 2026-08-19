@@ -735,6 +735,7 @@ class PluginsSettings(BaseModel):
             seen.add(url)
             cleaned.append(source.model_copy(update={"url": url}))
 
+        folded_in = ""
         if self.registry_url:
             try:
                 legacy = normalize_registry_url(self.registry_url)
@@ -742,12 +743,13 @@ class PluginsSettings(BaseModel):
                 legacy = ""
             if legacy and legacy not in seen:
                 cleaned.append(RegistrySource(url=legacy))
+                folded_in = legacy
             self.registry_url = ""
 
         self.registries = cleaned
         if not self.registry_move_applied:
             if self._predates_the_registry_move():
-                self._follow_the_moved_default()
+                self._follow_the_moved_default(folded_in)
             self.registry_move_applied = True
         return self
 
@@ -779,65 +781,54 @@ class PluginsSettings(BaseModel):
             for entry in self.entries.values()
         )
 
-    def _follow_the_moved_default(self) -> None:
+    def _follow_the_moved_default(self, folded_in: str = "") -> None:
         """Bring a pre-move document to the built-in registry's new home (#130).
 
-        Runs exactly once per document, which is the whole design: what the
-        old URL *means* changed with the move. Before it, that URL was the
-        built-in row — ``resolve_registries`` collapsed any stored copy into
-        it and ``PluginHost.add_registry`` refused to create one, so a stored
-        copy was invisible in Settings > Plugins and never separately fetched.
-        After it, the same URL is an ordinary third-party registry somebody
-        can deliberately add. A rule that could not tell those apart would
-        either strand the first population or delete the second one's row on
-        every launch.
+        Runs once, and what it repairs is the *record* an install left behind.
+        ``resolve_registries`` synthesizes the built-in row from a constant so
+        that moving it moves every user, but ``PluginEntry.registry_url`` is
+        written once at install time and nothing re-points it. Left alone,
+        everything installed before the move reads as "installed from a
+        registry that is no longer configured": the Source cell falls back to
+        a bare host, Browse offers "Installed (other source)" instead of an
+        Update button, and taking the update demands a cross-source
+        confirmation naming two registries that are in fact one catalogue.
+        The move is not a trust hop and must not look like one.
 
-        Two things, and both are about the same fossil:
+        In a pre-move document that rewrite is unambiguous: back then the old
+        URL *was* the built-in row. ``PluginHost.add_registry`` refused a URL
+        equal to the default and ``resolve_registries`` collapsed any stored
+        copy into that row, so no install can have come through a copy —
+        there was nothing else for it to come through.
 
-        1. **Drop a stored row equal to the old default.** Only two paths ever
-           wrote one — a hand-edited ``settings.json`` or the legacy
-           ``registry_url`` fold-in a few lines above — and in both cases it
-           was inert, hidden behind the built-in row it duplicated. Left in
-           place it would *un-collapse* on this upgrade: a third-party
-           registry the user never added, pointing at a stale index, appearing
-           in the table on its own.
-        2. **Re-point what that registry vouched for.** ``resolve_registries``
-           synthesizes the built-in row from a constant so that moving it
-           moves every user, but ``PluginEntry.registry_url`` is a *record*
-           written once at install time. Left alone, everything installed
-           before the move reads as "installed from a registry that is no
-           longer configured": the Source cell falls back to a bare host,
-           Browse offers "Installed (other source)" instead of an Update
-           button, and taking the update demands a cross-source confirmation
-           naming two registries that are in fact one catalogue. The move is
-           not a trust hop and must not look like one.
+        **The user's registry list is not edited.** A stored row holding the
+        old URL is ambiguous in a way the records are not: post-move that URL
+        is an ordinary index someone may deliberately add, and a settings file
+        written by the release that moved the constant carries no marker to
+        tell the two eras apart. Deleting there would discard a trust
+        decision to tidy a row that is merely redundant, so the row stays and
+        Settings > Plugins can remove it — it is no longer the built-in URL,
+        so ``remove_registry`` no longer refuses it.
+
+        The single exception is a row this same validation just manufactured
+        from the deprecated ``plugins.registry_url`` override: that one is an
+        artifact of a field being folded in, never a list entry the user
+        built, and leaving it would materialize a third-party registry out of
+        a value that named the built-in one.
 
         Only a value that normalizes to the old default *exactly* is touched.
         A fork's Pages URL, or the old one carrying a query string, is
         somebody else's registry and stays exactly as written.
 
-        And nothing at all happens to a document with no stale provenance in
-        it: the registry list is only ever touched as part of repairing
-        records that name the old URL, so a document with nothing to repair
-        keeps its rows even if one of them holds that URL. This migration
-        does not exist to tidy, and deleting a row nothing depends on would
-        be pure loss on the one reading — a post-move add by someone with no
-        installs — where this cannot tell the two eras apart.
-
         Called from the validator, and like it this never raises.
         """
-        stale = [
-            entry
-            for entry in self.entries.values()
-            if self._recorded_registry(entry) == _LEGACY_DEFAULT_REGISTRY_URL
-        ]
-        if not stale:
-            return
-        self.registries = [
-            source for source in self.registries if source.url != _LEGACY_DEFAULT_REGISTRY_URL
-        ]
-        for entry in stale:
-            entry.registry_url = BUILTIN_REGISTRY_URL
+        if folded_in == _LEGACY_DEFAULT_REGISTRY_URL:
+            self.registries = [
+                source for source in self.registries if source.url != _LEGACY_DEFAULT_REGISTRY_URL
+            ]
+        for entry in self.entries.values():
+            if self._recorded_registry(entry) == _LEGACY_DEFAULT_REGISTRY_URL:
+                entry.registry_url = BUILTIN_REGISTRY_URL
 
 
 class Settings(BaseModel):
