@@ -98,6 +98,11 @@ class LogDriver:
         # Registration changes from other threads, applied at one fixed point
         # per loop iteration (see submit_to_driver).
         self._inbox: SimpleQueue[tuple[str, Callable[[], None]]] = SimpleQueue()
+        # Guards the accept flag AND the enqueue that follows reading it: the
+        # two have to be one step, or a command can be accepted by a loop that
+        # has already run its last drain. stop() takes the same lock.
+        self._command_lock = threading.Lock()
+        self._accepting_commands = False
         # The driver owns the pipeline's chain the way it owns on_tick, so it
         # hands the pipeline the same inbox rather than leaving a second way
         # to mutate the chain from the GUI thread.
@@ -107,13 +112,34 @@ class LogDriver:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        # Before the thread: a command submitted in the gap is queued and
+        # drained by the first iteration, rather than running on the caller.
+        with self._command_lock:
+            self._accepting_commands = True
         self._thread = threading.Thread(target=self._run, name="log-driver", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
+        """Stop the loop, then answer for every command it did not drain.
+
+        Order matters. The loop exits after some final drain, and a submit
+        that was accepted before that drain — or while this method is joining
+        — has nowhere else to run. So: join, close the window under the lock
+        (later submits run on their caller), then drain what is left here.
+        A command accepted while the driver was alive always runs; that is the
+        promise the old synchronous mutation path made and this keeps.
+        """
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=2)
+        with self._command_lock:
+            self._accepting_commands = False
+        # Outside the lock: nothing can enqueue any more (the flag is the
+        # gate), and a command must not run holding it. If the join above
+        # timed out the loop is still draining too — SimpleQueue hands each
+        # command to exactly one of us, which is the most that can be said
+        # for a driver thread that would not stop.
+        self._drain_commands()
 
     def set_log_dir(self, log_dir: Path) -> None:
         self.log_dir = log_dir
@@ -136,10 +162,6 @@ class LogDriver:
 
     # -- the driver-thread command inbox -------------------------------------
 
-    def is_running(self) -> bool:
-        """True while the driver thread owns the log — i.e. commands queue."""
-        return self._thread is not None and self._thread.is_alive()
-
     def submit_to_driver(self, fn: Callable[[], None], *, label: str) -> None:
         """Run ``fn`` on the driver thread at the next loop boundary.
 
@@ -153,19 +175,30 @@ class LogDriver:
         ``SharingCoordinator.enqueue_inbound``: any thread enqueues, only the
         driver runs it.
 
-        With the loop not running there is nothing to race with, so ``fn``
-        runs immediately on the calling thread. That is what keeps startup
-        wiring (plugins are activated before ``Backend.start``) and shutdown
-        unwind (``backend.stop`` has already joined the thread) synchronous,
-        as they were before this seam existed.
+        With no loop to run it there is nothing to race with, so ``fn`` runs
+        immediately on the calling thread. That is what keeps startup wiring
+        (plugins are activated before ``Backend.start``) and shutdown unwind
+        (``backend.stop`` has already joined the thread) synchronous, as they
+        were before this seam existed.
+
+        Reading that state and enqueueing are ONE step, under the lock
+        ``stop`` also takes — hence no public "is the driver running"
+        predicate for callers to branch on themselves. Split apart, the
+        answer can go stale between the two: the loop runs its final drain
+        and exits, and the command lands in a queue nobody will ever read
+        again. ``stop`` drains what it finds for the same reason, so a
+        command accepted while the driver was alive always runs.
 
         ``label`` names the change in the log if ``fn`` raises; a raising
         command is that command's problem and never the loop's.
         """
-        if not self.is_running():
-            self._invoke(fn, label)
-            return
-        self._inbox.put((label, fn))
+        with self._command_lock:
+            if self._accepting_commands:
+                self._inbox.put((label, fn))
+                return
+        # Outside the lock: a command is free to submit another one, and a
+        # slow one must not block every other thread's registration.
+        self._invoke(fn, label)
 
     def _drain_commands(self) -> None:
         while True:

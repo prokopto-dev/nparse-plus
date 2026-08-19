@@ -1,10 +1,10 @@
 """The driver-thread command inbox: registration changes from other threads.
 
 Everything here is driven by hand — submit, then run exactly one iteration —
-so nothing waits on the 100 ms poll. ``loop_running`` gives the driver a real
-live thread so ``is_running()`` answers through the real predicate, without
-the loop actually running; the test itself stands in for the driver thread by
-calling ``_iterate``.
+so nothing waits on the 100 ms poll. ``accepting_commands`` puts the driver in
+the state ``start()`` leaves it in without the loop running, and the test
+itself stands in for the driver thread by calling ``_iterate``. The shutdown
+race at the bottom is the exception: it needs the real ``start``/``stop``.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from queue import Empty
 
 import pytest
 
@@ -61,23 +62,20 @@ def _make_driver(tmp_path: Path, pipeline: object | None = None):
 
 
 @contextmanager
-def loop_running(driver: LogDriver) -> Iterator[None]:
-    """Make ``is_running()`` true without starting the poll loop.
+def accepting_commands(driver: LogDriver) -> Iterator[None]:
+    """The state ``start()`` leaves the driver in, without the poll loop.
 
-    A real thread — the predicate is the real one — parked on an event. The
-    test drives ``_iterate`` itself, which is what makes every assertion here
+    The loop is what would otherwise drain on its own schedule; the test
+    drives ``_iterate`` instead, which is what makes every assertion here
     deterministic.
     """
-    release = threading.Event()
-    thread = threading.Thread(target=release.wait, name="log-driver", daemon=True)
-    thread.start()
-    driver._thread = thread
+    with driver._command_lock:
+        driver._accepting_commands = True
     try:
         yield
     finally:
-        release.set()
-        thread.join(timeout=2)
-        driver._thread = None
+        with driver._command_lock:
+            driver._accepting_commands = False
 
 
 def off_thread(fn: Callable[[], None]) -> None:
@@ -96,7 +94,7 @@ def test_a_submitted_command_runs_on_the_driver_thread_exactly_once(tmp_path: Pa
     driver, _pipeline, _log = _make_driver(tmp_path)
     ran_on: list[threading.Thread] = []
 
-    with loop_running(driver):
+    with accepting_commands(driver):
         submit_from_another_thread(
             driver, lambda: ran_on.append(threading.current_thread()), label="hot registration"
         )
@@ -124,7 +122,7 @@ def test_commands_land_between_lines_never_inside_one(tmp_path: Path) -> None:
         else None
     )
 
-    with loop_running(driver):
+    with accepting_commands(driver):
         driver._iterate()
         assert log == ["line one", "line two", "line three"]
 
@@ -143,7 +141,7 @@ def test_a_raising_command_is_logged_and_the_loop_keeps_going(
     def boom() -> None:
         raise RuntimeError("plugin registration blew up")
 
-    with loop_running(driver), caplog.at_level("ERROR"):
+    with accepting_commands(driver), caplog.at_level("ERROR"):
         submit_from_another_thread(driver, boom, label="bad command")
         submit_from_another_thread(driver, lambda: ran.append("after"), label="good command")
 
@@ -161,7 +159,7 @@ def test_tick_registration_is_routed_while_the_loop_runs(tmp_path: Path) -> None
     def tick(now: datetime) -> None:
         ticked.append(now)
 
-    with loop_running(driver):
+    with accepting_commands(driver):
         driver.add_supervised_tick(tick, label="plugin late")
         assert driver.on_tick == []  # not yet — the loop owns this list
 
@@ -185,10 +183,83 @@ def test_registration_is_immediate_with_no_loop_running(tmp_path: Path) -> None:
         pass
 
     driver.add_supervised_tick(tick, label="plugin at startup")
-    assert driver.on_tick == [tick] and driver.is_running() is False
+    assert driver.on_tick == [tick]
 
     driver.remove_tick(tick)
     assert driver.on_tick == []
+
+
+class _SlowInbox:
+    """The real inbox with ``put`` parked, so a submit can straddle ``stop``."""
+
+    def __init__(self, inner, entered: threading.Event, release: threading.Event) -> None:
+        self._inner = inner
+        self._entered = entered
+        self._release = release
+
+    def put(self, item) -> None:
+        self._entered.set()
+        assert self._release.wait(2), "the test never released the enqueue"
+        self._inner.put(item)
+
+    def get_nowait(self):
+        return self._inner.get_nowait()
+
+
+def test_a_command_accepted_as_the_driver_stops_is_not_stranded(tmp_path: Path) -> None:
+    """Accepted by a live driver, enqueued after the loop has already gone.
+
+    The window a bare "is it running?" check leaves open: the answer is true,
+    then the loop runs its final drain and exits, and only then does the
+    command reach the queue — where nothing would ever read it again, and a
+    later ``start()`` would apply it at a moment nobody asked for. Real
+    ``start``/``stop`` here, with the enqueue itself parked to pin the
+    ordering: the loop is joined and confirmed dead before the command lands.
+    """
+    driver, _pipeline, _log = _make_driver(tmp_path)
+    ran: list[str] = []
+    entered, release = threading.Event(), threading.Event()
+    driver._inbox = _SlowInbox(driver._inbox, entered, release)
+    driver.start()
+
+    submitter = threading.Thread(
+        target=lambda: driver.submit_to_driver(
+            lambda: ran.append(threading.current_thread().name), label="late registration"
+        ),
+        name="submitter",
+    )
+    submitter.start()
+    assert entered.wait(2), "the submit never reached the enqueue"
+
+    stopper = threading.Thread(target=driver.stop, name="stopper")
+    stopper.start()
+    assert driver._thread is not None
+    driver._thread.join(timeout=2)
+    assert not driver._thread.is_alive()  # loop gone, its last drain done
+
+    release.set()  # only NOW does the command reach the queue
+    submitter.join(timeout=2)
+    stopper.join(timeout=2)
+
+    # stop() could not close the window until the submit in flight finished,
+    # so it is the one that runs it. Nothing is stranded and nothing is left
+    # for a later start() to apply out of nowhere.
+    assert ran == ["stopper"]
+    assert driver._accepting_commands is False
+    with pytest.raises(Empty):
+        driver._inbox.get_nowait()
+
+
+def test_after_stop_a_command_runs_on_its_caller(tmp_path: Path) -> None:
+    """The gate is shut: no queue to sit in, so the caller runs it itself."""
+    driver, _pipeline, _log = _make_driver(tmp_path)
+    driver.start()
+    driver.stop()
+    ran: list[str] = []
+
+    off_thread(lambda: driver.submit_to_driver(lambda: ran.append("now"), label="post-stop"))
+
+    assert ran == ["now"]
 
 
 class _NoopParser:
@@ -209,7 +280,7 @@ def test_parser_changes_are_routed_through_the_driver(tmp_path: Path) -> None:
     pipeline, driver = _pipeline_with_driver(tmp_path)
     parser = _NoopParser()
 
-    with loop_running(driver):
+    with accepting_commands(driver):
         off_thread(lambda: pipeline.append_parser(parser))
         assert pipeline._parsers == []
 
