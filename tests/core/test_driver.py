@@ -32,6 +32,10 @@ from nparseplus.core.player import ActivePlayer
 class _StubPipeline:
     """_maybe_switch_log never touches the pipeline; this stands in for it."""
 
+    def set_command_sink(self, submit) -> None:
+        """The driver wires its inbox into whatever pipeline it is given."""
+        self.submit = submit
+
     def process(self, raw: str) -> None:  # pragma: no cover - unused here
         pass
 
@@ -238,6 +242,38 @@ def test_builtin_ticks_are_never_dropped(tmp_path: Path, clock: FakeClock) -> No
 
     assert len(runs) == 20
     assert builtin in driver.on_tick
+
+
+def test_the_fast_path_tick_loop_tolerates_concurrent_mutation(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """No supervised ticks means the plain loop — which must still copy.
+
+    Mutating the list the loop is walking shifts every later entry down one,
+    so the neighbour is silently skipped for that iteration. app-owned ticks
+    append to ``on_tick`` directly, so the list is reachable from outside the
+    driver whatever the registration path does.
+    """
+    driver, _player, _events = _make_driver(tmp_path)
+    ran: list[str] = []
+
+    def first(now: datetime) -> None:
+        ran.append("first")
+        # Another thread drops a tick while this iteration is in flight.
+        mutator = threading.Thread(target=lambda: driver.on_tick.remove(first))
+        mutator.start()
+        mutator.join()
+
+    def second(now: datetime) -> None:
+        ran.append("second")
+
+    driver.on_tick.extend([first, second])
+
+    driver._iterate()
+
+    assert ran == ["first", "second"]
+    assert driver.on_tick == [second]
+    assert clock.perf_counter_calls == 0  # the fast path really was taken
 
 
 def test_remove_tick_deregisters_supervision(tmp_path: Path, clock: FakeClock) -> None:
