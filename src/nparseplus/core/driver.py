@@ -4,6 +4,11 @@ Pure stdlib threading — no Qt. Watches the log directory for a newer
 character log (character switch) every few seconds and re-attaches,
 emitting player-changed events around the swap.
 
+Registration changes (parsers, ticks) may arrive from any thread — a plugin
+enabled from Settings is the case that matters — so they are routed through
+``submit_to_driver`` and applied on this thread between lines. See that
+method; it is the one seam.
+
 Tick callbacks registered through ``add_supervised_tick`` (plugins) are timed
 and evicted if they repeatedly blow the budget — see ``TICK_BUDGET_S``. Ticks
 appended straight to ``on_tick`` (the app's own services) are never timed and
@@ -22,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from queue import Empty, SimpleQueue
 
 from nparseplus.core.bus import EventBus
 from nparseplus.core.events import AfterPlayerChangedEvent, BeforePlayerChangedEvent
@@ -89,6 +95,13 @@ class LogDriver:
         # every user with no plugins, which is what keeps the timing path off
         # the hot loop entirely (see _run).
         self._supervised: dict[Callable[[datetime], None], _SupervisedTick] = {}
+        # Registration changes from other threads, applied at one fixed point
+        # per loop iteration (see submit_to_driver).
+        self._inbox: SimpleQueue[tuple[str, Callable[[], None]]] = SimpleQueue()
+        # The driver owns the pipeline's chain the way it owns on_tick, so it
+        # hands the pipeline the same inbox rather than leaving a second way
+        # to mutate the chain from the GUI thread.
+        pipeline.set_command_sink(self.submit_to_driver)
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -121,6 +134,54 @@ class LogDriver:
             self._tail.restart()
             logger.info("%s was archived — reading it from the top", path.name)
 
+    # -- the driver-thread command inbox -------------------------------------
+
+    def is_running(self) -> bool:
+        """True while the driver thread owns the log — i.e. commands queue."""
+        return self._thread is not None and self._thread.is_alive()
+
+    def submit_to_driver(self, fn: Callable[[], None], *, label: str) -> None:
+        """Run ``fn`` on the driver thread at the next loop boundary.
+
+        The seam every registration change goes through. The parser chain and
+        the tick list belong to this thread: ``LogPipeline.process`` iterates
+        the live chain with an early ``break``, so a removal from the GUI
+        thread mid-line shifts the index and silently skips a parser for that
+        line. Commands are drained at ONE point per iteration — after the
+        log-switch check, before a single line is read — so a change lands
+        between lines and never inside one. Same shape as
+        ``SharingCoordinator.enqueue_inbound``: any thread enqueues, only the
+        driver runs it.
+
+        With the loop not running there is nothing to race with, so ``fn``
+        runs immediately on the calling thread. That is what keeps startup
+        wiring (plugins are activated before ``Backend.start``) and shutdown
+        unwind (``backend.stop`` has already joined the thread) synchronous,
+        as they were before this seam existed.
+
+        ``label`` names the change in the log if ``fn`` raises; a raising
+        command is that command's problem and never the loop's.
+        """
+        if not self.is_running():
+            self._invoke(fn, label)
+            return
+        self._inbox.put((label, fn))
+
+    def _drain_commands(self) -> None:
+        while True:
+            try:
+                label, fn = self._inbox.get_nowait()
+            except Empty:
+                return
+            self._invoke(fn, label)
+
+    @staticmethod
+    def _invoke(fn: Callable[[], None], label: str) -> None:
+        try:
+            fn()
+        except Exception:
+            logger.exception("driver command %s failed", label)
+
     # -- tick registration ---------------------------------------------------
 
     def add_supervised_tick(
@@ -136,12 +197,30 @@ class LogDriver:
         the driver thread with a human-readable reason so the owner can
         surface the fact. App-owned ticks append to ``on_tick`` directly and
         are never supervised.
+
+        Callable from any thread: the registration itself is routed through
+        ``submit_to_driver``, so a plugin enabled mid-session joins the tick
+        list between lines rather than during one.
         """
-        self.on_tick.append(fn)
-        self._supervised[fn] = _SupervisedTick(label=label, on_dropped=on_dropped)
+
+        def register() -> None:
+            self.on_tick.append(fn)
+            self._supervised[fn] = _SupervisedTick(label=label, on_dropped=on_dropped)
+
+        self.submit_to_driver(register, label=f"register tick {label}")
 
     def remove_tick(self, fn: Callable[[datetime], None]) -> None:
-        """Deregister a tick (already-dropped ones unregister silently)."""
+        """Deregister a tick from any thread (already-dropped ones: no-op)."""
+        self.submit_to_driver(lambda: self._remove_tick_now(fn), label="deregister tick")
+
+    def _remove_tick_now(self, fn: Callable[[datetime], None]) -> None:
+        """Driver-thread removal, applied immediately.
+
+        The supervisor calls this rather than ``remove_tick``: an eviction
+        decided mid-loop has to take effect for THIS iteration, and a queued
+        removal would let the tick run — and breach — once more first. Safe
+        mid-loop because ``_run_supervised_ticks`` iterates a copy.
+        """
         self._supervised.pop(fn, None)
         with contextlib.suppress(ValueError):
             self.on_tick.remove(fn)
@@ -151,22 +230,37 @@ class LogDriver:
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                self._maybe_switch_log()
-                if self._tail is not None:
-                    for line in self._tail.poll():
-                        self._pipeline.process(line)
-                now = datetime.now()
-                # No plugins => no supervision dict => the plain loop, with no
-                # per-callback clock reads at all. This is the app's hottest
-                # loop and the empty case is the common one; keep it free.
-                if self._supervised:
-                    self._run_supervised_ticks(now)
-                else:
-                    for tick in self.on_tick:
-                        tick(now)
+                self._iterate()
             except Exception:
                 logger.exception("log driver iteration failed")
             self._stop.wait(POLL_INTERVAL_S)
+
+    def _iterate(self) -> None:
+        """One pass of the loop. Split out so tests can run exactly one."""
+        self._maybe_switch_log()
+        # THE drain point, and the reason it is here: after the log-switch
+        # check so a command sees the tail it will affect, and before any
+        # line is read so a chain change is applied between lines, never
+        # between the parsers of one line.
+        self._drain_commands()
+        if self._tail is not None:
+            for line in self._tail.poll():
+                self._pipeline.process(line)
+        now = datetime.now()
+        # No plugins => no supervision dict => the plain loop, with no
+        # per-callback clock reads at all. This is the app's hottest
+        # loop and the empty case is the common one; keep it free.
+        if self._supervised:
+            self._run_supervised_ticks(now)
+        else:
+            # Copied for the same reason _run_supervised_ticks copies: a tick
+            # is free to mutate on_tick (app-owned ticks append to it
+            # directly), and mutating a list mid-iteration shifts the index
+            # and skips the neighbour. Copying a handful of bound methods is
+            # not what the branch above is protecting against — the
+            # per-callback clock reads are.
+            for tick in list(self.on_tick):
+                tick(now)
 
     def _run_supervised_ticks(self, now: datetime) -> None:
         # Iterate a copy: a drop mutates on_tick mid-loop, and a plugin tick
@@ -207,7 +301,7 @@ class LogDriver:
             f"tick removed after {watch.breaches} consecutive runs over "
             f"{TICK_BUDGET_S * 1000:.0f} ms (last: {elapsed * 1000:.0f} ms)"
         )
-        self.remove_tick(tick)
+        self._remove_tick_now(tick)
         logger.error("%s: %s — the rest of the app keeps running", watch.label, reason)
         if watch.on_dropped is not None:
             try:
