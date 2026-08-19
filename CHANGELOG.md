@@ -6,6 +6,23 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.17.1 (2026-08-19)
+
+### Bug Fixes
+
+- **plugins**: Decide the moved-registry rewrite from the registry list, not an era
+  ([`a97d2db`](https://github.com/prokopto-dev/nparse-plus/commit/a97d2db5bade0d746e15becebc91dfae97e00225))
+
+- **plugins**: Make the moved-registry migration one-shot, and drop the fossil row
+  ([`e9756d8`](https://github.com/prokopto-dev/nparse-plus/commit/e9756d8816a679956e6875b7ef0fcb72819b43b2))
+
+- **plugins**: Never delete a registry row the move cannot disambiguate
+  ([`d667324`](https://github.com/prokopto-dev/nparse-plus/commit/d66732443ff9effc2f7546a5a1642f7849472717))
+
+- **plugins**: Recognise a post-move settings document without a marker
+  ([`836b3af`](https://github.com/prokopto-dev/nparse-plus/commit/836b3afbd67d6b78187485dd78980c63a156b267))
+
+
 ## v2.17.0 (2026-08-19)
 
 ### Bug Fixes
