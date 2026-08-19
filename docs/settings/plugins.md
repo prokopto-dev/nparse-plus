@@ -75,16 +75,16 @@ before the catalogue moved to
 and left alone they would all read as that "no longer configured" case, with
 every update from the built-in registry demanding a source-change
 confirmation between two names for the same catalogue. So those records are
-re-pointed — **unless you list that old URL as a registry of your own**, in
-which case they name something you actually have, and neither they nor your
-row are touched.
+re-pointed once, the first time nParse+ loads your settings after the move —
+**unless you list that old URL as a registry of your own**, in which case they
+name something you actually have and neither they nor your row are touched.
 
-Your **Plugin registries** list is never edited to tidy this up. If a row
-holding that old URL turns up after the upgrade it was always in your
-settings, hidden behind the built-in row it duplicated — it is an ordinary
-third-party row now, and **Remove** works on it. Remove it and the next load
-folds those old records into the built-in catalogue; keep it and everything
-it vouched for keeps naming it.
+After that one-time repair nothing re-decides provenance: removing a registry
+later leaves its plugins naming it, the same as for any other registry. Your
+**Plugin registries** list is not edited either. If a row holding that old URL
+turns up after the upgrade it was always in your settings, hidden behind the
+built-in row it duplicated — it is an ordinary third-party row now, and
+**Remove** works on it.
 
 ## The buttons
 

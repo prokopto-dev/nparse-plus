@@ -197,27 +197,27 @@ recorded the old GitHub Pages URL as its provenance, and that URL now names
 no registry you have: the Source cell falls back to a bare host name, Browse
 offers *Installed (other source)* instead of an Update button, and taking the
 update demands a confirmation naming two registries that are the same
-catalogue. So a record naming that URL is re-pointed at the new one. The
-catalogue moved; the publisher did not, and the move is not a trust hop.
+catalogue. So a record naming that URL is re-pointed at the new one, **once**,
+the first time settings are loaded by a version that knows about the move.
+The catalogue moved; the publisher did not, and the move is not a trust hop.
 
-**Unless you list that URL yourself.** The rule is your own registry list,
-re-checked on every load: while the old index is a row in **Plugin
-registries**, every record naming it is true as written and nothing is
-touched — not the row, not the records. That is what makes it safe to add the
-old index deliberately now that it is an ordinary third-party URL. Only when
-no row holds it is a record re-pointed, and then there is nothing else it
+**Unless you list that URL yourself.** While the old index is a row in
+**Plugin registries**, every record naming it is true as written and nothing
+is touched — not the row, not the records. That is what makes it safe to add
+the old index deliberately, now that it is an ordinary third-party URL. Only
+when no row holds it is a record re-pointed, and then there is nothing else it
 could have meant: back when that URL was the built-in registry, nParse+
 refused to add it as a registry of your own and folded any stored copy into
 the built-in row, so an install could not have come through a copy.
 
-nParse+ does not edit your registry list to make this tidier. If a row
-holding the old URL appears after the upgrade, it was always in your settings,
-hidden behind the built-in row it duplicated; it is an ordinary third-party
-row now and **Remove** works on it. Take it out and the next load folds the
-records it was holding in place into the built-in catalogue. The single row
-nParse+ does drop is one it created in that same load out of the
-long-deprecated `plugins.registry_url` override — an artifact of folding a
-field in, never a list entry you built.
+Because the repair happens once, everything after it is yours: removing a
+registry later never rewrites what it vouched for, exactly as it does not for
+any other registry. nParse+ also does not edit your registry list to make this
+tidier — a row holding the old URL that appears after the upgrade was always
+in your settings, hidden behind the built-in row it duplicated, and **Remove**
+works on it. The single row nParse+ does drop is one it created in that same
+load out of the long-deprecated `plugins.registry_url` override: an artifact
+of folding a field in, never a list entry you built.
 
 ## Index format (schema 1)
 

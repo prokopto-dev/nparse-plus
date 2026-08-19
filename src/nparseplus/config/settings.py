@@ -698,6 +698,12 @@ class PluginsSettings(BaseModel):
     # URL a past release happened to write into their settings.json.
     registries: list[RegistrySource] = Field(default_factory=list)
     default_registry_enabled: bool = True
+    # Written the first time a document is loaded by a build that knows the
+    # built-in registry has moved (#130), and read only to make that repair
+    # happen at most once. Everything after it is the user's own doing: with
+    # this set, removing a registry never rewrites what it vouched for, which
+    # is the invariant PluginEntry.registry_url is documented to keep.
+    registry_move_applied: bool = False
     # Poll the enabled registries (and each plugin's declared update feed)
     # shortly after launch so Settings > Plugins can say what is out of date
     # without the user opening Browse first. Only meaningful while `enabled`
@@ -738,7 +744,9 @@ class PluginsSettings(BaseModel):
             self.registry_url = ""
 
         self.registries = cleaned
-        self._follow_the_moved_default(folded_in)
+        if not self.registry_move_applied:
+            self._follow_the_moved_default(folded_in)
+            self.registry_move_applied = True
         return self
 
     @staticmethod
@@ -750,9 +758,8 @@ class PluginsSettings(BaseModel):
             return ""
 
     def _follow_the_moved_default(self, folded_in: str = "") -> None:
-        """Keep an install's provenance pointing at the catalogue it came from.
+        """Repair, once, what the built-in registry's move left behind (#130).
 
-        The built-in registry moved to its own server (#130).
         ``resolve_registries`` synthesizes that row from a constant so the
         move carries every user across, but ``PluginEntry.registry_url`` is
         written once at install time and nothing re-points it. Left alone,
@@ -763,23 +770,34 @@ class PluginsSettings(BaseModel):
         registries that are in fact one catalogue. The move is not a trust
         hop and must not look like one.
 
-        **The condition is the user's own registry list, and it is checked on
-        every load rather than once.** A record naming the old URL is
-        rewritten only while that URL is in no row of ``registries``: then
-        nothing else it could mean is left, because back when that URL was
-        the default ``PluginHost.add_registry`` refused to add it and
-        ``resolve_registries`` collapsed any stored copy into the built-in
-        row — an install could not have come through a copy. List it, and the
-        record is true as written and is left exactly alone; that is what
-        makes it safe for someone to add the old index deliberately now that
-        it is an ordinary third-party URL. Remove it later and the next load
-        folds those records into the built-in catalogue, which is the
-        documented way back for a row that only ever duplicated it.
+        Two conditions, and each answers a different objection.
 
-        Deliberately stateless: no marker distinguishes a settings file
-        written before the move from one written by the release that made it
-        (v2.16.0 introduced none), so the answer is derived from what the
-        document says now rather than from when it was written.
+        **The old URL must not be in the user's own registry list.** If it is,
+        the record is true as written and neither it nor the row is touched.
+        That is what lets somebody add the old index deliberately, now that it
+        is an ordinary third-party URL, and keep everything it vouches for.
+        Where no row holds it there is nothing else the record could ever have
+        meant: back when that URL was the default, ``PluginHost.add_registry``
+        refused to add it and ``resolve_registries`` collapsed any stored copy
+        into the built-in row, so an install could not have come through a
+        copy.
+
+        **And it runs at most once per document**, gated by
+        ``registry_move_applied`` in the caller. Without that gate the same
+        rule would fire later, when a user *removes* a registry they had
+        deliberately added — silently rewriting provenance on an ordinary
+        removal, which is exactly what ``PluginEntry.registry_url`` promises
+        not to do (a removed registry leaves the record naming it, so the
+        manager can say "no longer configured" rather than invent a source).
+        A one-time repair of a URL the app itself moved is a different act
+        from re-deciding provenance whenever the list changes.
+
+        Known limit, stated rather than papered over: v2.16.0 moved the
+        constant and wrote no marker, so a document from that one release is
+        indistinguishable from a pre-move one. A user who added the old index
+        *there*, installed only from it, and removed the row again before
+        upgrading has that record re-pointed. Nothing in the file separates
+        that from an install the move stranded.
 
         The registry list itself is edited in exactly one case: a row this
         same validation manufactured out of the deprecated

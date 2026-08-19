@@ -412,10 +412,10 @@ class TestBuiltInRegistryMoved:
     and every offer from the new default becomes a cross-source confirmation
     for what is the same catalogue.
 
-    The condition is the user's own registry list, checked on every load. No
-    settings file says which era it was written in — the release that moved
-    the constant recorded no marker — so the answer is derived from what the
-    document says now.
+    Two conditions: the old URL must be in no row of the user's own list (a
+    listed registry is true as written), and the repair happens at most once
+    per document, so an ordinary registry removal later never rewrites what
+    it vouched for.
     """
 
     def test_an_install_from_the_old_default_follows_it(self, tmp_path: Path) -> None:
@@ -474,12 +474,16 @@ class TestBuiltInRegistryMoved:
         assert plugins.registries[0].name == "The old index"
         assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
 
-    def test_removing_that_row_is_the_way_back(self, tmp_path: Path) -> None:
-        """Documented recovery for a row that only ever duplicated the default.
+    def test_removing_that_row_later_does_not_rewrite_what_it_vouched_for(
+        self, tmp_path: Path
+    ) -> None:
+        """An ordinary removal, and removals never falsify provenance.
 
-        Checked on every load rather than once, so the user's own action is
-        what decides — take the row out and the records it was holding in
-        place fold into the built-in catalogue on the next load.
+        The repair is gated on ``registry_move_applied``, so it cannot fire a
+        second time when the list changes. Without that gate, taking out a
+        registry you had deliberately added would silently re-attribute its
+        plugins to the built-in catalogue and turn a later cross-source
+        confirmation into a silent update.
         """
         path = tmp_path / "settings.json"
         path.write_text(
@@ -494,10 +498,13 @@ class TestBuiltInRegistryMoved:
         )
         listed = load_settings(path)
         assert listed.plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+        assert listed.plugins.registry_move_applied is True
 
         listed.plugins.registries = []
         save_settings(listed, path)
-        assert load_settings(path).plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+        reloaded = load_settings(path)
+        assert reloaded.plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+        assert reloaded.plugins.registries == []
 
     def test_a_legacy_override_of_the_old_url_leaves_no_row_behind(self) -> None:
         """The one row this touches, and only because it just made it.
@@ -560,13 +567,32 @@ class TestBuiltInRegistryMoved:
         assert loaded.plugins.entries["demo"].registry_url == "not a url at all"
         assert loaded.general.eq_log_dir == Path("/keep/me")
 
-    def test_the_rewrite_is_idempotent(self, tmp_path: Path) -> None:
+    def test_a_registry_added_after_the_repair_is_never_touched(self, tmp_path: Path) -> None:
+        """Whatever the user does with that URL afterwards is theirs."""
         path = tmp_path / "settings.json"
-        original = Settings()
-        original.plugins.entries["demo"] = PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)
-        save_settings(original, path)
+        save_settings(Settings(), path)
+        settings = load_settings(path)
+        assert settings.plugins.registry_move_applied is True
+
+        settings.plugins.registries = [RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL)]
+        settings.plugins.entries["demo"] = PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)
+        save_settings(settings, path)
+
+        reloaded = load_settings(path)
+        assert [r.url for r in reloaded.plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
+        assert reloaded.plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+
+    def test_the_repair_settles(self, tmp_path: Path) -> None:
+        """A document from an older build is repaired once and stays repaired."""
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {"plugins": {"entries": {"demo": {"registry_url": _LEGACY_DEFAULT_REGISTRY_URL}}}}
+            )
+        )
         once = load_settings(path)
         assert once.plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+        assert once.plugins.registry_move_applied is True
         save_settings(once, path)
         assert load_settings(path).plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
