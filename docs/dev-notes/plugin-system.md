@@ -276,7 +276,14 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     the move: before it, a stored copy could only be a duplicate of the
     built-in row; after it, the same URL is an ordinary registry a user may
     deliberately add, and a rule that could not tell those apart would
-    delete that row on every launch.
+    delete that row on every launch. The marker cannot be the only test —
+    v2.16.0 moved the constant and introduced none, so its (post-move)
+    documents look markerless too. `_predates_the_registry_move` therefore
+    also reads the one artifact only post-move code can write: a provenance
+    record naming the new URL. That is the idempotence guard as well, since
+    the rewrite leaves exactly that evidence. A document with no stale
+    provenance is left entirely alone — the registry list is only touched
+    while repairing records, so a row nothing depends on is never dropped.
 31. **The URL literal lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
     is defined beside `normalize_registry_url` and re-exported as
     `core.plugins.registry.DEFAULT_REGISTRY_URL`, for the reason that

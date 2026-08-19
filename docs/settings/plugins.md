@@ -82,7 +82,8 @@ registry you never added.
 
 Afterwards that URL is an ordinary index like any other: add it under
 **Plugin registries** and it stays, and anything you install from it keeps
-naming it.
+naming it — including if you added it under the very release that moved the
+catalogue, which recorded no marker for nParse+ to read.
 
 ## The buttons
 

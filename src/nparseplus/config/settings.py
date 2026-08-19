@@ -699,12 +699,13 @@ class PluginsSettings(BaseModel):
     registries: list[RegistrySource] = Field(default_factory=list)
     default_registry_enabled: bool = True
     # One-shot marker for the built-in registry's move to its own server
-    # (#130). Every document written before that move lacks it, and those are
-    # exactly the ones the migration below has to run over. Running it ONCE is
-    # what lets a post-move user add the old URL as a registry of their own
-    # and keep it: after the move that row is a real, visible, addable
-    # registry and its records are true, while before the move it could only
-    # ever have been an inert duplicate of the built-in row.
+    # (#130). Running that migration ONCE is what lets a post-move user add
+    # the old URL as a registry of their own and keep it: after the move that
+    # row is a real, visible, addable registry and its records are true,
+    # while before the move it could only ever have been an inert duplicate
+    # of the built-in row. NOTE the marker cannot be the only test — v2.16.0
+    # moved the constant without introducing one, so its documents lack it
+    # too; ``_predates_the_registry_move`` is what covers them.
     registry_move_applied: bool = False
     # Poll the enabled registries (and each plugin's declared update feed)
     # shortly after launch so Settings > Plugins can say what is out of date
@@ -745,9 +746,38 @@ class PluginsSettings(BaseModel):
 
         self.registries = cleaned
         if not self.registry_move_applied:
-            self._follow_the_moved_default()
+            if self._predates_the_registry_move():
+                self._follow_the_moved_default()
             self.registry_move_applied = True
         return self
+
+    @staticmethod
+    def _recorded_registry(entry: PluginEntry) -> str:
+        """An install's provenance in comparable form, "" if unusable."""
+        try:
+            return normalize_registry_url(entry.registry_url)
+        except ValueError:
+            return ""
+
+    def _predates_the_registry_move(self) -> bool:
+        """Whether this document was written before the built-in registry moved.
+
+        The marker above answers it for everything written from here on, but
+        it cannot answer it for **v2.16.0** — the release that moved the
+        constant and added no marker. Those documents are already post-move,
+        and their users could deliberately add the former default as an
+        ordinary third-party registry, which the migration must not undo.
+
+        So fall back to the one artifact only post-move code can produce: a
+        provenance record naming the *new* URL. Nothing that ran before the
+        move could write one. It also makes the migration self-limiting — a
+        run leaves that evidence behind, so even a document that never gets
+        the marker persisted cannot be migrated twice.
+        """
+        return not any(
+            self._recorded_registry(entry) == BUILTIN_REGISTRY_URL
+            for entry in self.entries.values()
+        )
 
     def _follow_the_moved_default(self) -> None:
         """Bring a pre-move document to the built-in registry's new home (#130).
@@ -786,20 +816,28 @@ class PluginsSettings(BaseModel):
         A fork's Pages URL, or the old one carrying a query string, is
         somebody else's registry and stays exactly as written.
 
+        And nothing at all happens to a document with no stale provenance in
+        it: the registry list is only ever touched as part of repairing
+        records that name the old URL, so a document with nothing to repair
+        keeps its rows even if one of them holds that URL. This migration
+        does not exist to tidy, and deleting a row nothing depends on would
+        be pure loss on the one reading — a post-move add by someone with no
+        installs — where this cannot tell the two eras apart.
+
         Called from the validator, and like it this never raises.
         """
+        stale = [
+            entry
+            for entry in self.entries.values()
+            if self._recorded_registry(entry) == _LEGACY_DEFAULT_REGISTRY_URL
+        ]
+        if not stale:
+            return
         self.registries = [
             source for source in self.registries if source.url != _LEGACY_DEFAULT_REGISTRY_URL
         ]
-        for entry in self.entries.values():
-            if not entry.registry_url:
-                continue
-            try:
-                recorded = normalize_registry_url(entry.registry_url)
-            except ValueError:
-                continue  # unusable provenance; leave the record as written
-            if recorded == _LEGACY_DEFAULT_REGISTRY_URL:
-                entry.registry_url = BUILTIN_REGISTRY_URL
+        for entry in stale:
+            entry.registry_url = BUILTIN_REGISTRY_URL
 
 
 class Settings(BaseModel):

@@ -80,7 +80,11 @@ which did exactly this):
    normalized match, and run the whole thing **once** against a persisted
    marker: after the move that URL is an ordinary registry somebody may
    deliberately add, and a rule that cannot tell those apart deletes their
-   row on every launch.
+   row on every launch. Introduce that marker **in the same release as the
+   move** — #130 did not, so the release that moved the catalogue writes
+   documents indistinguishable from pre-move ones, and the code needs a
+   second test (a provenance record naming the new URL, which only post-move
+   code can write) to cover them.
 3. Regenerate the schema (its `$id` names the host) and copy the result to
    every consumer — see below.
 4. Update this file and `docs/plugins/registry.md`; the test named above

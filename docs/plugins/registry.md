@@ -211,7 +211,12 @@ registry you never added, pointing at a stale index.
 Both halves run **once**, recorded by `plugins.registry_move_applied`, because
 what that URL means changed with the move: it is now an ordinary index you
 may add deliberately. Do that and it stays — the row survives every reload
-and anything it vouches for keeps naming it.
+and anything it vouches for keeps naming it. Settings written by the release
+that moved the catalogue carry no marker, so a second test backs it up: a
+provenance record naming the *new* URL can only have been written after the
+move, and one is enough to leave the document alone. A registry row that
+nothing is installed from is never touched either — there is nothing to
+repair, so nothing is.
 
 ## Index format (schema 1)
 

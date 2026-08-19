@@ -1218,6 +1218,20 @@ built-in row, after it the same URL is an ordinary registry a user may
 deliberately add — and a rule that cannot tell those apart deletes their row
 on every launch.
 
+**The marker cannot be the only test, because the release that moved the
+constant shipped without one.** v2.16.0 already repointed provenance and
+already let `add_registry` accept the old URL, so its documents are post-move
+*and* markerless — reading "no marker" as "pre-move" would delete exactly the
+trust decision the marker exists to protect. So
+`_predates_the_registry_move` also looks for the one artifact only post-move
+code can produce: a provenance record naming the **new** URL. That doubles as
+the idempotence guard — a migrated document leaves that evidence behind, so a
+lost marker cannot make it run twice. And nothing happens at all to a
+document with no stale provenance: the registry list is only touched while
+repairing records that name the old URL, so a row nothing was installed from
+is never deleted — there is nothing to repair, and that is the one reading
+where the two eras are genuinely indistinguishable.
+
 **One literal, and it lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
 sits beside `normalize_registry_url` for the reason that function is there:
 settings has to migrate a stored URL without importing the plugin subsystem,
