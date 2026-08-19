@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.16.0 (2026-08-19)
+
+### Features
+
+- **plugins**: Point the built-in registry at the live server
+  ([`27ead8e`](https://github.com/prokopto-dev/nparse-plus/commit/27ead8e2c7f6d5a5c1c69704ae4a3c124409e7d5))
+
+
 ## v2.15.0 (2026-08-18)
 
 ### Bug Fixes
