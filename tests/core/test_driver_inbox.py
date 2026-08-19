@@ -108,6 +108,37 @@ def test_a_submitted_command_runs_on_the_driver_thread_exactly_once(tmp_path: Pa
         assert len(ran_on) == 1
 
 
+def test_on_driver_thread_answers_for_the_caller(tmp_path: Path) -> None:
+    """The one predicate callers may branch on: "am I already there?"
+
+    Work that is on the driver thread already must skip the queue — a plugin
+    adding a timer row from its own handler has to land on that line, not a
+    poll later. Unlike "is the driver running", this cannot go stale under
+    the thread asking it.
+    """
+    driver, _pipeline, _log = _make_driver(tmp_path)
+    # No loop accepting commands: whoever calls is the only thread there is.
+    assert driver.on_driver_thread is True
+
+    with accepting_commands(driver):
+        # A loop is live (the test stands in for it), so this thread is not it.
+        assert driver.on_driver_thread is False
+        answers: list[bool] = []
+        off_thread(lambda: answers.append(driver.on_driver_thread))
+        assert answers == [False]
+        # ...and the loop's own thread says yes, which is what a command
+        # submitted from inside another command relies on.
+        seen: list[bool] = []
+        submit_from_another_thread(
+            driver, lambda: seen.append(driver.on_driver_thread), label="who am i"
+        )
+        driver._thread = threading.current_thread()  # the test IS the loop here
+        driver._iterate()
+        assert seen == [True]
+
+    assert driver.on_driver_thread is True  # gate shut again
+
+
 def test_commands_land_between_lines_never_inside_one(tmp_path: Path) -> None:
     """The drain point is the contract: a batch of lines is never split.
 

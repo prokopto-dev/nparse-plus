@@ -592,6 +592,7 @@ class PluginHost:
         there is nobody left to show a status to, no window to destroy and no
         Timers window to clean up, so ``shutdown`` skips all of it.
         """
+        had_ui = bool(loaded.window_specs or loaded.page_specs)
         if loaded.status == "active" and loaded.plugin is not None:
             try:
                 loaded.plugin.deactivate()
@@ -609,7 +610,7 @@ class PluginHost:
         plugin_id = loaded.plugin_id
         if plugin_id is not None:
             self._drop_timer_rows(plugin_id)
-            self._teardown_ui(plugin_id)
+            self._teardown_ui(plugin_id, had_ui)
         loaded.context = None
         if loaded.status in ("active", "ready"):
             loaded.status = "disabled"
@@ -628,7 +629,22 @@ class PluginHost:
 
         self._backend.driver.submit_to_driver(drop, label=f"drop {plugin_id} timer rows")
 
-    def _teardown_ui(self, plugin_id: str) -> None:
+    def _teardown_ui(self, plugin_id: str, had_ui: bool) -> None:
+        """Ask whoever built this plugin's surfaces to destroy them.
+
+        With nobody listening, a plugin that contributed a window or a
+        settings page is switched off underneath surfaces that stay on
+        screen. The disable itself still happens — refusing it would leave a
+        misbehaving add-on running, which is the reason people reach for the
+        checkbox — so the mismatch is logged rather than silently accepted.
+        Wiring the listener is the Qt layer's half of #45.
+        """
+        if had_ui and not self.on_ui_teardown:
+            logger.warning(
+                "plugin %s was disabled but nothing is registered to destroy its "
+                "windows/settings pages; they stay until the app restarts",
+                plugin_id,
+            )
         for callback in list(self.on_ui_teardown):
             try:
                 callback(plugin_id)

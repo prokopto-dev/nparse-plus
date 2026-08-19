@@ -91,26 +91,45 @@ class _OwnedNet:
 
 
 class _PluginTimers:
-    """``ctx.timers`` with every row this plugin adds stamped as its own.
+    """``ctx.timers`` for one plugin: rows tagged, mutations kept on-thread.
 
-    A thin facade over the real ``TimersService``: unknown attributes pass
-    straight through (``snapshot``, ``remove_row``, ``tick``, the observer
-    lists), and the four ``add_*`` methods set ``row.owner`` on the way in.
+    A thin facade over the real ``TimersService``. Reads and observer lists
+    pass straight through (``snapshot``, ``find``, ``on_change``, ``tick``);
+    the mutations it wraps do two things the raw service cannot do for a
+    plugin.
 
-    That stamp is the whole point — it is what lets ``PluginHost`` take a
+    **They stamp ``row.owner``.** That is what lets ``PluginHost`` take a
     plugin's countdowns off the Timers window when the user disables it
-    (#45). ``unwind()`` reverses *registrations*; rows are data the plugin
-    put in a user-visible store, so nothing there could find them again.
+    (#45): ``unwind()`` reverses *registrations*, and rows are data the
+    plugin put in a user-visible store, so nothing there could find them
+    again. Stamped here rather than asked of the plugin because a plugin
+    cannot be relied on to do it, and the row it hands over is the one
+    moment the host knows whose it is. ``add_counter`` deliberately stamps
+    only the row coming in: incrementing a tally the app (or another plugin)
+    already owns must not transfer it.
 
-    Stamped here rather than asked of the plugin because a plugin cannot be
-    relied on to do it, and the row it hands over is the one moment the host
-    knows whose it is. ``add_counter`` deliberately only stamps the row
-    coming in: incrementing a counter the app (or another plugin) already
-    owns must not transfer it.
+    **They are applied on the driver thread.** ``TimersService`` is not
+    thread-safe and its ``on_change`` observers expect that thread, and
+    since #45 a plugin's ``activate``/``deactivate`` can run on the GUI
+    thread — the settings window enabling an add-on mid-session. So a
+    mutation from anywhere else is routed through
+    ``LogDriver.submit_to_driver`` and lands at the next loop boundary,
+    exactly like the host's own ``remove_owner`` sweep.
+
+    A call that is already on the driver thread — a plugin's handler, tick
+    or parser, and every call at startup before the loop exists — is applied
+    immediately and returns what the service returned, which is what keeps
+    the ordinary path identical to before. Only a *deferred* call cannot
+    know the service's answer, and there it answers what the caller asked
+    for: its own row back, and for ``remove_row`` whether the row was in the
+    store when asked. One consequence worth knowing: an ``add_counter``
+    deferred from another thread returns the caller's row, so a merge into
+    an existing tally is not visible on it — read the store from a tick.
     """
 
-    def __init__(self, timers: Any, plugin_id: str) -> None:
+    def __init__(self, timers: Any, driver: Any, plugin_id: str) -> None:
         self._timers = timers
+        self._driver = driver
         self._plugin_id = plugin_id
 
     def __getattr__(self, name: str) -> Any:
@@ -118,19 +137,45 @@ class _PluginTimers:
 
     def add_spell(self, row: Any, overwrite: bool = True) -> Any:
         row.owner = self._plugin_id
-        return self._timers.add_spell(row, overwrite)
+        return self._apply(lambda: self._timers.add_spell(row, overwrite), row, "add_spell")
 
     def add_timer(self, row: Any, allow_duplicates: bool = False) -> Any:
         row.owner = self._plugin_id
-        return self._timers.add_timer(row, allow_duplicates)
+        return self._apply(lambda: self._timers.add_timer(row, allow_duplicates), row, "add_timer")
 
     def add_counter(self, row: Any) -> Any:
         row.owner = self._plugin_id
-        return self._timers.add_counter(row)
+        return self._apply(lambda: self._timers.add_counter(row), row, "add_counter")
 
     def add_roll(self, row: Any) -> Any:
         row.owner = self._plugin_id
-        return self._timers.add_roll(row)
+        return self._apply(lambda: self._timers.add_roll(row), row, "add_roll")
+
+    def remove_row(self, row: Any) -> Any:
+        # The snapshot is a copy, so reading it off-thread is safe, and
+        # "was the row there when you asked" is the honest answer available
+        # to a removal that has not happened yet.
+        return self._apply(
+            lambda: self._timers.remove_row(row),
+            row in self._timers.snapshot(),
+            "remove_row",
+        )
+
+    def _apply(self, mutate: Callable[[], Any], deferred: Any, what: str) -> Any:
+        """Run ``mutate`` now if this is the driver thread, else queue it.
+
+        ``deferred`` is what to answer when it was queued — see the class
+        docstring for why it is the caller's own value and not the
+        service's.
+        """
+        if self._driver.on_driver_thread:
+            return mutate()
+
+        def run() -> None:
+            mutate()
+
+        self._driver.submit_to_driver(run, label=f"plugin {self._plugin_id} {what}")
+        return deferred
 
 
 class HostPluginContext:
@@ -224,7 +269,9 @@ class HostPluginContext:
         with the plugin when the user disables it (#45).
         """
         if self._plugin_timers is None:
-            self._plugin_timers = _PluginTimers(self._backend.timers, self._meta.id)
+            self._plugin_timers = _PluginTimers(
+                self._backend.timers, self._backend.driver, self._meta.id
+            )
         return self._plugin_timers
 
     @property

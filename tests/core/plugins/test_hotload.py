@@ -38,11 +38,13 @@ WIRED = (
 )
 
 # Two timer rows through the two doors a plugin has: the raw service and the
-# pop-window helper.
+# pop-window helper. Wall-clock anchored, because a test that runs a driver
+# iteration also ticks the service, and a row from a fixed past date would
+# expire on that same pass.
 ARMS_TIMERS = (
     "        from datetime import datetime, timedelta\n"
     "        from nparseplus.core.timers import TimerRow\n"
-    "        when = datetime(2026, 7, 15, 12, 0, 0)\n"
+    "        when = datetime.now()\n"
     "        ctx.timers.add_timer(\n"
     "            TimerRow(\n"
     "                name='Plugin Countdown',\n"
@@ -182,6 +184,33 @@ def test_registration_changes_go_through_the_driver_inbox(
         assert registrations(backend) == (subscribers, ticks, parsers)
 
 
+def test_a_hot_plugins_timer_rows_go_through_the_inbox_too(
+    make_host, plugins_dir: Path, settings: Settings, backend, tmp_path: Path
+) -> None:
+    """activate() runs on the GUI thread now, so what it puts in the Timers
+    window has to reach the driver thread the same way its registrations do —
+    TimersService is not thread-safe and its observers expect that thread."""
+    backend.driver.log_dir = tmp_path
+    write_plugin(plugins_dir, "ticker.py", plugin_id="ticker", activate_body=ARMS_TIMERS)
+    approve(settings, "ticker", enabled=False)
+    host = make_host()
+    host.discover_and_load()
+
+    with accepting_commands(backend.driver):
+        host.set_enabled("ticker", True)
+        assert backend.timers.snapshot() == []  # queued, not applied by the caller
+        backend.driver._iterate()
+        assert {row.name for row in backend.timers.snapshot()} == {
+            "Plugin Countdown",
+            "Plugin Pop",
+        }
+
+        host.set_enabled("ticker", False)
+        assert len(backend.timers.snapshot()) == 2  # the sweep is queued as well
+        backend.driver._iterate()
+        assert backend.timers.snapshot() == []
+
+
 # --- what unwind() cannot reverse on its own --------------------------------
 
 
@@ -285,6 +314,33 @@ def test_disable_asks_the_ui_to_drop_what_it_built(
 
     host.set_enabled("windowed", False)  # a raising listener must not propagate
     assert torn == ["windowed"]
+
+
+def test_disabling_a_windowed_plugin_says_so_when_nothing_can_tear_it_down(
+    make_host, plugins_dir: Path, settings: Settings, caplog
+) -> None:
+    """The disable still happens — a misbehaving add-on is exactly what the
+    checkbox is for — but a surface left on screen must not be silent."""
+    write_plugin(
+        plugins_dir,
+        "windowed.py",
+        plugin_id="windowed",
+        activate_body=(
+            "        from nparseplus_sdk import PluginWindowSpec\n"
+            "        ctx.add_window(PluginWindowSpec(key='main', title='Windowed',"
+            " factory=lambda wctx: None))"
+        ),
+    )
+    approve(settings, "windowed")
+    host = make_host()
+    host.discover_and_load()
+    host.activate_enabled()
+    assert host.window_specs()  # it contributed one
+
+    with caplog.at_level("WARNING"):
+        loaded = host.set_enabled("windowed", False)
+    assert loaded is not None and loaded.status == "disabled"
+    assert any("windowed" in r.message and "restarts" in r.message for r in caplog.records)
 
 
 # --- failure isolation ------------------------------------------------------
