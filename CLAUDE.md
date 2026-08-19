@@ -1202,31 +1202,27 @@ host, Browse offers "Installed (other source)", and `best_update`'s rule that
 the installed-from registry wins turns the built-in registry's own offer into
 a cross-source confirmation between two names for one catalogue.
 `PluginsSettings._follow_the_moved_default` rewrites those records inside the
-validator documented to never raise. In a pre-move document that rewrite is
-**unambiguous**: back then the old URL *was* the built-in row —
-`add_registry` refused a URL equal to `DEFAULT_REGISTRY_URL` and
-`resolve_registries` collapsed a stored copy into it — so no install can have
-come through a copy.
+validator documented to never raise, and **the condition is the user's own
+registry list, re-checked on every load**: a record naming the old URL moves
+only while no row holds that URL. Then nothing else it could have meant is
+left — `add_registry` refused a URL equal to `DEFAULT_REGISTRY_URL` and
+`resolve_registries` collapsed a stored copy into the built-in row, so an
+install cannot have come through a copy. List it and both the row and its
+records stand untouched, which is what makes the old index safe to add
+deliberately now that it is an ordinary third-party URL; remove it and the
+next load folds those records into the built-in catalogue, which is the
+documented way back for a row that only ever duplicated the default.
 
-**The user's registry list is not edited, and that is the settled answer to a
-genuine conflict.** A stored row holding the old URL was inert and
-un-collapses into a visible third-party row on the upgrade, which argues for
-deleting it; but post-move that same URL is an index somebody may add on
-purpose, and **no settings file distinguishes the two eras** — v2.16.0 moved
-the constant without introducing a marker. Deleting would trade a trust
-decision for tidiness, so the row stays (and `remove_registry` now accepts
-it, since it is no longer the default) while the records are repaired
-regardless. The one row dropped is a row the same validation manufactured
-from the deprecated `plugins.registry_url` override: an artifact of folding a
-field in, never a list entry.
-
-**It runs once**, recorded by `plugins.registry_move_applied` — and the
-marker cannot be the only test, for the same v2.16.0 reason: its documents
-are post-move AND markerless. `_predates_the_registry_move` also reads the
-one artifact only post-move code can produce, a provenance record naming the
-**new** URL. That doubles as the idempotence guard, since the rewrite leaves
-exactly that evidence behind. Only an exact normalized match is ever touched;
-a fork's Pages URL is somebody else's registry.
+**Stateless on purpose.** A one-shot `plugins.registry_move_applied` marker
+was written and then removed: v2.16.0 moved the constant and introduced no
+marker, so "no marker" proves nothing about a document's era, and every
+derived era signal (e.g. "does any record name the NEW url") has the same
+hole — a user who added the old index on that release and installed only from
+it. Deciding from what the document says *now* has no hole to argue about.
+The list is edited in exactly one case: a row the same validation
+manufactured from the deprecated `plugins.registry_url` override, an artifact
+of the fold and never a list entry. Only an exact normalized match is ever
+touched; a fork's Pages URL is somebody else's registry.
 
 **One literal, and it lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
 sits beside `normalize_registry_url` for the reason that function is there:

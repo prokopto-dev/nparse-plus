@@ -698,15 +698,6 @@ class PluginsSettings(BaseModel):
     # URL a past release happened to write into their settings.json.
     registries: list[RegistrySource] = Field(default_factory=list)
     default_registry_enabled: bool = True
-    # One-shot marker for the built-in registry's move to its own server
-    # (#130). Running that migration ONCE is what lets a post-move user add
-    # the old URL as a registry of their own and keep it: after the move that
-    # row is a real, visible, addable registry and its records are true,
-    # while before the move it could only ever have been an inert duplicate
-    # of the built-in row. NOTE the marker cannot be the only test — v2.16.0
-    # moved the constant without introducing one, so its documents lack it
-    # too; ``_predates_the_registry_move`` is what covers them.
-    registry_move_applied: bool = False
     # Poll the enabled registries (and each plugin's declared update feed)
     # shortly after launch so Settings > Plugins can say what is out of date
     # without the user opening Browse first. Only meaningful while `enabled`
@@ -747,10 +738,7 @@ class PluginsSettings(BaseModel):
             self.registry_url = ""
 
         self.registries = cleaned
-        if not self.registry_move_applied:
-            if self._predates_the_registry_move():
-                self._follow_the_moved_default(folded_in)
-            self.registry_move_applied = True
+        self._follow_the_moved_default(folded_in)
         return self
 
     @staticmethod
@@ -761,60 +749,43 @@ class PluginsSettings(BaseModel):
         except ValueError:
             return ""
 
-    def _predates_the_registry_move(self) -> bool:
-        """Whether this document was written before the built-in registry moved.
-
-        The marker above answers it for everything written from here on, but
-        it cannot answer it for **v2.16.0** — the release that moved the
-        constant and added no marker. Those documents are already post-move,
-        and their users could deliberately add the former default as an
-        ordinary third-party registry, which the migration must not undo.
-
-        So fall back to the one artifact only post-move code can produce: a
-        provenance record naming the *new* URL. Nothing that ran before the
-        move could write one. It also makes the migration self-limiting — a
-        run leaves that evidence behind, so even a document that never gets
-        the marker persisted cannot be migrated twice.
-        """
-        return not any(
-            self._recorded_registry(entry) == BUILTIN_REGISTRY_URL
-            for entry in self.entries.values()
-        )
-
     def _follow_the_moved_default(self, folded_in: str = "") -> None:
-        """Bring a pre-move document to the built-in registry's new home (#130).
+        """Keep an install's provenance pointing at the catalogue it came from.
 
-        Runs once, and what it repairs is the *record* an install left behind.
-        ``resolve_registries`` synthesizes the built-in row from a constant so
-        that moving it moves every user, but ``PluginEntry.registry_url`` is
+        The built-in registry moved to its own server (#130).
+        ``resolve_registries`` synthesizes that row from a constant so the
+        move carries every user across, but ``PluginEntry.registry_url`` is
         written once at install time and nothing re-points it. Left alone,
-        everything installed before the move reads as "installed from a
-        registry that is no longer configured": the Source cell falls back to
-        a bare host, Browse offers "Installed (other source)" instead of an
-        Update button, and taking the update demands a cross-source
-        confirmation naming two registries that are in fact one catalogue.
-        The move is not a trust hop and must not look like one.
+        anything installed before the move records a URL that names no
+        registry the user has: the Source cell falls back to a bare host,
+        Browse offers "Installed (other source)" instead of an Update button,
+        and taking the update demands a cross-source confirmation naming two
+        registries that are in fact one catalogue. The move is not a trust
+        hop and must not look like one.
 
-        In a pre-move document that rewrite is unambiguous: back then the old
-        URL *was* the built-in row. ``PluginHost.add_registry`` refused a URL
-        equal to the default and ``resolve_registries`` collapsed any stored
-        copy into that row, so no install can have come through a copy —
-        there was nothing else for it to come through.
+        **The condition is the user's own registry list, and it is checked on
+        every load rather than once.** A record naming the old URL is
+        rewritten only while that URL is in no row of ``registries``: then
+        nothing else it could mean is left, because back when that URL was
+        the default ``PluginHost.add_registry`` refused to add it and
+        ``resolve_registries`` collapsed any stored copy into the built-in
+        row — an install could not have come through a copy. List it, and the
+        record is true as written and is left exactly alone; that is what
+        makes it safe for someone to add the old index deliberately now that
+        it is an ordinary third-party URL. Remove it later and the next load
+        folds those records into the built-in catalogue, which is the
+        documented way back for a row that only ever duplicated it.
 
-        **The user's registry list is not edited.** A stored row holding the
-        old URL is ambiguous in a way the records are not: post-move that URL
-        is an ordinary index someone may deliberately add, and a settings file
-        written by the release that moved the constant carries no marker to
-        tell the two eras apart. Deleting there would discard a trust
-        decision to tidy a row that is merely redundant, so the row stays and
-        Settings > Plugins can remove it — it is no longer the built-in URL,
-        so ``remove_registry`` no longer refuses it.
+        Deliberately stateless: no marker distinguishes a settings file
+        written before the move from one written by the release that made it
+        (v2.16.0 introduced none), so the answer is derived from what the
+        document says now rather than from when it was written.
 
-        The single exception is a row this same validation just manufactured
-        from the deprecated ``plugins.registry_url`` override: that one is an
-        artifact of a field being folded in, never a list entry the user
-        built, and leaving it would materialize a third-party registry out of
-        a value that named the built-in one.
+        The registry list itself is edited in exactly one case: a row this
+        same validation manufactured out of the deprecated
+        ``plugins.registry_url`` override, which is an artifact of folding a
+        field in and never a list entry the user built. Leaving it would turn
+        a value that named the built-in registry into a third-party row.
 
         Only a value that normalizes to the old default *exactly* is touched.
         A fork's Pages URL, or the old one carrying a query string, is
@@ -826,6 +797,8 @@ class PluginsSettings(BaseModel):
             self.registries = [
                 source for source in self.registries if source.url != _LEGACY_DEFAULT_REGISTRY_URL
             ]
+        if any(source.url == _LEGACY_DEFAULT_REGISTRY_URL for source in self.registries):
+            return
         for entry in self.entries.values():
             if self._recorded_registry(entry) == _LEGACY_DEFAULT_REGISTRY_URL:
                 entry.registry_url = BUILTIN_REGISTRY_URL

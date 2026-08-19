@@ -485,19 +485,18 @@ class TestTheBuiltInRegistryMoved:
         assert action.kind == "update"
         assert action.enabled is True
 
-    def test_a_registry_added_after_the_move_still_asks(self, tmp_path: Path) -> None:
-        """Post-move that URL is an ordinary registry, so the offer is a hop.
+    def test_a_listed_old_url_still_asks(self, tmp_path: Path) -> None:
+        """Listing that URL is what separates this from the case above.
 
-        ``registry_move_applied`` is what separates this from the case above:
-        the migration has already run, so this row is a trust decision the
-        user made and the record naming it is true.
+        A registry in the list is a trust decision the user made and the
+        record naming it is true, so nothing is repointed and the built-in
+        registry's offer is a genuine source change.
         """
         path = tmp_path / "settings.json"
         path.write_text(
             json.dumps(
                 {
                     "plugins": {
-                        "registry_move_applied": True,
                         "registries": [{"url": _LEGACY_DEFAULT_REGISTRY_URL}],
                         "entries": {
                             "demo": {"registry_url": _LEGACY_DEFAULT_REGISTRY_URL},

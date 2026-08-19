@@ -74,17 +74,15 @@ which did exactly this):
    everything already installed reads as "from a registry that is no longer
    configured" and every update offer becomes a cross-source confirmation
    between two names for the same catalogue. Rewrite only an exact normalized
-   match, and **do not edit the user's registry list** while you are there: a
-   stored row holding the outgoing URL was inert (it collapsed into the
-   built-in row) but after the move the same URL is an index somebody may add
-   on purpose, and no settings file distinguishes the two. Leave it and let
-   *Remove* work on it. The one row worth dropping is one the same validation
-   just manufactured from the deprecated `plugins.registry_url` override.
-3. Introduce the one-shot marker **in the same release as the move** — #130
-   did not, so the release that moved the catalogue writes documents
-   indistinguishable from pre-move ones, and the code needs a second test
-   (a provenance record naming the new URL, which only post-move code can
-   write) to recognise them.
+   match, and only while the outgoing URL is **not** a row in the user's own
+   `registries` — after the move it is an ordinary index somebody may add
+   deliberately, and no settings file records which era it was written in.
+3. Do **not** edit the registry list to tidy up. A stored row holding the
+   outgoing URL was inert (it collapsed into the built-in row) and will
+   un-collapse into a visible third-party row; leave it, let *Remove* work on
+   it, and document that removing it lets the records follow on the next
+   load. The one row worth dropping is one the same validation just
+   manufactured from the deprecated `plugins.registry_url` override.
 4. Regenerate the schema (its `$id` names the host) and copy the result to
    every consumer — see below.
 5. Update this file and `docs/plugins/registry.md`; the test named above

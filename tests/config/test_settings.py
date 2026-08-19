@@ -405,18 +405,17 @@ class TestRegistrySettings:
 
 
 class TestBuiltInRegistryMoved:
-    """The one-shot migration for #130 — the built-in registry's new home.
+    """Provenance after the built-in registry moved to its own server (#130).
 
-    A plugin installed before the move records the old URL, which after the
-    move names no configured registry at all: the manager reads that as a
-    third-party source and every offer from the new default becomes a
-    cross-source confirmation for what is the same catalogue. A stored
-    *registry* row carrying that URL is the same fossil seen from the other
-    side — inert while it duplicated the built-in row, an uninvited
-    third-party registry the moment it stops.
+    A plugin installed before the move records the old URL, which now names
+    no registry the user has: the manager reads that as a third-party source
+    and every offer from the new default becomes a cross-source confirmation
+    for what is the same catalogue.
 
-    It runs once per document, because after the move the same URL is an
-    ordinary registry somebody may deliberately add.
+    The condition is the user's own registry list, checked on every load. No
+    settings file says which era it was written in — the release that moved
+    the constant recorded no marker — so the answer is derived from what the
+    document says now.
     """
 
     def test_an_install_from_the_old_default_follows_it(self, tmp_path: Path) -> None:
@@ -453,19 +452,17 @@ class TestBuiltInRegistryMoved:
         )
         assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
-    def test_a_stored_row_survives_the_records_moving(self) -> None:
-        """Records are repaired; the registry list is never edited.
+    def test_a_listed_old_url_keeps_everything_it_vouched_for(self) -> None:
+        """The registry is in the list, so the record naming it is true.
 
-        In a pre-move document the rewrite is unambiguous — back then that URL
-        *was* the built-in row, and a stored copy collapsed into it, so no
-        install can have come through the copy. The row itself is a different
-        question: post-move that URL is an index somebody may deliberately
-        add, and nothing in the file distinguishes the two eras, so it stays
-        and Settings > Plugins can remove it.
+        This is also what makes the old index safe to add deliberately now
+        that it is an ordinary third-party URL — including on the release
+        that moved the catalogue, which wrote no marker to recognise itself
+        by. Neither the row nor the records it owns are touched.
         """
         plugins = PluginsSettings(
             registries=[
-                RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="Mine"),
+                RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="The old index"),
                 RegistrySource(url="https://guild.example/index.json"),
             ],
             entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
@@ -474,16 +471,41 @@ class TestBuiltInRegistryMoved:
             _LEGACY_DEFAULT_REGISTRY_URL,
             "https://guild.example/index.json",
         ]
-        assert plugins.registries[0].name == "Mine"
-        assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
+        assert plugins.registries[0].name == "The old index"
+        assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+
+    def test_removing_that_row_is_the_way_back(self, tmp_path: Path) -> None:
+        """Documented recovery for a row that only ever duplicated the default.
+
+        Checked on every load rather than once, so the user's own action is
+        what decides — take the row out and the records it was holding in
+        place fold into the built-in catalogue on the next load.
+        """
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "plugins": {
+                        "registries": [{"url": _LEGACY_DEFAULT_REGISTRY_URL}],
+                        "entries": {"demo": {"registry_url": _LEGACY_DEFAULT_REGISTRY_URL}},
+                    }
+                }
+            )
+        )
+        listed = load_settings(path)
+        assert listed.plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
+
+        listed.plugins.registries = []
+        save_settings(listed, path)
+        assert load_settings(path).plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
     def test_a_legacy_override_of_the_old_url_leaves_no_row_behind(self) -> None:
-        """The deprecated single-registry override folds in, then drops out.
+        """The one row this touches, and only because it just made it.
 
-        The one row this migration removes, and only because this same
-        validation manufactured it: a value naming the built-in registry must
-        not become a third-party row on the way past. A row already in the
-        list is left alone — see the test above.
+        Someone who set ``plugins.registry_url`` to the then-default on <=1.18
+        had it folded into ``registries`` by a later build. That value named
+        the built-in registry; it must not become a third-party row on the way
+        past, and it must not hold the rewrite back either.
         """
         plugins = PluginsSettings(
             registry_url=_LEGACY_DEFAULT_REGISTRY_URL,
@@ -493,57 +515,16 @@ class TestBuiltInRegistryMoved:
         assert plugins.registry_url == ""
         assert plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
-    def test_a_v2_16_0_document_is_recognised_without_a_marker(self) -> None:
-        """v2.16.0 moved the constant and wrote no marker — spot it anyway.
-
-        That release already repointed provenance, so a record naming the NEW
-        URL is proof the document is post-move: nothing that ran before the
-        move could write one. Which means the registry beside it is a
-        deliberate post-move add, and neither it nor what it vouched for may
-        be touched.
-        """
+    def test_a_legacy_override_beside_a_listed_copy_keeps_the_list_intact(self) -> None:
+        """The fold adds nothing, so there is no artifact to remove."""
         plugins = PluginsSettings(
-            registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="The old index")],
-            entries={
-                "merchant-mode": PluginEntry(registry_url=BUILTIN_REGISTRY_URL),
-                "from-the-old-index": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL),
-            },
-        )
-        assert [r.url for r in plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
-        assert plugins.entries["from-the-old-index"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
-
-    def test_a_row_nothing_depends_on_is_left_alone(self) -> None:
-        """No stale provenance means nothing to repair — so repair nothing.
-
-        Without a record naming the old URL there is no way to tell a
-        pre-move fossil from a post-move add, and no reason to try: deleting
-        a row nothing points at fixes nothing and can only lose a row
-        somebody chose.
-        """
-        plugins = PluginsSettings(
-            registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL)],
-            entries={"demo": PluginEntry(registry_url="https://guild.example/index.json")},
-        )
-        assert [r.url for r in plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
-        assert plugins.entries["demo"].registry_url == "https://guild.example/index.json"
-
-    def test_a_registry_added_after_the_move_is_left_alone(self) -> None:
-        """Post-move the old URL is an ordinary registry — and stays one.
-
-        Once the migration has run, adding that index is a trust decision
-        like any other: the row survives every reload, and what it vouched
-        for keeps naming it.
-        """
-        plugins = PluginsSettings(
-            registry_move_applied=True,
+            registry_url=_LEGACY_DEFAULT_REGISTRY_URL,
             registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL, name="Mine")],
             entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)},
         )
         assert [r.url for r in plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
+        assert plugins.registries[0].name == "Mine"
         assert plugins.entries["demo"].registry_url == _LEGACY_DEFAULT_REGISTRY_URL
-
-    def test_a_fresh_document_records_the_move_as_done(self) -> None:
-        assert Settings().plugins.registry_move_applied is True
 
     def test_other_provenance_is_never_rewritten(self) -> None:
         plugins = PluginsSettings(
@@ -579,56 +560,15 @@ class TestBuiltInRegistryMoved:
         assert loaded.plugins.entries["demo"].registry_url == "not a url at all"
         assert loaded.general.eq_log_dir == Path("/keep/me")
 
-    def test_the_rewrite_is_its_own_second_guard(self) -> None:
-        """A migrated document is recognisable even if the marker is lost.
-
-        The rewrite leaves records naming the new URL, which is exactly the
-        evidence ``_predates_the_registry_move`` reads — so a downgrade that
-        drops the unknown key, or a load that is never saved, cannot make
-        this run twice and delete a row added in between.
-        """
-        migrated = PluginsSettings(
-            entries={"demo": PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)}
-        )
-        assert migrated.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
-
-        as_if_the_marker_were_lost = PluginsSettings(
-            registries=[RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL)],
-            entries=migrated.entries,
-        )
-        assert [r.url for r in as_if_the_marker_were_lost.registries] == [
-            _LEGACY_DEFAULT_REGISTRY_URL
-        ]
-
-    def test_the_marker_persists_so_the_migration_runs_once(self, tmp_path: Path) -> None:
+    def test_the_rewrite_is_idempotent(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "plugins": {
-                        "registries": [{"url": _LEGACY_DEFAULT_REGISTRY_URL}],
-                        "entries": {"demo": {"registry_url": _LEGACY_DEFAULT_REGISTRY_URL}},
-                    }
-                }
-            )
-        )
+        original = Settings()
+        original.plugins.entries["demo"] = PluginEntry(registry_url=_LEGACY_DEFAULT_REGISTRY_URL)
+        save_settings(original, path)
         once = load_settings(path)
-        assert once.plugins.registry_move_applied is True
         assert once.plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
-        assert [r.url for r in once.plugins.registries] == [_LEGACY_DEFAULT_REGISTRY_URL]
-
-        # Removing that row and adding it back are both the user's to make,
-        # and neither is undone on the next load.
-        once.plugins.registries = []
         save_settings(once, path)
-        assert load_settings(path).plugins.registries == []
-
-        reloaded = load_settings(path)
-        reloaded.plugins.registries = [RegistrySource(url=_LEGACY_DEFAULT_REGISTRY_URL)]
-        save_settings(reloaded, path)
-        assert [r.url for r in load_settings(path).plugins.registries] == [
-            _LEGACY_DEFAULT_REGISTRY_URL
-        ]
+        assert load_settings(path).plugins.entries["demo"].registry_url == BUILTIN_REGISTRY_URL
 
 
 class TestNormalizeRegistryUrl:

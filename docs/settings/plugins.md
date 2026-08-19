@@ -74,15 +74,17 @@ before the catalogue moved to
 <https://nparseplugins.prokopto.dev/index.json> recorded its previous URL,
 and left alone they would all read as that "no longer configured" case, with
 every update from the built-in registry demanding a source-change
-confirmation between two names for the same catalogue. Those records are
-re-pointed once, on the first load after the move.
+confirmation between two names for the same catalogue. So those records are
+re-pointed — **unless you list that old URL as a registry of your own**, in
+which case they name something you actually have, and neither they nor your
+row are touched.
 
-Your **Plugin registries** list is not touched. If a row holding that old URL
-turns up after the upgrade it was always in your settings, hidden behind the
-built-in row it duplicated — it is an ordinary third-party row now, and
-**Remove** works on it. nParse+ will not delete it for you, because that same
-URL is an index you may have added on purpose, and nothing in the file tells
-the two apart. Anything you add there stays added.
+Your **Plugin registries** list is never edited to tidy this up. If a row
+holding that old URL turns up after the upgrade it was always in your
+settings, hidden behind the built-in row it duplicated — it is an ordinary
+third-party row now, and **Remove** works on it. Remove it and the next load
+folds those old records into the built-in catalogue; keep it and everything
+it vouched for keeps naming it.
 
 ## The buttons
 

@@ -262,25 +262,24 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     offer into a cross-source confirmation between two names for one
     catalogue. `PluginsSettings._follow_the_moved_default`
     rewrites those records inside the validator that is documented to never
-    raise. In a pre-move document the rewrite is unambiguous: back then that
-    URL *was* the built-in row — `add_registry` refused a URL equal to
-    `DEFAULT_REGISTRY_URL` and `resolve_registries` collapsed a stored copy
-    into it — so no install can have come through a copy. **The registry
-    list is not edited.** A stored row holding the old URL un-collapses into
-    a visible third-party row on this upgrade, which is untidy, but after
-    the move that URL is an index a user may add on purpose and no file
-    distinguishes the two eras; deleting it would trade a trust decision for
-    tidiness, so it stays and `remove_registry` now accepts it. The sole
-    exception is a row the same validation manufactured from the deprecated
-    `plugins.registry_url` override — an artifact of the fold, never a list
-    entry. **One-shot**, recorded by `plugins.registry_move_applied`, since
-    post-move that URL is ordinary; and the marker cannot be the only test,
-    because v2.16.0 moved the constant and introduced none, so its
-    (post-move) documents look markerless too.
-    `_predates_the_registry_move` therefore also reads the one artifact only
-    post-move code can write: a provenance record naming the new URL. That
-    is the idempotence guard as well, since the rewrite leaves exactly that
-    evidence.
+    raise, and the condition is **the user's own registry list, re-checked
+    on every load**: a record naming the old URL is repointed only while no
+    row holds that URL. Then nothing else it could have meant is left —
+    `add_registry` refused a URL equal to `DEFAULT_REGISTRY_URL` and
+    `resolve_registries` collapsed a stored copy into the built-in row, so
+    an install cannot have come through a copy. List it and both the row and
+    its records are true as written and are left alone, which is what makes
+    the old index safe to add deliberately now that it is an ordinary
+    third-party URL. Remove it and the next load folds those records into
+    the built-in catalogue — the documented way back for a row that only
+    ever duplicated the default. Deliberately **stateless**: a one-shot
+    marker was tried and abandoned because the release that moved the
+    constant (v2.16.0) introduced none, so "no marker" proves nothing about
+    which era a document was written in, and every derived era signal has
+    the same hole. The one row the migration edits is one the same
+    validation manufactured from the deprecated `plugins.registry_url`
+    override: an artifact of the fold, never a list entry, and leaving it
+    would turn a value naming the built-in registry into a third-party row.
 31. **The URL literal lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
     is defined beside `normalize_registry_url` and re-exported as
     `core.plugins.registry.DEFAULT_REGISTRY_URL`, for the reason that
