@@ -1201,13 +1201,22 @@ pointed at a URL no longer configured anywhere: Source falls back to a bare
 host, Browse offers "Installed (other source)", and `best_update`'s rule that
 the installed-from registry wins turns the built-in registry's own offer into
 a cross-source confirmation between two names for one catalogue.
-`PluginsSettings._repoint_installs_at_the_moved_default` rewrites those
-records on load, inside the validator documented to never raise. Two guards,
-and the second is the one that matters: only a value normalizing to
-`_LEGACY_DEFAULT_REGISTRY_URL` **exactly** is touched (a fork's Pages URL is
-somebody else's registry), and nothing is touched while the user still lists
-that old URL as a registry of their own — then it is still configured, still
-fetched, and the record is still true.
+`PluginsSettings._follow_the_moved_default` rewrites those records inside the
+validator documented to never raise, and drops a stored `RegistrySource`
+holding the old URL in the same pass. **That row was always inert** —
+`add_registry` refused a URL equal to `DEFAULT_REGISTRY_URL` and
+`resolve_registries` collapsed a stored copy into the built-in row, so it
+never appeared in the registries table and was never separately fetched — so
+keeping it would un-collapse it into a third-party registry nobody added, and
+keying the rewrite off its presence would withhold the fix from the one
+population that most needs it (a `plugins.registry_url` override that a later
+build folded into `registries`, invisibly). Only an exact normalized match is
+touched; a fork's Pages URL is somebody else's registry. **It runs once**,
+recorded by `plugins.registry_move_applied`, because the URL's meaning
+changed with the move: before it a stored copy could only duplicate the
+built-in row, after it the same URL is an ordinary registry a user may
+deliberately add — and a rule that cannot tell those apart deletes their row
+on every launch.
 
 **One literal, and it lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
 sits beside `normalize_registry_url` for the reason that function is there:

@@ -197,12 +197,21 @@ recorded the old GitHub Pages URL as its provenance, and that URL now names
 no configured registry at all: the Source cell would fall back to a bare host
 name, Browse would offer *Installed (other source)* instead of an Update
 button, and taking the update would demand a confirmation naming two
-registries that are the same catalogue. So those records are re-pointed when
-settings load. The catalogue moved; the publisher did not, and the move is
-not a trust hop. Only an exact match to the old default is rewritten, and
-nothing is rewritten while you still list that old URL as a registry of your
-own — then it is still configured, still fetched, and the record is still
-true.
+registries that are the same catalogue. So those records are re-pointed the
+first time settings load after the move. The catalogue moved; the publisher
+did not, and the move is not a trust hop.
+
+The same load drops a *registry* row holding that old URL. Such a row could
+only ever have been an inert duplicate of the built-in one — the app refused
+to add a registry equal to the built-in URL, and a stored copy collapsed into
+that row rather than appearing beside it, so it was never shown and never
+separately fetched. Keeping it would un-collapse it into a third-party
+registry you never added, pointing at a stale index.
+
+Both halves run **once**, recorded by `plugins.registry_move_applied`, because
+what that URL means changed with the move: it is now an ordinary index you
+may add deliberately. Do that and it stays — the row survives every reload
+and anything it vouches for keeps naming it.
 
 ## Index format (schema 1)
 

@@ -260,13 +260,23 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     back to a bare host, Browse offers "Installed (other source)", and
     `best_update`'s trust rule (item 27) turns the built-in registry's own
     offer into a cross-source confirmation between two names for one
-    catalogue. `PluginsSettings._repoint_installs_at_the_moved_default`
-    rewrites those records on load, inside the validator that is documented
-    to never raise. Two guards: only a value normalizing to
-    `_LEGACY_DEFAULT_REGISTRY_URL` *exactly* is touched (a fork's Pages URL
-    is somebody else's registry), and nothing is touched while the user
-    still lists that old URL as a registry of their own — then it is still
-    configured, still fetched, and the record is still true.
+    catalogue. `PluginsSettings._follow_the_moved_default`
+    rewrites those records inside the validator that is documented to never
+    raise, and drops a stored `RegistrySource` holding the old URL in the
+    same pass. That row was always inert — `add_registry` refused a URL
+    equal to `DEFAULT_REGISTRY_URL` and `resolve_registries` collapsed a
+    stored copy into the built-in row, so it never appeared in the
+    registries table and was never separately fetched — and keeping it would
+    un-collapse it into a third-party registry nobody added *and*, if the
+    rule keyed off it, withhold the rewrite from the one population (a
+    `plugins.registry_url` override folded in by a later build) that most
+    needs it. Only an exact normalized match is touched; a fork's Pages URL
+    is somebody else's registry. **One-shot**, recorded by
+    `plugins.registry_move_applied`, because the URL's meaning changed with
+    the move: before it, a stored copy could only be a duplicate of the
+    built-in row; after it, the same URL is an ordinary registry a user may
+    deliberately add, and a rule that could not tell those apart would
+    delete that row on every launch.
 31. **The URL literal lives in `config/settings.py`.** `BUILTIN_REGISTRY_URL`
     is defined beside `normalize_registry_url` and re-exported as
     `core.plugins.registry.DEFAULT_REGISTRY_URL`, for the reason that

@@ -69,12 +69,18 @@ goes with it (see [#130](https://github.com/prokopto-dev/nparse-plus/issues/130)
 which did exactly this):
 
 1. Point `BUILTIN_REGISTRY_URL` (`config/settings.py`) at the new index.
-2. Keep the outgoing URL as `_LEGACY_DEFAULT_REGISTRY_URL` beside it and
-   re-point `PluginEntry.registry_url` in `PluginsSettings`. Without that,
-   everything already installed reads as "from a registry that is no longer
-   configured" and every update offer becomes a cross-source confirmation
-   between two names for the same catalogue. Rewrite only an exact match, and
-   only while the old URL is not one of the user's own registries.
+2. Keep the outgoing URL as `_LEGACY_DEFAULT_REGISTRY_URL` beside it, and in
+   `PluginsSettings` re-point `PluginEntry.registry_url` **and** drop any
+   stored `RegistrySource` holding it. Without the first, everything already
+   installed reads as "from a registry that is no longer configured" and
+   every update offer becomes a cross-source confirmation between two names
+   for the same catalogue; without the second, a stored copy of the outgoing
+   default — inert until now, collapsed into the built-in row — un-collapses
+   into a third-party registry the user never added. Rewrite only an exact
+   normalized match, and run the whole thing **once** against a persisted
+   marker: after the move that URL is an ordinary registry somebody may
+   deliberately add, and a rule that cannot tell those apart deletes their
+   row on every launch.
 3. Regenerate the schema (its `$id` names the host) and copy the result to
    every consumer — see below.
 4. Update this file and `docs/plugins/registry.md`; the test named above
