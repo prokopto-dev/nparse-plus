@@ -75,9 +75,14 @@ before the catalogue moved to
 and left alone they would all read as that "no longer configured" case, with
 every update from the built-in registry demanding a source-change
 confirmation between two names for the same catalogue. Those records are
-re-pointed once, when settings load. If you have added the old URL as a
-registry of your own, nothing is rewritten — it is still configured, and the
-record is still true.
+re-pointed once, on the first load after the move — as is the registry list,
+which drops any stored copy of the old URL, since that copy was hidden behind
+the built-in row it duplicated and would otherwise surface as a third-party
+registry you never added.
+
+Afterwards that URL is an ordinary index like any other: add it under
+**Plugin registries** and it stays, and anything you install from it keeps
+naming it.
 
 ## The buttons
 

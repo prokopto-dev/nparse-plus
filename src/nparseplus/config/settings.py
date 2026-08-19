@@ -698,6 +698,14 @@ class PluginsSettings(BaseModel):
     # URL a past release happened to write into their settings.json.
     registries: list[RegistrySource] = Field(default_factory=list)
     default_registry_enabled: bool = True
+    # One-shot marker for the built-in registry's move to its own server
+    # (#130). Every document written before that move lacks it, and those are
+    # exactly the ones the migration below has to run over. Running it ONCE is
+    # what lets a post-move user add the old URL as a registry of their own
+    # and keep it: after the move that row is a real, visible, addable
+    # registry and its records are true, while before the move it could only
+    # ever have been an inert duplicate of the built-in row.
+    registry_move_applied: bool = False
     # Poll the enabled registries (and each plugin's declared update feed)
     # shortly after launch so Settings > Plugins can say what is out of date
     # without the user opening Browse first. Only meaningful while `enabled`
@@ -733,39 +741,56 @@ class PluginsSettings(BaseModel):
                 legacy = ""
             if legacy and legacy not in seen:
                 cleaned.append(RegistrySource(url=legacy))
-                seen.add(legacy)
             self.registry_url = ""
 
         self.registries = cleaned
-        self._repoint_installs_at_the_moved_default(seen)
+        if not self.registry_move_applied:
+            self._follow_the_moved_default()
+            self.registry_move_applied = True
         return self
 
-    def _repoint_installs_at_the_moved_default(self, user_urls: set[str]) -> None:
-        """Follow the built-in registry when it moves (#130).
+    def _follow_the_moved_default(self) -> None:
+        """Bring a pre-move document to the built-in registry's new home (#130).
 
-        ``resolve_registries`` synthesizes the built-in row from a constant so
-        that moving it moves every user — but ``PluginEntry.registry_url`` is
-        a *record*, written once at install time, and nothing re-points it.
-        Left alone, every plugin installed before the move reads as "installed
-        from a registry that is no longer configured": the Source cell falls
-        back to a bare host name, Browse offers "Installed (other source)"
-        instead of an Update button, and taking the update demands a
-        cross-source confirmation naming two registries that are in fact the
-        same catalogue. The move is not a trust hop, so it must not look like
-        one.
+        Runs exactly once per document, which is the whole design: what the
+        old URL *means* changed with the move. Before it, that URL was the
+        built-in row — ``resolve_registries`` collapsed any stored copy into
+        it and ``PluginHost.add_registry`` refused to create one, so a stored
+        copy was invisible in Settings > Plugins and never separately fetched.
+        After it, the same URL is an ordinary third-party registry somebody
+        can deliberately add. A rule that could not tell those apart would
+        either strand the first population or delete the second one's row on
+        every launch.
 
-        Two guards, and the second is the one that matters. Only a value that
-        normalizes to the old default *exactly* is rewritten — a fork's Pages
-        URL, or the old one with a query string, is somebody else's registry.
-        And nothing is rewritten while the user still lists the old URL as a
-        registry of their own: that copy is still configured, still fetched,
-        and still genuinely where those bytes came from, so re-pointing the
-        record at the built-in row would falsify it.
+        Two things, and both are about the same fossil:
+
+        1. **Drop a stored row equal to the old default.** Only two paths ever
+           wrote one — a hand-edited ``settings.json`` or the legacy
+           ``registry_url`` fold-in a few lines above — and in both cases it
+           was inert, hidden behind the built-in row it duplicated. Left in
+           place it would *un-collapse* on this upgrade: a third-party
+           registry the user never added, pointing at a stale index, appearing
+           in the table on its own.
+        2. **Re-point what that registry vouched for.** ``resolve_registries``
+           synthesizes the built-in row from a constant so that moving it
+           moves every user, but ``PluginEntry.registry_url`` is a *record*
+           written once at install time. Left alone, everything installed
+           before the move reads as "installed from a registry that is no
+           longer configured": the Source cell falls back to a bare host,
+           Browse offers "Installed (other source)" instead of an Update
+           button, and taking the update demands a cross-source confirmation
+           naming two registries that are in fact one catalogue. The move is
+           not a trust hop and must not look like one.
+
+        Only a value that normalizes to the old default *exactly* is touched.
+        A fork's Pages URL, or the old one carrying a query string, is
+        somebody else's registry and stays exactly as written.
 
         Called from the validator, and like it this never raises.
         """
-        if _LEGACY_DEFAULT_REGISTRY_URL in user_urls:
-            return
+        self.registries = [
+            source for source in self.registries if source.url != _LEGACY_DEFAULT_REGISTRY_URL
+        ]
         for entry in self.entries.values():
             if not entry.registry_url:
                 continue
