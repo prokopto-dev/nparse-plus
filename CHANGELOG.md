@@ -6,6 +6,25 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.17.0 (2026-08-19)
+
+### Bug Fixes
+
+- **core**: Let the driver thread close the command gate as it exits
+  ([`e90b2f1`](https://github.com/prokopto-dev/nparse-plus/commit/e90b2f1aa639ccaf206d6968f0c357f04fd65a0d))
+
+- **core**: Make accepting a driver command atomic with stopping
+  ([`ea25bbd`](https://github.com/prokopto-dev/nparse-plus/commit/ea25bbd94e2d2cb3e7718d0d4654db9653e69b30))
+
+- **core**: Never run a queued command beside a live driver thread
+  ([`99aefae`](https://github.com/prokopto-dev/nparse-plus/commit/99aefae34d0e75e6f52ed4c5a1441494ec667efd))
+
+### Features
+
+- **core**: Run plugin registration changes on the driver thread
+  ([`68804e7`](https://github.com/prokopto-dev/nparse-plus/commit/68804e798b41b8bd5fd9c48f53654987a3f0fbe2))
+
+
 ## v2.16.0 (2026-08-19)
 
 ### Features
