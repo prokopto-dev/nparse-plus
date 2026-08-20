@@ -291,10 +291,12 @@ strictly greater — so keep bumping it.
 
 ## Testing your plugin locally
 
-There is **no hot reload.** Installing, enabling, disabling and uninstalling
-all take effect on the next launch, and so does every edit to your source —
-the module is imported once at discovery. Removing that restart is
-[issue #45](https://github.com/prokopto-dev/nparse-plus/issues/45).
+Installing, enabling, disabling and uninstalling all take effect
+**immediately** — no restart. What does *not* is **editing your source**:
+your module is imported once per session, so a code change needs a relaunch.
+(Same reason updating an installed plugin in place keeps its restart notice:
+re-importing would replace only the top-level module, leaving your
+submodules stale and the old objects holding the old globals.)
 
 The practical loop, fastest first:
 
@@ -419,8 +421,9 @@ Your options:
 
 Knowing the walls up front saves you designing into one:
 
-- **No hot reload.** Install, enable, disable, uninstall and code edits all
-  require an app restart ([#45](https://github.com/prokopto-dev/nparse-plus/issues/45)).
+- **No hot reload of your code.** Install, enable, disable and uninstall are
+  live; a source edit (or an in-place update of an installed plugin) still
+  needs a relaunch, because a module is imported once per session.
 - **No inter-plugin dependencies.** Plugins can't import, discover, or call
   each other; load order is not a contract. If two of your plugins need to
   cooperate, make them one plugin.

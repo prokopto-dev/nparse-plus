@@ -51,7 +51,11 @@ def test_identity_and_logger(backend, tmp_path) -> None:
     assert ctx.meta is META
     assert ctx.app_version == "1.15.0"
     assert ctx.logger.name == "nparseplus.plugins.ctx-test"
-    assert ctx.timers is backend.timers
+    # ctx.timers is the tagging facade, not the service itself (#45) — but
+    # everything it does not stamp reaches the same object.
+    assert ctx.timers is ctx.timers
+    assert ctx.timers.snapshot() == backend.timers.snapshot()
+    assert ctx.timers.on_change is backend.timers.on_change
     assert ctx.player is backend.player
     assert ctx.speaker is backend.speaker
 
@@ -308,13 +312,125 @@ def test_add_window_timer_raises_through_rather_than_swallowing(backend, tmp_pat
 def test_unwind_leaves_the_timer_row(backend, tmp_path) -> None:
     """Asserted so nobody "fixes" it later: unwind reverses registrations, and
     a timer row is data the plugin put in a user-visible store — same as
-    ctx.timers.add_timer today. remove_row is the way back out."""
+    ctx.timers.add_timer today. remove_row is the way back out; the owner tag
+    (#45) is how the *host* takes it out when the plugin is disabled."""
     ctx = make_ctx(backend, tmp_path)
     row = ctx.add_window_timer(
         "Trakanon", group="g", started_at=TOD, base_seconds=400, window_seconds=900
     )
     ctx.unwind()
     assert backend.timers.find("Trakanon", "g") is row
+    assert row.owner == META.id
+
+
+# -- rows carry their plugin, so disabling one can take them away (#45) --------
+
+
+def test_rows_added_through_ctx_timers_are_tagged(backend, tmp_path) -> None:
+    from nparseplus.core.timers import CounterRow, TimerRow
+
+    ctx = make_ctx(backend, tmp_path)
+    ctx.timers.add_timer(
+        TimerRow(
+            name="Plugin Countdown",
+            group="g",
+            updated_at=TOD,
+            ends_at=TOD + timedelta(minutes=5),
+            total_duration_s=300.0,
+        )
+    )
+    ctx.timers.add_counter(CounterRow(name="Casts", group="g", updated_at=TOD))
+    assert {row.owner for row in backend.timers.snapshot()} == {META.id}
+    assert backend.timers.remove_owner(META.id) == 2
+    assert backend.timers.snapshot() == []
+
+
+def test_incrementing_someone_elses_counter_does_not_claim_it(backend, tmp_path) -> None:
+    """The app (or another plugin) keeps the row it created."""
+    from nparseplus.core.timers import CounterRow
+
+    ours = backend.timers.add_counter(CounterRow(name="Casts", group="g", updated_at=TOD))
+    ctx = make_ctx(backend, tmp_path)
+    ctx.timers.add_counter(CounterRow(name="Casts", group="g", updated_at=TOD))
+    assert ours.count == 2
+    assert ours.owner == ""
+
+
+def test_timer_mutations_off_the_driver_thread_wait_for_it(backend, tmp_path) -> None:
+    """TimersService belongs to the driver thread, and #45 made it reachable
+    from the GUI thread: a plugin enabled from the settings window runs its
+    activate() there. So a mutation from anywhere but the driver thread is
+    queued and lands at the next loop boundary — with the row still handed
+    back, since the plugin owns that object either way."""
+    import contextlib
+
+    from nparseplus.core.timers import TimerRow
+
+    backend.driver.log_dir = tmp_path
+    ctx = make_ctx(backend, tmp_path)
+    # Wall-clock anchored: _iterate ticks the service right after draining,
+    # and a row that ended a month ago would expire on the same pass.
+    now = datetime.now()
+    row = TimerRow(
+        name="Deferred",
+        group="g",
+        updated_at=now,
+        ends_at=now + timedelta(minutes=5),
+        total_duration_s=300.0,
+    )
+    with contextlib.ExitStack() as stack:
+        stack.callback(_stop_accepting, backend.driver)
+        _start_accepting(backend.driver)
+
+        assert ctx.timers.add_timer(row) is row
+        assert backend.timers.snapshot() == []  # queued, not applied here
+        backend.driver._iterate()
+        assert backend.timers.find("Deferred", "g") is row
+        assert row.owner == META.id
+
+        assert ctx.timers.remove_row(row) is True  # it was there when asked
+        assert backend.timers.find("Deferred", "g") is row  # ...still, for now
+        backend.driver._iterate()
+        assert backend.timers.snapshot() == []
+
+
+def test_timer_mutations_on_the_driver_thread_land_immediately(backend, tmp_path) -> None:
+    """The ordinary path — a plugin's own handler, tick or parser, and every
+    call at startup — is unchanged: applied now, and the service's own answer
+    comes back (which is what makes add_counter's merge visible)."""
+    from nparseplus.core.timers import CounterRow
+
+    ctx = make_ctx(backend, tmp_path)
+    first = ctx.timers.add_counter(CounterRow(name="Casts", group="g", updated_at=TOD))
+    again = ctx.timers.add_counter(CounterRow(name="Casts", group="g", updated_at=TOD))
+    assert again is first and first.count == 2
+    assert ctx.timers.remove_row(first) is True
+    assert backend.timers.snapshot() == []
+
+
+def _start_accepting(driver) -> None:
+    """The state ``start()`` leaves the driver in, without the poll loop."""
+    with driver._command_lock:
+        driver._accepting_commands = True
+
+
+def _stop_accepting(driver) -> None:
+    with driver._command_lock:
+        driver._accepting_commands = False
+
+
+def test_unwind_clears_the_slow_tick_note(backend, tmp_path) -> None:
+    """The note describes a tick that no longer exists once unwind ran.
+
+    Left behind, a plugin re-enabled in the same session would inherit
+    "tick disabled (too slow)" from the activation before it.
+    """
+    ctx = make_ctx(backend, tmp_path)
+    ctx.add_tick(lambda now: None)
+    ctx._note_tick_dropped("tick disabled (too slow)")
+    assert ctx.tick_dropped is not None
+    ctx.unwind()
+    assert ctx.tick_dropped is None
 
 
 # -- several candidate windows for one spawn (#125) ----------------------------

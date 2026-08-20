@@ -216,6 +216,28 @@ class LogDriver:
         # slow one must not block every other thread's registration.
         self._invoke(fn, label)
 
+    @property
+    def on_driver_thread(self) -> bool:
+        """True when the CALLER is the thread that owns this loop.
+
+        Deliberately not the predicate ``submit_to_driver`` refuses to give
+        out. "Is the driver running" is a fact about another thread and can
+        go stale between the read and the enqueue; this is a fact about the
+        calling thread, which nothing else can change underneath it. It
+        exists so work that is *already* on the right thread can skip the
+        queue: a plugin adding a timer row from its own handler or tick has
+        to land on this line, not a poll later.
+
+        True whenever no loop is accepting commands — never started, or
+        stopped and drained — because then there is no other thread to be
+        wrong about: startup wiring and post-``stop`` teardown run on
+        whoever calls them.
+        """
+        with self._command_lock:
+            if not self._accepting_commands:
+                return True
+        return threading.current_thread() is self._thread
+
     def _drain_commands(self) -> None:
         while True:
             try:

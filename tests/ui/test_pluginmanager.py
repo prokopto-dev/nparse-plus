@@ -57,8 +57,13 @@ def host(tmp_path: Path):
     return host
 
 
-def make_page(qtbot, host) -> PluginManagerPage:
+def make_page(qtbot, host, *, consent: bool = True) -> PluginManagerPage:
     page = PluginManagerPage(host, "1.15.0")
+    # An install now loads the plugin immediately (#45), which means asking
+    # the first-load consent question — a modal dialog that would hang a
+    # headless run. Answer it inline instead; the dialog itself is covered by
+    # tests/ui/test_plugin_consent.py.
+    page.consent_ask = lambda _loaded: consent
     qtbot.addWidget(page)
     return page
 
@@ -85,6 +90,59 @@ def test_enable_checkbox_persists(qtbot, host) -> None:
     assert host.entry_for("demo").enabled is False
 
 
+def test_the_page_hint_matches_what_a_toggle_actually_does(qtbot, host) -> None:
+    """The hint sits beside the controls it describes, so it has to be true.
+
+    It used to say enable/disable and new installs took effect at the next
+    launch; since #45 they take effect now, and an instruction telling the
+    user the opposite of what just happened is worse than none.
+    """
+    from PySide6.QtWidgets import QLabel
+
+    page = make_page(qtbot, host)
+    hints = [
+        w.text() for w in page.findChildren(QLabel) if "Installing runs the plugin" in w.text()
+    ]
+    assert len(hints) == 1
+    hint = hints[0]
+    assert "immediately" in hint
+    assert "next time nParse+ starts" not in hint
+    # ...and it still says the one thing that DOES need a restart.
+    assert "updating a plugin you already have needs a restart" in hint
+
+
+def test_toggling_the_checkbox_updates_the_status_cell(qtbot, host) -> None:
+    """The toggle takes effect immediately (#45), so the row has to say so.
+
+    The refresh is deferred by one event-loop turn because it rebuilds the
+    row — destroying the checkbox whose signal fired it — so the assertion
+    waits for the loop rather than reading straight after setChecked.
+    """
+    page = make_page(qtbot, host)
+    assert page._table.item(0, 3).text() == "Active"
+
+    page._table.cellWidget(0, 0).setChecked(False)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text() == "Disabled", timeout=2000)
+
+    page._table.cellWidget(0, 0).setChecked(True)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text() == "Active", timeout=2000)
+
+
+def test_a_plugin_that_fails_to_re_activate_shows_the_error(qtbot, host, tmp_path) -> None:
+    """The case the stale cell hid worst: enabling landed in error, silently."""
+    page = make_page(qtbot, host)
+    loaded = next(p for p in host.statuses() if p.plugin_id == "demo")
+    page._table.cellWidget(0, 0).setChecked(False)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text() == "Disabled", timeout=2000)
+
+    def boom(_ctx):
+        raise RuntimeError("no")
+
+    loaded.plugin.activate = boom
+    page._table.cellWidget(0, 0).setChecked(True)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text().startswith("Error"), timeout=2000)
+
+
 def test_install_from_file_via_dialog(qtbot, host, tmp_path: Path, monkeypatch) -> None:
     archive = tmp_path / "extra.zip"
     with zipfile.ZipFile(archive, "w") as zf:
@@ -98,8 +156,63 @@ def test_install_from_file_via_dialog(qtbot, host, tmp_path: Path, monkeypatch) 
     install_from_file_and_wait(qtbot, page)
     assert (host.plugins_dir / "extra.py").is_file()
     assert infos, "success dialog not shown"
-    assert page._table.rowCount() == 2  # session-install row appended
-    assert "restart" in page._table.item(1, 3).text().lower()
+    # A fresh install loads immediately (#45): the new plugin is a real row
+    # in the host, consented (make_page answers yes) and active — not a
+    # "restart to load" placeholder appended from _session_installs.
+    assert page._table.rowCount() == 2
+    assert page._table.item(1, 3).text() == "Active"
+    assert not page._session_installs
+    assert host.entry_for("extra") is not None and host.entry_for("extra").approved
+
+
+def test_install_message_reports_what_actually_happened() -> None:
+    """A plugin that did not start must not be reported as running.
+
+    Declining consent, an SDK mismatch, a duplicate id and a raising
+    activate() all leave the plugin installed and NOT running — saying
+    "installed and running" would send the user looking for a feature that
+    is switched off, which is worse than the restart notice this replaced.
+    """
+    from types import SimpleNamespace
+
+    from nparseplus.ui.pluginmanager import install_outcome_text
+
+    def row(status: str, error: str | None = None):
+        return SimpleNamespace(status=status, error=error)
+
+    assert install_outcome_text("Demo", row("active")) == "Demo installed and running."
+    declined = install_outcome_text("Demo", row("disabled"))
+    assert "running" not in declined and "disabled" in declined
+    incompatible = install_outcome_text("Demo", row("incompatible", "needs SDK >=99"))
+    assert "cannot run in this build" in incompatible and "needs SDK >=99" in incompatible
+    duplicate = install_outcome_text("Demo", row("duplicate", "already claimed id 'demo'"))
+    assert "already claims its id" in duplicate
+    failed = install_outcome_text("Demo", row("error", "activate() raised: RuntimeError()"))
+    assert "failed to start" in failed and "nparseplus.log" in failed
+    # Not adopted at all (entry-point plugin, unreadable path): the old
+    # promise is still the right one.
+    assert "next time nParse+ starts" in install_outcome_text("Demo", None)
+
+
+def test_declining_consent_after_an_install_leaves_it_disabled(
+    qtbot, host, tmp_path: Path, monkeypatch
+) -> None:
+    """Consent still gates running — installing is not approving."""
+    archive = tmp_path / "extra.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("extra.py", PLUGIN_SOURCE.replace('"demo"', '"extra"'))
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(archive), "zip"))
+    )
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    infos: list[tuple] = []
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: infos.append(a)))
+    page = make_page(qtbot, host, consent=False)
+    install_from_file_and_wait(qtbot, page)
+    assert page._table.item(1, 3).text() == "Disabled"
+    assert host.entry_for("extra").approved and not host.entry_for("extra").enabled
+    # ...and the dialog says so, rather than claiming it is running.
+    assert infos and "running" not in infos[0][2]
 
 
 def test_install_failure_shows_warning(qtbot, host, tmp_path: Path, monkeypatch) -> None:

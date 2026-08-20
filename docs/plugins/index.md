@@ -30,10 +30,12 @@ timers, triggers, DPS and sharing are all built in. A default-on
 plugin loader would be an attack surface every user carries for a feature
 most users never use.
 
-The restart is required because plugin activation registers bus
-subscriptions, pipeline parsers and driver ticks, all of which have to be in
-place before the log-driver thread starts. Hot enable/disable is tracked in
-[issue #45](https://github.com/prokopto-dev/nparse-plus/issues/45).
+This one switch is the only part that needs a restart, and it needs one
+precisely because "off" means the machinery is never imported: turning it on
+has to import, ask consent for and start everything discovered, and turning
+it off has to prove none of it is left. Individual add-ons need no restart —
+install, enable and disable all take effect immediately (the exception is
+updating a plugin *in place*, which cannot re-import safely mid-session).
 
 ## Step 2: install a plugin
 
