@@ -90,6 +90,38 @@ def test_enable_checkbox_persists(qtbot, host) -> None:
     assert host.entry_for("demo").enabled is False
 
 
+def test_toggling_the_checkbox_updates_the_status_cell(qtbot, host) -> None:
+    """The toggle takes effect immediately (#45), so the row has to say so.
+
+    The refresh is deferred by one event-loop turn because it rebuilds the
+    row — destroying the checkbox whose signal fired it — so the assertion
+    waits for the loop rather than reading straight after setChecked.
+    """
+    page = make_page(qtbot, host)
+    assert page._table.item(0, 3).text() == "Active"
+
+    page._table.cellWidget(0, 0).setChecked(False)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text() == "Disabled", timeout=2000)
+
+    page._table.cellWidget(0, 0).setChecked(True)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text() == "Active", timeout=2000)
+
+
+def test_a_plugin_that_fails_to_re_activate_shows_the_error(qtbot, host, tmp_path) -> None:
+    """The case the stale cell hid worst: enabling landed in error, silently."""
+    page = make_page(qtbot, host)
+    loaded = next(p for p in host.statuses() if p.plugin_id == "demo")
+    page._table.cellWidget(0, 0).setChecked(False)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text() == "Disabled", timeout=2000)
+
+    def boom(_ctx):
+        raise RuntimeError("no")
+
+    loaded.plugin.activate = boom
+    page._table.cellWidget(0, 0).setChecked(True)
+    qtbot.waitUntil(lambda: page._table.item(0, 3).text().startswith("Error"), timeout=2000)
+
+
 def test_install_from_file_via_dialog(qtbot, host, tmp_path: Path, monkeypatch) -> None:
     archive = tmp_path / "extra.zip"
     with zipfile.ZipFile(archive, "w") as zf:

@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -340,6 +340,32 @@ class PluginManagerPage(QWidget):
         check = self._check
         return list(check.updates) if check is not None else []
 
+    def _toggle_enabled(self, plugin_id: str, enabled: bool) -> None:
+        """Apply the box — and re-render, because the toggle happens NOW (#45).
+
+        The row would otherwise keep saying "Active" for a plugin that has
+        just been unwound, until something else happened to refresh the
+        table. Status is not the only stale cell either: a disabled plugin
+        stops being offered updates, and a re-enabled one can land in
+        ``error``, which is exactly the case a user needs to see immediately.
+
+        Deferred to the next turn of the event loop on purpose. ``refresh``
+        rebuilds every row, which destroys the very checkbox whose ``toggled``
+        signal we are standing in — Qt does not survive that. By the time the
+        timer fires the signal has returned and the widget is safe to replace.
+        """
+        self._host.set_enabled(plugin_id, enabled)
+        QTimer.singleShot(0, self._refresh_if_alive)
+
+    def _refresh_if_alive(self) -> None:
+        """``refresh`` unless the page was destroyed before the timer fired."""
+        try:
+            self.refresh()
+        except RuntimeError:
+            # The settings window went away with a refresh still queued; the
+            # table it would redraw no longer exists, which is not a failure.
+            logger.debug("plugin manager refresh skipped; page already gone")
+
     # --- table -------------------------------------------------------------
     def refresh(self) -> None:
         rows = self._host.statuses()
@@ -358,7 +384,7 @@ class PluginManagerPage(QWidget):
             enabled_box.setEnabled(plugin_id is not None)
             if plugin_id is not None:
                 enabled_box.toggled.connect(
-                    lambda checked, pid=plugin_id: self._host.set_enabled(pid, checked)
+                    lambda checked, pid=plugin_id: self._toggle_enabled(pid, checked)
                 )
             self._table.setCellWidget(row_index, 0, enabled_box)
             version = loaded.meta.version if loaded.meta is not None else ""
