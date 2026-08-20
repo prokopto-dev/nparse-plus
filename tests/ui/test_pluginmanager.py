@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -519,7 +520,7 @@ def test_registry_install_records_provenance(qtbot, host, monkeypatch) -> None:
 def test_sideloaded_plugin_shows_no_provenance(qtbot, host) -> None:
     """A plugin dropped into the folder by hand says so, plainly."""
     page = make_page(qtbot, host)
-    source_item = page._table.item(0, 5)
+    source_item = page._table.item(0, pluginmanager._SOURCE_COLUMN)
     assert source_item.text() == "Sideloaded"
     assert "no recorded source" in source_item.toolTip()
 
@@ -539,7 +540,7 @@ def test_url_installed_plugin_shows_source_and_hash(qtbot, host, monkeypatch) ->
             installed_path=host.plugins_dir / "fromreg.py",
         )
     )
-    source_item = page._table.item(1, 5)  # the session-install row
+    source_item = page._table.item(1, pluginmanager._SOURCE_COLUMN)  # the session-install row
     assert "https://example.com/fromreg.zip" in source_item.text()
     assert "bbbbbbbbbbbb" in source_item.text()  # short hash
     assert "b" * 64 in source_item.toolTip()  # full hash on hover
@@ -551,8 +552,10 @@ def test_loaded_plugin_row_reads_provenance_from_the_entry(qtbot, host) -> None:
     entry.source_url = "https://example.com/demo.zip"
     entry.sha256 = "f" * 64
     page = make_page(qtbot, host)
-    assert "https://example.com/demo.zip" in page._table.item(0, 5).text()
-    assert "f" * 64 in page._table.item(0, 5).toolTip()
+    assert (
+        "https://example.com/demo.zip" in page._table.item(0, pluginmanager._SOURCE_COLUMN).text()
+    )
+    assert "f" * 64 in page._table.item(0, pluginmanager._SOURCE_COLUMN).toolTip()
 
 
 def test_provenance_display_forms() -> None:
@@ -785,7 +788,7 @@ def test_registry_row_shows_the_registry_name_in_source(qtbot, host, monkeypatch
     entry.registry_url = "https://guild.example/index.json"
     host.add_registry("https://guild.example/index.json", "Guild registry")
     page = make_page(qtbot, host)
-    item = page._table.item(0, 5)
+    item = page._table.item(0, pluginmanager._SOURCE_COLUMN)
     assert item.text().startswith("Guild registry · ")
     assert "Listed by Guild registry" in item.toolTip()
 
@@ -1196,3 +1199,62 @@ def test_the_teardown_guard_joined_the_leaked_installer(ui_worker_threads) -> No
         "by the previous test — this run is one emit away from a segfault"
     )
     assert not [t for t in threading.enumerate() if t.name in ui_worker_threads.names]
+
+
+# --- the Performance column (#132) -----------------------------------------
+def test_performance_cell_is_a_dash_before_anything_runs(qtbot, host) -> None:
+    page = make_page(qtbot, host)
+    assert page._table.item(0, pluginmanager._PERFORMANCE_COLUMN).text() == "—"
+
+
+def test_performance_cell_reports_what_the_plugin_cost(qtbot, host) -> None:
+    """The stats are recorded by the wrappers, not by anything the page does."""
+    from nparseplus.core.events import LineEvent
+
+    loaded = host.statuses()[0]
+    assert loaded.context is not None
+    loaded.context.subscribe(LineEvent, lambda event: None)
+    host._backend.bus.publish(
+        LineEvent(timestamp=datetime(2026, 7, 15, 21, 0, 0), line="hello", line_number=1)
+    )
+
+    page = make_page(qtbot, host)
+    text = page._table.item(0, pluginmanager._PERFORMANCE_COLUMN).text()
+    assert "ev/s" in text and "avg" in text
+    assert "p99" in page._table.item(0, pluginmanager._PERFORMANCE_COLUMN).toolTip()
+
+
+def test_unticking_the_box_stops_collection_and_says_so(qtbot, host) -> None:
+    page = make_page(qtbot, host)
+    page._telemetry_box.setChecked(False)
+    assert host.telemetry_enabled is False
+    assert host._settings.plugins.telemetry is False
+    assert page._table.item(0, pluginmanager._PERFORMANCE_COLUMN).text() == "not collecting"
+
+
+def test_the_stats_timer_refreshes_without_rebuilding_the_row(qtbot, host) -> None:
+    """The checkbox and Update cell must survive a stats tick.
+
+    ``refresh()`` destroys both, and doing that once a second under the
+    user's cursor is the reason the stats path is separate.
+    """
+    page = make_page(qtbot, host)
+    box = page._table.cellWidget(0, 0)
+    page._tick_stats()
+    assert page._table.cellWidget(0, 0) is box
+
+
+def test_a_disabled_plugin_shows_no_numbers(qtbot, host) -> None:
+    """A row that says Disabled must not also say "18 ev/s"."""
+    from nparseplus.core.events import LineEvent
+
+    loaded = host.statuses()[0]
+    assert loaded.context is not None
+    loaded.context.subscribe(LineEvent, lambda event: None)
+    host._backend.bus.publish(
+        LineEvent(timestamp=datetime(2026, 7, 15, 21, 0, 0), line="hello", line_number=1)
+    )
+    host.set_enabled("demo", False)
+
+    page = make_page(qtbot, host)
+    assert page._table.item(0, pluginmanager._PERFORMANCE_COLUMN).text() == "—"

@@ -73,6 +73,12 @@ class _SupervisedTick:
 
     label: str
     on_dropped: Callable[[str], None] | None = None
+    # Handed (elapsed_seconds, start_stamp) — both of which this loop already
+    # measured for the budget. The one piece of #132's telemetry that costs
+    # nothing to collect: the clock reads below happen whether or not anybody
+    # is listening, so a listener is a function call, not a measurement. The
+    # signature is `Channel.record`'s, so the listener is that bound method.
+    on_duration: Callable[[float, float], None] | None = None
     breaches: int = field(default=0)
 
 
@@ -261,13 +267,15 @@ class LogDriver:
         *,
         label: str,
         on_dropped: Callable[[str], None] | None = None,
+        on_duration: Callable[[float, float], None] | None = None,
     ) -> None:
         """Register a tick that the driver may evict for being too slow.
 
         Used for third-party (plugin) callbacks; ``on_dropped`` is called on
         the driver thread with a human-readable reason so the owner can
-        surface the fact. App-owned ticks append to ``on_tick`` directly and
-        are never supervised.
+        surface the fact, and ``on_duration`` — also on the driver thread —
+        with what this run cost, which the budget already measured. App-owned
+        ticks append to ``on_tick`` directly and are never supervised.
 
         Callable from any thread: the registration itself is routed through
         ``submit_to_driver``, so a plugin enabled mid-session joins the tick
@@ -276,7 +284,9 @@ class LogDriver:
 
         def register() -> None:
             self.on_tick.append(fn)
-            self._supervised[fn] = _SupervisedTick(label=label, on_dropped=on_dropped)
+            self._supervised[fn] = _SupervisedTick(
+                label=label, on_dropped=on_dropped, on_duration=on_duration
+            )
 
         self.submit_to_driver(register, label=f"register tick {label}")
 
@@ -374,6 +384,11 @@ class LogDriver:
                 tick(now)
             finally:
                 elapsed = time.perf_counter() - started
+            if watch.on_duration is not None:
+                try:
+                    watch.on_duration(elapsed, started)
+                except Exception:
+                    logger.exception("duration listener for %s raised", watch.label)
             self._record_tick_duration(tick, watch, elapsed)
 
     def _record_tick_duration(

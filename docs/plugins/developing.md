@@ -141,6 +141,23 @@ on a schedule, do it in the `fetch` closure, not in the tick. The merchant
 example's `_tick` is the shape to copy — it compares timestamps, then
 returns or submits.
 
+### Your numbers are on screen
+
+Your handlers, parsers and ticks are timed while the app runs, and
+[Settings → Plugins](../settings/plugins.md#the-performance-column) shows
+the result in a Performance column per add-on: events per second, average /
+p95 / worst callback duration, and roughly what share of the log thread you
+are using. It costs a fraction of a microsecond per callback and the user
+can switch it off, but assume it is on and that someone is looking at your
+row.
+
+Nothing is throttled on the strength of those numbers — only the tick
+watchdog above ever removes anything — but they are the fastest way to find
+out whether the handler you just wrote is a problem. Subscribe to
+`LineEvent` and you will see it immediately: that one fires for **every**
+line of the log, so an expensive handler on it is the most reliable way to
+make nParse+ stutter.
+
 ## Events vs parsers
 
 The app's parser chain is first-match-wins, and the built-ins already

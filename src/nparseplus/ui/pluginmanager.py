@@ -54,6 +54,7 @@ from nparseplus.core.plugins.registry import (
     fetch_indexes,
     registry_display_name,
 )
+from nparseplus.core.plugins.telemetry import format_note, format_tooltip
 from nparseplus.core.plugins.updatecheck import (
     SELF_FEED_WARNING,
     InstalledPlugin,
@@ -91,10 +92,26 @@ STATUS_LABELS = {
     "duplicate": "Duplicate id",
 }
 
-_COLUMNS = ("Enabled", "Name", "Version", "Status", "Location", "Source", "Update")
-_LOCATION_COLUMN = 4
-_SOURCE_COLUMN = 5
-_UPDATE_COLUMN = 6
+_COLUMNS = (
+    "Enabled",
+    "Name",
+    "Version",
+    "Status",
+    "Performance",
+    "Location",
+    "Source",
+    "Update",
+)
+_PERFORMANCE_COLUMN = 4
+_LOCATION_COLUMN = 5
+_SOURCE_COLUMN = 6
+_UPDATE_COLUMN = 7
+
+# The Performance cell is repainted on its own, without rebuilding the table:
+# refresh() destroys and recreates the Enabled checkbox and the Update button,
+# and doing that once a second under the user's cursor is not acceptable for a
+# number that is only ever informational.
+_STATS_REFRESH_MS = 1000
 
 
 def install_outcome_text(name: str, loaded: LoadedPlugin | None) -> str:
@@ -300,6 +317,15 @@ class PluginManagerPage(QWidget):
         )
         self._auto_check.toggled.connect(self._host.set_update_check)
 
+        self._telemetry_box = QCheckBox("Measure add-on performance", self)
+        self._telemetry_box.setChecked(host.telemetry_enabled)
+        self._telemetry_box.setToolTip(
+            "Fills the Performance column: how often each add-on's handlers "
+            "run and what they cost on the log thread. Timing is only ever "
+            "applied to add-on callbacks, never to nParse+'s own."
+        )
+        self._telemetry_box.toggled.connect(self._set_telemetry)
+
         note = QLabel(
             f"{CONSENT_WARNING} Installing runs the plugin's module code to "
             "validate it. Enabling, disabling and new installs take effect "
@@ -320,11 +346,19 @@ class PluginManagerPage(QWidget):
         layout.addLayout(buttons)
         layout.addWidget(self._status)
         layout.addWidget(self._auto_check)
+        layout.addWidget(self._telemetry_box)
         layout.addWidget(registries_box)
         layout.addWidget(note)
         self.setLayout(layout)
 
         self.refresh()
+
+        # Parented to this page, so it dies with the settings window rather
+        # than polling a host nobody is looking at.
+        self._stats_timer = QTimer(self)
+        self._stats_timer.setInterval(_STATS_REFRESH_MS)
+        self._stats_timer.timeout.connect(self._tick_stats)
+        self._stats_timer.start()
 
     @property
     def _check(self) -> UpdateCheckResult | None:
@@ -410,6 +444,7 @@ class PluginManagerPage(QWidget):
                 (1, loaded.display_name),
                 (2, version),
                 (3, status),
+                (_PERFORMANCE_COLUMN, ""),
                 (_LOCATION_COLUMN, loaded.source.location),
                 (_SOURCE_COLUMN, source_text),
             ):
@@ -438,6 +473,7 @@ class PluginManagerPage(QWidget):
                 (1, name),
                 (2, version),
                 (3, "Installed — restart to load"),
+                (_PERFORMANCE_COLUMN, "—"),
                 (_LOCATION_COLUMN, location),
                 (_SOURCE_COLUMN, source_text),
             ):
@@ -445,8 +481,51 @@ class PluginManagerPage(QWidget):
                 if column == _SOURCE_COLUMN:
                     item.setToolTip(source_tip)
                 self._table.setItem(row_index, column, item)
+        # Through the same method the timer uses, so the cell a user sees
+        # first and the cell they see a second later come from one place.
+        self._refresh_stats()
         self._refresh_status()
         self._refresh_update_all()
+
+    # --- performance (#132) -------------------------------------------------
+    def _refresh_stats(self) -> None:
+        """Repaint only the Performance cells of the plugin rows.
+
+        Deliberately not a ``refresh()``: that rebuilds every row, destroying
+        the Enabled checkbox and Update button as it goes, which is not
+        something to do under the user's cursor once a second for a number
+        nothing depends on. Session-install rows are skipped — they have not
+        run, so they have nothing to report.
+
+        Every string here comes from ``core.plugins.telemetry``, so what the
+        cell says is tested without a window.
+        """
+        rows = self._host.statuses()
+        collecting = self._host.telemetry_enabled
+        for row_index, loaded in enumerate(rows):
+            item = self._table.item(row_index, _PERFORMANCE_COLUMN)
+            if item is None:
+                continue
+            plugin_id = loaded.plugin_id
+            # Only a RUNNING add-on gets numbers. A disabled one keeps its
+            # record on the collector (a re-enable resets it), but showing
+            # the last run's figures on a row that says "Disabled" reads as
+            # a plugin still doing work.
+            running = plugin_id is not None and loaded.status == "active"
+            snapshot = self._host.stats_for(plugin_id) if running and plugin_id else None
+            item.setText(format_note(snapshot, collecting=collecting))
+            item.setToolTip(format_tooltip(snapshot))
+
+    def _tick_stats(self) -> None:
+        """Timer slot; silent about a page the settings window already closed."""
+        try:
+            self._refresh_stats()
+        except RuntimeError:
+            logger.debug("plugin manager stats tick skipped; page already gone")
+
+    def _set_telemetry(self, enabled: bool) -> None:
+        self._host.set_telemetry(enabled)
+        self._refresh_stats()
 
     def _refresh_update_all(self) -> None:
         """Label carries the count; disabled when there is nothing to take."""
@@ -899,7 +978,7 @@ class PluginManagerPage(QWidget):
         row = self._table.currentRow()
         if row < 0:
             return
-        location_item = self._table.item(row, 4)
+        location_item = self._table.item(row, _LOCATION_COLUMN)
         name_item = self._table.item(row, 1)
         if location_item is None:
             return

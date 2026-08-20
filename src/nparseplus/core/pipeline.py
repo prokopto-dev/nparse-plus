@@ -19,7 +19,7 @@ from typing import Protocol
 
 from nparseplus.core.events import LineEvent
 from nparseplus.core.lineinfo import LineInfo, parse_line
-from nparseplus.core.parsers.base import LineParser, ParseContext
+from nparseplus.core.parsers.base import LineParser, ParseContext, describe_parser
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class LogPipeline:
         """
         self._mutate(
             lambda: self._parsers.append(parser),
-            label=f"add parser {type(parser).__name__}",
+            label=f"add parser {describe_parser(parser)}",
         )
 
     def remove_parser(self, parser: LineParser) -> None:
@@ -79,7 +79,7 @@ class LogPipeline:
         """
         self._mutate(
             lambda: self._remove_now(parser),
-            label=f"remove parser {type(parser).__name__}",
+            label=f"remove parser {describe_parser(parser)}",
         )
 
     def _remove_now(self, parser: LineParser) -> None:
@@ -120,7 +120,7 @@ class LogPipeline:
                 if parser.handle(info, self._ctx):
                     break
             except Exception:
-                logger.exception("parser %r failed on line: %s", type(parser).__name__, raw)
+                logger.exception("parser %s failed on line: %s", describe_parser(parser), raw)
         # The raw-line firehose fires whether or not a parser consumed it.
         self._ctx.bus.publish(
             LineEvent(timestamp=info.timestamp, line=info.message, line_number=info.line_number)

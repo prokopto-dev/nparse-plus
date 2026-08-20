@@ -39,3 +39,15 @@ class LineParser(Protocol):
     def handle(self, line: LineInfo, ctx: ParseContext) -> bool:
         """Return True if this parser consumed the line."""
         ...
+
+
+def describe_parser(parser: LineParser) -> str:
+    """Name a parser for a log line, seeing through any wrapper.
+
+    ``type(parser).__name__`` is the answer for every parser in the chain
+    except one a decorator stands in front of, where it names the decorator
+    and tells the reader nothing about which parser actually raised. A
+    wrapper sets ``parser_label`` to keep that log line useful; nothing else
+    in the chain has to know wrappers exist.
+    """
+    return getattr(parser, "parser_label", None) or type(parser).__name__
