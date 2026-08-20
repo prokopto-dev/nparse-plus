@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.19.0 (2026-08-20)
+
+### Features
+
+- **timers**: Collapsible group headers in the Timers window
+  ([`74d8529`](https://github.com/prokopto-dev/nparse-plus/commit/74d8529546532ce36a1a69112ad880e32b029cae))
+
+
 ## v2.18.1 (2026-08-20)
 
 ### Bug Fixes
