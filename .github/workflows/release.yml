@@ -443,6 +443,11 @@ jobs:
           if [ ! -s release-notes.md ]; then
             echo "See the full changelog for v$VERSION." > release-notes.md
           fi
+          # Standing footer on every release body: the SmartScreen/antivirus
+          # note and how to verify a download (#122). Not changelog material —
+          # it is not news about a version — but it is what somebody on the
+          # download page needs, so it rides along with each one.
+          cat packaging/release-notes-footer.md >> release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}

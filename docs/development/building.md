@@ -21,6 +21,32 @@ uv run pyinstaller packaging/nparseplus.spec --noconfirm
 Compress-Archive -Path dist/nparseplus -DestinationPath dist/nparseplus-win64.zip
 ```
 
+That gives you a working build, but **not** the one CI ships: the release job
+compiles the PyInstaller bootloader from source first, because the prebuilt
+one in the wheel is byte-identical for every PyInstaller user on earth and is
+what heuristic antivirus engines match on
+([#122](https://github.com/prokopto-dev/nparse-plus/issues/122)). To do the
+same locally you need MSVC installed, and then:
+
+```powershell
+uv sync --group build
+uv run python tools/pyinstaller_source_pin.py requirements -o pyi-source.txt
+$env:PYINSTALLER_COMPILE_BOOTLOADER = "1"
+uv pip install --no-deps --reinstall-package pyinstaller `
+    --no-binary pyinstaller --require-hashes -r pyi-source.txt
+uv run --no-sync pyinstaller packaging/nparseplus.spec --noconfirm
+```
+
+`PYINSTALLER_COMPILE_BOOTLOADER` is not optional: PyInstaller's sdist ships
+the prebuilt Windows bootloaders too, so a plain source install packages the
+exact bytes this is meant to replace. CI proves the swap happened by hashing
+the result against the published wheel's copy — see
+[Release flow](releasing.md#windows-the-bootloader-is-rebuilt-from-source).
+
+macOS and Linux stay on the wheel. The macOS bootloader build is
+byte-reproducible (a local `waf` build of 6.21.0 reproduces the published
+`runw` exactly), so rebuilding it there would change nothing.
+
 ## Linux (tarball + Flatpak)
 
 ```bash

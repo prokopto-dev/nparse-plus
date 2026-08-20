@@ -59,6 +59,77 @@ Where they live:
 - **SmartScreen blocks the exe** — More info → Run anyway
   ([details](getting-started/install-windows.md)).
 
+### Antivirus flagged the download
+
+Quarantined, or gone from your Downloads folder without warning? It is a
+**false positive**. Some engines — AVG and Avast most often — flag
+nParse+ with a generic name like `Win64:Evo-gen` or `Trojan:Script/Wacatac`.
+A generic detection name is the tell: it means "this resembles a pattern",
+not "this file is known malware".
+
+**Why it happens.** nParse+ is a Python app packaged with
+[PyInstaller](https://pyinstaller.org). Every PyInstaller build starts from
+the same small C launcher — the *bootloader* — which unpacks the bundle and
+starts Python. Malware authors use PyInstaller too, so engines learned to
+match on those launcher bytes, and everything built with the tool inherits
+the verdict. Unpacking-an-embedded-payload is also the behaviour a heuristic
+scanner is built to distrust, whoever does it.
+
+**What nParse+ does about it.** The Windows build compiles its own bootloader
+in our release CI rather than shipping the prebuilt one every PyInstaller
+user ships, is packaged as a plain folder (not a self-extracting single
+file), uses no executable compressor, and carries a real version resource you
+can read in Explorer → Properties → Details. What it does **not** have is a
+code-signing certificate — that is
+[issue #19](https://github.com/prokopto-dev/nparse-plus/issues/19), and it is
+the one thing that would settle this for good. Until it lands, expect the
+occasional flag.
+
+**Verify what you downloaded.** GitHub publishes a sha256 for every release
+asset, so you can check the zip is exactly the file we uploaded:
+
+```powershell
+Get-FileHash .\nparseplus-<version>-win64.zip -Algorithm SHA256
+```
+
+Compare it against the `digest` GitHub reports for that asset — open
+`https://api.github.com/repos/prokopto-dev/nparse-plus/releases/latest` in a
+browser and look for your file under `assets`, or run:
+
+```powershell
+gh api repos/prokopto-dev/nparse-plus/releases/latest --jq '.assets[] | "\(.digest)  \(.name)"'
+```
+
+A match proves you have the file GitHub served, unaltered in transit. It is
+not a signature and does not prove anything about who built it — the same
+[caveat that applies to update
+downloads](features/updater.md#verified-downloads).
+
+**Get it back and keep it.** Restore the file from your antivirus'
+quarantine, then add an exclusion for the extracted folder (in AVG or Avast:
+**Menu → Settings → Exceptions**; in Windows Security: **Virus & threat
+protection → Manage settings → Exclusions**). Do that only once the checksum
+above matches.
+
+**Report it — this is the part that actually helps.** Vendors fix false
+positives from user submissions, and one report benefits everyone:
+
+| Vendor | Where |
+|---|---|
+| AVG / Avast (one engine, one report covers both) | [Avast false-positive form](https://www.avast.com/false-positive-file-form.php) |
+| Microsoft Defender | [Microsoft security intelligence submission](https://www.microsoft.com/en-us/wdsi/filesubmission) |
+| Anything else | Check the vendor's site for a "false positive" or "sample submission" form |
+
+Please also open a [GitHub
+issue](https://github.com/prokopto-dev/nparse-plus/issues) with the engine
+name, the detection name and the nParse+ version — and, if you can, a
+[VirusTotal](https://www.virustotal.com/) link for the zip, which shows how
+many engines agree.
+
+If you would rather not wait, the [source is
+public](https://github.com/prokopto-dev/nparse-plus) and
+[building it yourself](development/building.md) is documented.
+
 ## Linux
 
 - **No tray icon on GNOME** — install the

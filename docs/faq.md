@@ -81,6 +81,18 @@ The app isn't notarized (that needs a paid Apple developer account), so
 macOS quarantines the download. One command clears it — see
 [Install on macOS](getting-started/install-macos.md).
 
+## Why does my antivirus flag the Windows build?
+
+Because it is a Python app packaged with PyInstaller, and every PyInstaller
+build shares the same small C launcher — which malware authors also use, so
+engines match on it. It is a false positive; a generic detection name like
+`Win64:Evo-gen` is the giveaway. nParse+'s Windows build compiles its own
+launcher rather than shipping the stock one, but without a code-signing
+certificate ([#19](https://github.com/prokopto-dev/nparse-plus/issues/19))
+the occasional flag is unavoidable. How to verify the download, get the file
+back and report it:
+[Troubleshooting](troubleshooting.md#antivirus-flagged-the-download).
+
 ## The overlays disappear when I click the game — why?
 
 EQ is probably running in exclusive fullscreen. Overlays can only draw
