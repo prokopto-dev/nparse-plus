@@ -1,0 +1,226 @@
+name: Performance (nightly)
+
+# Runs the Phase 0 benchmark suite (#132, epic #131), archives the raw JSON,
+# normalizes it into a persistent history, compares it against that runner's
+# own baseline, regenerates docs/development/performance.md plus its trend
+# charts, and redeploys the `dev` docs version.
+#
+# THIS JOB NEVER FAILS ON A SLOW NUMBER. Hosted runners are shared VMs; a
+# nightly that cried wolf would be muted inside a week, and `pyproject`
+# already deselects the benchmark marker from the default test run for the
+# same reason. The dashboard is for trends. `tools/perf_report.py compare`
+# only exits non-zero for `--fail-over`, which nothing here passes.
+#
+# History lives on the orphan `perf-history` branch, NOT on gh-pages: the
+# flatpak release job force-pushes gh-pages as a single-commit orphan, so
+# anything stored there is destroyed on the next release. It is also not
+# committed to master — a nightly bot commit there would spin CI and the
+# semantic-release workflow every night for a file nobody reviews.
+
+on:
+  schedule:
+    # 04:10 UTC. Off the hour, because that is when every other scheduled
+    # job on the platform starts and the runner queue is at its worst —
+    # which shows up directly in benchmark numbers.
+    - cron: "10 4 * * *"
+  workflow_dispatch:
+    inputs:
+      promote_baseline:
+        description: "Replace this runner's stored baseline with this run"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serialized against itself only. The docs deploy step below takes the
+  # gh-pages-docs group separately, so a nightly can never interleave with a
+  # release's mike push.
+  group: performance-nightly
+  cancel-in-progress: false
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  # The label a run is recorded and compared under. Benchmark means are facts
+  # about a machine, so the baseline is per-runner; change this and the next
+  # run seeds a new baseline rather than reporting nonsense against the old.
+  PERF_RUNNER: ubuntu-latest
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Run the benchmark suite
+        run: |
+          uv run pytest -m benchmark --benchmark-only \
+            --benchmark-json=perf-raw.json
+
+      - name: Normalize into a run record
+        run: |
+          uv run python tools/perf_report.py record perf-raw.json \
+            --out perf-run.json \
+            --commit "$GITHUB_SHA" \
+            --ref "$GITHUB_REF" \
+            --runner "$PERF_RUNNER"
+
+      - name: Check out the history branch
+        # The explicit refspec matters: actions/checkout configures a
+        # remote.origin.fetch for the checked-out branch only, so a bare
+        # `git fetch origin perf-history` lands in FETCH_HEAD and leaves no
+        # refs/remotes/origin/perf-history for the worktree to be added at.
+        run: |
+          git fetch --depth=1 origin \
+            "+refs/heads/perf-history:refs/remotes/origin/perf-history" || true
+          if git show-ref --verify --quiet refs/remotes/origin/perf-history; then
+            git worktree add perf-history origin/perf-history
+          else
+            echo "no perf-history branch yet; starting one"
+            mkdir -p perf-history
+          fi
+
+      - name: Promote a baseline if this runner has none
+        # Self-seeding, so nobody has to remember to do it. The committed
+        # tests/perf/baseline.json was recorded on a developer machine and is
+        # useless as a CI reference; the first CI run on a given runner
+        # becomes that runner's baseline, and every later night compares
+        # like with like. `promote_baseline` re-seeds it deliberately after
+        # an intended change (a Python bump, a new runner image).
+        run: |
+          BASELINE="perf-history/baseline-$PERF_RUNNER.json"
+          if [ ! -f "$BASELINE" ] || [ "${{ inputs.promote_baseline }}" = "true" ]; then
+            mkdir -p perf-history
+            uv run python tools/perf_report.py baseline perf-run.json --out "$BASELINE"
+            echo "promoted this run to $BASELINE"
+          fi
+          echo "PERF_BASELINE=$BASELINE" >> "$GITHUB_ENV"
+
+      - name: Append to the persistent history
+        run: |
+          mkdir -p perf-history/runs
+          cp perf-run.json "perf-history/runs/$(date -u +%Y%m%d)-${GITHUB_SHA:0:12}.json"
+          uv run python tools/perf_report.py append perf-run.json \
+            --history perf-history/history.json
+
+      - name: Compare against the baseline
+        run: |
+          uv run python tools/perf_report.py compare perf-run.json \
+            --baseline "$PERF_BASELINE" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Archive the raw and normalized results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            perf-raw.json
+            perf-run.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Configure git identity
+        # --global, because the history worktree may be a fresh `git init`
+        # with no repo-local identity of its own.
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Push the history
+        # A plain branch with ordinary history — unlike gh-pages, nothing
+        # force-pushes it, so an accidental bad run can be reverted.
+        run: |
+          cd perf-history
+          if [ ! -d .git ] && [ ! -f .git ]; then
+            git init -q -b perf-history
+            git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "nothing to record"
+            exit 0
+          fi
+          git commit -q -m "perf: nightly benchmark run ${GITHUB_SHA:0:12}"
+          git push origin HEAD:perf-history
+
+      - name: Regenerate the docs page and trend charts
+        run: |
+          uv run python tools/perf_report.py render \
+            --history perf-history/history.json \
+            --baseline "$PERF_BASELINE" \
+            --out docs/development/performance.md \
+            --assets docs/assets/perf
+
+      - name: Build the docs (strict)
+        # A cheap guard on the generated page: a malformed table or a broken
+        # asset link fails here, in the job that produced it, rather than in
+        # the deploy job that would publish it.
+        run: |
+          uv sync --frozen --only-group docs
+          uv run mkdocs build --strict
+
+  # Separate job so the mike push takes the shared gh-pages lock on its own,
+  # exactly as docs-dev.yml and release.yml do. It re-renders rather than
+  # passing the generated page between jobs: the page is a pure function of
+  # the history branch, so re-deriving it is cheaper and less fragile than an
+  # artifact hand-off.
+  deploy-dev-docs:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages-docs
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch gh-pages for mike
+        run: git fetch origin gh-pages --depth=1 || true
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Check out the history branch
+        run: |
+          git fetch --depth=1 origin \
+            "+refs/heads/perf-history:refs/remotes/origin/perf-history"
+          git worktree add perf-history origin/perf-history
+
+      - name: Regenerate the docs page and trend charts
+        run: |
+          BASELINE="perf-history/baseline-$PERF_RUNNER.json"
+          python3 tools/perf_report.py render \
+            --history perf-history/history.json \
+            --baseline "$BASELINE" \
+            --out docs/development/performance.md \
+            --assets docs/assets/perf
+
+      - name: Sync docs dependencies
+        run: uv sync --frozen --only-group docs
+
+      - name: Build (strict)
+        run: uv run mkdocs build --strict
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy dev docs
+        # The generated page and charts are in the working tree but never
+        # committed to master; mike deploys the built site, so the dev docs
+        # carry last night's numbers while master keeps the seed page.
+        run: uv run mike deploy --push dev

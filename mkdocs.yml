@@ -142,3 +142,4 @@ nav:
       - development/index.md
       - Building packages: development/building.md
       - Release flow: development/releasing.md
+      - Performance: development/performance.md
