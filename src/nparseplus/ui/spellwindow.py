@@ -39,6 +39,7 @@ from nparseplus.core.timers import (
     TRIGGER_TIMER_GROUP,
     YOU_GROUP,
     CounterRow,
+    DisplayGroup,
     RollRow,
     Row,
     SpellRow,
@@ -95,6 +96,40 @@ FADE_TARGET = COLOR_DETRIMENTAL
 # 250 ms refresh. 12 buckets means a row restyles at most 12 times over its
 # whole life, whatever its length.
 FADE_STEPS = 12
+
+# Fold marker on a collapsed section header (#129). Only a COLLAPSED header
+# carries one: an expanded window is unchanged from before this feature, which
+# keeps a 220 px-wide overlay from spending a glyph column on an affordance
+# that is only ever true for a section or two.
+#
+# U+25BA and not the smaller U+25B8/U+25B6 triangles: the bundled Noto Sans
+# (data/fonts, the family every skin resolves to) has no cmap entry for those,
+# so they render only through whatever Qt falls back to — which on a Flatpak
+# with a thin font set is exactly where a marker turns into a tofu box.
+COLLAPSE_MARKER = "►"
+
+
+def section_key(group: DisplayGroup) -> str:
+    """Stable persisted identity of one displayed section (see #129).
+
+    The orientation is part of the key because the two orientations name
+    different things: a target-headed section is keyed by its group (a player,
+    an NPC, or a built-in timer section) and a raid-mode section by a spell
+    name. Without the prefix, folding the spell "Aegolism" would also fold a
+    target who happens to be called that — and, more to the point, a section
+    that flips orientation mid-fight (which ``group_rows_for_display``
+    recomputes every render, #17) would carry the other one's fold state.
+    """
+    return f"{group.orientation}:{group.header}"
+
+
+def collapsed_header_text(label: str, count: int) -> str:
+    """The one-line stub a folded section leaves behind.
+
+    The count is the point: a section folded away and then forgotten must not
+    look like a section with nothing in it.
+    """
+    return f"{COLLAPSE_MARKER} {label}  ({count})"
 
 
 class TimersLike(Protocol):
@@ -476,6 +511,11 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend = backend
         self._on_save = on_save
         self._drag_offset: QPoint | None = None
+        # A left-press over a group header ARMS a fold (#129); the toggle
+        # happens on release and only if the window did not move, so a header
+        # stays a drag handle — on a full window it is most of the surface.
+        self._press_section: str | None = None
+        self._press_pos: QPoint | None = None
         self._quitting = False
         self._headers: dict[str, QLabel] = {}
         self._row_widgets: dict[tuple[str, str, str, int], _RowWidget] = {}
@@ -656,30 +696,52 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         used_headers: set[str] = set()
         used_rows: set[tuple[str, str, str, int]] = set()
         dup_counter: dict[tuple[str, str, str], int] = {}
+        collapsed = set(self._state.collapsed_groups)
+        total_rows = 0
         for group in display_groups:
             spell_headed = group.orientation == "spell"
             # Header widgets are keyed by (orientation, header) so a spell name
             # can never collide with a same-named target group.
             hkey = f"{group.orientation}\x00{group.header}"
+            skey = section_key(group)
+            folded = skey in collapsed
             label = group.header if spell_headed else self._group_label(group.header)
+            text = collapsed_header_text(label, len(group.rows)) if folded else label
             header = self._headers.get(hkey)
             if header is None:
-                header = QLabel(label, self._container)
+                header = QLabel(text, self._container)
                 header.setObjectName("SpellTimerGroup")
                 # Only target headers map to a clearable group (context menu).
                 header.setProperty("group_key", None if spell_headed else group.header)
+                # EVERY header collapses, raid-mode spell headers included:
+                # clearing is destructive and a spell section spans several
+                # target groups, so there is no single group to clear (which is
+                # why ``group_key`` is None there) — but folding is
+                # display-only, and one buff over forty raiders is exactly the
+                # section worth folding. Its identity is the orientation-keyed
+                # ``section_key``, not the clearable group key.
+                header.setProperty("section_key", skey)
                 set_caps(header)
                 self._headers[hkey] = header
-            elif header.text() != label:
-                # Target class can arrive later (PlayerTracker /who sync).
-                header.setText(label)
+            elif header.text() != text:
+                # Target class can arrive later (PlayerTracker /who sync), and
+                # a folded header's count moves with its rows.
+                header.setText(text)
             kind = header_kind(group.header, group.rows)
             if header.property("kind") != kind:
                 header.setProperty("kind", kind)
                 header.setStyleSheet(skins.header_style(self._skin, self._font_size, kind))
             entries.append(header)
-            order.append(("H", hkey))
+            # ``folded`` rides in the order key so a fold is a layout change
+            # even for a section whose rows are all that would have differed.
+            order.append(("H", hkey, folded))
             used_headers.add(hkey)
+            total_rows += len(group.rows)
+            if folded:
+                # Display-only: the rows are not built, but they are still in
+                # the service, still counting, and still announcing on expiry —
+                # the same contract as the per-section show/hide toggles.
+                continue
             # Target sections re-sort live by the user's mode; spell sections
             # keep the core's deterministic by-target order.
             ordered = (
@@ -714,7 +776,9 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         for key in [k for k in self._row_widgets if k not in used_rows]:
             self._row_widgets.pop(key).deleteLater()
 
-        self._title_count.setText(str(len(used_rows)) if used_rows else "")
+        # The window's own count is every row it is showing you, folded
+        # sections included — a fold must not read as timers that went away.
+        self._title_count.setText(str(total_rows) if total_rows else "")
 
         # Only touch the layout when the widget sequence actually changed —
         # the per-tick takeAt/addWidget/adjustSize teardown forced a full
@@ -751,6 +815,31 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             if player_class is not None:
                 label = f"{label}  ({player_class.display_name})"
         return label
+
+    def toggle_section(self, key: str) -> None:
+        """Fold or unfold one section (#129), and persist the choice.
+
+        Display-only, exactly like the per-section show/hide toggles in
+        Settings: nothing is removed from ``TimersService``, so the rows keep
+        counting and their expiry announcements still fire.
+
+        A key whose section is not on screen is kept rather than dropped — a
+        group folded now is still folded when its rows come back.
+        """
+        collapsed = list(self._state.collapsed_groups)
+        if key in collapsed:
+            collapsed.remove(key)
+        else:
+            collapsed.append(key)
+        self._state.collapsed_groups = collapsed
+        self.refresh()
+
+    def is_section_collapsed(self, key: str) -> bool:
+        return key in self._state.collapsed_groups
+
+    def collapsed_sections(self) -> list[str]:
+        """The persisted fold set, in the order the user folded them."""
+        return list(self._state.collapsed_groups)
 
     def current_groups(self) -> list[str]:
         """Group keys in on-screen order (test/debug hook)."""
@@ -885,6 +974,8 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             if self._dismiss_expired_at(event.position().toPoint()):
                 event.accept()
                 return
+            self._press_section = self._section_at(event.position().toPoint())
+            self._press_pos = event.globalPosition().toPoint()
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         else:
@@ -911,10 +1002,26 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._drag_offset is not None:
             self._drag_offset = None
+            section = self._press_section
+            self._press_section = None
+            if section is not None and not self._dragged_since_press(event):
+                self.toggle_section(section)
+            self._press_pos = None
             self.persist_state()
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+
+    def _dragged_since_press(self, event: QMouseEvent) -> bool:
+        """Did this press-release pair move the window rather than click it?
+
+        Qt's own start-drag distance is the threshold, so the hand-jitter that
+        every click carries does not read as a drag (and a header fold does not
+        need a perfectly still mouse)."""
+        if self._press_pos is None:
+            return False
+        moved = event.globalPosition().toPoint() - self._press_pos
+        return moved.manhattanLength() > QApplication.startDragDistance()
 
     def wheelEvent(self, event) -> None:
         # Reaches here only when the scroll area didn't consume it (nothing
@@ -932,6 +1039,24 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
     # -- context menu (manual timer clearing) -----------------------------------
     # Note: with click-through enabled the OS never delivers right-clicks
     # here, same as drag-to-move.
+
+    def _section_at(self, pos: QPoint) -> str | None:
+        """The collapse key of the group header under ``pos`` (else None).
+
+        Deliberately not folded into ``_context_target``: that one answers with
+        a *clearable* group key, which raid-mode spell headers do not have and
+        must not gain — see the header construction in ``refresh``.
+        """
+        child = self.childAt(pos)
+        while child is not None and child is not self:
+            if isinstance(child, _RowWidget):
+                return None
+            if isinstance(child, QLabel):
+                key = child.property("section_key")
+                if key:
+                    return key
+            child = child.parentWidget()
+        return None
 
     def _context_target(self, pos: QPoint) -> tuple[Row | None, str | None]:
         """Resolve a click position: a row widget yields (row, its group), a
