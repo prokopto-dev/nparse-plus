@@ -88,7 +88,6 @@ class Discord(ParserWindow):
         self.name = "discord"
         super().__init__()
         QApplication.instance()._signals["settings"].config_updated.connect(self.config_updated)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumWidth(125)
         self.overlay = None
         self.settings_dialog = None
@@ -99,6 +98,30 @@ class Discord(ParserWindow):
         self._bg_opacity = config.data.get(self.name, {}).get("bg_opacity", "25")
 
         self.update_background_color()
+
+    def _set_flags(self):
+        """Claim the alpha channel before the native window is created.
+
+        The window has to be translucent for ``bg_opacity`` below 100% to show
+        the game behind Discord's own page, and ``WA_TranslucentBackground`` is
+        only honoured by the platform window that is created *after* it is set:
+        ``QWidget`` re-requests the surface format when the attribute changes,
+        but ``QWindow::setFormat()`` after ``create()`` does not recreate the
+        window, so a late request is simply never granted. Setting it in
+        ``__init__`` (where it used to live) is late — ``ParserWindow`` shows
+        the window at the end of its own ``__init__``, before this subclass
+        gets to that line, whenever the overlay was open at last quit.
+
+        ``_set_flags`` is the right home because ``setWindowFlags`` is the
+        thing that (re)creates the native window, so this runs before every
+        creation rather than before none of them. It is also why the
+        translucency used to appear after a Settings Apply: Apply reaches here
+        through ``apply_window_state``, and the recreation was granting the
+        alpha channel that construction had not. Same ordering bug as the
+        map's backdrop (#99, #101).
+        """
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        super()._set_flags()
 
     def config_updated(self):
         if self._color != config.data.get(self.name, {}).get("color", "#000000"):
