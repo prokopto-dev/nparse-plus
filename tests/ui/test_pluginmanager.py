@@ -90,6 +90,27 @@ def test_enable_checkbox_persists(qtbot, host) -> None:
     assert host.entry_for("demo").enabled is False
 
 
+def test_the_page_hint_matches_what_a_toggle_actually_does(qtbot, host) -> None:
+    """The hint sits beside the controls it describes, so it has to be true.
+
+    It used to say enable/disable and new installs took effect at the next
+    launch; since #45 they take effect now, and an instruction telling the
+    user the opposite of what just happened is worse than none.
+    """
+    from PySide6.QtWidgets import QLabel
+
+    page = make_page(qtbot, host)
+    hints = [
+        w.text() for w in page.findChildren(QLabel) if "Installing runs the plugin" in w.text()
+    ]
+    assert len(hints) == 1
+    hint = hints[0]
+    assert "immediately" in hint
+    assert "next time nParse+ starts" not in hint
+    # ...and it still says the one thing that DOES need a restart.
+    assert "updating a plugin you already have needs a restart" in hint
+
+
 def test_toggling_the_checkbox_updates_the_status_cell(qtbot, host) -> None:
     """The toggle takes effect immediately (#45), so the row has to say so.
 

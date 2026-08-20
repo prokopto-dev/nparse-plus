@@ -1,9 +1,10 @@
 """Settings > Plugins — the in-app plugin manager page.
 
-Lists every discovered plugin with status, toggles enablement (persisted
-immediately; activation changes take effect next launch), opens the plugins
-folder, uninstalls (to ``plugins/trash/``, forgetting the plugin's consent
-record and stored data along with it), and installs from a local
+Lists every discovered plugin with status, toggles enablement (persisted AND
+applied immediately since #45 — the row re-renders because the plugin really
+did start or stop), opens the plugins folder, uninstalls (to
+``plugins/trash/``, forgetting the plugin's consent record and stored data
+along with it), and installs from a local
 zip/.py or an https zip URL. Every install — URL download and local file
 alike — runs on a worker thread, because validation imports AND activates the
 plugin's module code (the page says so next to the buttons) and a plugin that
@@ -234,7 +235,9 @@ class PluginManagerPage(QWidget):
         super().__init__(parent)
         self._host = host
         self._app_version = app_version
-        # Installed this session (the host loads them next launch).
+        # Installed this session but NOT loadable in place — the narrow case
+        # adopt_installed refuses (nothing the plugins-folder sweep would pick
+        # up). An ordinary install joins host.statuses() and runs at once.
         self._session_installs: list[InstallResult] = []
         # How a just-installed plugin is asked about, injectable so a test can
         # answer without a modal dialog (the same seam run_consent_prompts
@@ -299,8 +302,8 @@ class PluginManagerPage(QWidget):
 
         note = QLabel(
             f"{CONSENT_WARNING} Installing runs the plugin's module code to "
-            "validate it. Enable/disable and new installs take effect the "
-            "next time nParse+ starts.",
+            "validate it. Enabling, disabling and new installs take effect "
+            "immediately; updating a plugin you already have needs a restart.",
             self,
         )
 

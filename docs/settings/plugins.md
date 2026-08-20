@@ -16,7 +16,7 @@ and how far to trust them lives in [Plugins](../plugins/index.md) and
 
 | Column | What it shows |
 |---|---|
-| **Enabled** | Tick to let the add-on run, untick to hold it back. Saved immediately; takes effect the next time nParse+ starts. Ticking a box is *not* consent — a plugin with no approval record still gets the first-load dialog. |
+| **Enabled** | Tick to let the add-on run, untick to hold it back. Saved *and applied* immediately — the plugin starts or stops there and then, and the Status cell re-renders to prove it. Ticking a box is *not* consent — a plugin with no approval record still gets the first-load dialog. |
 | **Name** | The add-on's own display name (its file or folder name if the metadata couldn't be read). |
 | **Version** | The version the add-on declares. |
 | **Status** | Where it is in the load sequence — see below. |
@@ -34,7 +34,7 @@ and how far to trust them lives in [Plugins](../plugins/index.md) and
 | **Incompatible** | The version handshake failed — the add-on wants an SDK or an nParse+ version this build doesn't provide. Ask the author for a rebuild; see [Versioning](../plugins/versioning.md). |
 | **Error** | It raised while loading, while its metadata was validated, or inside `activate()`. Hover the cell for the exception; `nparseplus.log` has the traceback. |
 | **Duplicate id** | Another add-on already claimed the same plugin id. Only the first one loads — uninstall one of them. |
-| **Installed — restart to load** | An in-place *update* installed this session. The new code loads at the next launch — a fresh install, by contrast, loads immediately. |
+| **Installed — restart to load** | Something installed this session that could not be loaded in place — nParse+ only adopts a plugin the plugins-folder sweep would pick up. It loads at the next launch; an ordinary install starts running immediately. |
 
 Two annotations can be appended to any of the above:
 
