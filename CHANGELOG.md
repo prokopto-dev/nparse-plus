@@ -6,6 +6,22 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.18.1 (2026-08-20)
+
+### Bug Fixes
+
+- **discord**: Create the Discord window with an alpha channel
+  ([`ea32c5a`](https://github.com/prokopto-dev/nparse-plus/commit/ea32c5a3339ad2d98130c20fb3e37d5117b57f0a))
+
+### Documentation
+
+- **plugins**: Finish the sweep — three more pages said "next launch"
+  ([`ede1392`](https://github.com/prokopto-dev/nparse-plus/commit/ede13929059fc4a48fb81a0706edaba59dcd5cd1))
+
+- **plugins**: Say that add-ons load and unload without a restart
+  ([`123f43b`](https://github.com/prokopto-dev/nparse-plus/commit/123f43b4d9d65099689e8a17982233a3360c2dcd))
+
+
 ## v2.18.0 (2026-08-20)
 
 ### Bug Fixes
