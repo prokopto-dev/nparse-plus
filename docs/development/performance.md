@@ -15,14 +15,14 @@ be muted inside a week. Read it for trends, not for single runs.
 ## Latest run
 
 - **When**: 2026-08-20T18:00:23.371329+00:00
-- **Commit**: `13905e443824` (refs/heads/master)
+- **Commit**: `188767e1fb98` (refs/heads/master)
 - **Runner**: seed (local, macOS arm64), Python 3.12.11
 - **Recorded runs in history**: 1
 
 This is the seed run committed with #132 — the trend charts appear
 once the nightly has recorded a second one.
 
-Percentages compare against the baseline recorded on **seed (local, macOS arm64)** (2026-08-20, `13905e443824`).
+Percentages compare against the baseline recorded on **seed (local, macOS arm64)** (2026-08-20, `188767e1fb98`).
 
 ## EventBus.publish
 

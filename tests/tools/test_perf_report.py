@@ -42,7 +42,12 @@ def _raw(means: dict[str, float], *, group: str = "bus") -> dict:
 
 
 def _record(means: dict[str, float], **kwargs) -> dict:
-    defaults = {"commit": "a" * 40, "ref": "refs/heads/master", "runner": "ubuntu-latest"}
+    defaults = {
+        "commit": "a" * 40,
+        "ref": "refs/heads/master",
+        "runner": "ubuntu-latest",
+        "run_id": "",
+    }
     return perf_report.normalize(_raw(means), **{**defaults, **kwargs}).to_json()
 
 
@@ -50,6 +55,7 @@ def test_normalize_keeps_only_what_the_history_needs() -> None:
     run = _record({"test_bench_bus_publish[1]": 1.5e-7})
     assert run["schema"] == perf_report.SCHEMA
     assert run["runner"] == "ubuntu-latest"
+    assert run["run_id"]  # always has an identity of its own
     assert run["python"] == "3.12.11"
     entry = run["benchmarks"]["test_bench_bus_publish[1]"]
     assert entry["group"] == "bus"
@@ -62,27 +68,54 @@ def test_normalize_falls_back_to_the_machine_node_for_the_runner() -> None:
     assert run["runner"] == "runner-7"
 
 
-def test_append_keeps_newest_and_replaces_a_rerun_of_the_same_commit() -> None:
-    first = _record({"a": 1.0}, commit="c1")
-    second = _record({"a": 2.0}, commit="c2")
-    rerun = _record({"a": 1.5}, commit="c1")
+def test_nightly_runs_of_one_commit_all_survive() -> None:
+    """The regression this history exists to catch.
+
+    A scheduled run measures whatever the default branch is at 04:10, so the
+    commit is identical every night until the next merge. Keying on it would
+    leave one point per merge — and throw away exactly the repeated
+    measurements that separate runner noise from a real regression.
+    """
+    history: list[dict] = []
+    for night in range(5):
+        history = perf_report.append_history(
+            history, _record({"a": 1.0 + night / 100}, commit="unchanged", run_id=f"r{night}")
+        )
+    assert len(history) == 5
+    assert {run["commit"] for run in history} == {"unchanged"}
+    assert [run["benchmarks"]["a"]["mean"] for run in history] == [1.0, 1.01, 1.02, 1.03, 1.04]
+
+
+def test_append_replaces_only_a_rerun_of_the_same_workflow_run() -> None:
+    first = _record({"a": 1.0}, run_id="run-1")
+    second = _record({"a": 2.0}, run_id="run-2")
+    rerun = _record({"a": 1.5}, run_id="run-1")
 
     history = perf_report.append_history([], first)
     history = perf_report.append_history(history, second)
     history = perf_report.append_history(history, rerun)
 
-    # The re-run replaces c1's entry rather than adding a third point, and
-    # lands at the end because it is the newest thing recorded.
-    assert [run["commit"] for run in history] == ["c2", "c1"]
+    # Re-running one workflow run corrects its own entry rather than adding a
+    # third point, and lands at the end as the newest thing recorded.
+    assert [run["run_id"] for run in history] == ["run-2", "run-1"]
     assert history[-1]["benchmarks"]["a"]["mean"] == 1.5
+
+
+def test_run_identity_falls_back_to_the_timestamp() -> None:
+    """A local run has no run id, and a record written before it existed
+    has no field — both still need an identity of their own."""
+    local = _record({"a": 1.0})
+    assert local["run_id"] == local["timestamp"]
+    legacy = {"timestamp": "2026-08-01T04:10:00+00:00", "benchmarks": {}}
+    assert perf_report.run_identity(legacy) == "2026-08-01T04:10:00+00:00"
 
 
 def test_append_trims_from_the_front() -> None:
     history: list[dict] = []
     for index in range(perf_report.HISTORY_LIMIT + 5):
-        history = perf_report.append_history(history, _record({"a": 1.0}, commit=f"c{index}"))
+        history = perf_report.append_history(history, _record({"a": 1.0}, run_id=f"r{index}"))
     assert len(history) == perf_report.HISTORY_LIMIT
-    assert history[-1]["commit"] == f"c{perf_report.HISTORY_LIMIT + 4}"
+    assert history[-1]["run_id"] == f"r{perf_report.HISTORY_LIMIT + 4}"
 
 
 def test_compare_classifies_against_the_threshold() -> None:
@@ -145,8 +178,8 @@ def test_page_reports_per_line_cost_where_a_line_count_was_recorded() -> None:
 
 def test_chart_needs_two_runs_and_then_draws_one_line_per_benchmark() -> None:
     runs = [
-        _record({"a": 1.0, "b": 2.0}, commit="c1"),
-        _record({"a": 1.1, "b": 1.8}, commit="c2"),
+        _record({"a": 1.0, "b": 2.0}, run_id="r1"),
+        _record({"a": 1.1, "b": 1.8}, run_id="r2"),
     ]
     assert perf_report.render_chart(runs[:1], "bus") == ""
     svg = perf_report.render_chart(runs, "bus")
@@ -158,9 +191,9 @@ def test_chart_needs_two_runs_and_then_draws_one_line_per_benchmark() -> None:
 
 def test_chart_tolerates_a_benchmark_that_only_exists_in_later_runs() -> None:
     runs = [
-        _record({"a": 1.0}, commit="c1"),
-        _record({"a": 1.0, "b": 1.0}, commit="c2"),
-        _record({"a": 1.0, "b": 1.2}, commit="c3"),
+        _record({"a": 1.0}, run_id="r1"),
+        _record({"a": 1.0, "b": 1.0}, run_id="r2"),
+        _record({"a": 1.0, "b": 1.2}, run_id="r3"),
     ]
     svg = perf_report.render_chart(runs, "bus")
     assert svg.count("<path") == 2
@@ -176,7 +209,12 @@ def test_cli_round_trip(tmp_path: Path) -> None:
     page = tmp_path / "performance.md"
     assets = tmp_path / "assets"
 
-    assert perf_report.main(["record", str(raw), "--out", str(run), "--commit", "abc"]) == 0
+    assert (
+        perf_report.main(
+            ["record", str(raw), "--out", str(run), "--commit", "abc", "--run-id", "999"]
+        )
+        == 0
+    )
     assert perf_report.main(["baseline", str(run), "--out", str(baseline)]) == 0
     assert perf_report.main(["append", str(run), "--history", str(history)]) == 0
     assert perf_report.main(["compare", str(run), "--baseline", str(baseline)]) == 0
@@ -197,7 +235,9 @@ def test_cli_round_trip(tmp_path: Path) -> None:
         == 0
     )
     assert "# Performance" in page.read_text(encoding="utf-8")
-    assert json.loads(history.read_text(encoding="utf-8"))["runs"][0]["commit"] == "abc"
+    recorded = json.loads(history.read_text(encoding="utf-8"))["runs"][0]
+    assert recorded["commit"] == "abc"
+    assert recorded["run_id"] == "999"
 
 
 def test_cli_refuses_a_missing_input(tmp_path: Path) -> None:

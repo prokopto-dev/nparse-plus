@@ -245,9 +245,10 @@
       "stddev": 0.00011785792161162106
     }
   },
-  "commit": "13905e4438245c5c2cd8ea948092833cc56585a3",
+  "commit": "188767e1fb985d5644975878be22b605ed2add45",
   "python": "3.12.11",
   "ref": "refs/heads/master",
+  "run_id": "seed",
   "runner": "seed (local, macOS arm64)",
   "schema": 1,
   "timestamp": "2026-08-20T18:00:23.371329+00:00"

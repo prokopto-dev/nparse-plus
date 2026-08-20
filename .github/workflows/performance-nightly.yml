@@ -76,7 +76,8 @@ jobs:
             --out perf-run.json \
             --commit "$GITHUB_SHA" \
             --ref "$GITHUB_REF" \
-            --runner "$PERF_RUNNER"
+            --runner "$PERF_RUNNER" \
+            --run-id "$GITHUB_RUN_ID"
 
       - name: Check out the history branch
         # The explicit refspec matters: actions/checkout configures a
@@ -110,9 +111,18 @@ jobs:
           echo "PERF_BASELINE=$BASELINE" >> "$GITHUB_ENV"
 
       - name: Append to the persistent history
+        # Named by run id, not by commit: a scheduled run measures whatever
+        # the default branch is at 04:10, so the SHA is the same every night
+        # until the next merge. Keying the archive — or the history — on it
+        # would keep one point per merge and throw away exactly the repeated
+        # measurements that separate runner noise from a real regression. The
+        # date is a prefix so the directory browses chronologically; a re-run
+        # of the same workflow run on the same day overwrites its own file,
+        # which is what `append` does to its history entry too.
         run: |
           mkdir -p perf-history/runs
-          cp perf-run.json "perf-history/runs/$(date -u +%Y%m%d)-${GITHUB_SHA:0:12}.json"
+          cp perf-run.json \
+            "perf-history/runs/$(date -u +%Y%m%d)-run${GITHUB_RUN_ID}.json"
           uv run python tools/perf_report.py append perf-run.json \
             --history perf-history/history.json
 
@@ -153,7 +163,7 @@ jobs:
             echo "nothing to record"
             exit 0
           fi
-          git commit -q -m "perf: nightly benchmark run ${GITHUB_SHA:0:12}"
+          git commit -q -m "perf: benchmark run ${GITHUB_RUN_ID} (${GITHUB_SHA:0:12})"
           git push origin HEAD:perf-history
 
       - name: Regenerate the docs page and trend charts

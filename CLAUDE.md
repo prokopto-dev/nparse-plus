@@ -1369,6 +1369,13 @@ compact run record, appends to a persistent history, compares, and renders
 `docs/development/performance.md` plus one ratio-to-first trend chart per
 group. `.github/workflows/performance-nightly.yml` runs it at 04:10 UTC,
 archives the JSON as an artifact, and redeploys the mike `dev` docs.
+**A run's identity is `$GITHUB_RUN_ID`, never the commit** — a scheduled run
+measures whatever the default branch is at 04:10, so the SHA repeats every
+night until the next merge, and keying the history (or the `runs/` archive)
+on it would keep one point per merge and discard exactly the repeated
+measurements that separate runner noise from a real regression. Re-running
+one workflow run replaces its own entry, which is the only case that IS a
+correction.
 **History lives on the orphan `perf-history` branch, not gh-pages** — the
 flatpak release job force-pushes gh-pages as a single-commit orphan and would
 destroy it — and not on master, where a nightly bot commit would spin CI and

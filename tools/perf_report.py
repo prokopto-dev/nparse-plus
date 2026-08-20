@@ -102,6 +102,15 @@ class RunRecord:
     ref: str
     runner: str
     python: str
+    # THE identity of a measurement, and deliberately not the commit. A
+    # scheduled run measures whatever the default branch is at 04:10, so the
+    # commit is the same every night until the next merge — keying on it
+    # would leave the history holding one point per merge and throw away
+    # exactly the repeated measurements that tell runner noise apart from a
+    # real regression. In CI this is `$GITHUB_RUN_ID`, so re-running one
+    # workflow run replaces its own entry (a re-run IS a correction) while
+    # every fresh run is a new point.
+    run_id: str = ""
     benchmarks: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
@@ -112,6 +121,7 @@ class RunRecord:
             "ref": self.ref,
             "runner": self.runner,
             "python": self.python,
+            "run_id": self.run_id or self.timestamp,
             "benchmarks": self.benchmarks,
         }
 
@@ -126,7 +136,9 @@ def _git_commit() -> str:
     return out.stdout.strip()
 
 
-def normalize(raw: dict[str, Any], *, commit: str, ref: str, runner: str) -> RunRecord:
+def normalize(
+    raw: dict[str, Any], *, commit: str, ref: str, runner: str, run_id: str = ""
+) -> RunRecord:
     """Reduce a pytest-benchmark document to the few numbers worth keeping.
 
     ``name`` is the parametrized test id, which is what makes a series
@@ -148,12 +160,16 @@ def normalize(raw: dict[str, Any], *, commit: str, ref: str, runner: str) -> Run
             "rounds": stats.get("rounds", 0),
             "extra": entry.get("extra_info", {}),
         }
+    timestamp = raw.get("datetime") or datetime.now(UTC).isoformat(timespec="seconds")
     return RunRecord(
-        timestamp=raw.get("datetime") or datetime.now(UTC).isoformat(timespec="seconds"),
+        timestamp=timestamp,
         commit=commit or _git_commit(),
         ref=ref,
         runner=runner or machine.get("node", ""),
         python=machine.get("python_version", platform.python_version()),
+        # Falls back to the timestamp so a local run still has an identity
+        # of its own; only CI has a run id to give.
+        run_id=run_id or timestamp,
         benchmarks=benchmarks,
     )
 
@@ -170,15 +186,27 @@ def load_history(path: Path) -> list[dict[str, Any]]:
     return list(runs) if isinstance(runs, list) else []
 
 
+def run_identity(run: dict[str, Any]) -> str:
+    """What makes two records the same measurement.
+
+    ``run_id`` (see :class:`RunRecord`), with the timestamp as the fallback
+    for a record written before that field existed. Never the commit: nightly
+    runs on an unchanged default branch all share one, and they are the whole
+    point of keeping a history.
+    """
+    return str(run.get("run_id") or run.get("timestamp") or "")
+
+
 def append_history(history: list[dict[str, Any]], run: dict[str, Any]) -> list[dict[str, Any]]:
     """Append, then trim from the FRONT so the newest run is always kept.
 
-    A same-commit re-run replaces the previous entry rather than doubling it:
-    a re-run is a correction, and two points at one commit make the trend
-    chart lie about how often the suite ran.
+    Only a record with the SAME run identity is replaced — re-running one
+    workflow run corrects its own entry. Two runs of the same commit on
+    different nights are two measurements and both stay: telling runner noise
+    apart from a real regression needs the repeats.
     """
-    commit = run.get("commit")
-    kept = [entry for entry in history if not (commit and entry.get("commit") == commit)]
+    identity = run_identity(run)
+    kept = [entry for entry in history if not (identity and run_identity(entry) == identity)]
     kept.append(run)
     return kept[-HISTORY_LIMIT:]
 
@@ -527,7 +555,9 @@ def _cmd_record(args: argparse.Namespace) -> int:
     if not raw:
         print(f"no benchmark JSON at {args.source}")
         return 1
-    record = normalize(raw, commit=args.commit, ref=args.ref, runner=args.runner)
+    record = normalize(
+        raw, commit=args.commit, ref=args.ref, runner=args.runner, run_id=args.run_id
+    )
     _write_json(args.out, record.to_json())
     print(f"{len(record.benchmarks)} benchmarks -> {args.out}")
     return 0
@@ -606,6 +636,13 @@ def main(argv: list[str] | None = None) -> int:
     record.add_argument("--commit", default="")
     record.add_argument("--ref", default="")
     record.add_argument("--runner", default="")
+    record.add_argument(
+        "--run-id",
+        default="",
+        help="unique id for this run (CI: $GITHUB_RUN_ID). Defaults to the "
+        "run's timestamp. Re-recording under the same id replaces that entry "
+        "in the history; anything else is a new point.",
+    )
     record.set_defaults(func=_cmd_record)
 
     append = sub.add_parser("append", help="run record -> persistent history")
