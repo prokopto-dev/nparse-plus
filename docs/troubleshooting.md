@@ -156,11 +156,16 @@ rather than taking the app down). Its traceback is in `nparseplus.log`.
 
 Check the **Status** column on [Settings → Plugins](settings/plugins.md):
 
-- **Installed — restart to load** or **Ready** — restart nParse+. Installs
-  and enable/disable changes only take effect at the next launch.
-- **Awaiting consent** — the approval dialog runs at the next launch,
-  before the plugin does anything. Answer **Enable plugin**.
-- **Disabled** — tick its **Enabled** box, then restart.
+- **Installed — restart to load** — the install landed somewhere the
+  plugins-folder sweep doesn't pick up, so nParse+ couldn't adopt it
+  in place. Restart once. (An ordinary install starts running immediately.)
+- **Ready** — approved and enabled, and due to activate; normally you only
+  catch this mid-startup. If it stays that way, `nparseplus.log` says why.
+- **Awaiting consent** — the approval dialog runs before the plugin does
+  anything: right after an install, or at the next launch for a file you
+  dropped into the plugins folder yourself. Answer **Enable plugin**.
+- **Disabled** — tick its **Enabled** box. It starts there and then; no
+  restart.
 - Not listed at all — it isn't in the plugins folder (**Open Plugins
   Folder** shows you where that is), or add-ons are off, or you're running
   with `NPARSEPLUS_NO_PLUGINS=1`.

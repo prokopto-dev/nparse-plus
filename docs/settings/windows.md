@@ -31,9 +31,9 @@ Two things worth knowing:
 - **Only add-ons that actually opened a window this session get a row.** One
   you disabled, one that errored on load, one you uninstalled — none of them
   appear. Their saved opacity isn't discarded, it just sits in your settings
-  until the add-on comes back. Because nothing hot-loads, an add-on you
-  enabled a moment ago only shows up here after the restart that starts it
-  ([Settings → Plugins](plugins.md)).
+  until the add-on comes back. The list follows the add-on as you toggle it:
+  tick its box in [Settings → Plugins](plugins.md) and its row appears here
+  with no restart, untick it and the row leaves with the window.
 - **An add-on can only offer a row for a window it built on the nParse+
   overlay base.** Most do, since that is what the SDK hands them. One that
   builds a plain Qt widget instead still opens from the tray, but nParse+ has

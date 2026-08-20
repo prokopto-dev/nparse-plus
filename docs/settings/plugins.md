@@ -234,19 +234,42 @@ registry being down leaves the previous answer in place and is reported the
 next time you open the page. Untick the box to stop it entirely and use
 **Check for updates** by hand instead.
 
-## Restart semantics
+## What applies now, and what needs a restart
 
-Everything on this page that changes *what runs* takes effect at the next
-launch — enable, disable, install, uninstall, update. Activation registers bus
-subscriptions, log parsers, and driver ticks that must all be in place
-before the log driver thread starts, and plugin windows must exist when the
-tray menu and window layouts are built, so there is no safe point to do it
-live. Hot enable/disable is tracked as
-[issue #45](https://github.com/prokopto-dev/nparse-plus/issues/45).
+**Enabling, disabling, installing and uninstalling all take effect
+immediately.** Tick a box and the add-on starts there and then; untick it
+and it stops. The Status cell re-renders to show you which it did.
 
-That is also why an add-on you just enabled has no row in
-[Settings → Windows](windows.md#plugin-windows) yet: only windows that
-actually opened this session are listed there.
+"Stops" means all of it. A disabled add-on loses its event subscriptions,
+its log parsers and its periodic tick, and everything it put on screen goes
+with them: its windows are closed and destroyed, its tray entries go, its
+in-game `show_`/`hide_`/`toggle_` chat commands stop resolving, its own
+settings page leaves the sidebar,
+its row leaves [Settings → Windows](windows.md#plugin-windows), and any
+timers it added are taken off the Timers window. Ticking the box again
+rebuilds every one of those.
+
+What a toggle does *not* touch is your side of it: the approval you gave and
+the add-on's `plugin-data/<id>` folder both survive being disabled — only
+uninstalling forgets those — and the window's saved size, opacity and
+on-top setting stay in `settings.json`, so it comes back where you left it.
+
+Two things still need a relaunch, and both say so where you do them:
+
+- **Enable plugins (add-ons)**, the master switch in
+  [Settings → Advanced](advanced.md#add-ons-plugins). This one is
+  restart-only *by design*: with add-ons off, none of the machinery is even
+  imported — that is what "off" means here — so turning it on would have to
+  import, ask consent for and start everything discovered at once, and
+  turning it off would have to prove none of it is left. A restart does both
+  properly.
+- **Updating an add-on you already have.** A Python module is imported once
+  per session and cannot be swapped out safely mid-flight: re-importing
+  replaces only the top-level module, leaving its submodules stale and the
+  running objects holding the old module's globals. So the new files are put
+  in place immediately and the new *code* starts at the next launch. (A
+  fresh install has never been imported this session, which is exactly why
+  it can load on the spot.)
 
 If an add-on is bad enough to break startup, start nParse+ once with
 `NPARSEPLUS_NO_PLUGINS=1` — see

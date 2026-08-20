@@ -492,9 +492,9 @@ are appended to `on_tick` directly and never timed. Qt side:
 worker thread because validation *imports and activates* the candidate, and
 a Source provenance column that says "Sideloaded" out loud),
 `ui/pluginconsent.py`, `ui/pluginwindow.py`, plus the settings window's
-`extra_pages` seam. Known v1 limits, both documented: consent gates
-activation but not import (a declarative manifest is the fix), and nothing
-hot-loads — install/uninstall/toggle all apply next launch (TODO(#45)).
+`extra_pages` seam. Known v1 limit, documented: consent gates activation but
+not import (a declarative manifest is the fix). The other one — nothing
+hot-loaded — is gone; see "Add-ons load and unload without a restart" below.
 
 **Multiple plugin registries** (post-1.18, ~1537 tests): the single
 `plugins.registry_url` override is gone — settings now carry
@@ -1237,6 +1237,71 @@ plus the two documents that tell a human where it went. `SCHEMA_ID` in
 `tools/gen_registry_schema.py` names the new host too; the generated schema is
 vendored verbatim by the server (its `SCHEMA001` gate) and by the curated
 repo's CI, so a regeneration has to be copied to both.
+
+**Add-ons load and unload without a restart** (post-2.17, ~2834 tests, #45):
+install, uninstall, enable and disable all take effect the moment you click,
+end to end — core and Qt.
+
+*The one new primitive is a driver-thread command inbox.* `LogDriver.
+submit_to_driver(fn, *, label)` runs a closure on the driver thread at a loop
+boundary. The unsafety was narrower than #45 assumed: `EventBus.publish`
+already iterates a snapshot of both subscriber lists (deliberately — a handler
+may (un)subscribe during dispatch), so the bus was never the problem. The
+genuine race is `LogPipeline.process`, which walks the live `_parsers` with an
+early `break`, so a GUI-thread `remove_parser` mid-line shifts the index and
+silently skips a parser for that line. `append_parser`/`remove_parser`/
+`add_supervised_tick`/`remove_tick` route through the inbox, and the fast-path
+tick loop copies unconditionally now. Same pattern as
+`SharingCoordinator.enqueue_inbound`, one layer down.
+
+*Per-plugin lifecycle.* `PluginHost.activate_one`/`deactivate_one` were
+already the loop bodies of `activate_enabled()` and `shutdown()` in all but
+name; `deactivate_one` adds the three things process-exit skips (retire the
+row to `disabled`, clear the context, drop what the plugin built) and keeps
+`shutdown`'s ordering — `deactivate()` **then** `unwind()`, so a plugin still
+has its registrations while it shuts down. `adopt_installed(path)` classifies
+a plugin installed this session. `set_enabled` is the live entry point and
+never stands in for consent. Two things `unwind()` could not reverse now
+reverse: `ctx.tick_dropped` resets (a re-enabled plugin inherited "tick
+disabled (too slow)"), and **timer rows carry an owner** (`BaseRow.owner`,
+empty for every app-owned row, plus `TimersService.remove_owner`) — `ctx.timers`
+stamps the plugin's id on rows it adds, which is also where the mutation
+crosses back onto the driver thread now that `activate`/`deactivate` run on
+the GUI thread. The `WindowState` on disk is left alone on purpose: it is how
+a window comes back where you left it.
+
+*The Qt half is six couplings and no private copies.* The host exposes
+`on_ui_build` (handed the `LoadedPlugin`) and `on_ui_teardown` (handed a bare
+plugin id — core never sees a widget); `PluginUi.attach_live` in
+`pluginbootstrap.py` subscribes both from `create_app` **after** the settings
+window, layout manager and tray exist, because those are built *from* what
+`build_plugin_ui` returned and subscribing earlier would build the startup
+windows twice. Each seam is the live collection its owner already had: the
+chat-command dict and the tray dict mutated in place
+(`Application.add_backend_window`/`remove_backend_window` — the menu re-reads
+its dict on open), `WindowLayoutManager.add_window`/`remove_window`,
+`UnifiedSettingsWindow.add_page`/`remove_page` (sidebar row and stack widget
+taken TOGETHER — row N maps to stack index N and only construction order
+maintained it), `set_plugin_window_rows` (that grid is index-addressed, so it
+is rebuilt in place at the same stack index; the plain-tuple typing stays, so
+`test_master_toggle.py` never wakes the subsystem), and `chrome_surfaces` for
+the skin sweep. Teardown runs AFTER the unwind and `deleteLater()`s the widget
+— hiding leaves the plugin's QTimers firing into a widget the host no longer
+manages — hiding first, since `deleteLater` only schedules.
+
+*Two things stay restart-only, and both say so.* The master Settings >
+Advanced switch, **by design**: "off" means the machinery is never imported,
+which is what `test_master_toggle.py` pins structurally (it passes unchanged —
+no third gated import site, `GATES` untouched), so a live switch would have to
+import, consent for and activate everything at once on the GUI thread and
+prove nothing is left on the way back. And an in-place **update**: re-importing
+replaces only the top-level `sys.modules` key, so stale `<stem>.helper`
+submodules survive and the old objects keep the old module globals (the import
+key is the file stem, not the plugin id — `demo.py` and `demo/` can coexist).
+Install, uninstall, enable and disable are live precisely because none of them
+re-imports anything. `"Installed — restart to load"` survives for exactly one
+case: an install `adopt_installed` refused, which the plugins-folder sweep will
+pick up next launch.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

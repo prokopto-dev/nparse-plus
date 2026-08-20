@@ -81,8 +81,10 @@ Settings > Plugins lists every discovered plugin with its status:
 - **Active** — running.
 - **Ready** — approved and enabled, and due to activate. You normally see
   this only if the plugin was installed but activation hasn't run for it.
-- **Awaiting consent** — new; you'll be asked on next launch (or was asked
-  and not answered).
+- **Awaiting consent** — nParse+ has never been told whether to trust this
+  one. The dialog runs before the plugin does anything: right after you
+  install it, or at the next launch for a file you dropped into the plugins
+  folder yourself.
 - **Disabled** — you turned it off (uncheck *Enabled*), or you declined
   consent; it stays installed but inert.
 - **Incompatible** — built for a different SDK or app version; the status
