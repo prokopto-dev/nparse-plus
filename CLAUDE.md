@@ -19,6 +19,9 @@ uv run pytest                                 # full suite (~1460 tests, fast);
 QT_QPA_PLATFORM=offscreen uv run pytest       # headless; CI matrix does this
 uv run ruff check . && uv run ruff format .   # lint/format (line length 100)
 uv run pytest tests/core/parsers -q           # scope runs to one area
+QT_QPA_PLATFORM=offscreen uv run pytest \
+  -m benchmark --benchmark-only               # the perf suite (#132); excluded
+                                              # from the default run
 NPARSEPLUS_NO_PLUGINS=1 uv run python -m nparseplus   # safe mode: veto add-ons
 ```
 
@@ -90,7 +93,9 @@ src/nparseplus/
                         #   (index schema + client: resolve_registries
                         #   synthesizes the built-in row, fetch_indexes fans
                         #   out over every enabled one, MergedListing carries
-                        #   provenance), storage.py (per-plugin JSON)
+                        #   provenance), storage.py (per-plugin JSON),
+                        #   telemetry.py (#132's rolling per-plugin stats:
+                        #   gated, lock-free, plugin callbacks ONLY)
   pluginbootstrap.py    # THE two gated plugin import sites create_app may use
                         # (start_plugins pre-Qt, build_plugin_ui post-windows);
                         # nothing plugin-related imports while plugins are off
@@ -146,6 +151,8 @@ templates/              # plugin-repo/ = ready-to-push content of the plugin
                         #   server vendors that file verbatim (see SETUP.md)
 tools/                  # one-shot converters (Zones.cs -> zones.json etc.); outputs committed
 tests/                  # pytest; tests/fixtures = EQtoolsTests golden corpus
+  perf/                 #   the benchmark suite + profiles.py (solo/group/raid
+                        #   traffic built from real corpus lines) + baseline.json
 ```
 
 ## Porting conventions (EQTool -> here)
@@ -1302,6 +1309,84 @@ Install, uninstall, enable and disable are live precisely because none of them
 re-imports anything. `"Installed — restart to load"` survives for exactly one
 case: an install `adopt_installed` refused, which the plugins-folder sweep will
 pick up next launch.
+
+**The plugin boundary got a measurement baseline** (post-2.18, #132 —
+Phase 0 of the #131 epic, and measurement ONLY: no interval-aware ticks, no
+COW bus snapshot, no serial queues). Four pieces.
+
+*Benchmarks with fixtures that are real.* `tests/perf/profiles.py` composes
+solo/group/raid traffic out of line shapes taken verbatim from the
+`EQtoolsTests` corpus (each template carries the C# test it came from); only
+the names, numbers and interleaving are ours, and `tests/perf/test_profiles.py`
+— NOT marked `benchmark`, so it runs in CI — asserts every line still parses,
+that each profile reaches the parsers it claims to, that >70% of lines are
+claimed by a parser, and that the line rates still match the situation
+described. A fixture that quietly stopped matching anything would otherwise
+keep producing beautiful, meaningless numbers. `tests/perf/test_benchmarks.py`
+covers `EventBus.publish` at 0/1/10/50 subscribers, `LogPipeline.process` over
+every profile plus the capture, plugin dispatch at 1/10/50 with collection off
+and on, a plugin parser, the Qt bridge, and end-to-end latency; the map
+benchmark moved here from the deleted `tests/test_benchmarks.py`. Two
+measurement bugs found and fixed en route, both from the pre-existing suite's
+shape: replaying into ONE backend accumulated fights and timer rows so the
+cost grew with the round count (fresh backend per round via
+`pedantic(setup=)`), and publishing a `DamageEvent` on the *backend's* bus ran
+the fight tracker, swamping the microseconds being measured (plugin dispatch
+uses a bare bus). Seed numbers: ~21 us/line through the full chain, +19-25 ns
+per plugin callback for the guard wrapper, +270 ns more when collecting,
+74 us parse->UI against 102 ms append->UI — i.e. the poll interval is the
+end-to-end latency and everything else is noise beside it.
+
+*The collector is cheap by construction, and that is asserted.*
+`core/plugins/telemetry.py` is Qt-free rolling stats per plugin per channel
+(handler/parser/tick): a 512-sample ring for nearest-rank p50/p95/p99, an
+all-time `worst` that deliberately does NOT roll, running mean, a bucketed
+15 s rate window, error/drop counts, and `busy_fraction` (share of ONE
+thread). Deliberately lock-free — writers are the driver thread, the reader
+is the GUI, and a lock would roughly double what collection costs to buy a
+count nothing decides on. **Only plugin callbacks are ever wrapped**, so the
+no-plugin case keeps `core/driver.py`'s property untouched, and the gate when
+a plugin IS loaded is one attribute read on a `__slots__` object *before* any
+clock. Ticks are free: `add_supervised_tick(on_duration=)` hands the channel
+the elapsed the watchdog already measured, which is why the tick channel has
+no gate. `tests/core/plugins/test_telemetry_cost.py` counts `perf_counter`
+calls rather than timing anything: 0 for the driver tick loop with no
+plugins, 0 with a plugin and collection off, exactly 2 with it on, and 2 (the
+watchdog's own) for a plugin tick. `settings.plugins.telemetry` defaults True
+and lives live through `PluginHost.set_telemetry`.
+
+*Two small seams the measurement needed.* `_MeasuredParser` wraps a plugin
+parser, so `core/parsers/base.describe_parser` exists to keep the pipeline's
+exception log naming the real parser through any wrapper (`parser_label`) —
+the pipeline itself learns nothing about measurement. And `Channel.reset()`
+is IN PLACE, never rebinding: wrappers capture the channel object at
+activate, so handing out a new one on re-enable would leave the plugin
+writing into a channel nobody reads.
+
+*The dashboard.* `tools/perf_report.py` (stdlib only, hand-written SVG — the
+`gen_icons.py` no-new-deps rule) normalizes pytest-benchmark JSON into a
+compact run record, appends to a persistent history, compares, and renders
+`docs/development/performance.md` plus one ratio-to-first trend chart per
+group. `.github/workflows/performance-nightly.yml` runs it at 04:10 UTC,
+archives the JSON as an artifact, and redeploys the mike `dev` docs.
+**A run's identity is `$GITHUB_RUN_ID`, never the commit** — a scheduled run
+measures whatever the default branch is at 04:10, so the SHA repeats every
+night until the next merge, and keying the history (or the `runs/` archive)
+on it would keep one point per merge and discard exactly the repeated
+measurements that separate runner noise from a real regression. Re-running
+one workflow run replaces its own entry, which is the only case that IS a
+correction.
+**History lives on the orphan `perf-history` branch, not gh-pages** — the
+flatpak release job force-pushes gh-pages as a single-commit orphan and would
+destroy it — and not on master, where a nightly bot commit would spin CI and
+semantic-release every night. **Nothing fails on a slow number**: hosted
+runners are shared VMs, `compare` only exits non-zero for `--fail-over`, and
+nothing passes it. A benchmark mean is a fact about a machine, so the
+baseline is per-runner and self-seeding: the first CI run on a runner becomes
+that runner's `baseline-<runner>.json`, and until then the page says out loud
+that it is comparing across hardware. `tests/perf/baseline.json` is the
+committed seed (recorded locally, labelled as such) so `compare` works for a
+developer with no history branch.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

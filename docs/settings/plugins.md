@@ -20,6 +20,7 @@ and how far to trust them lives in [Plugins](../plugins/index.md) and
 | **Name** | The add-on's own display name (its file or folder name if the metadata couldn't be read). |
 | **Version** | The version the add-on declares. |
 | **Status** | Where it is in the load sequence — see below. |
+| **Performance** | What this add-on is costing the log thread — see [below](#the-performance-column). |
 | **Location** | The file, folder, or `dist:entry-point` it was loaded from. |
 | **Source** | Provenance: which registry vouched for those bytes, or where else they came from. |
 
@@ -214,6 +215,50 @@ be no way back to it from this page. Untick it instead: that stops it being
 offered while keeping the way back, and it also means a future release can
 move the built-in catalogue without stranding you on an old URL.
 
+## The performance column
+
+Add-on event handlers, log parsers and periodic ticks all run **inline on
+the log thread** — the same thread that tails your log, advances every
+countdown and tracks your DPS. So an add-on that takes too long there is not
+just slow itself; it stutters the whole app. The Performance column is the
+number that lets you tell which one.
+
+A row that has done some work reads something like:
+
+```
+28.1 ev/s · avg 1.2 µs · p95 1.8 µs · worst 42 µs · 0.1% of the driver thread
+```
+
+- **ev/s** — how many events the add-on's handlers are being given per
+  second, averaged over the last fifteen seconds. It falls back to zero when
+  the add-on goes quiet.
+- **avg / p95 / worst** — how long one of its handlers takes. `avg` and
+  `p95` are over the most recent few hundred calls, so they describe how it
+  is behaving *now*; `worst` is the whole session and never resets, so a
+  single bad stall is still there to be found later. Figures below a
+  millisecond are shown in microseconds, because that is where a
+  well-behaved add-on lives.
+- **parser avg / tick avg** — the same, for add-ons that read log lines
+  directly or run on a timer.
+- **% of the driver thread** — roughly what share of the log thread's life
+  this add-on has spent using. Well-behaved add-ons sit near zero.
+- **errors / dropped** — only appear when there are some. "Dropped" means
+  the tick watchdog evicted the add-on's periodic callback for repeatedly
+  overrunning its budget; the Status cell says so too.
+
+Hover the cell for the long form: call counts, p50/p95/p99 per channel, and
+what windows the figures cover.
+
+**Measure add-on performance** (ticked by default) is the switch. Untick it
+and the column reads *not collecting*: handler and parser timing stops
+immediately, and what it costs while on — a fraction of a microsecond per
+callback — stops with it. Timing is only ever applied to add-on callbacks;
+nParse+'s own handlers, parsers and ticks are never measured, so a setup
+with no add-ons pays nothing for this either way.
+
+The figures are per session and are not saved. Disabling an add-on and
+enabling it again starts its numbers over, because that is a new run.
+
 ## Automatic checks
 
 **Check for plugin updates shortly after launch** (ticked by default) polls
@@ -254,6 +299,9 @@ What a toggle does *not* touch is your side of it: the approval you gave and
 the add-on's `plugin-data/<id>` folder both survive being disabled — only
 uninstalling forgets those — and the window's saved size, opacity and
 on-top setting stay in `settings.json`, so it comes back where you left it.
+
+**Measure add-on performance** is live too — untick it and timing stops
+on the next callback, with no restart and no re-registration.
 
 Two things still need a relaunch, and both say so where you do them:
 

@@ -40,6 +40,7 @@ from nparseplus.core.plugins.context import HostPluginContext, _OwnedNet
 from nparseplus.core.plugins.discovery import PluginSource, discover_all
 from nparseplus.core.plugins.install import InstallResult, trash_plugin_data
 from nparseplus.core.plugins.storage import JsonPluginStorage
+from nparseplus.core.plugins.telemetry import MetricsCollector, PluginStatsSnapshot
 from nparseplus_sdk import SDK_VERSION as _SDK_VERSION
 from nparseplus_sdk import NParsePlugin, PluginMeta, check_compat
 from nparseplus_sdk.plugin import PluginSettingsPageSpec, PluginWindowSpec
@@ -110,6 +111,11 @@ class PluginHost:
         self._plugins_dir = plugins_dir_override or plugins_dir()
         self._plugin_data_dir = plugin_data_dir_override or plugin_data_dir
         self._owned_net = _OwnedNet(backend)
+        # One collector for the run (#132). Built here rather than in
+        # composition because it is plugin-scoped by construction: with
+        # add-ons off this class is never imported, which is what keeps the
+        # measurement off the no-plugin hot loop entirely.
+        self._metrics = MetricsCollector(enabled=settings.plugins.telemetry)
         self._loaded: list[LoadedPlugin] = []
         # Latest update check, session-only. See cache_update_check.
         self._update_check: UpdateCheckResult | None = None
@@ -131,6 +137,30 @@ class PluginHost:
     @property
     def sdk_version(self) -> str:
         return _SDK_VERSION
+
+    # --- performance telemetry (#132) ---------------------------------------
+    @property
+    def telemetry_enabled(self) -> bool:
+        return self._metrics.enabled
+
+    def set_telemetry(self, enabled: bool) -> None:
+        """Turn per-plugin measurement on or off, live and for everything.
+
+        Live because the gate is a flag the wrappers read, not a wrapper they
+        are: re-registering every callback to change this would be a far
+        bigger intervention than the thing being switched.
+        """
+        self._settings.plugins.telemetry = enabled
+        self._metrics.set_enabled(enabled)
+        self._save()
+
+    def stats(self) -> dict[str, PluginStatsSnapshot]:
+        """Snapshot every plugin's numbers — GUI-thread read, plain data."""
+        return self._metrics.snapshots()
+
+    def stats_for(self, plugin_id: str) -> PluginStatsSnapshot | None:
+        metrics = self._metrics.get(plugin_id)
+        return metrics.snapshot() if metrics is not None else None
 
     # --- discovery / classification ---------------------------------------
     def discover_and_load(self) -> None:
@@ -359,6 +389,7 @@ class PluginHost:
         self._loaded = [loaded for loaded in self._loaded if loaded.plugin_id != plugin_id]
         if self._settings.plugins.entries.pop(plugin_id, None) is not None:
             self._save()
+        self._metrics.forget(plugin_id)
         error = trash_plugin_data(self._plugin_data_dir(plugin_id), self._plugins_dir)
         if error is not None:
             logger.warning("plugin %s data not moved aside: %s", plugin_id, error)
@@ -583,8 +614,15 @@ class PluginHost:
         if loaded.status != "ready" or loaded.plugin is None or loaded.meta is None:
             return
         storage = JsonPluginStorage(self._plugin_data_dir(loaded.meta.id))
+        # for_plugin also zeroes an earlier run's numbers, which is what makes
+        # a disable/re-enable read as the fresh run it is.
         ctx = HostPluginContext(
-            loaded.meta, self._backend, self._app_version, storage, self._owned_net
+            loaded.meta,
+            self._backend,
+            self._app_version,
+            storage,
+            self._owned_net,
+            metrics=self._metrics.for_plugin(loaded.meta.id),
         )
         try:
             loaded.plugin.activate(ctx)

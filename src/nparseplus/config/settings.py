@@ -711,6 +711,14 @@ class PluginsSettings(BaseModel):
     # is True — with add-ons off, nothing plugin-shaped is even imported.
     # Matches general.update_check, which defaults on for the app itself.
     update_check: bool = True
+    # Per-plugin performance measurement (#132). On by default *given that
+    # add-ons are on at all*: it is what the plugin manager's Performance
+    # column reads, and a column that says "not collecting" until you find a
+    # checkbox is a column nobody uses. It costs one attribute read per
+    # plugin callback when off and two clock reads when on, and it never
+    # touches an app-owned handler, parser or tick — so a user with no
+    # plugins pays nothing for it either way.
+    telemetry: bool = True
 
     @model_validator(mode="after")
     def _fold_in_legacy_and_sanitize(self) -> PluginsSettings:

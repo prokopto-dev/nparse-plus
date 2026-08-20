@@ -5,6 +5,13 @@ plugin id so a broken plugin can log loudly but never break bus dispatch,
 the tick loop, or the parser chain. Registrations are tracked so a plugin
 that fails mid-``activate`` can be unwound.
 
+Since #132 those same wrappers are where a plugin's callbacks are timed.
+The instrumentation is deliberately built into the wrapper that already
+existed rather than layered over it: a plugin callback was already one
+indirection away from the bus, and this keeps it at one. See
+``core/plugins/telemetry.py`` for what the numbers mean and why collection
+being off costs a single attribute read.
+
 ``_OwnedNet`` covers the sharing-off case: when the backend built no
 NetWorker / PigParse client (``settings.sharing.mode == "off"``), one lazily
 constructed pair — shared by all plugins, owned and closed by the host —
@@ -20,10 +27,12 @@ import threading
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
-from nparseplus.core.parsers.base import LineParser
+from nparseplus.core.parsers.base import LineParser, ParseContext
 from nparseplus.core.plugins.storage import JsonPluginStorage
+from nparseplus.core.plugins.telemetry import Channel, PluginMetrics
 from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.worker import NetWorker
 from nparseplus_sdk import (
@@ -178,6 +187,42 @@ class _PluginTimers:
         return deferred
 
 
+class _MeasuredParser:
+    """Times one plugin parser, and is otherwise invisible to the chain.
+
+    Wrapping rather than timing inside ``LogPipeline.process`` is what keeps
+    the app's own parsers — nine tenths of the chain, run on every line —
+    exactly as fast as they were: the pipeline has no idea which parsers
+    belong to a plugin, and asking it per line would be the cost this is
+    supposed to measure.
+
+    Exceptions are deliberately allowed through to the pipeline's own guard,
+    which is the thing that decides a raising parser does not consume the
+    line. ``parser_label`` is how that guard's log line still names the real
+    parser (``core.parsers.base.describe_parser``).
+    """
+
+    __slots__ = ("_channel", "_parser", "parser_label")
+
+    def __init__(self, parser: LineParser, channel: Channel, plugin_id: str) -> None:
+        self._parser = parser
+        self._channel = channel
+        self.parser_label = f"{type(parser).__name__} (plugin {plugin_id})"
+
+    def handle(self, line: Any, ctx: ParseContext) -> bool:
+        channel = self._channel
+        if not channel.enabled:
+            return self._parser.handle(line, ctx)
+        started = perf_counter()
+        try:
+            return self._parser.handle(line, ctx)
+        except Exception:
+            channel.note_error()
+            raise
+        finally:
+            channel.record(perf_counter() - started, started)
+
+
 class HostPluginContext:
     """Capability object handed to ``NParsePlugin.activate`` (SDK protocol)."""
 
@@ -188,12 +233,17 @@ class HostPluginContext:
         app_version: str,
         storage: JsonPluginStorage,
         owned_net: _OwnedNet,
+        metrics: PluginMetrics | None = None,
     ) -> None:
         self._meta = meta
         self._backend = backend
         self._app_version = app_version
         self._storage = storage
         self._owned_net = owned_net
+        # None only in the fakes and older tests that build a context by
+        # hand; the host always supplies one. Absent, every callback below
+        # takes exactly the path it took before #132.
+        self._metrics = metrics
         self._logger = logging.getLogger(f"nparseplus.plugins.{meta.id}")
         # Registrations tracked for unwind if activate fails partway.
         self._unsubscribes: list[Unsubscribe] = []
@@ -289,14 +339,46 @@ class HostPluginContext:
     # --- registration ------------------------------------------------------
     def subscribe(self, event_type: type[Any], fn: Callable[[Any], None]) -> Unsubscribe:
         plugin_logger = self._logger
+        plugin_id = self._meta.id
+        metrics = self._metrics
 
-        def _guarded(event: Any) -> None:
-            try:
-                fn(event)
-            except Exception:
-                plugin_logger.exception(
-                    "handler for %s raised (plugin %s)", event_type.__name__, self._meta.id
-                )
+        if metrics is None:
+
+            def _guarded(event: Any) -> None:
+                try:
+                    fn(event)
+                except Exception:
+                    plugin_logger.exception(
+                        "handler for %s raised (plugin %s)", event_type.__name__, plugin_id
+                    )
+
+        else:
+            channel = metrics.handlers
+
+            def _guarded(event: Any) -> None:
+                # The gate, and the whole cost of collection being off: one
+                # attribute read on a __slots__ object before any clock.
+                if not channel.enabled:
+                    try:
+                        fn(event)
+                    except Exception:
+                        plugin_logger.exception(
+                            "handler for %s raised (plugin %s)", event_type.__name__, plugin_id
+                        )
+                    return
+                started = perf_counter()
+                try:
+                    fn(event)
+                except Exception:
+                    channel.note_error()
+                    plugin_logger.exception(
+                        "handler for %s raised (plugin %s)", event_type.__name__, plugin_id
+                    )
+                finally:
+                    # In the finally so a raising handler still costs what it
+                    # cost: a plugin that throws on every event is exactly the
+                    # one whose time the user needs to see.
+                    channel.record(perf_counter() - started, started)
 
         unsubscribe = self._backend.bus.subscribe(event_type, _guarded)
         self._unsubscribes.append(unsubscribe)
@@ -304,31 +386,56 @@ class HostPluginContext:
 
     def add_parser(self, parser: LineParser) -> None:
         # The pipeline already guards each parser's handle() with try/except.
-        self._backend.pipeline.append_parser(parser)
-        self._parsers.append(parser)
+        # What goes into the chain is the wrapper when there is one, and it is
+        # what `unwind` must take back out, so track that object and not the
+        # plugin's.
+        registered: LineParser = parser
+        if self._metrics is not None:
+            registered = _MeasuredParser(parser, self._metrics.parsers, self._meta.id)
+        self._backend.pipeline.append_parser(registered)
+        self._parsers.append(registered)
 
     def add_tick(self, fn: Callable[[datetime], None]) -> None:
         plugin_logger = self._logger
+        plugin_id = self._meta.id
+        # Counted, not timed: the driver's watchdog measures the duration
+        # (see on_duration below), but only this guard ever sees the raise.
+        # Without it the Performance column would report a tick that throws
+        # ten times a second as a tick with no errors, which is worse than
+        # reporting nothing.
+        channel = self._metrics.ticks if self._metrics is not None else None
 
         def _guarded(now: datetime) -> None:
             try:
                 fn(now)
             except Exception:
-                plugin_logger.exception("tick raised (plugin %s)", self._meta.id)
+                if channel is not None:
+                    channel.note_error()
+                plugin_logger.exception("tick raised (plugin %s)", plugin_id)
 
         # Supervised: the driver times this callback and drops it if it keeps
         # blowing the budget, because a blocking tick freezes log tailing,
-        # every timer and the sharing inbox along with it.
+        # every timer and the sharing inbox along with it. Since #132 the
+        # elapsed value that budget already computes is also handed to the
+        # tick channel — no second clock read, which is why tick timing has
+        # no gate to turn off.
+        record = self._metrics.ticks.record if self._metrics is not None else None
         self._backend.driver.add_supervised_tick(
             _guarded,
             label=f"plugin {self._meta.id}",
             on_dropped=self._note_tick_dropped,
+            on_duration=record,
         )
         self._ticks.append(_guarded)
 
     def _note_tick_dropped(self, reason: str) -> None:
         """Driver-thread callback; a plain string the GUI reads on refresh."""
         self.tick_dropped = reason
+        if self._metrics is not None:
+            # The one thing genuinely "dropped" in this release: a tick the
+            # watchdog evicted. Counted here rather than in the driver so the
+            # driver keeps knowing nothing about plugin bookkeeping.
+            self._metrics.ticks.note_dropped()
 
     def submit(
         self,

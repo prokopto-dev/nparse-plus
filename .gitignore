@@ -43,6 +43,14 @@ htmlcov/
 .pytest_cache
 nosetests.xml
 coverage.xml
+.benchmarks/
+# Nightly benchmark artifacts (#132). The run record and the generated
+# performance page belong on the perf-history branch and in the dev docs,
+# never in a commit here — see .github/workflows/performance-nightly.yml.
+perf-raw.json
+perf-run.json
+perf-history/
+docs/assets/perf/
 
 # Translations
 *.mo
