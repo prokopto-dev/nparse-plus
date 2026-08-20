@@ -162,6 +162,51 @@ def test_a_raising_handler_still_records_its_cost(tmp_path) -> None:
     assert snapshot.errors == 1
 
 
+def test_a_raising_tick_is_counted_as_an_error_and_still_timed(tmp_path) -> None:
+    """Every channel reports errors, and the tick channel is no exception.
+
+    Only this guard sees the raise — the driver's watchdog measures duration
+    and knows nothing about it — so a tick throwing on every iteration would
+    otherwise read as a tick with no errors at all.
+    """
+    backend = build_backend(Settings(), speaker=NullSpeaker())
+    metrics = MetricsCollector(enabled=True).for_plugin(META.id)
+    ctx = HostPluginContext(
+        META,
+        backend,
+        "0.0.0",
+        JsonPluginStorage(tmp_path / "plugin-data" / META.id),
+        _OwnedNet(backend),
+        metrics=metrics,
+    )
+
+    def boom(now: datetime) -> None:
+        raise RuntimeError("no")
+
+    ctx.add_tick(boom)
+    backend.driver._run_supervised_ticks(datetime(2026, 7, 15, 21, 0, 0))
+    backend.driver._run_supervised_ticks(datetime(2026, 7, 15, 21, 0, 1))
+
+    snapshot = metrics.ticks.snapshot()
+    assert snapshot.errors == 2
+    assert snapshot.calls == 2  # a raising tick still cost what it cost
+    # Raising is not overrunning: the watchdog evicts a tick for being slow,
+    # never for throwing, so this one is still registered.
+    assert len(backend.driver._supervised) == 1
+
+
+def test_a_tick_with_no_metrics_still_swallows_its_exception(tmp_path) -> None:
+    """The pre-#132 path: guarded, logged, never counted, never propagated."""
+    backend = build_backend(Settings(), speaker=NullSpeaker())
+    ctx = _ctx(backend, tmp_path, collecting=None)
+
+    def boom(now: datetime) -> None:
+        raise RuntimeError("no")
+
+    ctx.add_tick(boom)
+    backend.driver._run_supervised_ticks(datetime(2026, 7, 15, 21, 0, 0))
+
+
 def test_a_plugin_tick_adds_no_clock_reads_of_its_own(monkeypatch, tmp_path) -> None:
     """The driver's budget already timed it; the channel takes that value.
 

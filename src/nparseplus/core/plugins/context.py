@@ -397,12 +397,21 @@ class HostPluginContext:
 
     def add_tick(self, fn: Callable[[datetime], None]) -> None:
         plugin_logger = self._logger
+        plugin_id = self._meta.id
+        # Counted, not timed: the driver's watchdog measures the duration
+        # (see on_duration below), but only this guard ever sees the raise.
+        # Without it the Performance column would report a tick that throws
+        # ten times a second as a tick with no errors, which is worse than
+        # reporting nothing.
+        channel = self._metrics.ticks if self._metrics is not None else None
 
         def _guarded(now: datetime) -> None:
             try:
                 fn(now)
             except Exception:
-                plugin_logger.exception("tick raised (plugin %s)", self._meta.id)
+                if channel is not None:
+                    channel.note_error()
+                plugin_logger.exception("tick raised (plugin %s)", plugin_id)
 
         # Supervised: the driver times this callback and drops it if it keeps
         # blowing the budget, because a blocking tick freezes log tailing,
