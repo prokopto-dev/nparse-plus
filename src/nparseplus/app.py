@@ -368,6 +368,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     plugin_tray: dict[str, object] = {}  # tray label -> widget
     extra_pages: list[object] = []
     plugin_window_rows: list[tuple[str, str, object]] = []  # Settings > Windows rows
+    plugin_ui = None  # the live owner; attached once the rest of the UI exists
     if plugin_host is not None:
         from nparseplus import __version__
         from nparseplus.pluginbootstrap import build_plugin_ui
@@ -484,6 +485,24 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         on_skin_changed=_apply_appearance,
         open_settings=lambda: _open_appearance_settings(settings_window),
     )
+    if plugin_ui is not None:
+        # Now — not inside build_plugin_ui — because the settings window, the
+        # layout manager and the tray are built FROM what it returned, so
+        # they did not exist yet. From here a plugin enabled or disabled in
+        # Settings > Plugins gains or loses its windows, tray entries, chat
+        # commands and settings pages without a restart (#45).
+        plugin_ui.attach_live(
+            plugin_host=plugin_host,
+            settings=settings,
+            save=save,
+            bridge=bridge,
+            window_handles=window_handles,
+            settings_window=settings_window,
+            layouts=window_layouts,
+            legacy_app=app,
+            chrome_surfaces=chrome_surfaces,
+            apply_appearance=_apply_appearance,
+        )
     app.aboutToQuit.connect(backend.stop)
     if plugin_host is not None:
         # After backend.stop: the driver thread has joined, so deactivate

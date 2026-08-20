@@ -45,6 +45,25 @@ class WindowLayoutManager:
         self._on_legacy_save = on_legacy_save
         self._notify = notify
 
+    def add_window(self, key: str, window: QWidget) -> None:
+        """Manage one more window from now on (a plugin enabled live, #45).
+
+        Layouts saved before it existed simply have no geometry for this key,
+        which ``apply_layout`` already tolerates — a window a preset never
+        captured keeps where it is rather than jumping to the origin.
+        """
+        self._windows[key] = window
+
+    def remove_window(self, key: str) -> bool:
+        """Stop managing a window (its plugin was disabled). True if managed.
+
+        The saved presets keep their entry for ``key`` on purpose: the
+        geometry is how the window comes back where the user left it if the
+        plugin is enabled again, and a layout is a description of a desktop,
+        not a list of what happens to be running.
+        """
+        return self._windows.pop(key, None) is not None
+
     @property
     def names(self) -> list[str]:
         return sorted(self._settings.window_layouts, key=str.casefold)

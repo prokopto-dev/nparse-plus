@@ -57,8 +57,13 @@ def host(tmp_path: Path):
     return host
 
 
-def make_page(qtbot, host) -> PluginManagerPage:
+def make_page(qtbot, host, *, consent: bool = True) -> PluginManagerPage:
     page = PluginManagerPage(host, "1.15.0")
+    # An install now loads the plugin immediately (#45), which means asking
+    # the first-load consent question — a modal dialog that would hang a
+    # headless run. Answer it inline instead; the dialog itself is covered by
+    # tests/ui/test_plugin_consent.py.
+    page.consent_ask = lambda _loaded: consent
     qtbot.addWidget(page)
     return page
 
@@ -98,8 +103,30 @@ def test_install_from_file_via_dialog(qtbot, host, tmp_path: Path, monkeypatch) 
     install_from_file_and_wait(qtbot, page)
     assert (host.plugins_dir / "extra.py").is_file()
     assert infos, "success dialog not shown"
-    assert page._table.rowCount() == 2  # session-install row appended
-    assert "restart" in page._table.item(1, 3).text().lower()
+    # A fresh install loads immediately (#45): the new plugin is a real row
+    # in the host, consented (make_page answers yes) and active — not a
+    # "restart to load" placeholder appended from _session_installs.
+    assert page._table.rowCount() == 2
+    assert page._table.item(1, 3).text() == "Active"
+    assert not page._session_installs
+    assert host.entry_for("extra") is not None and host.entry_for("extra").approved
+
+
+def test_declining_consent_after_an_install_leaves_it_disabled(
+    qtbot, host, tmp_path: Path, monkeypatch
+) -> None:
+    """Consent still gates running — installing is not approving."""
+    archive = tmp_path / "extra.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("extra.py", PLUGIN_SOURCE.replace('"demo"', '"extra"'))
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(archive), "zip"))
+    )
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    page = make_page(qtbot, host, consent=False)
+    install_from_file_and_wait(qtbot, page)
+    assert page._table.item(1, 3).text() == "Disabled"
+    assert host.entry_for("extra").approved and not host.entry_for("extra").enabled
 
 
 def test_install_failure_shows_warning(qtbot, host, tmp_path: Path, monkeypatch) -> None:

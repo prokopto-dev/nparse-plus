@@ -19,11 +19,12 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
     from nparseplus.composition import Backend
@@ -41,11 +42,31 @@ PLUGIN_UPDATE_CHECK_DELAY_MS = 12_000
 
 
 @dataclass
+class _PluginSurfaces:
+    """Everything one plugin currently has on screen.
+
+    Recorded as it is built because the teardown hook is handed a bare plugin
+    id — by then the host has already cleared the specs it was built from,
+    and a widget cannot be asked which add-on made it.
+    """
+
+    window_keys: list[str] = field(default_factory=list)  # "plugin.<id>.<key>"
+    widgets: list[Any] = field(default_factory=list)
+    tray_labels: list[str] = field(default_factory=list)
+    command_keys: list[str] = field(default_factory=list)
+    page_specs: list[Any] = field(default_factory=list)
+
+
+@dataclass
 class PluginUi:
     """What the plugin subsystem contributes to the assembled UI.
 
     Empty in every field when plugins are off, so ``create_app`` can splat
     these unconditionally instead of branching at each use.
+
+    It is also what keeps contributing afterwards: ``attach_live`` subscribes
+    it to the host's build/teardown hooks so a plugin enabled or disabled
+    mid-session gains or loses exactly these surfaces (#45).
     """
 
     windows_by_key: dict[str, Any] = field(default_factory=dict)  # "plugin.<id>.<key>"
@@ -55,6 +76,54 @@ class PluginUi:
     # Settings > Windows grid rows: (label, window key, widget). Only windows
     # built on the overlay recipe appear here — see build_plugin_ui.
     window_rows: list[tuple[str, str, Any]] = field(default_factory=list)
+    # Per-plugin provenance for the live path; keyed by plugin id.
+    surfaces: dict[str, _PluginSurfaces] = field(default_factory=dict)
+
+    def attach_live(
+        self,
+        *,
+        plugin_host: PluginHost,
+        settings: Settings,
+        save: Callable[[], None],
+        bridge: QtEventBridge,
+        window_handles: dict[str, Any],
+        settings_window: Any,
+        layouts: Any,
+        legacy_app: Any,
+        chrome_surfaces: list[Any],
+        apply_appearance: Callable[[], None],
+    ) -> None:
+        """Make plugin surfaces follow the plugin, for the rest of the session.
+
+        Called from ``create_app`` once the settings window, the layout
+        manager and the tray exist — which is *after* ``build_plugin_ui``,
+        because those three are built from what it returns. That ordering is
+        also why the hooks are subscribed here and not inside the host:
+        subscribing any earlier would make ``activate_enabled`` build the
+        startup windows a second time.
+
+        Everything it needs is a live collection someone else owns, so the
+        plugin layer never holds a private copy that can drift: the chat
+        command table and the tray dict are mutated in place (the tray menu
+        re-reads its dict every time it opens), the layout manager and the
+        settings window grew add/remove methods, and ``chrome_surfaces`` is
+        the list a skin change sweeps.
+        """
+        live = _LivePluginUi(
+            ui=self,
+            plugin_host=plugin_host,
+            settings=settings,
+            save=save,
+            bridge=bridge,
+            window_handles=window_handles,
+            settings_window=settings_window,
+            layouts=layouts,
+            legacy_app=legacy_app,
+            chrome_surfaces=chrome_surfaces,
+            apply_appearance=apply_appearance,
+        )
+        plugin_host.on_ui_build.append(live.materialize)
+        plugin_host.on_ui_teardown.append(live.retire)
 
 
 def start_plugins(
@@ -103,40 +172,181 @@ def build_plugin_ui(
     plugin_host.activate_enabled()
 
     for loaded, spec, widget in _materialize_plugin_windows(plugin_host, settings, save, bridge):
-        assert loaded.meta is not None
-        window_key = f"plugin.{loaded.meta.id}.{spec.key}"
-        if window_key in ui.windows_by_key:
-            # add_window() does not enforce unique spec.key, so a plugin can
-            # declare the same one twice. Two widgets sharing one window key
-            # would share one WindowState (and one Settings > Windows row) —
-            # keep the first and say so, rather than let the second win the
-            # dict while both draw.
-            logger.warning(
-                "plugin %s declared window key %r twice; the later window is ignored",
-                loaded.meta.id,
-                spec.key,
-            )
-            continue
-        ui.windows_by_key[window_key] = widget
-        command_key = _plugin_command_key(loaded, spec.key, spec.command_key)
-        if command_key in window_handles or command_key in ui.command_handles:
-            logger.warning(
-                "plugin %s window command %r collides; chat toggle skipped",
-                loaded.meta.id,
-                command_key,
-            )
-        else:
-            ui.command_handles[command_key] = widget
-        label = spec.title
-        if label in ui.tray:
-            label = f"{spec.title} ({loaded.meta.id})"
-        ui.tray[label] = widget
-        _add_window_row(ui, loaded, spec, widget, window_key)
+        _register_window(ui, loaded, spec, widget, window_handles)
 
-    ui.extra_pages.extend(spec for _loaded, spec in plugin_host.page_specs())
+    for loaded, spec in plugin_host.page_specs():
+        ui.extra_pages.append(spec)
+        if loaded.plugin_id is not None:
+            ui.surfaces.setdefault(loaded.plugin_id, _PluginSurfaces()).page_specs.append(spec)
     if settings.plugins.update_check:
         schedule_update_check(plugin_host, app_version)
     return ui
+
+
+def _register_window(
+    ui: PluginUi,
+    loaded: LoadedPlugin,
+    spec: Any,
+    widget: Any,
+    window_handles: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Record one built window in every collection that has to know about it.
+
+    Shared by the startup sweep and the live path so a plugin enabled from
+    the settings window joins exactly the same tables — nothing about a
+    window built at launch is special. Returns ``(window key, tray label)``,
+    or None if the window was refused as a duplicate.
+    """
+    assert loaded.meta is not None
+    window_key = f"plugin.{loaded.meta.id}.{spec.key}"
+    if window_key in ui.windows_by_key:
+        # add_window() does not enforce unique spec.key, so a plugin can
+        # declare the same one twice. Two widgets sharing one window key
+        # would share one WindowState (and one Settings > Windows row) —
+        # keep the first and say so, rather than let the second win the
+        # dict while both draw.
+        logger.warning(
+            "plugin %s declared window key %r twice; the later window is ignored",
+            loaded.meta.id,
+            spec.key,
+        )
+        return None
+    surfaces = ui.surfaces.setdefault(loaded.meta.id, _PluginSurfaces())
+    ui.windows_by_key[window_key] = widget
+    surfaces.window_keys.append(window_key)
+    surfaces.widgets.append(widget)
+    command_key = _plugin_command_key(loaded, spec.key, spec.command_key)
+    if command_key in window_handles or command_key in ui.command_handles:
+        logger.warning(
+            "plugin %s window command %r collides; chat toggle skipped",
+            loaded.meta.id,
+            command_key,
+        )
+    else:
+        ui.command_handles[command_key] = widget
+        surfaces.command_keys.append(command_key)
+    label = spec.title
+    if label in ui.tray:
+        label = f"{spec.title} ({loaded.meta.id})"
+    ui.tray[label] = widget
+    surfaces.tray_labels.append(label)
+    _add_window_row(ui, loaded, spec, widget, window_key)
+    return window_key, label
+
+
+@dataclass
+class _LivePluginUi:
+    """The subscriber that makes plugin surfaces follow the plugin (#45).
+
+    One instance per launch, subscribed to ``PluginHost.on_ui_build`` and
+    ``on_ui_teardown`` by ``PluginUi.attach_live``. Everything it touches is
+    a collection owned by ``create_app`` or by a window, mutated in place —
+    which is what lets a toggle in Settings > Plugins reach the tray menu,
+    the chat commands, the layout manager, the skin sweep and the settings
+    sidebar without any of them being rebuilt.
+
+    Both entry points are called from the GUI thread (the host runs the hook
+    inline from ``set_enabled``) and both are fully guarded: an add-on may
+    not break the settings window it is being toggled in.
+    """
+
+    ui: PluginUi
+    plugin_host: PluginHost
+    settings: Settings
+    save: Callable[[], None]
+    bridge: QtEventBridge
+    window_handles: dict[str, Any]
+    settings_window: Any
+    layouts: Any
+    legacy_app: Any
+    chrome_surfaces: list[Any]
+    apply_appearance: Callable[[], None]
+
+    def materialize(self, loaded: LoadedPlugin) -> None:
+        """Build and register everything a just-activated plugin declared."""
+        plugin_id = loaded.plugin_id
+        if plugin_id is None:
+            return
+        built = False
+        for spec, widget in _build_plugin_windows(loaded, self.settings, self.save, self.bridge):
+            registered = _register_window(self.ui, loaded, spec, widget, self.window_handles)
+            if registered is None:
+                widget.deleteLater()
+                continue
+            window_key, tray_label = registered
+            with _isolated(f"plugin {plugin_id} window registration"):
+                self.layouts.add_window(window_key, widget)
+                self.legacy_app.add_backend_window(tray_label, widget)
+            self.chrome_surfaces.append(widget)
+            built = True
+        for spec in list(loaded.page_specs):
+            self.ui.extra_pages.append(spec)
+            self.ui.surfaces.setdefault(plugin_id, _PluginSurfaces()).page_specs.append(spec)
+            with _isolated(f"plugin {plugin_id} settings page"):
+                self.settings_window.add_page(spec)
+        if built:
+            # create_app merged the startup command table by hand once; the
+            # live path has to keep that merge true, and re-merging every
+            # plugin command is idempotent (same keys, same widgets).
+            self.window_handles.update(self.ui.command_handles)
+            # The new windows are undressed until a skin lands on them, and
+            # the Settings > Windows grid is built once per row set.
+            with _isolated("settings window rows"):
+                self.settings_window.set_plugin_window_rows(self.ui.window_rows)
+            with _isolated("skin sweep"):
+                self.apply_appearance()
+
+    def retire(self, plugin_id: str) -> None:
+        """Unregister and destroy everything that plugin had on screen.
+
+        Runs after the host unwound the plugin's registrations, which is the
+        order that matters: hiding a window whose plugin is still subscribed
+        would leave its QTimers firing into a widget nobody manages, and
+        destroying it before the unwind could pull the ground out from under
+        a handler mid-call.
+        """
+        surfaces = self.ui.surfaces.pop(plugin_id, None)
+        if surfaces is None:
+            return
+        for spec in surfaces.page_specs:
+            with _isolated(f"plugin {plugin_id} settings page"):
+                self.settings_window.remove_page(spec)
+            if spec in self.ui.extra_pages:
+                self.ui.extra_pages.remove(spec)
+        for command_key in surfaces.command_keys:
+            self.window_handles.pop(command_key, None)
+            self.ui.command_handles.pop(command_key, None)
+        for label in surfaces.tray_labels:
+            self.ui.tray.pop(label, None)
+            with _isolated(f"plugin {plugin_id} tray entry"):
+                self.legacy_app.remove_backend_window(label)
+        for window_key in surfaces.window_keys:
+            self.ui.windows_by_key.pop(window_key, None)
+            with _isolated(f"plugin {plugin_id} layout entry"):
+                self.layouts.remove_window(window_key)
+        dropped = set(surfaces.window_keys)
+        self.ui.window_rows[:] = [row for row in self.ui.window_rows if row[1] not in dropped]
+        for widget in surfaces.widgets:
+            if widget in self.chrome_surfaces:
+                self.chrome_surfaces.remove(widget)
+            with _isolated(f"plugin {plugin_id} window teardown"):
+                # Hide first: deleteLater() only schedules the destruction, so
+                # a visible window would otherwise linger on screen until the
+                # event loop next spins.
+                widget.hide()
+                widget.deleteLater()
+        if surfaces.window_keys:
+            with _isolated("settings window rows"):
+                self.settings_window.set_plugin_window_rows(self.ui.window_rows)
+
+
+@contextmanager
+def _isolated(what: str) -> Iterator[None]:
+    """Log and swallow — no add-on may break the window it is toggled in."""
+    try:
+        yield
+    except Exception:
+        logger.exception("%s failed", what)
 
 
 def schedule_update_check(
@@ -218,18 +428,23 @@ def _plugin_command_key(loaded: LoadedPlugin, spec_key: str, command_key: str | 
     return re.sub(r"\W", "_", raw)
 
 
-def _materialize_plugin_windows(
-    plugin_host: PluginHost,
+def _build_plugin_windows(
+    loaded: LoadedPlugin,
     settings: Settings,
     save: Callable[[], None],
     bridge: QtEventBridge,
-) -> list[tuple[LoadedPlugin, Any, Any]]:
-    """Build each active plugin's declared windows; every factory is guarded."""
+) -> list[tuple[Any, Any]]:
+    """Build ONE plugin's declared windows; every factory is guarded.
+
+    Per-plugin rather than a sweep because #45 needs exactly this for one
+    add-on enabled mid-session; the startup sweep is now a loop over it, so
+    a window built at launch and one built live go through the same code.
+    """
     from nparseplus_sdk.plugin import PluginWindowContext
 
-    built: list[tuple[LoadedPlugin, Any, Any]] = []
-    for loaded, spec in plugin_host.window_specs():
-        assert loaded.meta is not None
+    assert loaded.meta is not None
+    built: list[tuple[Any, Any]] = []
+    for spec in list(loaded.window_specs):
         window_key = f"plugin.{loaded.meta.id}.{spec.key}"
         wctx = PluginWindowContext(
             settings=settings,
@@ -251,5 +466,25 @@ def _materialize_plugin_windows(
         if widget is None:
             logger.warning("plugin %s window %r factory returned None", loaded.meta.id, spec.key)
             continue
-        built.append((loaded, spec, widget))
+        built.append((spec, widget))
+    return built
+
+
+def _materialize_plugin_windows(
+    plugin_host: PluginHost,
+    settings: Settings,
+    save: Callable[[], None],
+    bridge: QtEventBridge,
+) -> list[tuple[LoadedPlugin, Any, Any]]:
+    """Build every active plugin's declared windows (the startup sweep)."""
+    built: list[tuple[LoadedPlugin, Any, Any]] = []
+    seen: list[LoadedPlugin] = []
+    for loaded, _spec in plugin_host.window_specs():
+        if loaded not in seen:
+            seen.append(loaded)
+    for loaded in seen:
+        built += [
+            (loaded, spec, widget)
+            for spec, widget in _build_plugin_windows(loaded, settings, save, bridge)
+        ]
     return built

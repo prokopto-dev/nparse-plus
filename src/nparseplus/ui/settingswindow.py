@@ -350,6 +350,10 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._stack = QStackedWidget(self)
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
 
+        # Page widgets by sidebar name. The Windows page is the one that gets
+        # rebuilt in place (set_plugin_window_rows), and a rebuild has to put
+        # the new widget at the same stack index the sidebar row points at.
+        self._pages_by_name: dict[str, QWidget] = {}
         for name, builder in (
             ("General", self._build_general),
             ("Appearance", self._build_appearance),
@@ -363,30 +367,17 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             ("Sharing", self._build_sharing),
             ("Advanced", self._build_advanced),
         ):
-            self._sidebar.addItem(name.replace("&&", "&"))
-            self._stack.addWidget(builder())
+            label = name.replace("&&", "&")
+            page = builder()
+            self._pages_by_name[label] = page
+            self._sidebar.addItem(label)
+            self._stack.addWidget(page)
 
         # Externally contributed pages (the Plugins manager, plugin settings
         # pages). Each page is built and applied under its own guard.
-        self._extra_pages: list[tuple[Any, QWidget]] = []
+        self._extra_pages: list[tuple[Any, QWidget, QWidget]] = []
         for spec in extra_pages or ():
-            try:
-                page = spec.builder(self)
-            except Exception:
-                logger.exception("settings page %r failed to build", spec.title)
-                page = QLabel("This page failed to build — see nparseplus.log.", self)
-            self._sidebar.addItem(spec.title)
-            # Scrolled like the built-in pages: the window's minimum size is
-            # not a contributed page's to raise, and the widest page in the
-            # app is a contributed one — the Plugins manager's table of
-            # installed add-ons wants ~1800px, which would pin the window
-            # wide open for exactly the users who enabled plugins.
-            #
-            # The wrapper goes in the stack; `_extra_pages` keeps what the
-            # builder returned, so ``spec.apply`` still gets the widget it
-            # made rather than a QScrollArea it has never heard of.
-            self._stack.addWidget(self._scrollable(page))
-            self._extra_pages.append((spec, page))
+            self.add_page(spec)
         self._sidebar.setCurrentRow(0)
 
         apply_button = QPushButton("Apply && Save", self)
@@ -597,6 +588,84 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         page = QWidget(self)
         page.setLayout(outer)
         return self._scrollable(page)
+
+    def add_page(self, spec: Any) -> None:
+        """Append a contributed settings page (the Plugins manager, a plugin's).
+
+        Called from ``__init__`` for the pages that exist at launch and again
+        whenever a plugin is enabled mid-session (#45), so the two paths
+        cannot drift. The sidebar row and the stack widget are appended
+        together — ``currentRowChanged`` maps row N to stack index N, and
+        that correspondence is maintained only by adding and removing in
+        step.
+        """
+        try:
+            page = spec.builder(self)
+        except Exception:
+            logger.exception("settings page %r failed to build", spec.title)
+            page = QLabel("This page failed to build — see nparseplus.log.", self)
+        self._sidebar.addItem(spec.title)
+        # Scrolled like the built-in pages: the window's minimum size is not
+        # a contributed page's to raise, and the widest page in the app is a
+        # contributed one — the Plugins manager's table of installed add-ons
+        # wants ~1800px, which would pin the window wide open for exactly the
+        # users who enabled plugins.
+        #
+        # The wrapper goes in the stack; `_extra_pages` keeps what the builder
+        # returned, so ``spec.apply`` still gets the widget it made rather
+        # than a QScrollArea it has never heard of.
+        wrapper = self._scrollable(page)
+        self._stack.addWidget(wrapper)
+        self._extra_pages.append((spec, page, wrapper))
+
+    def remove_page(self, spec: Any) -> bool:
+        """Drop a contributed page (its plugin was disabled). True if present.
+
+        Located by the widget rather than the title: two plugins may title a
+        page the same thing, and ``show_page`` resolves by title precisely
+        because it does not care which one it lands on. Removing the wrong
+        one would leave a page belonging to a plugin that is still running.
+        """
+        for index, (candidate, page, wrapper) in enumerate(self._extra_pages):
+            if candidate is not spec:
+                continue
+            row = self._stack.indexOf(wrapper)
+            if row >= 0:
+                # The sidebar row and the stack index are the same number;
+                # take both, or every page after this one is off by one.
+                self._stack.removeWidget(wrapper)
+                item = self._sidebar.takeItem(row)
+                del item
+            wrapper.deleteLater()
+            page.deleteLater()
+            del self._extra_pages[index]
+            if self._sidebar.currentRow() < 0 and self._sidebar.count():
+                self._sidebar.setCurrentRow(0)
+            return True
+        return False
+
+    def set_plugin_window_rows(self, rows: Sequence[tuple[str, str, object]]) -> None:
+        """Replace the Settings > Windows plugin section and rebuild the page.
+
+        The grid is built once and addressed by row index, so adding or
+        removing one row means rebuilding it — which is safe here because the
+        only thing that changes this set is a toggle on the Plugins page, so
+        the Windows page is never the one being looked at. The new widget
+        goes in at the same stack index, or the sidebar would point at the
+        wrong page from then on.
+        """
+        self._plugin_windows = tuple(rows)
+        current = self._pages_by_name.get("Windows")
+        if current is None:
+            return
+        index = self._stack.indexOf(current)
+        if index < 0:
+            return
+        page = self._build_windows_grid()
+        self._stack.insertWidget(index, page)
+        self._stack.removeWidget(current)
+        current.deleteLater()
+        self._pages_by_name["Windows"] = page
 
     def show_page(self, title: str) -> None:
         """Show the window with ``title``'s page selected (unknown = no-op
@@ -1896,13 +1965,15 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         return self._page(form)
 
     def _notify_plugins_restart(self, *, enabled: bool) -> None:
-        """Tell the user the add-on switch takes effect next launch.
+        """Tell the user the MASTER add-on switch takes effect next launch.
 
-        Plugins cannot be turned on live: activation registers bus
-        subscriptions, pipeline parsers and driver ticks, all of which must
-        happen before the driver thread starts, and plugin windows must exist
-        when the tray menu and window layouts are built. Hot enable/disable is
-        tracked separately — see TODO(#45).
+        Individual plugins enable and disable live (#45). This one switch
+        does not, by design: with add-ons off the subsystem is never even
+        imported — that is what "off" means here, and what
+        ``tests/core/plugins/test_master_toggle.py`` pins structurally — so
+        turning it on has to import, consent for and activate everything
+        discovered, all on the GUI thread, and turning it off would have to
+        prove nothing of it is left. A restart does both properly.
         """
         if enabled:
             box = QMessageBox(
@@ -2092,7 +2163,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._apply_character()
         self._apply_maps()
         self._apply_windows()
-        for spec, page in self._extra_pages:
+        for spec, page, _wrapper in self._extra_pages:
             if spec.apply is None:
                 continue
             try:

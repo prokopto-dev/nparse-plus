@@ -30,11 +30,11 @@ and how far to trust them lives in [Plugins](../plugins/index.md) and
 | **Active** | Loaded, approved, enabled, and `activate()` succeeded — it's running. |
 | **Ready** | Approved and enabled, but not activated yet (you're seeing it mid-startup). |
 | **Disabled** | You unticked it, or you answered **Keep disabled** at the consent dialog. |
-| **Awaiting consent** | nParse+ has never asked you about this one. The approval dialog runs at the next launch, before the plugin does anything. |
+| **Awaiting consent** | nParse+ has never asked you about this one. The approval dialog runs before the plugin does anything — right after an install, or at the next launch. |
 | **Incompatible** | The version handshake failed — the add-on wants an SDK or an nParse+ version this build doesn't provide. Ask the author for a rebuild; see [Versioning](../plugins/versioning.md). |
 | **Error** | It raised while loading, while its metadata was validated, or inside `activate()`. Hover the cell for the exception; `nparseplus.log` has the traceback. |
 | **Duplicate id** | Another add-on already claimed the same plugin id. Only the first one loads — uninstall one of them. |
-| **Installed — restart to load** | You installed it in this session. It isn't loaded yet. |
+| **Installed — restart to load** | An in-place *update* installed this session. The new code loads at the next launch — a fresh install, by contrast, loads immediately. |
 
 Two annotations can be appended to any of the above:
 

@@ -71,7 +71,7 @@ from nparseplus.ui.pluginregistries import REGISTRY_WARNING, RegistryListWidget
 from nparseplus.ui.settingswindow import SettingsPageSpec
 
 if TYPE_CHECKING:
-    from nparseplus.core.plugins.host import PluginHost
+    from nparseplus.core.plugins.host import LoadedPlugin, PluginHost
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +205,10 @@ class PluginManagerPage(QWidget):
         self._app_version = app_version
         # Installed this session (the host loads them next launch).
         self._session_installs: list[InstallResult] = []
+        # How a just-installed plugin is asked about, injectable so a test can
+        # answer without a modal dialog (the same seam run_consent_prompts
+        # already offers). None = the real first-load dialog.
+        self.consent_ask: Callable[[LoadedPlugin], bool] | None = None
         self._checking = False
         # Which registry vouched for the install currently in flight (""
         # for file/plain-URL installs). One value is enough: installs are
@@ -733,10 +737,18 @@ class PluginManagerPage(QWidget):
         # queueing rather than by widening these.
         registry_url, self._pending_registry_url = self._pending_registry_url, ""
         update, self._pending_update = self._pending_update, None
+        loaded_now = False
         if result.ok:
             self._host.record_install(result, registry_url=registry_url)
             if update is None:
-                self._session_installs.append(result)
+                # A fresh install can load now (#45): nothing has imported
+                # this file yet, so there is no stale module to fight. An
+                # UPDATE cannot — re-importing in-session leaves the old
+                # objects live and its submodules stale — so it keeps the
+                # restart notice and stays a session-install row.
+                loaded_now = self._adopt_installed(result)
+                if not loaded_now:
+                    self._session_installs.append(result)
             else:
                 self._drop_taken_update(update.plugin_id)
         if update is not None and self._batch_active:
@@ -749,7 +761,11 @@ class PluginManagerPage(QWidget):
         if result.ok:
             name = result.meta.name if result.meta is not None else "Plugin"
             if update is None:
-                lines = [f"{name} installed. It will load the next time nParse+ starts."]
+                lines = [
+                    f"{name} installed and running."
+                    if loaded_now
+                    else f"{name} installed. It will load the next time nParse+ starts."
+                ]
             else:
                 lines = [
                     f"{name} updated to v{update.offered_version}. It will load the "
@@ -772,6 +788,32 @@ class PluginManagerPage(QWidget):
                 "\n".join(result.errors) or "Unknown error",
             )
         self.refresh()
+
+    def _adopt_installed(self, result: InstallResult) -> bool:
+        """Load a just-installed plugin now: classify, consent, activate.
+
+        The install half of #45. Consent is unchanged and non-negotiable —
+        ``record_install`` wrote an unapproved entry, so the plugin arrives
+        ``pending_consent`` and the same first-load dialog runs here that
+        would have run at the next launch. Declining leaves it installed and
+        disabled, which is a load answered, not a load failed.
+
+        False when the plugin could not be adopted at all (an entry-point
+        plugin, an unreadable path), so the caller falls back to the
+        session-install row and its restart notice.
+        """
+        from nparseplus.ui.pluginconsent import run_consent_prompts
+
+        if result.installed_path is None:
+            return False
+        loaded = self._host.adopt_installed(Path(result.installed_path))
+        if loaded is None or loaded.plugin_id is None:
+            return False
+        if loaded.status == "pending_consent":
+            run_consent_prompts(self._host, self.consent_ask)
+        if loaded.status == "ready":
+            self._host.activate_one(loaded.plugin_id)
+        return True
 
     def _drop_taken_update(self, plugin_id: str) -> None:
         """Retire an offer once taken, so the row stops advertising it.
@@ -834,7 +876,7 @@ class PluginManagerPage(QWidget):
             QMessageBox.information(
                 self,
                 "Plugin uninstalled",
-                f"{name} was moved to the trash folder. Restart nParse+ to unload it.",
+                f"{name} was moved to the trash folder.",
             )
         self.refresh()
 

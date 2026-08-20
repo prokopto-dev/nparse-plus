@@ -248,6 +248,18 @@ class NomnsParse(QApplication):
         self._open_settings = open_settings
         bridge.events_batch.connect(self._on_backend_events)
 
+    def add_backend_window(self, label, window):
+        """Add a toggleable window to the tray menu, live (nparseplus #45).
+
+        No menu rebuild is needed: ``_build_tray_menu`` re-reads this dict
+        every time the menu is opened.
+        """
+        self._backend_windows[label] = window
+
+    def remove_backend_window(self, label):
+        """Drop a tray entry (its plugin was disabled). True if it was there."""
+        return self._backend_windows.pop(label, None) is not None
+
     def _on_backend_events(self, events):
         # Delivered on the GUI thread (one coalesced flush per bridge wake-up).
         # The legacy windows expect (timestamp, text-without-timestamp) tuples.
