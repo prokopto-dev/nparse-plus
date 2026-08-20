@@ -20,10 +20,32 @@ don't see a window, look for the tray icon.
     public](https://github.com/prokopto-dev/nparse-plus) if you'd rather
     audit or build it yourself.
 
+!!! warning "If your antivirus quarantines it"
+    A few engines (AVG and Avast most often) flag PyInstaller-packaged apps
+    generically — it is a false positive, and nParse+ is not the only app it
+    happens to. The full explanation, how to get the file back, and how to
+    report it to the vendor are in
+    [Troubleshooting](../troubleshooting.md#antivirus-flagged-the-download).
+
 ## 2. Point it at your logs
 
 Continue with [First run](first-run.md) — you'll select your EverQuest
 `Logs` folder and turn on `/log on` in game.
+
+## Verify your download (optional)
+
+GitHub publishes a sha256 for every release asset. To check the zip you got
+is byte-for-byte the one we uploaded:
+
+```powershell
+Get-FileHash .\nparseplus-<version>-win64.zip -Algorithm SHA256
+```
+
+and compare it with the `digest` listed for that asset at
+`https://api.github.com/repos/prokopto-dev/nparse-plus/releases/latest`.
+A match proves the transfer was clean; it is not a signature. Same check the
+[self-updater](../features/updater.md#verified-downloads) runs on your behalf
+for in-app updates.
 
 ## Updating
 

@@ -139,8 +139,61 @@ jobs:
           enable-cache: true
       - name: Sync dependencies (with build group)
         run: uv sync --frozen --group build
+      # Windows only, and deliberately not through the lock: the prebuilt
+      # bootloader in PyInstaller's wheel is byte-identical for every
+      # PyInstaller user on earth, malware authors ship it too, and that is
+      # what heuristic AV engines match on (#122). Compiling it here produces
+      # bytes no vendor has fingerprinted. macOS and Linux stay on the wheel —
+      # neither is affected, and the macOS bootloader build is byte-reproducible
+      # anyway (verified against the published wheel), so rebuilding it there
+      # would change nothing.
+      #
+      # It fails loudly by construction: PyInstaller's build hook raises when
+      # waf fails, and the check below refuses a bootloader that still equals
+      # the published one. That check is not belt-and-braces — the sdist SHIPS
+      # the prebuilt Windows bootloaders, so a source install that does not set
+      # PYINSTALLER_COMPILE_BOOTLOADER packages the exact bytes this replaces
+      # and looks exactly like success.
+      - name: Pin the PyInstaller source distribution from uv.lock
+        run: uv run python tools/pyinstaller_source_pin.py requirements -o pyi-source.txt
+      - name: Rebuild the PyInstaller bootloader from source
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+        run: >-
+          uv pip install --python .venv/Scripts/python.exe
+          --no-deps --reinstall-package pyinstaller
+          --no-binary pyinstaller --require-hashes -r pyi-source.txt
+      - name: Verify the bootloader is not the published one
+        shell: pwsh
+        run: |
+          $pin = (uv run --no-sync python tools/pyinstaller_source_pin.py wheel win_amd64) -split ' '
+          if ($pin.Count -ne 2) { Write-Host '::error::could not read the wheel pin'; exit 1 }
+          $wheel = Join-Path $env:RUNNER_TEMP 'pyinstaller-stock.zip'
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri $pin[0] -OutFile $wheel
+          $got = (Get-FileHash $wheel -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $pin[1]) {
+            Write-Host "::error::stock wheel sha256 $got != $($pin[1]) from uv.lock"
+            exit 1
+          }
+          $stockDir = Join-Path $env:RUNNER_TEMP 'pyinstaller-stock'
+          Remove-Item -Recurse -Force $stockDir -ErrorAction SilentlyContinue
+          Expand-Archive -Path $wheel -DestinationPath $stockDir
+          # console=False in the spec, so the windowed bootloader is the one
+          # that ends up as nparseplus.exe.
+          $rel = 'PyInstaller/bootloader/Windows-64bit-intel/runw.exe'
+          $stock = (Get-FileHash (Join-Path $stockDir $rel) -Algorithm SHA256).Hash.ToLower()
+          $built = (Get-FileHash (Join-Path '.venv/Lib/site-packages' $rel) -Algorithm SHA256).Hash.ToLower()
+          Write-Host "published runw.exe sha256 $stock"
+          Write-Host "built     runw.exe sha256 $built"
+          if ($stock -eq $built) {
+            Write-Host "::error::bootloader was NOT rebuilt - it is still the published binary"
+            exit 1
+          }
       - name: Build
-        run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+        # --no-sync: the bootloader rebuild above replaced the lock's
+        # PyInstaller wheel in .venv, and a syncing `uv run` may put it back.
+        run: uv run --no-sync pyinstaller packaging/nparseplus.spec --noconfirm
       - name: Verify exe version
         # Same guard as the macOS Info.plist check: the VERSIONINFO resource
         # must carry the tag, not silently go missing again.
@@ -151,6 +204,40 @@ jobs:
           Write-Host "ProductVersion=$got"
           if ($got -ne $want) {
             Write-Host "::error::exe ProductVersion $got != $want"
+            exit 1
+          }
+      - name: Smoke-test the exe
+        # The guard on the rebuilt bootloader: a bootloader we compiled here is
+        # exactly the thing that could produce an exe that no longer starts,
+        # and console=False means a failing one says nothing on stderr.
+        # Two signals, because "still running" alone is weak — a bootloader
+        # error pops a message box and keeps the process alive: the app must
+        # also have got far enough into run_app() to open its log file, which
+        # happens before Qt loads.
+        shell: pwsh
+        run: |
+          $logDir = uv run --no-sync python -c "from platformdirs import user_log_dir; print(user_log_dir('nparseplus'))"
+          if (-not $logDir) { Write-Host '::error::could not resolve the log directory'; exit 1 }
+          Write-Host "log dir: $logDir"
+          Remove-Item -Recurse -Force $logDir -ErrorAction SilentlyContinue
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $p = Start-Process -FilePath dist/nparseplus/nparseplus.exe -PassThru
+          Start-Sleep -Seconds 30
+          $crash = Join-Path $logDir 'crash.log'
+          if (Test-Path $crash) { Write-Host '--- crash.log ---'; Get-Content $crash }
+          $log = Join-Path $logDir 'nparseplus.log'
+          if (Test-Path $log) { Write-Host '--- nparseplus.log ---'; Get-Content $log }
+          if ($p.HasExited) {
+            Write-Host "::error::nparseplus.exe exited early (code $($p.ExitCode))"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not (Test-Path $log)) {
+            Write-Host "::error::nparseplus.exe never opened its log file - it did not reach run_app()"
+            exit 1
+          }
+          if (Test-Path $crash) {
+            Write-Host '::error::nparseplus.exe wrote a crash log on startup'
             exit 1
           }
       - name: Zip
@@ -356,6 +443,11 @@ jobs:
           if [ ! -s release-notes.md ]; then
             echo "See the full changelog for v$VERSION." > release-notes.md
           fi
+          # Standing footer on every release body: the SmartScreen/antivirus
+          # note and how to verify a download (#122). Not changelog material —
+          # it is not news about a version — but it is what somebody on the
+          # download page needs, so it rides along with each one.
+          cat packaging/release-notes-footer.md >> release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}

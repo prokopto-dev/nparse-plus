@@ -47,6 +47,40 @@ versioning.
 Between releases, pushes to `master` that touch `docs/` redeploy the
 **dev** docs version automatically (`docs-dev.yml`).
 
+## Windows: the bootloader is rebuilt from source
+
+A Windows user's antivirus flagging the download
+([#122](https://github.com/prokopto-dev/nparse-plus/issues/122)) is almost
+always a match on PyInstaller's *bootloader* — the small C launcher every
+PyInstaller build starts from. The one in the published wheel is byte-identical
+for everyone who uses the tool, malware included, so the Windows job compiles
+its own:
+
+1. `uv sync --frozen --group build` as before, then a narrow second install of
+   PyInstaller from its **sdist** with `PYINSTALLER_COMPILE_BOOTLOADER=1`,
+   pinned to the same version and sha256 the lock already resolved
+   (`tools/pyinstaller_source_pin.py`). The lock is untouched, so macOS and
+   Linux keep the wheel.
+2. A check that the bootloader in `.venv` no longer equals the one inside the
+   published wheel. This is load-bearing, not decorative: PyInstaller's sdist
+   **also ships the prebuilt Windows bootloaders**, so a source install without
+   that environment variable silently packages the bytes we are replacing and
+   looks exactly like success.
+3. `uv run --no-sync pyinstaller …` — `--no-sync` because a syncing `uv run`
+   may put the lock's wheel back.
+4. A smoke test that launches the exe: a bootloader compiled here is exactly
+   the thing that could produce an exe that no longer starts, and `console=False`
+   means a broken one says nothing on stderr. It asserts the process survives
+   30 s **and** that the app got far enough to open `nparseplus.log`, since a
+   bootloader error pops a message box and keeps the process alive.
+
+Honest limits: a freshly built bootloader is *unknown* rather than
+*known-good*, and some heuristics distrust novelty — the measure of success is
+a VirusTotal comparison before and after, not the change itself. And none of
+this substitutes for an Authenticode signature
+([#19](https://github.com/prokopto-dev/nparse-plus/issues/19)), which is the
+only thing that settles it.
+
 ## What the app checks before it installs a download
 
 The in-app updater streams the release artifact to a `.part` staging file

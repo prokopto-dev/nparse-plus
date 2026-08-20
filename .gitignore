@@ -78,3 +78,6 @@ run-nparse.sh
 .screenshots-scratch/
 AGENTS.md
 tools/*_report.txt
+
+# tools/pyinstaller_source_pin.py output (the Windows bootloader rebuild, #122)
+pyi-source.txt
