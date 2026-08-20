@@ -6,6 +6,24 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.19.1 (2026-08-20)
+
+### Bug Fixes
+
+- **packaging**: Rebuild the PyInstaller bootloader from source on Windows
+  ([`d379b7f`](https://github.com/prokopto-dev/nparse-plus/commit/d379b7f7cf44cc7165c0d6627e6087eef8adbd99))
+
+### Chores
+
+- Ignore the pyinstaller source pin file the Windows build writes
+  ([`8c3bfa6`](https://github.com/prokopto-dev/nparse-plus/commit/8c3bfa69ca203eff343da710e506292515a31842))
+
+### Documentation
+
+- Explain the Windows antivirus false positive
+  ([`756e581`](https://github.com/prokopto-dev/nparse-plus/commit/756e5815d23fe94fdaeb272853cd896a52d4e286))
+
+
 ## v2.19.0 (2026-08-20)
 
 ### Features
