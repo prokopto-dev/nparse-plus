@@ -57,9 +57,9 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     (absolute/`..`/symlink members rejected, member+size caps), single
     top-level entry rule, staging + `validate_plugin` gate before the move
     into place, https-only URL installs with the download on a worker
-    thread, uninstall-to-`trash/`. No hot-load in v1 — installs/toggles
-    apply on restart (`PluginHost.reload_plugin` is future work; tracked as
-    issue #45).
+    thread, uninstall-to-`trash/`. Installs, toggles and uninstalls apply
+    live since #45 (hot-load increment below); an in-place *update* of an
+    installed plugin is the one thing that still waits for a relaunch.
 
 ## Ecosystem increment (same branch, post-v1)
 
@@ -106,8 +106,10 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     `tests/core/plugins/test_master_toggle.py` checks that structurally.
     `NPARSEPLUS_NO_PLUGINS=1` stays a **veto**, never an enabler — it is
     the safe-mode recovery switch, so it must not be able to turn plugins
-    on for someone who never opted in. Toggling requires a restart
-    (`_notify_plugins_restart` in ui/settingswindow.py); the tray's
+    on for someone who never opted in. Toggling *this* switch requires a
+    restart, and since #45 that is a stated design decision rather than a
+    gap — see item 34 (`_notify_plugins_restart` in
+    ui/settingswindow.py argues it in place); the tray's
     "Open Plugins Folder" keys off `plugin_host is not None`, not the
     setting, so a failed discovery sweep doesn't leave a misleading entry.
 17. **Uninstall forgets** (`PluginHost.forget` + `install.trash_plugin_data`).
@@ -291,6 +293,83 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     and that `templates/registry-repo/SETUP.md` and `docs/plugins/registry.md`
     both name whatever the constant says.
 
+## Hot-load increment (#45)
+
+32. **The one new primitive is a driver-thread command inbox**
+    (`core/driver.py` `submit_to_driver(fn, *, label)`). The unsafety was
+    narrower than #45 assumed. `EventBus.publish` already iterates a
+    snapshot of both subscriber lists — deliberately, so a handler may
+    (un)subscribe during dispatch — so the bus was never the problem. The
+    genuine race is `LogPipeline.process`, which walks the live
+    `self._parsers` with an early `break`: a `remove_parser` from the GUI
+    thread mid-line shifts the index and silently skips a parser for that
+    line. So the GUI thread enqueues a closure and the driver runs it at a
+    loop boundary, between lines, never inside one — the
+    `SharingCoordinator.enqueue_inbound` pattern one layer down.
+    `append_parser`, `remove_parser`, `add_supervised_tick` and
+    `remove_tick` all route through it, and the fast-path tick loop copies
+    unconditionally now.
+33. **Per-plugin lifecycle** (`PluginHost.activate_one` / `deactivate_one` /
+    `adopt_installed`). The first two were already the loop bodies of
+    `activate_enabled()` and `shutdown()` in all but name.
+    `deactivate_one` adds the three things `shutdown` may skip because it
+    runs at process exit: retire the row to `disabled`, clear the context,
+    and drop what the plugin built. `shutdown`'s ordering is kept —
+    `deactivate()` **then** `unwind()`, so a plugin still has its
+    registrations while it is shutting itself down. `set_enabled` is the
+    live entry point and never stands in for consent: an unapproved plugin
+    stays `pending_consent`.
+34. **The master toggle stays restart-only, by design.** Turning it on
+    would need a third gated import site and a wider `GATES` in
+    `test_master_toggle.py` (item 16), and would have to import, consent for
+    and activate everything discovered at once on the GUI thread; turning it
+    off would have to prove nothing is left. That is a real architectural
+    guarantee traded for a convenience on a switch most users flip once —
+    so `_notify_plugins_restart` says so out loud instead of leaving it as
+    implied future work.
+35. **What `unwind()` could not reverse, and now can.** Two items: a
+    re-enabled plugin inherited `ctx.tick_dropped` ("tick disabled (too
+    slow)") from the activation before it — one line, clearly a bug — and
+    **timer rows carry an owner** (`BaseRow.owner`, empty for every
+    app-owned row, plus `TimersService.remove_owner`). `ctx.timers` is a
+    thin facade that stamps the plugin's id on rows it adds and passes
+    everything else through, so `deactivate_one` can take a disabled
+    plugin's countdowns off the Timers window — the one item on the "unwind
+    does not cover this" list a user actually sees. It is also where the
+    mutation crosses back onto the driver thread, since `activate` and
+    `deactivate` now run on the GUI thread. Left deliberately: the
+    `WindowState` on disk, which is how a window returns where you left it.
+36. **Update-in-place keeps its restart notice.** Re-importing a plugin
+    mid-session replaces only the top-level `sys.modules` key, so stale
+    `<stem>.helper` submodules survive and the old plugin's live objects
+    keep the old module globals (class identity diverges, module-level
+    singletons fork); entry-point plugins are not reloadable at all. Note
+    the stem-vs-id hazard while you are here: the import key is the file
+    stem, not the plugin id, and `demo.py` and `demo/` can coexist. Install,
+    uninstall, enable and disable are all live because none of them re-import
+    anything.
+37. **The Qt half: a plugin's surfaces follow the plugin.** The host exposes
+    `on_ui_build` (handed the `LoadedPlugin`, whose `window_specs` /
+    `page_specs` are what the UI needs) and `on_ui_teardown` (handed a bare
+    plugin id — core stays Qt-free and never sees a widget).
+    `PluginUi.attach_live` in `pluginbootstrap.py` subscribes both, called
+    from `create_app` **after** the settings window, layout manager and tray
+    exist: they are built *from* what `build_plugin_ui` returned, which is
+    also why subscribing earlier would build the startup windows twice.
+    Nothing keeps a private copy that can drift — each seam is the live
+    collection its owner already had: the chat-command dict and the tray
+    dict are mutated in place (`Application.add_backend_window` /
+    `remove_backend_window`; the menu re-reads its dict on open),
+    `WindowLayoutManager` grew `add_window`/`remove_window`, the settings
+    window grew `add_page`/`remove_page` (sidebar row and stack widget taken
+    together — the correspondence is maintained only by adding and removing
+    in step) and `set_plugin_window_rows` (that grid is index-addressed, so
+    it is rebuilt in place at the same stack index), and `chrome_surfaces`
+    is the list the skin sweep walks. Teardown runs *after* the host's
+    unwind and `deleteLater()`s the widget — hiding it would leave the
+    plugin's QTimers firing into a live widget nobody manages — hiding
+    first, since `deleteLater` only schedules.
+
 ## Follow-ups (open as issues)
 
 - Extract `sdk/` to its own repo (`git subtree split -P sdk`).
@@ -300,7 +379,8 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
   makes an SDK edit immediately visible to the app's tests.
 - Declarative plugin manifest to close the import-before-consent caveat
   (and to let the installer skip the `activate()` call in `validate_plugin`).
-- Hot enable/disable/reload without restart (#45).
+- True code reload: re-importing a plugin updated in place, mid-session —
+  the one case #45 left restart-only (item 36).
 - Frozen-PYZ stdlib audit (which stdlib modules plugin authors can rely on
   in the bundle) + mkdocstrings-generated API reference. Until it exists,
   docs/plugins/developing.md hedges the frozen-dependency list rather than

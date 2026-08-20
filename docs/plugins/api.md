@@ -29,7 +29,8 @@ never an exception.
 ## NParsePlugin
 
 Base class. Subclass, set `meta` as a class attribute, implement
-`activate(ctx)`; `deactivate()` is optional (app shutdown, best-effort).
+`activate(ctx)`; `deactivate()` is optional and best-effort — it runs when
+the user disables or uninstalls you mid-session as well as at app shutdown.
 Expose `create_plugin()` at module level returning an instance.
 
 ## PluginContext

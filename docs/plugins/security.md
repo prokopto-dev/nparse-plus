@@ -123,7 +123,8 @@ first caveat; it is on the roadmap.)
 Consent is recorded against the plugin's **id**, not its version. When a
 plugin's `meta.version` changes, `PluginHost._load_one` updates the recorded
 `last_version` and loads it — no new dialog. An author you approved once can
-ship arbitrary new code under the same id and it runs on the next launch.
+ship arbitrary new code under the same id and it runs — at the next launch
+if you take it as an in-place update, immediately if you install it fresh.
 
 That is a deliberate trade (a prompt on every patch release trains people to
 click through), but it means your trust decision is in the *author*, not in

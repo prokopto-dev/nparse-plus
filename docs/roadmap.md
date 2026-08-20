@@ -19,9 +19,6 @@ default. What it's still missing:
   (CI, release workflow, a working example plugin) so a new add-on starts
   from something that already builds. Content is written in
   `templates/plugin-repo/`.
-- **[Enable/disable without restarting](https://github.com/prokopto-dev/nparse-plus/issues/45)**
-  — today every add-on change (install, uninstall, tick a box) applies at
-  the next launch.
 - **A declarative manifest** so nParse+ can read an add-on's name, version,
   and compatibility *without importing it*. Reading that metadata means
   importing the module today, which is why installing (and dropping a file
@@ -67,6 +64,12 @@ Longer-horizon packaging work, waiting on time (and in some cases, money):
 
 Recently off this list:
 
+- **Add-ons load and unload without a restart** — installing, uninstalling,
+  enabling and disabling an add-on all take effect immediately, windows,
+  tray entries and settings pages included; see
+  [Settings → Plugins](settings/plugins.md#what-applies-now-and-what-needs-a-restart).
+  Two things still need a relaunch and both are deliberate: the master
+  **Enable plugins** switch, and updating an add-on you already have.
 - **A live plugin registry** — the curated index is served by the registry
   server at <https://nparseplugins.prokopto.dev/index.json>, so **Browse
   registry…** works and the app follows the catalogue wherever it lives; see

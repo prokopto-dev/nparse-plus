@@ -175,8 +175,10 @@ version you had installed and loading.
 
 Consent and `plugin-data/<id>` survive an update, which is the entire point:
 the old workaround (uninstall, reinstall) went through `PluginHost.forget`
-and destroyed both. The new code loads at the next launch, like every other
-change on that page.
+and destroyed both. The new code loads at the next launch — the one thing on
+that page that still waits for one, because a module is imported once per
+session and cannot be swapped out under the objects already using it.
+Installing, enabling and disabling all apply immediately.
 
 Since an index carries only `latest`, there is no version history and no
 "downgrade" — the previous copy in `plugins/trash/` is the only way back.

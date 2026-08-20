@@ -74,7 +74,7 @@ class MyPlugin(NParsePlugin):
         ...   # register everything here
 
     def deactivate(self) -> None:
-        ...   # optional; runs at app shutdown
+        ...   # optional; runs when the user disables you, and at shutdown
 
 def create_plugin() -> MyPlugin:
     return MyPlugin()
@@ -99,8 +99,13 @@ Everything a plugin may touch arrives through the
 
 ## The threading contract (read this one section)
 
-- `activate(ctx)` runs once on the **GUI thread before the log driver
-  starts** — registrations are race-free, but never block here.
+- `activate(ctx)` runs once on the **GUI thread**, and `deactivate()` runs
+  there too. At startup that is before the log driver starts; when the user
+  ticks your add-on's box mid-session it is while the driver is already
+  running. Either way your registrations are race-free: the host lands
+  parsers and ticks at a driver-loop boundary, never inside a line. Still
+  **never block here**, and do your work in your callbacks rather than
+  reaching for driver-thread state during `activate()`.
 - Subscriptions, parsers, and ticks run on the app's single **driver
   thread**. That is the only thread where `ctx.timers` and event handling
   are safe — which is exactly where your callbacks run, so mutate freely
@@ -209,10 +214,12 @@ itself. Either way, the rule is the same: nothing Qt at import time.
 
 ## Consent, from your side
 
-- **Your plugin is inert until the user answers.** On the first launch after
-  installation, nParse+ shows a dialog with your `name`, `version`, `author`
-  and install location. `activate()` is not called until the user accepts.
-  Fill in `description` and `author` — that dialog is the only pitch you get.
+- **Your plugin is inert until the user answers.** nParse+ shows a dialog
+  with your `name`, `version`, `author` and install location — right after
+  the install finishes, or at the first launch after someone drops your
+  files into the plugins folder by hand. `activate()` is not called until
+  the user accepts. Fill in `description` and `author` — that dialog is the
+  only pitch you get.
 - **A decline is remembered.** Declining records an approved-but-disabled
   entry, so the user is never re-asked. Your plugin shows as *Disabled* and
   they have to enable it in Settings > Plugins by hand.
