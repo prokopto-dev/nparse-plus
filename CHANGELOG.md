@@ -6,6 +6,32 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.20.0 (2026-08-20)
+
+### Bug Fixes
+
+- **perf**: Key the benchmark history on the run, not the commit
+  ([`dce4af8`](https://github.com/prokopto-dev/nparse-plus/commit/dce4af80a6ec048a8d9a9d7193ecfe7947d6a469))
+
+- **plugins**: Count a tick that raises as an error
+  ([`9aeff0a`](https://github.com/prokopto-dev/nparse-plus/commit/9aeff0afedf6ab57d6729bdf771da2d96a39798f))
+
+### Continuous Integration
+
+- **perf**: Nightly benchmark run and the performance dashboard
+  ([`188767e`](https://github.com/prokopto-dev/nparse-plus/commit/188767e1fb985d5644975878be22b605ed2add45))
+
+### Features
+
+- **plugins**: Show what each add-on costs the log thread
+  ([`2bc9492`](https://github.com/prokopto-dev/nparse-plus/commit/2bc9492705b34ce331e7ce5ce7d41106fe58d7c5))
+
+### Testing
+
+- **perf**: Benchmark the bus, pipeline, plugin dispatch and UI latency
+  ([`58f0f63`](https://github.com/prokopto-dev/nparse-plus/commit/58f0f6374cb0b22af966ad80d5f00d25982c76f1))
+
+
 ## v2.19.1 (2026-08-20)
 
 ### Bug Fixes
