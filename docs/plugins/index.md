@@ -56,8 +56,10 @@ plugin loads, and shows any advisory findings before finishing.
     https (on every redirect hop) and a size cap, and nothing more. Whoever
     controls that URL controls what you install.
 
-Newly installed plugins load **the next time nParse+ starts**, and you'll be
-asked to confirm enabling each new one then.
+A newly installed plugin loads **straight away** — you'll be asked to
+confirm enabling it as soon as the install finishes, and it starts running
+when you approve it. (If it landed somewhere the plugins-folder sweep does
+not pick up, the row says *Installed — restart to load* instead.)
 
 **Manually** — drop the plugin (a `.py` file or a folder) into the plugins
 directory: tray menu > *Open Plugins Folder*, or find it here:
@@ -107,8 +109,10 @@ The *Source* column shows where each plugin came from: a URL plus the first
 characters of its sha256, `Local file (…)`, or **Sideloaded** for anything
 copied into the folder by hand — no recorded source, no checksum.
 
-Enable/disable changes and uninstalls take effect the next time nParse+
-starts.
+Enabling, disabling and uninstalling all take effect immediately — the
+add-on starts or stops there and then, and its windows, tray entries and
+settings page go with it. See
+[what applies now, and what needs a restart](../settings/plugins.md#what-applies-now-and-what-needs-a-restart).
 
 **Uninstalling forgets the plugin.** *Uninstall* moves the plugin's code
 into a `trash/` folder inside the plugins directory rather than deleting it,

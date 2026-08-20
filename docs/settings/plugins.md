@@ -171,7 +171,8 @@ pip). Nothing is deleted: the code moves to `plugins/trash/` and the
 plugin's private data moves to `plugins/trash/plugin-data/`. Its consent
 record is forgotten with it, deliberately — anything that later claims the
 same plugin id has to ask your permission again instead of inheriting the
-old approval and the old stored data. Restart to unload it.
+old approval and the old stored data. A running add-on is stopped and
+unloaded as it goes — no restart.
 
 **Open Plugins Folder** reveals the folder nParse+ scans, in your file
 manager. The same entry is on the tray menu while add-ons are enabled. See
