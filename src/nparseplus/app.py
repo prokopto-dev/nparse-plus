@@ -365,7 +365,6 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # These stay empty when plugins are off, so the uses below need no branch.
     plugin_windows_by_key: dict[str, object] = {}  # "plugin.<id>.<key>" -> widget
     plugin_command_handles: dict[str, object] = {}  # chat toggle_<name> -> widget
-    plugin_tray: dict[str, object] = {}  # tray label -> widget
     extra_pages: list[object] = []
     plugin_window_rows: list[tuple[str, str, object]] = []  # Settings > Windows rows
     plugin_ui = None  # the live owner; attached once the rest of the UI exists
@@ -383,7 +382,6 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         else:
             plugin_windows_by_key = plugin_ui.windows_by_key
             plugin_command_handles = plugin_ui.command_handles
-            plugin_tray = plugin_ui.tray
             extra_pages = plugin_ui.extra_pages
             plugin_window_rows = plugin_ui.window_rows
 
@@ -475,7 +473,10 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             "Trigger Editor": trigger_editor,
             "Macro Editor": macro_editor,
             "Character Dumps": dumps_window,
-            **plugin_tray,
+            # Plugin windows are NOT merged in here: this dict is last-write-
+            # wins, so an add-on titling its window "Settings" would replace
+            # the app's own entry. attach_live adds them below, once this dict
+            # exists to be checked against.
             "Position Event Overlay": _OverlayPositioner(event_overlay),
         },
         window_layouts=window_layouts,

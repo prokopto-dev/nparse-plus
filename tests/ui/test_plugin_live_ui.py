@@ -80,6 +80,9 @@ class FakeTray:
     def remove_backend_window(self, label: str) -> bool:
         return self.windows.pop(label, None) is not None
 
+    def has_backend_window(self, label: str) -> bool:
+        return label in self.windows
+
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
@@ -131,7 +134,10 @@ def wired(qtbot, settings: Settings, plugins_dir: Path):
         on_save=lambda: None,
     )
     tray = FakeTray()
-    tray.windows.update(ui.tray)
+    # Deliberately NOT seeded with ui.tray: create_app stopped merging plugin
+    # entries into the tray literal, because that dict is last-write-wins and
+    # a plugin titling its window "Settings" would replace the app's own.
+    # attach_live claims the labels against the tray below.
     chrome_surfaces: list[object] = list(ui.windows_by_key.values())
     dressed: list[int] = []
     ui.attach_live(
@@ -244,6 +250,56 @@ def test_a_toggle_cycle_leaves_no_duplicates(wired) -> None:
     assert page_titles(window).count("Showy") == 1
     assert len(wired["tray"].windows) == 1
     assert [w for w in wired["chrome_surfaces"]] == [ui.windows_by_key[WINDOW_KEY]]
+
+
+def test_a_plugin_cannot_take_over_a_core_tray_entry(qtbot, settings, tmp_path) -> None:
+    """A plugin names its own window, and the tray dict is last-write-wins.
+
+    A window titled "Settings" would replace the app's own entry until the
+    add-on was disabled — so the label is claimed against the tray itself,
+    and disambiguated with the plugin id, which is also the answer to "whose
+    window is this?".
+    """
+    plugins_dir = tmp_path / "greedy-plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "greedy.py").write_text(
+        PLUGIN.replace('id="showy"', 'id="greedy"').replace('"Showy Window"', '"Settings"'),
+        encoding="utf-8",
+    )
+    settings.plugins.entries["greedy"] = PluginEntry(enabled=True, approved=True)
+    backend = build_backend(settings, speaker=NullSpeaker())
+    host = PluginHost(
+        settings, backend, APP_VERSION, request_save=lambda: None, plugins_dir_override=plugins_dir
+    )
+    host.discover_and_load()
+    bridge = QtEventBridge(backend.bus)
+    handles: dict[str, object] = {}
+    ui = build_plugin_ui(host, settings, APP_VERSION, lambda: None, bridge, handles)
+    settings_window = UnifiedSettingsWindow(settings, on_save=lambda: None)
+    qtbot.addWidget(settings_window)
+    tray = FakeTray()
+    core = object()
+    tray.windows["Settings"] = core  # the app's own entry, already there
+    ui.attach_live(
+        plugin_host=host,
+        settings=settings,
+        save=lambda: None,
+        bridge=bridge,
+        window_handles=handles,
+        settings_window=settings_window,
+        layouts=WindowLayoutManager(settings, {}, on_save=lambda: None),
+        legacy_app=tray,
+        chrome_surfaces=[],
+        apply_appearance=lambda: None,
+    )
+    try:
+        assert tray.windows["Settings"] is core  # untouched
+        assert "Settings (greedy)" in tray.windows
+        # ...and disabling the plugin takes only its own entry.
+        host.set_enabled("greedy", False)
+        assert tray.windows == {"Settings": core}
+    finally:
+        backend.stop()
 
 
 def test_uninstalling_a_running_plugin_takes_its_ui_with_it(wired) -> None:

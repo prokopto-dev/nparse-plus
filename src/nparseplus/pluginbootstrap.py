@@ -71,7 +71,10 @@ class PluginUi:
 
     windows_by_key: dict[str, Any] = field(default_factory=dict)  # "plugin.<id>.<key>"
     command_handles: dict[str, Any] = field(default_factory=dict)  # chat toggle_<name>
-    tray: dict[str, Any] = field(default_factory=dict)  # tray label -> widget
+    # Tray label -> widget. Provisional until ``attach_live`` claims real
+    # labels against the tray itself — at launch the tray does not exist yet,
+    # so the only collisions ``build_plugin_ui`` can see are between plugins.
+    tray: dict[str, Any] = field(default_factory=dict)
     extra_pages: list[Any] = field(default_factory=list)
     # Settings > Windows grid rows: (label, window key, widget). Only windows
     # built on the overlay recipe appear here — see build_plugin_ui.
@@ -122,6 +125,11 @@ class PluginUi:
             chrome_surfaces=chrome_surfaces,
             apply_appearance=apply_appearance,
         )
+        # The windows built at launch are in the tray dict provisionally; now
+        # that the tray exists, claim real labels for them through exactly the
+        # path a live enable uses.
+        for plugin_id in list(self.surfaces):
+            live.claim_tray_labels(plugin_id)
         plugin_host.on_ui_build.append(live.materialize)
         plugin_host.on_ui_teardown.append(live.retire)
 
@@ -273,10 +281,9 @@ class _LivePluginUi:
             if registered is None:
                 widget.deleteLater()
                 continue
-            window_key, tray_label = registered
+            window_key, _provisional = registered
             with _isolated(f"plugin {plugin_id} window registration"):
                 self.layouts.add_window(window_key, widget)
-                self.legacy_app.add_backend_window(tray_label, widget)
             self.chrome_surfaces.append(widget)
             built = True
         for spec in list(loaded.page_specs):
@@ -285,6 +292,7 @@ class _LivePluginUi:
             with _isolated(f"plugin {plugin_id} settings page"):
                 self.settings_window.add_page(spec)
         if built:
+            self.claim_tray_labels(plugin_id)
             # create_app merged the startup command table by hand once; the
             # live path has to keep that merge true, and re-merging every
             # plugin command is idempotent (same keys, same widgets).
@@ -295,6 +303,54 @@ class _LivePluginUi:
                 self.settings_window.set_plugin_window_rows(self.ui.window_rows)
             with _isolated("skin sweep"):
                 self.apply_appearance()
+
+    def claim_tray_labels(self, plugin_id: str) -> None:
+        """Give one plugin's windows real tray labels, then add them.
+
+        A plugin names its own window, so a title of "Settings" or "Console"
+        collides with an app entry — and the tray dict is last-write-wins,
+        so the built-in would simply disappear until the add-on was disabled.
+        ``_register_window`` cannot catch that: at launch it runs before the
+        tray exists, and the only labels it can see are other plugins'. This
+        runs once the tray is real, for the startup batch and for every live
+        enable, and disambiguates with the plugin id — which is also the
+        answer to "whose window is this?", the question a duplicate title
+        leaves the user asking.
+        """
+        surfaces = self.ui.surfaces.get(plugin_id)
+        if surfaces is None:
+            return
+        claimed: list[str] = []
+        for provisional in surfaces.tray_labels:
+            widget = self.ui.tray.pop(provisional, None)
+            if widget is None:
+                continue
+            label = self._free_tray_label(provisional, plugin_id)
+            self.ui.tray[label] = widget
+            with _isolated(f"plugin {plugin_id} tray entry"):
+                self.legacy_app.add_backend_window(label, widget)
+            claimed.append(label)
+        surfaces.tray_labels = claimed
+
+    def _free_tray_label(self, title: str, plugin_id: str) -> str:
+        label = title
+        attempt = 1
+        while self._tray_label_taken(label):
+            attempt += 1
+            suffix = f" ({plugin_id})" if attempt == 2 else f" ({plugin_id} {attempt})"
+            label = f"{title}{suffix}"
+        return label
+
+    def _tray_label_taken(self, label: str) -> bool:
+        if label in self.ui.tray:
+            return True
+        try:
+            return bool(self.legacy_app.has_backend_window(label))
+        except Exception:
+            # An embedder with a tray that cannot answer: fall back to what
+            # this layer knows rather than refusing to register anything.
+            logger.exception("tray could not be asked about %r", label)
+            return False
 
     def retire(self, plugin_id: str) -> None:
         """Unregister and destroy everything that plugin had on screen.

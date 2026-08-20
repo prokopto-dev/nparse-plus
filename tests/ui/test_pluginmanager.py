@@ -112,6 +112,35 @@ def test_install_from_file_via_dialog(qtbot, host, tmp_path: Path, monkeypatch) 
     assert host.entry_for("extra") is not None and host.entry_for("extra").approved
 
 
+def test_install_message_reports_what_actually_happened() -> None:
+    """A plugin that did not start must not be reported as running.
+
+    Declining consent, an SDK mismatch, a duplicate id and a raising
+    activate() all leave the plugin installed and NOT running — saying
+    "installed and running" would send the user looking for a feature that
+    is switched off, which is worse than the restart notice this replaced.
+    """
+    from types import SimpleNamespace
+
+    from nparseplus.ui.pluginmanager import install_outcome_text
+
+    def row(status: str, error: str | None = None):
+        return SimpleNamespace(status=status, error=error)
+
+    assert install_outcome_text("Demo", row("active")) == "Demo installed and running."
+    declined = install_outcome_text("Demo", row("disabled"))
+    assert "running" not in declined and "disabled" in declined
+    incompatible = install_outcome_text("Demo", row("incompatible", "needs SDK >=99"))
+    assert "cannot run in this build" in incompatible and "needs SDK >=99" in incompatible
+    duplicate = install_outcome_text("Demo", row("duplicate", "already claimed id 'demo'"))
+    assert "already claims its id" in duplicate
+    failed = install_outcome_text("Demo", row("error", "activate() raised: RuntimeError()"))
+    assert "failed to start" in failed and "nparseplus.log" in failed
+    # Not adopted at all (entry-point plugin, unreadable path): the old
+    # promise is still the right one.
+    assert "next time nParse+ starts" in install_outcome_text("Demo", None)
+
+
 def test_declining_consent_after_an_install_leaves_it_disabled(
     qtbot, host, tmp_path: Path, monkeypatch
 ) -> None:
@@ -123,10 +152,14 @@ def test_declining_consent_after_an_install_leaves_it_disabled(
         QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(archive), "zip"))
     )
     monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    infos: list[tuple] = []
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: infos.append(a)))
     page = make_page(qtbot, host, consent=False)
     install_from_file_and_wait(qtbot, page)
     assert page._table.item(1, 3).text() == "Disabled"
     assert host.entry_for("extra").approved and not host.entry_for("extra").enabled
+    # ...and the dialog says so, rather than claiming it is running.
+    assert infos and "running" not in infos[0][2]
 
 
 def test_install_failure_shows_warning(qtbot, host, tmp_path: Path, monkeypatch) -> None:

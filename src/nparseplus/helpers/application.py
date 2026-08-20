@@ -260,6 +260,17 @@ class NomnsParse(QApplication):
         """Drop a tray entry (its plugin was disabled). True if it was there."""
         return self._backend_windows.pop(label, None) is not None
 
+    def has_backend_window(self, label):
+        """Whether a tray label is already spoken for.
+
+        A plugin names its own window, so nothing stops one titling it
+        "Settings"; without this the entry would replace the app's own until
+        the plugin was disabled. Asked of the tray rather than answered from a
+        list of core labels kept somewhere else, because this dict is the only
+        thing that actually knows.
+        """
+        return label in self._backend_windows
+
     def _on_backend_events(self, events):
         # Delivered on the GUI thread (one coalesced flush per bridge wake-up).
         # The legacy windows expect (timestamp, text-without-timestamp) tuples.
