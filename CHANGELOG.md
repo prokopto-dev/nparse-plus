@@ -6,6 +6,36 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.18.0 (2026-08-20)
+
+### Bug Fixes
+
+- **plugins**: Keep a plugin's timer mutations on the driver thread
+  ([`2d7a185`](https://github.com/prokopto-dev/nparse-plus/commit/2d7a1851b502c16486552df619f93641eb41fcd7))
+
+- **plugins**: Re-render the manager row when a toggle takes effect
+  ([`6a36836`](https://github.com/prokopto-dev/nparse-plus/commit/6a36836ab209336e631aea27550ed09b10763696))
+
+- **plugins**: Report what an install actually did, and stop tray takeovers
+  ([`f610bab`](https://github.com/prokopto-dev/nparse-plus/commit/f610babe6bf9b0aea5730299d928ab5aee00509d))
+
+### Documentation
+
+- **plugins**: The Plugins page hint says what a toggle now does
+  ([`d4c76c9`](https://github.com/prokopto-dev/nparse-plus/commit/d4c76c988ac0494e8b24c06df19b439f242db682))
+
+### Features
+
+- **plugins**: Activate and deactivate plugins without a restart
+  ([`9b48f55`](https://github.com/prokopto-dev/nparse-plus/commit/9b48f55076b3b48671052d212b7bc1e97275ea5e))
+
+- **plugins**: Build and destroy plugin windows and pages without a restart
+  ([`2c117b7`](https://github.com/prokopto-dev/nparse-plus/commit/2c117b71ca8c2b8cff3f31161ca97f53a2496643))
+
+- **plugins**: Let a plugin's surfaces follow it, and retry a failed activate
+  ([`72b26e7`](https://github.com/prokopto-dev/nparse-plus/commit/72b26e79fe9c93575c58ffd615d33d39ce2e81f6))
+
+
 ## v2.17.1 (2026-08-19)
 
 ### Bug Fixes
