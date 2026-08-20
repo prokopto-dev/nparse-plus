@@ -56,6 +56,9 @@ Spell rows show their **gem icon** from the spell data.
   in [Settings → Timers](../settings/timers.md). Ambiguous
   casts (several spells share one cast message) show a best guess when
   enabled.
+- **Fold a section away** — click any group header to collapse it; click it
+  again to bring it back. See [Collapsing sections](#collapsing-sections)
+  below.
 - **Hide whole sections** — don't care about Boats, Mob Timers, Roll Timers,
   or Custom Timers? Each built-in section (and random rolls) has its own show/
   hide toggle in [Settings → Timers](../settings/timers.md).
@@ -94,6 +97,37 @@ A buff flagged *Flash on expiry* stays on screen flashing **REBUFF** until you
 left-click to dismiss it:
 
 ![A post-expiry rebuff prompt flashing in the Timers window](../assets/screenshots/feature--rebuff-flash.png)
+
+## Collapsing sections
+
+In a raid — or at a busy camp — the window stacks up enough sections that the
+rows you actually care about get pushed off the bottom. **Left-click a group
+header to fold that section shut.** Its rows come off the window and the header
+stays behind as a one-line stub, marked with a ► and carrying the number of
+rows it is holding, so a folded group is never silently forgotten:
+
+```
+► JOE  (7)
+```
+
+Click the stub again to unfold it. Everything folds — your own **You** buffs,
+a player or NPC target, the built-in Mob/Roll/Custom/Boats sections, and the
+spell headers raid mode creates.
+
+Folding is **display-only**, exactly like the per-section show/hide toggles in
+Settings: nothing is cleared, the timers keep counting, and buff-fade warnings
+and expiry announcements still fire from inside a folded section. The count in
+the window's title bar keeps counting folded rows too.
+
+Two details worth knowing:
+
+- **Folds survive a restart**, per section, and they survive the section
+  leaving the window: fold *Joe* and the fold is still there the next time Joe
+  takes a buff.
+- **Headers are still drag handles.** A press that moves the window is a drag,
+  not a click, so dragging the overlay by a header does not fold it. And with
+  click-through enabled the overlay gets no clicks at all — including these —
+  so turn click-through off first.
 
 ## Camping and logging back in
 

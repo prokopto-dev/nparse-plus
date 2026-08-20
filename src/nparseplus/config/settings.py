@@ -122,6 +122,13 @@ class WindowState(BaseModel):
     # Event-overlay per-region placement (keys: "lanes", "alert", "bars").
     # None = the legacy stacked QVBoxLayout (regions not independently placed).
     overlay_regions: dict[str, OverlayRegion] | None = None
+    # Timers-window sections the user has folded shut (#129, ui/spellwindow.py).
+    # Keys are "<orientation>:<header>" — see ``spellwindow.section_key``;
+    # the orientation prefix is what keeps a raid-mode spell section and a
+    # same-named target group apart. Keys for sections that are not currently
+    # on screen are kept on purpose, so a group folded now is still folded
+    # when its rows come back.
+    collapsed_groups: list[str] = Field(default_factory=list)
 
 
 class WindowLayoutPreset(BaseModel):

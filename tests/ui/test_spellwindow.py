@@ -6,8 +6,9 @@ import types
 from datetime import datetime, timedelta
 
 import pytest
+from PySide6.QtCore import QPoint, Qt
 
-from nparseplus.config.settings import Settings
+from nparseplus.config.settings import Settings, WindowState
 from nparseplus.core.handlers.boat import BOATS_GROUP
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.timers import (
@@ -16,6 +17,7 @@ from nparseplus.core.timers import (
     TRIGGER_TIMER_GROUP,
     YOU_GROUP,
     CounterRow,
+    DisplayGroup,
     RollRow,
     SpellRow,
     TimerRow,
@@ -23,6 +25,7 @@ from nparseplus.core.timers import (
 )
 from nparseplus.ui.overlaybase import format_mmss
 from nparseplus.ui.spellwindow import (
+    COLLAPSE_MARKER,
     COLOR_BENEFICIAL,
     COLOR_DETRIMENTAL,
     COLOR_POP_WINDOW,
@@ -31,9 +34,11 @@ from nparseplus.ui.spellwindow import (
     FADE_STEPS,
     SpellTimerWindow,
     bar_color,
+    collapsed_header_text,
     fade_color,
     row_bar_color,
     row_sort_key,
+    section_key,
 )
 
 pytestmark = pytest.mark.qt
@@ -1163,3 +1168,159 @@ def test_clearing_the_series_removes_every_candidate(qtbot):
     window._clear_series("lodizal")
     mob_rows = [r.name for r in backend.timers.snapshot() if r.group == MOB_TIMER_GROUP]
     assert mob_rows == ["--Dead-- a gnoll"]
+
+
+# -- collapsible group headers (#129) ------------------------------------------
+
+
+def _header_for(window: SpellTimerWindow, key: str):
+    """The header widget whose collapse key is ``key``."""
+    return next(h for h in window._headers.values() if h.property("section_key") == key)
+
+
+def _click_header(qtbot, window: SpellTimerWindow, key: str, drag: int = 0) -> None:
+    """Press and release over a header, optionally moving ``drag`` px between."""
+    header = _header_for(window, key)
+    pos = header.mapTo(window, header.rect().center())
+    qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=pos)
+    qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=pos + QPoint(drag, drag))
+
+
+def test_section_key_separates_the_two_orientations():
+    rows: list = []
+    assert section_key(DisplayGroup("Aegolism", "spell", rows)) == "spell:Aegolism"
+    assert section_key(DisplayGroup("Aegolism", "target", rows)) == "target:Aegolism"
+
+
+def test_clicking_a_group_header_folds_and_unfolds_it(qtbot):
+    backend = make_backend()  # Clarity (YOU) + a Custom Timer
+    window = _shown_window(qtbot, backend)
+    key = f"target:{YOU_GROUP}"
+
+    assert "Clarity" in window.current_row_names()
+    _click_header(qtbot, window, key)
+
+    assert window.is_section_collapsed(key) is True
+    assert "Clarity" not in window.current_row_names()
+    # The header stays, with its row count, so a folded group is not forgotten.
+    folded = _header_for(window, key).text()
+    assert folded == collapsed_header_text(YOU_GROUP.strip(), 1)
+    assert "(1)" in folded
+    assert COLLAPSE_MARKER in folded
+    # Everything else is untouched.
+    assert "Custom Timer" in window.current_row_names()
+
+    _click_header(qtbot, window, key)
+    assert window.is_section_collapsed(key) is False
+    assert "Clarity" in window.current_row_names()
+    assert _header_for(window, key).text() == YOU_GROUP.strip()
+
+
+def test_folding_is_display_only_and_the_timers_keep_running(qtbot):
+    backend = make_backend()
+    window = _shown_window(qtbot, backend)
+    window.toggle_section(f"target:{YOU_GROUP}")
+
+    # The row is off the window but still in the service, still counting.
+    assert "Clarity" not in window.current_row_names()
+    row = backend.timers.find("Clarity", YOU_GROUP)
+    assert row is not None
+    # The window's own count still reports it — a fold is not a disappearance.
+    assert window._title_count.text() == "2"
+
+
+def test_a_folded_header_count_follows_its_rows(qtbot):
+    backend = make_backend()
+    _add_other_buff(backend, "Aegolism", "Joe")
+    _add_other_buff(backend, "Clarity", "Joe")
+    window = _shown_window(qtbot, backend)
+    window.toggle_section("target:Joe")
+    assert _header_for(window, "target:Joe").text() == collapsed_header_text("Joe", 2)
+
+    backend.timers.remove_row(backend.timers.find("Aegolism", "Joe"))
+    window.refresh(now=NOW)
+    assert _header_for(window, "target:Joe").text() == collapsed_header_text("Joe", 1)
+
+
+def test_dragging_the_window_from_a_header_does_not_fold_it(qtbot):
+    backend = make_backend()
+    window = _shown_window(qtbot, backend)
+    key = f"target:{YOU_GROUP}"
+
+    _click_header(qtbot, window, key, drag=40)
+
+    assert window.is_section_collapsed(key) is False
+    assert "Clarity" in window.current_row_names()
+    # Same press point, no drag: proof the position really is over the header
+    # and the drag is what spared it.
+    _click_header(qtbot, window, key)
+    assert window.is_section_collapsed(key) is True
+
+
+def test_a_fold_persists_in_the_window_state_and_survives_a_restart(qtbot):
+    backend = make_backend()
+    saves: list[int] = []
+    window = SpellTimerWindow(backend, on_save=lambda: saves.append(1))
+    qtbot.addWidget(window)
+    window.refresh()
+    window.show()
+    window._rows_layout.activate()
+
+    _click_header(qtbot, window, f"target:{TRIGGER_TIMER_GROUP}")
+    assert saves  # the release writes the window state
+    state = backend.settings.windows["spells"]
+    assert state.collapsed_groups == [f"target:{TRIGGER_TIMER_GROUP}"]
+
+    # A JSON round-trip (what settings.json is) keeps the fold...
+    reloaded = Settings.model_validate_json(backend.settings.model_dump_json())
+    assert reloaded.windows["spells"].collapsed_groups == [f"target:{TRIGGER_TIMER_GROUP}"]
+
+    # ...and the next launch opens with that section already folded.
+    backend.settings = reloaded
+    restarted = SpellTimerWindow(backend)
+    qtbot.addWidget(restarted)
+    restarted.refresh(now=NOW)
+    assert "Custom Timer" not in restarted.current_row_names()
+    assert "Clarity" in restarted.current_row_names()
+
+
+def test_an_old_settings_file_without_the_key_loads_unfolded():
+    """The field is additive: a settings.json written before #129 has none."""
+    state = WindowState.model_validate({"shown": True, "opacity": 1.0})
+    assert state.collapsed_groups == []
+
+
+def test_a_fold_outlives_the_section_leaving_the_window(qtbot):
+    backend = make_backend()
+    _add_other_buff(backend, "Aegolism", "Joe")
+    window = _shown_window(qtbot, backend)
+    window.toggle_section("target:Joe")
+
+    backend.timers.remove_group("Joe")
+    window.refresh(now=NOW)
+    assert "Joe" not in window.current_groups()
+
+    _add_other_buff(backend, "Aegolism", "Joe")
+    window.refresh(now=NOW)
+    assert window.collapsed_sections() == ["target:Joe"]
+    assert "Aegolism" not in window.current_row_names()
+
+
+def test_raid_mode_spell_headers_fold_by_their_own_key(qtbot):
+    backend = make_backend()
+    for target in ("Joe", "Bob", "Ann"):
+        _add_other_buff(backend, "Aegolism", target)
+    backend.settings.spellwindow.raid_group_by_spell = True
+    window = _shown_window(qtbot, backend)
+    window.refresh(now=NOW)
+
+    # A spell header has no clearable group key but is still collapsible.
+    header = _header_for(window, "spell:Aegolism")
+    assert header.property("group_key") is None
+    _click_header(qtbot, window, "spell:Aegolism")
+
+    assert window.current_row_labels() == ["Clarity", "Custom Timer"]
+    assert header.text() == collapsed_header_text("Aegolism", 3)
+
+    # The orientation prefix keeps it apart from a target of the same name.
+    assert window.is_section_collapsed("target:Aegolism") is False
