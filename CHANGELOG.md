@@ -6,6 +6,33 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.22.0 (2026-08-21)
+
+### Bug Fixes
+
+- **data**: Detect a running EverQuest client on Windows
+  ([`97f0d85`](https://github.com/prokopto-dev/nparse-plus/commit/97f0d85f2d3f30dfe24cb4cf1a37327eceba7b03))
+
+- **overlays**: A rehearsed alert must not disturb a row it does not own
+  ([`652a7e4`](https://github.com/prokopto-dev/nparse-plus/commit/652a7e4ae0e7f7c604b1ed8d624d2e26698acd2e))
+
+- **triggers**: Ask the capability question from inside the guard
+  ([`ed06eb3`](https://github.com/prokopto-dev/nparse-plus/commit/ed06eb318b287ccd561f5f956707638860cf98a3))
+
+- **triggers**: Let chat window toggles reach every window
+  ([`f96198b`](https://github.com/prokopto-dev/nparse-plus/commit/f96198b554e99f913b24eb2c2d87013cd2853d88))
+
+### Features
+
+- **data**: Keep a macro pack's page layout when moving to free slots
+  ([#34](https://github.com/prokopto-dev/nparse-plus/pull/34),
+  [`768011b`](https://github.com/prokopto-dev/nparse-plus/commit/768011bada649b1b4ec036cb0593aa4b437a8e7f))
+
+- **overlays**: Test-fire overlay and TTS alerts from settings
+  ([#85](https://github.com/prokopto-dev/nparse-plus/pull/85),
+  [`1d2907c`](https://github.com/prokopto-dev/nparse-plus/commit/1d2907c89afa6319492158690482b30f21f1da2b))
+
+
 ## v2.21.0 (2026-08-21)
 
 ### Bug Fixes
