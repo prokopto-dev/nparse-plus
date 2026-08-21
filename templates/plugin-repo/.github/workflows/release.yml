@@ -89,7 +89,13 @@ jobs:
           )
           if meta.min_app_version:
               body += f"- min_app_version: `{meta.min_app_version}`\n"
-          open("release-body.md", "w").write(body)
+          # encoding is explicit because the body is not ASCII (the arrows
+          # above) and Python's default follows the platform — cp1252 on a
+          # Windows runner, which raises UnicodeEncodeError rather than
+          # mangling anything. This job is `runs-on: ubuntu-latest` today;
+          # the failure would arrive the day somebody changes that.
+          with open("release-body.md", "w", encoding="utf-8") as handle:
+              handle.write(body)
           EOF
 
       - name: Publish GitHub release

@@ -94,6 +94,14 @@ def test_release_body_carries_every_value_a_publish_request_needs(tmp_path, monk
     assert "https://github.com/someone/my-nparse-plugin/releases/download/v1.2.0/" in body
     assert hashlib.sha256(b"not really a zip").hexdigest() in body
     assert ">=1.1,<2" in body
+    # The body is not ASCII, and the write has to say so. Python's default
+    # encoding follows the platform, so an implicit one raises
+    # UnicodeEncodeError on a Windows runner rather than mangling the text —
+    # which is how this suite found it. Asserted on the source as well as on
+    # the round-trip, because the round-trip passes on any platform whose
+    # default happens to be UTF-8.
+    assert "nParse+ → Settings → Plugins" in body
+    assert 'encoding="utf-8"' in _compose_release_body_script()
 
 
 def test_release_body_keeps_an_authors_app_version_floor(tmp_path, monkeypatch) -> None:
