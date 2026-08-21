@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from nparseplus.config.settings import BUILTIN_REGISTRY_URL
 from nparseplus_sdk import PluginMeta, check_compat
@@ -59,13 +59,36 @@ MAX_INDEX_BYTES = 5 * 1024 * 1024
 class RegistryRelease(BaseModel):
     """One reviewed, downloadable release of a plugin."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     version: str
     url: str
     sha256: str
     requires_sdk: str = ">=1.0,<2"
     min_app_version: str | None = None
+    notes: str = Field(
+        default="",
+        # PLAIN TEXT, NEVER MARKUP. The registry promises the field is not
+        # markup rather than filtering what it holds (regserve ADR-0013: valid
+        # UTF-8, no control characters but newline, at most 2048 bytes), which
+        # is precisely so no client has to carry a sanitiser or a Markdown
+        # renderer. Show it in a text widget; anything that interprets it is
+        # doing what that ADR says not to.
+        #
+        # Two spellings are accepted because the server names it two things
+        # in two places and only one of them is on this wire yet: the publish
+        # request's field is `notes` (the database's own column name), while
+        # the index document spells it `release_notes` — canonical §7 over
+        # there forbids a column named after a wire field. Surfacing it on
+        # `latest` is the server's next phase, so this ships ahead of it and
+        # lights up under either name; unknown keys were always tolerated,
+        # which is what makes an additive field safe to anticipate.
+        validation_alias=AliasChoices("release_notes", "notes"),
+        description=(
+            "Author-supplied patch notes for this release. Plain text, not "
+            "Markdown and not HTML: a client renders it in a text widget."
+        ),
+    )
 
     @field_validator("url")
     @classmethod

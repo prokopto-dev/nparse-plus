@@ -7,8 +7,12 @@ a SQLite database, [`prokopto-dev/nparse-plugin-regserve`](https://github.com/pr
 It began as a static file published from GitHub Pages and edited by pull
 request, and moved so that publishing can be a step in a plugin's own release
 pipeline instead of a second repository and a wait. What did **not** move is
-the part that carries the trust: a listing pins a sha256, and the installer
-refuses bytes that do not match it.
+the part that carries the trust — and on the question that matters it got
+*stronger*: a listing pins a sha256 and the installer refuses bytes that do
+not match it, and that digest is now one the registry
+[computed itself](#the-digest-is-one-the-registry-computed) from the artifact
+it downloaded, rather than a number an author submitted and a human agreed
+looked right.
 
 That built-in catalogue is the one nParse+ ships with, but it is not the
 only one it will read: you can add registries of your own, and Browse
@@ -17,22 +21,22 @@ decision, and [Using another registry](#using-another-registry) below is
 the canonical explanation of what you are agreeing to.
 
 !!! note "Status"
-    The registry is **live**: the app fetches
-    [`index.json`](https://nparseplugins.prokopto.dev/index.json) and
-    *Browse registry…* works.
+    The registry is **live**, and so is publishing into it. The app fetches
+    [`index.json`](https://nparseplugins.prokopto.dev/index.json),
+    *Browse registry…* works, and an author publishes a release with one
+    authenticated `POST` from their own pipeline — see
+    [Publishing a plugin](#publishing-a-plugin).
 
     Nothing in the client changed when the catalogue moved off GitHub Pages
     ([#130](https://github.com/prokopto-dev/nparse-plus/issues/130)). It is
     the same schema-1 document fetched with the same single unconditional
     GET, and the server keeps that path outside its versioned API precisely
-    so it never moves. Publishing *into* it straight from a plugin's release
-    pipeline is designed and not yet built; until it is, a maintainer applies
-    listings — see [Submitting a plugin](#submitting-a-plugin).
+    so it never moves.
 
     This page is the specification the index and the app both implement. The
-    JSON Schema the registry validates listings against is generated from the
+    JSON Schema the served index is checked against is generated from the
     app's own parser and committed at
-    [`templates/registry-repo/`](https://github.com/prokopto-dev/nparse-plus/tree/master/templates/registry-repo)
+    [`templates/registry-repo/schema/`](https://github.com/prokopto-dev/nparse-plus/tree/master/templates/registry-repo)
     (see below).
 
 ## How the app consumes it
@@ -47,7 +51,10 @@ the canonical explanation of what you are agreeing to.
 - **Registry installs are sha256-pinned**: the app downloads the release zip
   and refuses it — before extraction, before any code runs — unless its bytes
   hash to the value that registry's index recorded. The URL is transport; the
-  hash is the security boundary. (This is what separates a registry install
+  hash is the security boundary. For the built-in catalogue that value was
+  [computed by the registry itself](#the-digest-is-one-the-registry-computed);
+  a registry you add makes its own promises, and the index cannot tell you
+  which. (This is what separates a registry install
   from *Install from URL…*, which has no expected hash — see
   [Security & trust](security.md#where-the-checksum-applies-and-where-it-doesnt).
   What the hash does *not* establish is
@@ -83,6 +90,11 @@ by Browse; every unticked row is ignored entirely.
     and one click from installed. Trust a registry the way you would trust
     the authors whose plugins you install — because it decides who those
     authors are.
+
+    Nor can you tell from an index *where its digests came from*. The
+    built-in registry computes every one of them itself, from the artifact it
+    downloaded; another registry is free to publish whatever number an author
+    handed it, and the document looks identical either way.
 
 The app states this at the moment it matters: adding shows a confirmation
 carrying both that warning and the plugin-consent warning, and it **defaults
@@ -238,7 +250,8 @@ field in, never a list entry you built.
         "url": "https://github.com/someone/nparse-merchant-prices/releases/download/v1.2.0/merchant_prices.zip",
         "sha256": "9f2c…64 hex chars…",
         "requires_sdk": ">=1.0,<2",
-        "min_app_version": "1.18.0"
+        "min_app_version": "1.18.0",
+        "release_notes": "Fixes the price cache going stale after a zone."
       }
     }
   ]
@@ -250,109 +263,169 @@ GitHub release asset of the plugin's own repo; `sha256` is 64 **lowercase**
 hex characters and is the hash of exactly that artifact; `schema_version`
 newer than the app understands makes the app say "update nParse+" rather
 than misread the index. Only `latest` is carried per plugin — the registry
-lists the current reviewed release, not a version history.
+lists the current published release, not a version history.
+
+`release_notes` is optional, and it is **plain text** — what changed, for a
+person to read. It is not Markdown and not HTML: the registry promises only
+that the field is *not markup* (valid UTF-8, no control characters but
+newline, at most 2048 bytes) rather than filtering what an author wrote, and
+that promise is what means no client has to carry a sanitiser or a renderer.
+nParse+ shows it in a plain-text widget, so `**bold**` arrives as literal
+asterisks — deliberately. Anything that renders the field as markup is doing
+what the registry's
+[ADR-0013](https://github.com/prokopto-dev/nparse-plugin-regserve/blob/main/docs/adr/0013-release-notes-are-plain-text-with-a-hard-cap.md)
+says not to. (nParse+ also accepts it spelled `notes`, which is what the
+publish API calls the same field.)
+
+Unknown keys are ignored, which is what makes a new field like that one safe
+to add: an app too old to know about it reads the rest of the index normally.
 
 `nparseplus.core.plugins.registry` is the source of truth for this format;
-`tools/gen_registry_schema.py` generates the registry repo's
-`schema/index-v1.schema.json` from those pydantic models, so the schema CI
-validates against and the parser the app runs cannot drift.
+`tools/gen_registry_schema.py` generates
+`templates/registry-repo/schema/index-v1.schema.json` from those pydantic
+models, and the registry server vendors that file verbatim and diffs the
+document it renders against it — so what the server serves and what the app
+parses cannot drift.
 
 ## Id ownership
 
-Ids are first-come and permanent, and that is **machine-checkable**, not
-just a review convention. The registry repo carries an `owners.json`
-alongside the index mapping each plugin id to a list of GitHub handles:
+Ids are first-come and permanent, and that is a **database row**, not a
+review convention and no longer a file. You claim an id once, from a
+signed-in session; the claim registers the plugin and makes you its owner,
+and every later publish under that id has to come from an owner of it.
 
-```json
-{
-  "owners": {
-    "merchant-prices": ["someone"],
-    "raid-tools": ["someone", "their-comaintainer"]
-  }
-}
-```
+Ownership rows are never deleted. Delisting removes the listing and leaves
+the claim standing, so a delisted id cannot be reused by someone else to
+ship an "update" to your former users. Handing a plugin over is
+add-the-new-owner, then remove the old one — in that order, so the plugin is
+never briefly ownerless.
 
-Any listed handle may submit changes to that plugin's entry. CI requires
-that every id in `index.json` has an owners entry, and that the PR author
-owns every entry they add or change. Adding the `owners.json` line for a
-brand-new plugin is a maintainer action in the same PR — that addition is
-the curation step. On the server the same rule is a database row rather than
-a file: ownership rows are never deleted, and the file above is what seeds
-them.
+Claiming an id gets you a row and an owner grant. It does **not** get you a
+listing: a plugin appears in the index only once a release of it has been
+published, and the first release of a new id always goes to a human.
 
-Delisting removes the listing but leaves the ownership claim: ids are never
-recycled, so a delisted id cannot be reused by someone else to ship an
-"update" to your former users.
-
-That guarantee is **per registry**. This repo's `owners.json` binds ids in
-this index and nowhere else — another registry can list your id pointing at
-its own artifact, which is exactly why Browse shows both rows and why the
-app refuses to treat one as an update to the other
+That guarantee is **per registry**. An ownership row binds an id in *that*
+registry's catalogue and nowhere else — another registry can list your id
+pointing at its own artifact, which is exactly why Browse shows both rows and
+why the app refuses to treat one as an update to the other
 ([above](#what-browse-does-with-several-registries)).
 
-## Submitting a plugin
+## Publishing a plugin
 
-1. Build your release with the
-   [plugin repo template](developing.md#starting-from-the-repo-template) —
-   its release workflow attaches the zip and prints the exact registry
-   entry JSON (with the sha256 already computed) in the release body and as
-   a `registry-entry.json` release asset.
-2. Open a PR against `prokopto-dev/nparseplus-plugins` adding or updating
-   your entry in `index.json`, plus your id in `owners.json` if it's new.
-   A submission should touch only those two files.
-3. Registry CI checks the mechanical facts (below).
-4. A maintainer reviews (this is the curation step — expect them to look
-   at your source) and applies the merged entry to the live catalogue.
+Publishing is a step in your own release pipeline: one authenticated `POST`
+per release, from the workflow that built the artifact. There is no second
+repository to fork and nothing to paste anywhere.
 
-Version updates are the same flow: bump `latest` (new version, new URL, new
-sha256). Because the hash pins the reviewed bytes, an author cannot swap the
-artifact behind an already-listed URL — changing what users receive means
-changing the listing, which means another review.
+1. **Sign in** at <https://nparseplugins.prokopto.dev/> with GitHub — the
+   registry's only identity provider — and mint a personal access token
+   scoped to publishing. The token is shown once.
+2. **Claim your plugin id**, once, from that signed-in session (a token
+   cannot do it; claiming an id is a decision a person makes while signed
+   in). The id is first-come, permanent and never recycled — it identifies
+   your plugin in every installed copy on every user's machine.
+3. **Tag your release.** The
+   [plugin repo template](developing.md#starting-from-the-repo-template)'s
+   workflow refuses a tag that disagrees with `meta.version`, builds the zip
+   in the layout the installer expects, attaches it to a GitHub release, and
+   prints its sha256.
+4. **`POST` the release** to `/api/v1/plugins/{id}/releases` with your token
+   and an `Idempotency-Key` header, carrying the artifact URL, the sha256
+   your build computed, your `requires_sdk` specifier, an optional minimum
+   app version, and optional plain-text release notes. Re-running the
+   workflow with the same key returns the original result instead of
+   publishing a second time — which is the behaviour you want from a job
+   somebody will inevitably re-run.
 
-!!! info "This is the interim flow"
-    The reason the registry became a server is that a patch release should be
-    a step in *your* pipeline, not a pull request against someone else's
-    repository: `POST` the new release with a scoped token, and the server
-    downloads the artifact and hashes it **itself**, so an author-supplied
-    hash is never stored. A brand-new plugin id still waits for a human — that
-    is the review worth keeping — while version bumps from a trusted owner
-    publish on their own. That half is specified and not yet built, which is
-    why a person still applies your entry today.
+The artifact stays on your GitHub release; the registry stores its URL and a
+hash. A version update is the same four steps minus the first two.
 
-### What CI checks
+!!! info "Step 4 is still a request you write yourself"
+    A reusable publish-on-tag workflow for plugin repositories is the
+    registry server's next piece of work, and the template will be wired to
+    it when it lands. Until then the `POST` is yours to add — this page and
+    the registry's own API documentation are the contract, and nothing about
+    it changes when the reusable workflow arrives.
 
-`.github/workflows/validate-index.yml` on every PR:
+### The digest is one the registry computed
 
-| Check | Failure means |
+The old arrangement's safety came from the merge: a maintainer read the
+listing, and because the sha256 pinned the reviewed bytes, changing what
+users received *required another review*. It is worth saying plainly what
+replaced that, rather than letting it quietly lapse — because on the one
+question a hash can answer, what replaced it is **stronger**.
+
+**The registry does not store the hash you submit.** It downloads the
+artifact from the URL you gave it, hashes the bytes it actually received, and
+publishes *that* value. Yours is compared against it and then discarded. So
+the digest in the index is not a claim somebody made about an artifact; it is
+a measurement of one, taken by the machine that published it. "A human
+confirmed this JSON matches that release" was the old promise, and it was
+only ever as good as the afternoon the human was having.
+
+The comparison is the point. If the two differ, something between your build
+and the registry's fetch changed the bytes — a re-uploaded release asset, a
+stolen token, a hijacked URL — and that release does not go live: it goes to
+review with the reason recorded. So does a release whose artifact could not
+be fetched at all. "We could not check" and "we checked and it was fine" are
+never allowed to produce the same answer
+([ADR-0008](https://github.com/prokopto-dev/nparse-plugin-regserve/blob/main/docs/adr/0008-server-rehashes-every-artifact.md)).
+
+That fetch treats the URL as hostile input throughout: `https` re-asserted on
+every redirect hop, a hop cap, a size cap enforced *during* the read, a
+timeout, and a dialer that refuses private, loopback, link-local and
+cloud-metadata addresses. The bytes are hashed as they stream and thrown
+away — never extracted, never written anywhere, never executed. That last
+part is not new: the registry has never run a submitted artifact, because
+validating a plugin means importing it and calling `activate()`, and doing
+that to unreviewed code on the registry's own infrastructure would be a worse
+trade than the check is worth. A reviewer runs it locally, in a sandbox.
+
+What the digest cannot do is vouch for the registry. It proves the registry
+measured those bytes, not that the registry is honest — which is why index
+signing is still on the list below, and why adding a *third-party* registry
+is [a decision of its own](#using-another-registry).
+
+### What still waits for a human
+
+A **brand-new plugin id always goes to review.** Nothing bypasses that — not
+trust, not automation, not an owner who has published fifty times before. The
+first appearance of an id is where curation is cheapest and where
+impersonation is caught, and it is the review worth keeping.
+
+After that, a version bump from an owner the maintainers have marked trusted
+publishes on its own, once the artifact has been fetched and hashed clean.
+Trust is a tier a maintainer raises by hand and can revoke; it starts at the
+floor for every new account and is **never** raised automatically, because a
+counter of successful publishes is a counter an attacker can run up.
+
+Some releases go to review regardless of trust
+([ADR-0007](https://github.com/prokopto-dev/nparse-plugin-regserve/blob/main/docs/adr/0007-review-new-ids-trust-gates-updates.md)):
+
+| The release is held when | Because |
 | --- | --- |
-| JSON Schema (`schema/index-v1.schema.json`) | The entry is malformed or has a field the app cannot read. |
-| Plugin id format and uniqueness | Bad id, or the id is already taken. |
-| `https://` release URLs, including after redirects | A plain-http hop. |
-| sha256 is 64 lowercase hex characters | Uppercase or truncated hash. |
-| Every listed id has an `owners.json` entry | A new plugin needs its ownership line in the same PR. |
-| The PR author owns every entry they add or change | Someone else owns that id. |
-| Best-effort: the artifact is downloaded and re-hashed | The zip at that URL is not the one you hashed. If the artifact is unreachable from CI the job records a notice instead of failing, and the reviewer checks by hand. |
+| The artifact is hosted somewhere this plugin's previous releases were not | The download URL moving is what taking over a plugin's distribution looks like. |
+| Its size differs from the previous release by more than a set proportion | A plugin that suddenly triples is worth a look, whoever published it. |
+| Its version is not greater than the current `latest` | Republishing over a version is how you change what an existing listing means. |
+| The artifact could not be fetched, or its bytes did not match the hash you submitted | Unverified is not a success, and a mismatch is the exact event the re-hash exists to catch. |
 
-!!! info "CI does not run `nparseplus-plugin validate` — on purpose"
-    Validating a plugin **imports it and calls `activate()`**. Doing that in
-    registry CI would mean executing unreviewed code from a pull request on
-    the registry's own infrastructure, on every submission, before any human
-    has read it. That trade isn't worth it for a check the reviewer can run
-    locally in a sandbox.
+Each of those is a named, testable condition rather than a reviewer's
+intuition, so the same submission gets the same answer twice.
 
-    So registry CI never extracts or executes a submitted artifact: it
-    downloads the bytes, hashes them, and throws them away. The job also
-    runs on `pull_request` (not `pull_request_target`), so fork PRs get a
-    read-only token and no secrets — and since a PR can edit the workflow
-    itself, a green check is a convenience filter, never the trust boundary.
-    The human merge is.
+And the honest cost of the bargain, since a trust document that only lists
+its wins is not one: **a trusted owner can ship unreviewed code to their
+existing users**, and so can anyone who steals a trusted owner's token. That
+is what was traded for patch releases that do not wait on a person. What
+bounds it is the blast radius — one plugin, one id, users who already chose
+that author — plus an audit trail, and your own
+[consent prompt](security.md), which no publish route can skip.
 
 ## Roadmap
 
-- **Publishing from your own release pipeline** — a scoped token, one
-  `POST` per release, and the server fetching and re-hashing the artifact
-  rather than believing a submitted digest. Tracked on the registry server's
-  own roadmap.
+- **A reusable publish-on-tag workflow** for plugin repositories, so step 4
+  above is a line in your release job instead of a request you wrote
+  yourself. It is the registry server's next piece of work, and the plugin
+  repo template will be wired to it when it lands.
 - Optional index signing (minisign/ed25519, public key shipped in the app)
   if the trust model ever needs to survive a compromise of the host serving
-  the index.
+  the index. That is the one gap the server-computed digest above cannot
+  close, since the server is what computes it.

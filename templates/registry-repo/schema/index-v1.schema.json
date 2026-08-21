@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nparseplugins.prokopto.dev/schema/index-v1.schema.json",
   "title": "RegistryIndex",
-  "description": "GENERATED FILE \u2014 do not edit by hand. Produced by tools/gen_registry_schema.py in prokopto-dev/nparse-plus from the pydantic models in nparseplus.core.plugins.registry, which are the source of truth for this wire format. Note that plugin-id uniqueness and ownership are NOT expressible here; the registry's validate-index workflow checks those in Python.",
+  "description": "GENERATED FILE \u2014 do not edit by hand. Produced by tools/gen_registry_schema.py in prokopto-dev/nparse-plus from the pydantic models in nparseplus.core.plugins.registry, which are the source of truth for this wire format. Note that plugin-id ownership, version ordering and the provenance of a sha256 are NOT expressible here: the registry server enforces those, and the digest it publishes is one it computed from bytes it downloaded itself.",
   "$defs": {
     "RegistryPlugin": {
       "description": "A plugin listing in the index.",
@@ -76,6 +76,12 @@
           ],
           "default": null,
           "title": "Min App Version"
+        },
+        "release_notes": {
+          "default": "",
+          "description": "Author-supplied patch notes for this release. Plain text, not Markdown and not HTML: a client renders it in a text widget.",
+          "title": "Release Notes",
+          "type": "string"
         }
       },
       "required": [
