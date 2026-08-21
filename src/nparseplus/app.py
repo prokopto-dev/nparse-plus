@@ -138,14 +138,34 @@ def _apply_window_command(event: object, window_handles: dict[str, object]) -> N
 
     ``toggle()`` owns each window's persistence (legacy and new alike), so
     show/hide only flip when the state actually differs.
+
+    **This table is what decides a window name exists.** The parser matches
+    any ``\\w+`` (#50) precisely so plugin keys and ``macroeditor`` can reach
+    here, so an unknown name is an ordinary no-op — and a widget behind a
+    plugin key comes from a third-party ``spec.factory``. The SDK documents
+    that factory's return as "any widget with ``.toggle()``/``.isVisible()``";
+    a plugin that ships something else is a bug in that plugin and must not
+    take the GUI thread down with it, so both the shape and the call are
+    guarded and the failure is logged against the command that caused it.
     """
     if not isinstance(event, WindowCommandEvent):
         return
     window = window_handles.get(event.window)
     if window is None:
         return
-    if event.action == "toggle" or (event.action == "show") != window.isVisible():  # type: ignore[attr-defined]
-        window.toggle()  # type: ignore[attr-defined]
+    if not hasattr(window, "toggle") or not hasattr(window, "isVisible"):
+        logger.warning(
+            "chat command %s_%s: %s has no toggle()/isVisible()",
+            event.action,
+            event.window,
+            type(window).__name__,
+        )
+        return
+    try:
+        if event.action == "toggle" or (event.action == "show") != window.isVisible():  # type: ignore[attr-defined]
+            window.toggle()  # type: ignore[attr-defined]
+    except Exception:
+        logger.exception("chat command %s_%s failed", event.action, event.window)
 
 
 def _open_appearance_settings(settings_window) -> None:

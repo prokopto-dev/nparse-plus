@@ -7,8 +7,9 @@ characters, and sharing it as a file. See
 
 ![The Macro Editor](../assets/screenshots/window--macro-editor.png)
 
-Open it from the tray → **Macro Editor**. It needs the **EQ install
-directory** set in [Settings → General](../settings/general.md).
+Open it from the tray → **Macro Editor**, or type `toggle_macroeditor` in
+game. It needs the **EQ install directory** set in [Settings →
+General](../settings/general.md).
 
 ## Layout
 
