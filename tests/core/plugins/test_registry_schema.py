@@ -85,6 +85,24 @@ def test_schema_carries_the_constraints_pydantic_cannot_express() -> None:
     assert schema["properties"]["schema_version"]["maximum"] == REGISTRY_SCHEMA_VERSION
 
 
+def test_the_schema_declares_the_wire_spelling_the_registry_actually_serves() -> None:
+    """``release_notes``, not ``notes`` — and the difference is not cosmetic.
+
+    ``RegistryRelease.notes`` accepts both spellings on purpose: the registry
+    server's publish *request* calls the field ``notes`` (its own column
+    name) while the index document it serves calls it ``release_notes``,
+    because a convention over there forbids a column named after a wire
+    field. The live catalogue was checked and serves ``release_notes``, so
+    collapsing the alias to the attribute name would leave every plugin's
+    notes silently unread. This test is the thing that fails if somebody
+    tries.
+    """
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    release = schema["$defs"]["RegistryRelease"]["properties"]
+    assert "release_notes" in release
+    assert release["release_notes"]["type"] == "string"
+
+
 def test_seed_index_parses_through_the_real_client() -> None:
     """The published index must load in the app, not merely satisfy the schema."""
     index = parse_index(INDEX_PATH.read_bytes())
