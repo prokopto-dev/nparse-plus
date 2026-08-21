@@ -118,10 +118,42 @@ on screen. The automatic copy on a notable kill is what covers the raid case.
 
 - A fight starts when damage lands on a target and ends when the target
   dies or the fight goes quiet.
-- The session footer tracks your best, current, and last fight DPS; a fight
-  must last more than 20 seconds to count toward **Best**, so one lucky
-  crit on a rat doesn't top your session.
-- Your best DPS persists per character profile.
+- A fight must last more than 20 seconds to count toward the footer, so one
+  lucky crit on a rat doesn't top your session.
+- Switching characters clears the meter: the rows on screen belong to the
+  character who just left.
+
+## Best, Now and Last
+
+The footer's three cells are different questions.
+
+**Best** is a lifetime record, kept **per character** and saved with that
+character's profile, so it survives a restart — a level 60 rogue's best hit
+says nothing about your level 12 cleric, and switching characters swaps the
+number rather than merging it.
+
+**Now** is this session; **Last** is the previous one. Right-click the meter
+for the three controls that move them:
+
+| Action | What it does |
+|---|---|
+| **Start new session** | Now becomes Last, and a fresh Now starts. |
+| **Clear last session** | Drops Last. |
+| **Reset best…** | Clears this character's lifetime Best, best damage and highest hit. It asks first, and leaves Now alone. |
+
+Unlike Best, **Last is not saved** — it is a within-session record, and a
+restart drops it.
+
+!!! note "Changing a counting rule clears Best"
+
+    A best DPS averaged over 12 seconds is not comparable to one averaged
+    over 4, and a best taken while your spell damage counted is unreachable
+    once the meter is set to melee only. So moving one of those rules in
+    [Settings → DPS Meter](../settings/dps-meter.md) clears Best and Now, and
+    the cleared value is what gets saved. A stored Best also records which
+    rules it was measured under, so a record taken under rules that have
+    since changed is dropped rather than restored — including for a character
+    who was not logged in when you changed them.
 
 ## Notes
 

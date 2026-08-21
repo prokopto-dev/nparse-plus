@@ -1504,6 +1504,79 @@ confirmation. The static `QMessageBox.question` helper had to go for that:
 its default `AutoText` would hand anything tag-shaped in a registry's
 display name or an author's notes to a rich-text renderer.
 
+**A parse leaves the meter, and Best stops resetting daily** (post-2.21,
+~3000 tests): the DPS parity cluster, #78 then #83 — one branch, because they
+share `core/dps.py` and `ui/dpswindow.py`.
+
+*Copying a parse* (#78). The single most common thing a raider does with a
+meter had no affordance at all: no copy, no export, no right-click on
+`ui/dpswindow.py`. `core.dps.format_fight_details` is the port of
+`DPSMeter.xaml.cs copytoclipboard`, and the format is a **wire format** —
+EQTool users paste these into the same raid channels — so the four spaces
+after the group total, the `" / "` between attackers and `DPS:` being
+`TotalDPS` rather than the trailing-window number the row displays are pinned
+by exact-string tests. There is no `EQtoolsTests` case for it; the call site
+at `d8e8084f` is the spec. `snapshot()` already sorted by total damage
+descending, which IS the copy order, and it re-sorts anyway so the function is
+true to `OrderByDescending` on any input.
+
+Auto-copy on a notable kill ports `LogParser_DeathEvent`, and its gate is
+`ZoneDatabase.is_notable_kill`: notable in the zone you are standing in,
+**minus** `kael_faction_mobs`. That second clause is the whole reason the
+predicate is not "is this notable" — Kael's faction giants are listed as
+notable so the map and spawn timers treat them properly, and they die by the
+hundred. The decision stays Qt-free in core and the window only writes the
+clipboard; the balloon EQTool raised from inside the copy is a `parse_copied`
+signal `app.py` connects to the tray. DEVIATION, commented: the C# compares
+NPC names with `==`, this casefolds, like every other lookup in
+`ZoneDatabase` — a raid target that silently fails to copy is
+indistinguishable from the feature not working.
+`system_clipboard_copy` moved out of `dumpswindow` into `ui/clipboard.py`, so
+the two windows that write to the clipboard share one injectable seam.
+
+*Best is a record again* (#83). It reset every launch, which makes it a second
+copy of "this session". It now persists per character in
+`PlayerInfo.best_damage` — EQTool's granularity and the only one that means
+anything — through `core/handlers/dps_persistence.py` on the same
+`Before/AfterPlayerChangedEvent` pair `TimerPersistenceHandler` uses.
+`last_session` is deliberately NOT persisted: it is explicitly a
+within-session record.
+
+**A stored best carries what it is a reading OF.** `reset_session_stats`
+already drops the live best when a counting knob moves — a best-dps over 12 s
+is not comparable to one over 4 s — and persisting the number alone would let
+a restart bring the incomparable reading back. Worse, a live reset **cannot
+reach a character who was not logged in when the knob moved**. So the record
+stores `measurement_rules_key()` and a record whose fingerprint disagrees with
+the current rules is dropped on restore *and overwritten*, so it is gone from
+disk rather than merely hidden. The key normalizes numbers, or `20` and `20.0`
+would be different rules.
+
+Two things the export path needs. `FightTracker.on_change` fires on every
+damage line and `request_save` arms a fresh `threading.Timer` per call, so the
+guard is a three-integer comparison — the fingerprint is deliberately left out
+of it, because the only thing that changes the rules is `configure()`, which
+resets a non-empty best to zero on its way through, and a reset IS a change of
+reading. And `DpsHandler` now clears the meter on **`BeforePlayerChangedEvent`**
+— Before, not After, so the outgoing character's last fight folds into their
+own stats while they are still the active one, and so nothing mutates the
+tracker between After firing and the restore. Without it the previous
+character's still-live fight was re-merged into the incoming one's session by
+the next `end_fight` or `tick`: a bleed the per-character best exists to
+prevent.
+
+*The three session controls, together.* `end_session()` and
+`remove_last_session()` had **zero callers outside `core/dps.py`** — EQTool had
+them as buttons and the port never grew any — and #83's "user-visible way to
+reset the stored best" had nowhere to sit, since the footer is three label
+cells. All three land in #78's new context menu: Start new session, Clear last
+session (disabled when there is none), and Reset best… `FightTracker.reset_best`
+is narrower than `reset_session_stats` on purpose (resetting a record is not
+abandoning the session you are in) and is the one irreversible action in the
+menu, so it confirms, defaulting to No, through an explicitly constructed
+`QMessageBox` in `PlainText` — the reason #147 retired `QMessageBox.question`,
+and a character name comes from the log.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).

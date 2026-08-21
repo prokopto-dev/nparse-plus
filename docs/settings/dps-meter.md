@@ -53,6 +53,13 @@ deliberately.
 **Attacker dropoff** does not clear anything: it decides how long a row is
 displayed, never what a reading measured.
 
+**Best** is saved per character, so this reaches across a restart too: the
+stored record carries which rules it was measured under, and one taken under
+rules that no longer apply is dropped rather than restored. That is what
+covers the case a live reset cannot — a character who was not logged in when
+you moved the knob. See
+[Best, Now and Last](../windows/dps-meter.md#best-now-and-last).
+
 ## Counting your pet
 
 A magician reasonably reads their pet as part of their own output; someone

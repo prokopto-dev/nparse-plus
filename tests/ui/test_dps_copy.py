@@ -206,3 +206,70 @@ def test_clicking_outside_any_group_offers_every_fight(
 def test_an_empty_meter_offers_nothing(qtbot, backend: _FakeBackend, clipboard: _Clipboard) -> None:
     window = _window(qtbot, backend, clipboard)
     assert window.menu_targets(QPoint(0, 0)) == []
+
+
+# -- the session controls (#83) ---------------------------------------------------
+
+
+def test_start_new_session_moves_now_into_last(
+    qtbot, backend: _FakeBackend, clipboard: _Clipboard
+) -> None:
+    backend.fights.add_damage(_damage(0, "You", "a gnoll", 900))
+    backend.fights.end_fight("a gnoll", T0 + timedelta(seconds=25))
+    window = _window(qtbot, backend, clipboard)
+    assert backend.fights.session_summary().last_session is None
+
+    window.end_session()
+    summary = backend.fights.session_summary()
+    assert summary.last_session is not None
+    assert summary.last_session.total_damage == 900
+    assert summary.current_session.total_damage == 0
+    assert summary.best.total_damage == 900  # the lifetime record is untouched
+
+
+def test_clear_last_session_drops_it(qtbot, backend: _FakeBackend, clipboard: _Clipboard) -> None:
+    backend.fights.add_damage(_damage(0, "You", "a gnoll", 900))
+    backend.fights.end_fight("a gnoll", T0 + timedelta(seconds=25))
+    window = _window(qtbot, backend, clipboard)
+    window.end_session()
+    window.clear_last_session()
+    assert backend.fights.session_summary().last_session is None
+
+
+class _Confirm:
+    """Stands in for the modal, so no test blocks on ``QMessageBox.exec``."""
+
+    def __init__(self, answer: bool) -> None:
+        self.answer = answer
+        self.titles: list[str] = []
+
+    def __call__(self, parent, title: str, text: str) -> bool:
+        self.titles.append(title)
+        return self.answer
+
+
+def test_reset_best_asks_first_and_obeys_a_refusal(qtbot, backend: _FakeBackend) -> None:
+    backend.fights.add_damage(_damage(0, "You", "a gnoll", 900))
+    backend.fights.end_fight("a gnoll", T0 + timedelta(seconds=25))
+    confirm = _Confirm(answer=False)
+    window = DpsMeterWindow(backend, copy_to_clipboard=_Clipboard(), confirm_reset=confirm)
+    qtbot.addWidget(window)
+
+    window.reset_best()
+    assert confirm.titles == ["Reset best"]
+    assert backend.fights.session_summary().best.total_damage == 900
+
+
+def test_reset_best_clears_the_record_but_not_the_session(qtbot, backend: _FakeBackend) -> None:
+    backend.fights.add_damage(_damage(0, "You", "a gnoll", 900))
+    backend.fights.end_fight("a gnoll", T0 + timedelta(seconds=25))
+    window = DpsMeterWindow(
+        backend, copy_to_clipboard=_Clipboard(), confirm_reset=_Confirm(answer=True)
+    )
+    qtbot.addWidget(window)
+
+    window.reset_best()
+    summary = backend.fights.session_summary()
+    assert summary.best.total_damage == 0
+    assert summary.current_session.total_damage == 900
+    assert window.footer_text().startswith("Best 0 dps")

@@ -21,7 +21,15 @@ from typing import Protocol
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dps import (
@@ -61,6 +69,23 @@ OTHERS_BAR = "#75798c"
 PET_SUFFIX = " (pet)"
 
 
+def confirm(parent: QWidget, title: str, text: str) -> bool:
+    """A yes/no box that defaults to No. Injected so tests never block on it.
+
+    Constructed rather than ``QMessageBox.question`` for the reason #147
+    retired that helper: its default ``AutoText`` hands anything tag-shaped in
+    the text to a rich-text renderer, and a character name comes from the log.
+    """
+    box = QMessageBox(parent)
+    box.setWindowTitle(title)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setText(text)
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    box.setDefaultButton(QMessageBox.StandardButton.No)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
 class FightsLike(Protocol):
     #: The live counting mode — read off the tracker rather than the settings
     #: object so the title marker follows an Apply without the window being
@@ -69,6 +94,9 @@ class FightsLike(Protocol):
 
     def snapshot(self, now: datetime) -> list[FightRow]: ...
     def session_summary(self) -> SessionSummary: ...
+    def end_session(self) -> None: ...
+    def remove_last_session(self) -> None: ...
+    def reset_best(self) -> None: ...
 
 
 class BackendLike(Protocol):
@@ -191,6 +219,7 @@ class DpsMeterWindow(OverlayWindowBase):
         on_save: Callable[[], None] | None = None,
         parent: QWidget | None = None,
         copy_to_clipboard: Callable[[str], bool] = system_clipboard_copy,
+        confirm_reset: Callable[[QWidget, str, str], bool] = confirm,
     ) -> None:
         super().__init__(
             settings=backend.settings,
@@ -202,6 +231,7 @@ class DpsMeterWindow(OverlayWindowBase):
         )
         self._backend = backend
         self._copy_to_clipboard = copy_to_clipboard
+        self._confirm_reset = confirm_reset
         self._headers: dict[str, QLabel] = {}
         self._rows: dict[tuple[str, str], _AttackerRow] = {}
 
@@ -489,7 +519,49 @@ class DpsMeterWindow(OverlayWindowBase):
         if not targets:
             empty = menu.addAction("No fight to copy")
             empty.setEnabled(False)
+        menu.addSeparator()
+        # The three session controls, together (#83). EQTool had two of them
+        # as buttons in the meter and ``end_session``/``remove_last_session``
+        # had no caller here at all; the footer is three label cells with
+        # nowhere to put a button, so this menu is where they land — and it is
+        # where "reset the stored best" has to sit beside them, since the
+        # footer's Best cell is what it resets.
+        menu.addAction("Start new session", self.end_session)
+        clear_last = menu.addAction("Clear last session", self.clear_last_session)
+        clear_last.setEnabled(self._backend.fights.session_summary().last_session is not None)
+        menu.addAction("Reset best…", self.reset_best)
         menu.exec(event.globalPos())
+
+    # -- session controls (the DPSMeter session buttons) ---------------------------
+
+    def end_session(self) -> None:
+        """Now becomes Last and a fresh Now starts (MoveCurrentToLastSession)."""
+        self._backend.fights.end_session()
+        self.refresh()
+
+    def clear_last_session(self) -> None:
+        """Drop the Last column (RemoveLastSession)."""
+        self._backend.fights.remove_last_session()
+        self.refresh()
+
+    def reset_best(self) -> None:
+        """Clear this character's lifetime best, on confirmation (#83).
+
+        The one irreversible action in the menu — the value it drops may be
+        months old and is persisted per character — so it asks, defaulting to
+        No. It deliberately does not touch Now: resetting a record is not
+        abandoning the session you are in.
+        """
+        if not self._confirm_reset(
+            self,
+            "Reset best",
+            "Clear the best DPS, best damage and highest hit recorded for "
+            "this character?\n\nThis cannot be undone. The current session "
+            "is left alone.",
+        ):
+            return
+        self._backend.fights.reset_best()
+        self.refresh()
 
     @staticmethod
     def _format_summary(summary: SessionSummary) -> str:

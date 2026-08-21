@@ -6,8 +6,16 @@ SlainHandler for the exp/faction-confirmed kills the slain line misses.
 
 EQTool never cleared the DPS window on zoning or camping — rows simply aged
 out via ShouldRemove. nparseplus clears active fights on zone change, camp,
-and the loading screen instead, folding your stats into the session totals
-first so nothing is lost.
+the loading screen, and a character switch instead, folding your stats into
+the session totals first so nothing is lost.
+
+The character switch is the one with a second reason: a fight left on screen
+across it is the *previous* character's, and every later ``end_fight`` or
+``tick`` would re-merge that character's damage into the incoming one's
+session — a bleed the per-character Best (#83) exists to prevent. It hangs on
+``BeforePlayerChangedEvent`` rather than After, so the fold happens while the
+outgoing character is still the active one — which is also what lets
+``DpsPersistenceHandler`` restore on After without racing anything.
 
 Two subscriptions have no EQTool counterpart, and both exist so the tracker
 can stay a value-in/value-out object (see ``FightTracker``): your own casts
@@ -20,6 +28,7 @@ from __future__ import annotations
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.events import (
+    BeforePlayerChangedEvent,
     CampEvent,
     ConfirmedDeathEvent,
     DamageEvent,
@@ -56,6 +65,7 @@ class DpsHandler(BaseHandler):
         bus.subscribe(YouZonedEvent, self._on_zoned)
         bus.subscribe(LoadingPleaseWaitEvent, self._on_loading)
         bus.subscribe(CampEvent, self._on_camp)
+        bus.subscribe(BeforePlayerChangedEvent, self._on_player_changed)
         bus.subscribe(YouBeginCastingEvent, self._on_begin_casting)
         bus.subscribe(YouFinishCastingEvent, self._on_finish_casting)
         bus.subscribe(YourSpellInterruptedEvent, self._on_cast_interrupted)
@@ -116,4 +126,9 @@ class DpsHandler(BaseHandler):
         self.tracker.clear(update_stats_at=event.timestamp)
 
     def _on_camp(self, event: CampEvent) -> None:
+        self.tracker.clear(update_stats_at=event.timestamp)
+
+    def _on_player_changed(self, event: BeforePlayerChangedEvent) -> None:
+        # Still the outgoing character here, so their last fight folds into
+        # their own session stats before the rows go — see the module docstring.
         self.tracker.clear(update_stats_at=event.timestamp)

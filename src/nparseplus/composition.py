@@ -36,6 +36,7 @@ from nparseplus.core.handlers.corpse import CorpseWaypointHandler
 from nparseplus.core.handlers.death_loop import DeathLoopHandler
 from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandler
 from nparseplus.core.handlers.dps import DpsHandler
+from nparseplus.core.handlers.dps_persistence import DpsPersistenceHandler
 from nparseplus.core.handlers.fte import FTEHandler
 from nparseplus.core.handlers.group_leader import GroupLeaderHandler
 from nparseplus.core.handlers.inventory_upload import InventoryUploadHandler
@@ -661,6 +662,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             timer_recast=timer_recast,
         ),
         DpsHandler(bus, player, fights, player_pet=player_pet),
+        DpsPersistenceHandler(bus, player, settings, fights, request_save=request_save),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
         TimerWindowNotifier(bus, timers),

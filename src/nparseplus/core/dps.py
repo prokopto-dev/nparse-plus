@@ -519,7 +519,9 @@ class FightTracker:
     ) -> None:
         self._fights: list[Fight] = []
         self.on_change: list[Callable[[], None]] = []
-        # BestPlayerDamage persists per character in EQTool; in-memory here.
+        # BestPlayerDamage, persisted per character by DpsPersistenceHandler
+        # (#83) — the tracker stays value-in/value-out and knows nothing about
+        # settings, exactly as it knows nothing about pets or spell books.
         self.best = PlayerDamage()
         self.current_session = PlayerDamage()
         self.last_session: PlayerDamage | None = None
@@ -619,6 +621,46 @@ class FightTracker:
         """
         self.best = PlayerDamage()
         self.current_session = PlayerDamage()
+
+    def measurement_rules_key(self) -> str:
+        """``_measurement_rules`` as one stable string, for the persisted best.
+
+        A stored best has to carry what it is a reading OF, or a restart brings
+        back a number ``reset_session_stats`` would have dropped — see
+        ``config.settings.SavedPlayerDamage``. A string rather than the tuple
+        because it is written to settings.json and compared on the way back,
+        and because the shape of the tuple is free to change: an old key simply
+        stops matching, which is the conservative answer.
+
+        Numbers are normalized, so a tunable that arrives as ``20`` and one
+        that arrives as ``20.0`` produce the same key: they are the same rule,
+        and settings.json round-trips whichever pydantic happens to hold.
+        """
+        parts = []
+        for rule in self._measurement_rules():
+            numeric = isinstance(rule, (int, float)) and not isinstance(rule, bool)
+            parts.append(f"{rule:g}" if numeric else str(rule))
+        return "|".join(parts)
+
+    def reset_best(self) -> None:
+        """Clear the lifetime best only (the window's Reset best action, #83).
+
+        Narrower than ``reset_session_stats``, which also drops Now: the user
+        asking to reset a record is not asking to discard the session they are
+        in the middle of.
+        """
+        self.best = PlayerDamage()
+        self._notify()
+
+    def load_best(self, best: PlayerDamage) -> None:
+        """Adopt a restored lifetime best (character switch, #83).
+
+        Assignment rather than a max-merge: switching characters must SWAP the
+        displayed best, and merging would bleed a rogue's record onto a cleric
+        the first time the two shared a session.
+        """
+        self.best = best
+        self._notify()
 
     @property
     def trailing_window(self) -> timedelta:
