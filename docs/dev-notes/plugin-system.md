@@ -294,7 +294,9 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     halves of a move disagreeing is exactly the bug. The URL-pin test was
     refocused, not deleted: it now asserts the shape (`https://…/index.json`)
     and that `templates/registry-repo/SETUP.md` and `docs/plugins/registry.md`
-    both name whatever the constant says.
+    both name whatever the constant says. (Item 38 deleted SETUP.md with the
+    rest of the submission scaffolding and refocused that test a second time,
+    onto `docs/plugins/security.md` — never halved it.)
 
 ## Hot-load increment (#45)
 
