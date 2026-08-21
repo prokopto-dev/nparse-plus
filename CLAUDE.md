@@ -1602,6 +1602,20 @@ menu, so it confirms, defaulting to No, through an explicitly constructed
 `QMessageBox` in `PlainText` — the reason #147 retired `QMessageBox.question`,
 and a character name comes from the log.
 
+**That confirmation is also why the reset is the one session control that
+goes through `submit_to_driver`.** Start/Clear session rebind app-level
+values and finish in microseconds; a reset waits on a MODAL event loop while
+the driver keeps parsing and checks for a log-file switch every three
+seconds. Switch characters with that dialog open and an unbound reset zeroes
+the best `DpsPersistenceHandler` has just restored for the INCOMING
+character, and exports the zero over their profile — the lifetime record of
+someone the user was not even looking at. So `Backend.dps_best_owner()` is
+captured before the dialog and handed back to `reset_dps_best`, which
+re-checks it on the driver thread, where the player-change pair also runs and
+so cannot overtake the comparison. The rule the whole layer follows: a
+GUI-thread write to driver state is fine when nothing can happen in the
+middle of it, and needs the driver the moment something can.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).

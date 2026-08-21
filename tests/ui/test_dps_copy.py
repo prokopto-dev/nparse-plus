@@ -44,9 +44,25 @@ def _damage(seconds: float, attacker: str, target: str, dmg: int) -> DamageEvent
 
 
 class _FakeBackend:
+    """Stands in for the slice of ``composition.Backend`` the window uses.
+
+    ``dps_best_owner``/``reset_dps_best`` mirror the real seam: the reset is
+    refused unless the token handed back still names the current character.
+    """
+
     def __init__(self) -> None:
         self.settings = Settings()
         self.fights = FightTracker()
+        self.best_owner: object = ("genartik", "green")
+        self.reset_calls: list[object] = []
+
+    def dps_best_owner(self) -> object:
+        return self.best_owner
+
+    def reset_dps_best(self, expect: object) -> None:
+        self.reset_calls.append(expect)
+        if expect == self.best_owner:  # the driver-thread check, in miniature
+            self.fights.reset_best()
 
 
 class _Clipboard:
@@ -294,6 +310,63 @@ def test_reset_best_clears_the_record_but_not_the_session(qtbot, backend: _FakeB
     assert summary.best.total_damage == 0
     assert summary.current_session.total_damage == 900
     assert window.footer_text().startswith("Best 0 dps")
+
+
+def test_a_character_change_during_the_dialog_cancels_the_reset(
+    qtbot, backend: _FakeBackend
+) -> None:
+    """The confirmation runs a modal loop and the driver keeps parsing.
+
+    It checks for a log-file switch every three seconds, so a dialog left open
+    that long can span one. The reset must not land on whoever the driver
+    switched to — that would destroy the lifetime record of a character the
+    user was not even looking at.
+    """
+    backend.fights.add_damage(_damage(0, "You", "a gnoll", 900))
+    backend.fights.end_fight("a gnoll", T0 + timedelta(seconds=25))
+
+    class _SwitchWhileOpen(_Confirm):
+        """The driver switches characters while the user reads the dialog."""
+
+        def __call__(self, parent, title: str, text: str) -> bool:
+            backend.best_owner = ("vebanab", "green")
+            return super().__call__(parent, title, text)
+
+    window = DpsMeterWindow(
+        backend, copy_to_clipboard=_Clipboard(), confirm_reset=_SwitchWhileOpen(answer=True)
+    )
+    qtbot.addWidget(window)
+
+    with qtbot.waitSignal(window.reset_refused, timeout=500):
+        window.reset_best()
+
+    assert backend.reset_calls == []  # never even dispatched
+    assert backend.fights.session_summary().best.total_damage == 900
+
+
+def test_the_reset_carries_the_character_it_was_asked_for(qtbot, backend: _FakeBackend) -> None:
+    """The token captured before the dialog is what reaches the driver."""
+    window = DpsMeterWindow(
+        backend, copy_to_clipboard=_Clipboard(), confirm_reset=_Confirm(answer=True)
+    )
+    qtbot.addWidget(window)
+
+    window.reset_best()
+    assert backend.reset_calls == [("genartik", "green")]
+
+
+def test_a_refusal_does_not_announce_anything(qtbot, backend: _FakeBackend) -> None:
+    """Saying No is not the same as being overtaken by a character change."""
+    window = DpsMeterWindow(
+        backend, copy_to_clipboard=_Clipboard(), confirm_reset=_Confirm(answer=False)
+    )
+    qtbot.addWidget(window)
+    refused: list[int] = []
+    window.reset_refused.connect(lambda: refused.append(1))
+
+    window.reset_best()
+    assert refused == []
+    assert backend.reset_calls == []
 
 
 # -- end to end: the batch the bridge really delivers -----------------------------

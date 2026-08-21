@@ -52,8 +52,15 @@ for reasons that are specific and worth stating rather than assuming:
   ``_last``. Two threads racing it cost at worst one stale reading, which the
   next damage line re-exports.
 * The window already reads live tracker state from the GUI thread every
-  500 ms (``snapshot``), so this is not a new crossing — and an inbox for
-  three scalar writes, while that read stays direct, would buy nothing.
+  500 ms (``snapshot``), so this is not a new crossing.
+
+That argument covers races measured in microseconds and NOTHING longer, which
+is exactly where it stopped being enough: "Reset best" puts a modal event loop
+between reading the state and writing it, and the driver checks for a log-file
+switch every three seconds underneath it. ``reset_best`` below therefore does
+go through the driver, bound to the character it was asked for. The rule the
+two cases share: a GUI-thread write is fine when nothing can happen in the
+middle of it, and needs the driver the moment something can.
 
 Persistence itself goes through ``request_save`` — the app's DebouncedSaver,
 which is thread-safe and coalesces bursts — so it is safe from either thread.
@@ -177,6 +184,42 @@ class DpsPersistenceHandler:
         # Re-sync: this stamps the current fingerprint onto a record that was
         # dropped, so the incomparable reading is gone from disk too.
         self.export_now()
+
+    # -- the guarded reset -------------------------------------------------------
+
+    def best_owner(self) -> tuple[str, str] | None:
+        """Which character ``tracker.best`` currently belongs to.
+
+        An opaque token, for a caller that must not act on a best which has
+        since been swapped for a different character's. ``None`` means no
+        profile is in play, in which case nothing is persisted and there is
+        nothing to protect.
+        """
+        server = self.player.server_key
+        if server is None or not self.player.name:
+            return None
+        return (self.player.name.casefold(), server)
+
+    def reset_best(self, expect: tuple[str, str] | None) -> bool:
+        """Clear the lifetime best, but only if it still belongs to ``expect``.
+
+        The reset is user-initiated and irreversible, and the confirmation in
+        front of it runs a modal event loop — seconds or minutes, while the
+        driver keeps parsing and checks for a log-file switch every
+        ``LOG_SWITCH_CHECK_S``. Switch characters with that dialog open and an
+        unguarded reset zeroes the best this handler has just restored for the
+        INCOMING character, and exports the zero over their profile: the
+        lifetime record of a character the user was not even looking at.
+
+        So the caller captures ``best_owner()`` before showing the dialog and
+        hands it back here, and here is on the driver thread — the same thread
+        that runs the player-change pair, so the comparison cannot be overtaken
+        by the switch it is checking for. Returns whether the reset happened.
+        """
+        if self.best_owner() != expect:
+            return False
+        self.tracker.reset_best()
+        return True
 
     def _load(self, best: PlayerDamage) -> None:
         self._restoring = True

@@ -105,6 +105,9 @@ class BackendLike(Protocol):
     fights: FightsLike
     settings: Settings
 
+    def dps_best_owner(self) -> object | None: ...
+    def reset_dps_best(self, expect: object) -> None: ...
+
 
 class _AttackerRow(QFrame):
     """One attacker's line: name | total dmg | trailing dps | % of total.
@@ -207,6 +210,11 @@ class DpsMeterWindow(OverlayWindowBase):
     #: raised a balloon tip from inside ``copytoclipboard``; the window has no
     #: tray, so it says so and ``app.py`` decides where that is shown.
     parse_copied = Signal(str)
+
+    #: A confirmed "Reset best" did NOT happen, because the active character
+    #: changed while the dialog was open. The user asked for something
+    #: irreversible and got nothing; saying so beats silence.
+    reset_refused = Signal()
 
     def __init__(
         self,
@@ -535,12 +543,16 @@ class DpsMeterWindow(OverlayWindowBase):
 
     # -- session controls (the DPSMeter session buttons) ---------------------------
     #
-    # These mutate FightTracker from the GUI thread, the same way
-    # ``Backend.apply_dps_settings`` already does on Apply. Each one rebinds a
-    # whole PlayerDamage rather than editing one in place, which is what makes
-    # that safe against the driver thread merging a reading at the same
-    # moment; ``core.handlers.dps_persistence`` documents the argument, since
-    # its export is what rides on the resulting notification.
+    # The two session controls below mutate FightTracker from the GUI thread,
+    # the same way ``Backend.apply_dps_settings`` already does on Apply: each
+    # rebinds a whole PlayerDamage rather than editing one in place, so the
+    # driver merging a reading at the same moment cannot tear anything, and
+    # neither value is per-character so a log-file switch cannot make the
+    # write land on the wrong profile.
+    #
+    # ``reset_best`` is neither of those things — it is per-character AND it
+    # waits on a modal — so it goes through the driver instead. See its
+    # docstring, and ``core.handlers.dps_persistence``.
 
     def end_session(self) -> None:
         """Now becomes Last and a fresh Now starts (MoveCurrentToLastSession)."""
@@ -559,7 +571,21 @@ class DpsMeterWindow(OverlayWindowBase):
         months old and is persisted per character — so it asks, defaulting to
         No. It deliberately does not touch Now: resetting a record is not
         abandoning the session you are in.
+
+        **Bound to the character the dialog was opened for.** The confirmation
+        runs a modal event loop, and the driver keeps parsing underneath it —
+        it checks for a log-file switch every three seconds. Switch characters
+        with this dialog open and an unbound reset would zero the best just
+        restored for the INCOMING character and export the zero over their
+        profile: the lifetime record of someone the user was not even looking
+        at, gone irreversibly.
+
+        So the owner is captured BEFORE the dialog and handed back after it.
+        The check here is the one that gives the user an answer; the
+        authoritative one is on the driver thread, where the player-change
+        pair also runs and so cannot overtake it.
         """
+        owner = self._backend.dps_best_owner()
         if not self._confirm_reset(
             self,
             "Reset best",
@@ -568,7 +594,11 @@ class DpsMeterWindow(OverlayWindowBase):
             "is left alone.",
         ):
             return
-        self._backend.fights.reset_best()
+        if self._backend.dps_best_owner() != owner:
+            # Answered for a character who is no longer the one on screen.
+            self.reset_refused.emit()
+            return
+        self._backend.reset_dps_best(owner)
         self.refresh()
 
     @staticmethod

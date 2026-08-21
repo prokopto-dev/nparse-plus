@@ -477,6 +477,13 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             msecs=4000,
         )
     )
+    dps_window.reset_refused.connect(
+        lambda: app._system_tray.showMessage(
+            "Best not reset",
+            "The active character changed while the confirmation was open, so nothing was cleared.",
+            msecs=5000,
+        )
+    )
     bridge.events_batch.connect(console_window.handle_events)
     # Console right-click -> a prefilled trigger (#82). Both halves point at
     # the editor: it owns creating the trigger, and its test-box character is

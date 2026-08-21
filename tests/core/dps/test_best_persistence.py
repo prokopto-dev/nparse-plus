@@ -256,6 +256,51 @@ def test_last_session_stays_in_memory(rig: _Rig) -> None:
 # -- the user-visible reset ---------------------------------------------------------
 
 
+def test_reset_best_is_bound_to_the_character_it_was_asked_for(rig: _Rig) -> None:
+    """The confirmation dialog runs a modal loop; the driver keeps parsing.
+
+    Switch characters while it is open and an unbound reset zeroes the best
+    just restored for the INCOMING character and exports the zero over their
+    profile — the lifetime record of someone the user was not looking at.
+    """
+    _long_fight(rig.tracker, 900, target="a gnoll")  # Genartik's record
+    owner = rig.handler.best_owner()
+
+    rig.switch_to("Vebanab")
+    _long_fight(rig.tracker, 400, target="a rat")  # Vebanab's own record
+    assert rig.tracker.best.total_damage == 400
+
+    # The user clicks Yes, still thinking of Genartik.
+    assert rig.handler.reset_best(owner) is False
+
+    assert rig.tracker.best.total_damage == 400
+    assert rig.stored("Vebanab").total_damage == 400
+    assert rig.stored("Genartik").total_damage == 900
+
+
+def test_reset_best_goes_ahead_when_the_character_has_not_changed(rig: _Rig) -> None:
+    _long_fight(rig.tracker, 900)
+    owner = rig.handler.best_owner()
+    assert rig.handler.reset_best(owner) is True
+    assert rig.tracker.best == PlayerDamage()
+    assert rig.stored("Genartik").total_damage == 0
+
+
+def test_the_owner_token_follows_the_character(rig: _Rig) -> None:
+    first = rig.handler.best_owner()
+    rig.switch_to("Vebanab")
+    assert rig.handler.best_owner() != first
+    rig.switch_to("Genartik")
+    assert rig.handler.best_owner() == first
+
+
+def test_with_no_profile_there_is_no_owner_to_protect(rig: _Rig) -> None:
+    """Nothing is persisted without one, so the reset is unconditional."""
+    rig.player.server = None
+    assert rig.handler.best_owner() is None
+    assert rig.handler.reset_best(None) is True
+
+
 def test_reset_best_clears_the_record_and_persists_it(rig: _Rig) -> None:
     _long_fight(rig.tracker, 900)
     rig.tracker.reset_best()
