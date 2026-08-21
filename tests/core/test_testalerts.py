@@ -269,3 +269,76 @@ def test_a_row_of_your_own_is_never_stamped_as_the_test_s(backend) -> None:
     assert "Harmshield" in left
     assert left["Harmshield"].owner == ""
     assert "--97% Rule-- Zlandicar" not in left  # the rehearsal's own row went
+
+
+# -- and never removes or edits a row it does not own --------------------------
+
+
+def test_root_break_gives_back_the_real_row_its_line_removes(backend) -> None:
+    """``SpellTimerHandler`` answers the same line with
+    ``try_remove_unambiguous_other``: press the button while one real
+    Paralyzing Earth is up on a mob and it would delete it. Cleanup can only
+    remove rows, so the restore has to happen inside the rehearsal."""
+    mine = backend.timers.add_timer(
+        TimerRow(
+            name="Paralyzing Earth",
+            group=" a shady goblin",
+            updated_at=datetime.now(),
+            ends_at=datetime.now() + timedelta(seconds=45),
+            total_duration_s=45.0,
+        )
+    )
+    ends_at = mine.ends_at
+    alerts = collect(backend.bus, OverlayEvent)
+
+    backend.test_alerts.fire("root_break")
+
+    assert backend.timers.snapshot() == [mine]  # same object, still there
+    assert mine.owner == "" and mine.ends_at == ends_at
+    assert len(alerts) == 1  # ...and the alert still fired
+
+
+def test_the_roll_sample_never_joins_a_live_roll_group(backend) -> None:
+    """Roll rows group on the maximum alone and ``add_roll`` resets the whole
+    group's window, so a fixed maximum would drop fake rollers into a real loot
+    roll and push its expiry out."""
+    real = backend.timers.add_roll(
+        RollRow(
+            name="Realroller",
+            group=f" Random -- {testalerts.TEST_ROLL_MAX}",
+            updated_at=datetime.now(),
+            roll=500,
+            max_roll=testalerts.TEST_ROLL_MAX,
+            ends_at=datetime.now() + timedelta(seconds=90),
+            total_duration_s=180.0,
+        )
+    )
+    ends_at = real.ends_at
+
+    backend.test_alerts.fire("random_roll")
+
+    samples = [row for row in backend.timers.snapshot() if row is not real]
+    assert len(samples) == 3
+    assert {row.max_roll for row in samples} == {testalerts.TEST_ROLL_MAX + 1}
+    # The real roll kept its group, its window and its lack of an owner.
+    assert real.ends_at == ends_at
+    assert real.owner == ""
+
+    backend.test_alerts.clear()
+    assert backend.timers.snapshot() == [real]
+
+
+def test_free_roll_max_walks_past_every_live_group(backend) -> None:
+    for offset in (0, 1, 2):
+        backend.timers.add_roll(
+            RollRow(
+                name=f"R{offset}",
+                group=f" Random -- {testalerts.TEST_ROLL_MAX + offset}",
+                updated_at=datetime.now(),
+                roll=1,
+                max_roll=testalerts.TEST_ROLL_MAX + offset,
+                ends_at=datetime.now() + timedelta(seconds=90),
+                total_duration_s=180.0,
+            )
+        )
+    assert testalerts.free_roll_max(backend.timers) == testalerts.TEST_ROLL_MAX + 3

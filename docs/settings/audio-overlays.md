@@ -42,7 +42,7 @@ draws it. Nothing is faked, and nothing new is read from your log.
 | **First to engage** | The yellow FTE banner and its callout, from `a training dummy engages Testcharacter!` |
 | **Engage rule timer** | The same banner for a mob that carries a raid engage rule (`Zlandicar`), plus the `--97% Rule--` countdown it starts in the [Timers](../windows/timers.md) window |
 | **Root break** | The red root-break alert, honouring the two root-break toggles above |
-| **/random rolls** | Three sample rolls out of 1000, as the Timers window draws a roll group |
+| **/random rolls** | Three sample rolls, as the Timers window draws a roll group. The maximum they are rolled out of is picked against the live rows, so the samples always get a group of their own and never land in a real loot roll |
 
 Your **saved** settings decide what fires. That is deliberate — an alert that
 only speaks in test mode has told you nothing — so if you have just changed a
@@ -53,6 +53,11 @@ A rehearsal lasts as long as the rehearsal. The two samples that leave a row
 in the Timers window take it back when you fire another one or when you close
 this window, and neither is ever saved to disk. The other two leave nothing
 at all.
+
+A rehearsal also never *removes* or changes a row it did not create. Firing
+the real path means real handlers run, and one of them answers a root wearing
+off by dropping the matching timer — so anything that goes missing while a
+sample runs is put straight back, exactly as it was.
 
 !!! note "Why there is no death-loop test"
 

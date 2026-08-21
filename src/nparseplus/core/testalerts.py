@@ -36,7 +36,14 @@ rule here is that the *alert* may be visible and nothing else may survive:
   restart as a row nothing owns.
 * **Nothing else is touched.** Each sample below is chosen so the only state it
   produces is its own overlay text, its speech, and (for the two that have one)
-  its own timer row. The audit is in each sample's ``leaves``. The pipeline's
+  its own timer row. The audit is in each sample's ``leaves``.
+* **A rehearsal never removes or edits a row it does not own.** Two real
+  handlers would otherwise: the root-break line is also ``SpellTimerHandler``'s
+  cue to drop a matching row, so ``_run`` puts back anything that went missing
+  while the sample ran; and roll rows are grouped by their maximum alone, with
+  ``add_roll`` resetting the window of the whole group, so the ``/random``
+  sample picks a maximum no live group is using (:func:`free_roll_max`) and
+  lands in a group of its own. The pipeline's
   own bookkeeping is the exception and is deliberate: a rehearsed line counts
   as a line, so it advances the line counter and the log clock, and the root
   break — which starts with "You" — counts as you being active. Pressing a
@@ -55,12 +62,13 @@ red ``OverlayEvent`` plus TTS — is the same path ``root_break`` below covers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from nparseplus.core.lineinfo import format_line
 from nparseplus.core.pipeline import CommandSink, LogPipeline
-from nparseplus.core.timers import YOU_GROUP, TimersService
+from nparseplus.core.timers import YOU_GROUP, RollRow, TimersService
 
 #: Stamped on every timer row a rehearsal creates. Not a plugin id and never
 #: will be, so it cannot collide with one; ``remove_owner`` takes it back.
@@ -70,10 +78,20 @@ TEST_OWNER = "__test_alert__"
 #: name anyone has: a rehearsal must read as one at a glance.
 TEST_PLAYER = "Testcharacter"
 
-#: The roll every ``/random`` sample is out of. Any number can collide with a
-#: real roll group (they are keyed on the maximum), and ``add_roll`` resets
-#: the window of every roll already in the group — see the sample's ``leaves``.
+#: Where the ``/random`` sample starts looking for a maximum to roll out of.
+#: It walks up from here until it finds one no live roll group is using — see
+#: :func:`free_roll_max`.
 TEST_ROLL_MAX = 1000
+
+#: The sample rolls, as (roller, result). Rendered at fire time because the
+#: maximum they are out of is decided then.
+SAMPLE_ROLLS = (("Testalpha", 742), ("Testbeta", 194), ("Testgamma", 908))
+
+
+#: Builds a sample's lines when it fires. A callable rather than a fixed
+#: tuple because one sample has to read the live timers before it can choose
+#: what to push (:func:`free_roll_max`).
+LineBuilder = Callable[[TimersService], tuple[str, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,16 +104,48 @@ class AlertSample:
     blurb: str
     #: What survives the rehearsal, in the user's terms. Empty means nothing.
     leaves: str
-    lines: tuple[str, ...]
+    build_lines: LineBuilder
 
 
-def _roll(name: str, roll: int) -> tuple[str, str]:
+def _fixed(*lines: str) -> LineBuilder:
+    """A sample whose lines never depend on what is on screen."""
+    return lambda _timers: lines
+
+
+def free_roll_max(timers: TimersService) -> int:
+    """A ``/random`` maximum no live roll group is using.
+
+    Roll rows are grouped by their maximum **alone**, and ``add_roll`` resets
+    the window of every roll already in the group. A fixed maximum would
+    therefore drop three fake rollers into the middle of somebody's real loot
+    roll and push its expiry out — mutating rows the cleanup deliberately does
+    not own and cannot restore. So the maximum is chosen against the live rows
+    instead: the rehearsal always gets a group of its own. EQTool randomises
+    the maximum per test; walking up from a fixed base is the same idea made
+    deterministic, which is what the tests need.
+    """
+    live = {row.max_roll for row in timers.snapshot() if isinstance(row, RollRow)}
+    maximum = TEST_ROLL_MAX
+    while maximum in live:
+        maximum += 1
+    return maximum
+
+
+def _roll(name: str, roll: int, maximum: int) -> tuple[str, str]:
     """The two lines one ``/random`` prints (RandomParser needs both)."""
     return (
         f"**A Magic Die is rolled by {name}.",
-        f"**It could have been any number from 0 to {TEST_ROLL_MAX}, "
+        f"**It could have been any number from 0 to {maximum}, "
         f"but this time it turned up a {roll}.",
     )
+
+
+def _roll_lines(timers: TimersService) -> tuple[str, ...]:
+    maximum = free_roll_max(timers)
+    lines: list[str] = []
+    for name, roll in SAMPLE_ROLLS:
+        lines.extend(_roll(name, roll, maximum))
+    return tuple(lines)
 
 
 SAMPLES: tuple[AlertSample, ...] = (
@@ -108,7 +158,7 @@ SAMPLES: tuple[AlertSample, ...] = (
         ),
         leaves="",
         # "a training dummy" carries no raid engage rule, so no timer starts.
-        lines=(f"a training dummy engages {TEST_PLAYER}!",),
+        build_lines=_fixed(f"a training dummy engages {TEST_PLAYER}!"),
     ),
     AlertSample(
         key="fte_timer",
@@ -119,7 +169,7 @@ SAMPLES: tuple[AlertSample, ...] = (
             "it starts in the Timers window."
         ),
         leaves="a 61-second “--97% Rule-- Zlandicar” row in the Timers window",
-        lines=(f"Zlandicar engages {TEST_PLAYER}!",),
+        build_lines=_fixed(f"Zlandicar engages {TEST_PLAYER}!"),
     ),
     AlertSample(
         key="root_break",
@@ -129,24 +179,22 @@ SAMPLES: tuple[AlertSample, ...] = (
             "root-break alert. Honours the two root-break toggles above."
         ),
         # SpellTimerHandler answers the same line with
-        # try_remove_unambiguous_other, which does nothing unless exactly one
-        # Paralyzing Earth row is on another target right now.
+        # try_remove_unambiguous_other. That would take a real Paralyzing Earth
+        # row off another target, so the runner puts back anything a rehearsal
+        # removes (see _run).
         leaves="",
-        lines=("Your Paralyzing Earth spell has worn off.",),
+        build_lines=_fixed("Your Paralyzing Earth spell has worn off."),
     ),
     AlertSample(
         key="random_roll",
         label="/random rolls",
         blurb=(
-            f"Pushes three sample rolls out of {TEST_ROLL_MAX} — the roll group "
-            "as the Timers window draws it, highest first."
+            "Pushes three sample rolls — the roll group as the Timers window "
+            "draws it, highest first. The maximum they are rolled out of is "
+            "picked so the group is the rehearsal's own, never a real roll's."
         ),
-        leaves=f"three sample rolls in the “ Random -- {TEST_ROLL_MAX}” group",
-        lines=(
-            *_roll("Testalpha", 742),
-            *_roll("Testbeta", 194),
-            *_roll("Testgamma", 908),
-        ),
+        leaves="three sample rolls in a “ Random -- …” group of their own",
+        build_lines=_roll_lines,
     ),
 )
 
@@ -199,10 +247,22 @@ class AlertTestRunner:
     def _run(self, sample: AlertSample) -> None:
         # Last rehearsal first, so at most one test's rows are ever on screen.
         self._clear_now()
-        before = {id(row) for row in self._timers.snapshot()}
+        before = self._timers.snapshot()
+        known = {id(row) for row in before}
         when = datetime.now()
-        for message in sample.lines:
+        for message in sample.build_lines(self._timers):
             self._pipeline.process(format_line(message, when))
+        after = self._timers.snapshot()
+
+        # A rehearsal may ADD rows; it may never take one away. The root-break
+        # line is also SpellTimerHandler's cue to drop a matching row, so
+        # pressing that button while one real Paralyzing Earth is up on a mob
+        # would delete it — and cleanup afterwards can only remove rows, never
+        # find a removed one again. Put back whatever went missing while the
+        # sample ran, with the state it had.
+        present = {id(row) for row in after}
+        self._timers.reinstate([row for row in before if id(row) not in present])
+
         # Stamped after the fact rather than by the handlers, which know
         # nothing about rehearsals and must not: nothing else runs on this
         # thread inside one command, so anything new is this sample's.
@@ -214,6 +274,6 @@ class AlertTestRunner:
         # completion message on whatever line arrives after its cast time. Cast
         # Harmshield and press a button inside the same second and that row is
         # yours, not the test's; stamping it would delete a real buff.
-        for row in self._timers.snapshot():
-            if id(row) not in before and not _eq_group(row.group, YOU_GROUP):
+        for row in after:
+            if id(row) not in known and not _eq_group(row.group, YOU_GROUP):
                 row.owner = TEST_OWNER
