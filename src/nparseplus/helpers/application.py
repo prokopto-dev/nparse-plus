@@ -5,16 +5,27 @@ from pathlib import Path
 from packaging.version import Version
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QMenu,
+    QMessageBox,
+    QSystemTrayIcon,
+)
 
-from nparseplus import updater
+from nparseplus import flatpakportal, updater
 from nparseplus.core.events import LineEvent
 from nparseplus.helpers import config, resource_path
 from nparseplus.helpers.settings import SettingsSignals
 from nparseplus.parsers.discord import Discord
 from nparseplus.parsers.maps import Maps
 from nparseplus.ui import appicon, appquit
-from nparseplus.ui.updatewindow import DownloadOutcomeDialog, UpdateAvailableDialog
+from nparseplus.ui.updatewindow import (
+    DownloadOutcomeDialog,
+    PortalOutcomeDialog,
+    PortalUpdateDialog,
+    UpdateAvailableDialog,
+)
 
 config.load("nparse.config.json")
 # validate settings file
@@ -76,6 +87,8 @@ class NomnsParse(QApplication):
     update_available = Signal(object)  # ReleaseInfo, emitted off-thread
     update_checked = Signal(object)  # ReleaseInfo | None — manual tray-check result
     install_finished = Signal(object)  # updater.DownloadOutcome, emitted off-thread
+    portal_progress = Signal(object)  # flatpakportal.PortalProgress, off-thread
+    portal_finished = Signal(object)  # flatpakportal.PortalOutcome, off-thread
 
     def __init__(self, *args, backend):
         super().__init__(*args)
@@ -92,9 +105,12 @@ class NomnsParse(QApplication):
         self._open_settings = None
         self._available_release = None
         self._update_window = None
+        self._portal_window = None
         self.update_available.connect(self._on_update_available)
         self.update_checked.connect(self._on_update_checked)
         self.install_finished.connect(self._on_install_finished)
+        self.portal_progress.connect(self._on_portal_progress)
+        self.portal_finished.connect(self._on_portal_finished)
 
         self._toggled = False
 
@@ -166,7 +182,13 @@ class NomnsParse(QApplication):
             return
         window = self._update_window
         if window is None:
-            window = UpdateAvailableDialog(release, str(CURRENT_VERSION))
+            window = UpdateAvailableDialog(
+                release,
+                str(CURRENT_VERSION),
+                # Inside a Flatpak the button installs in place through the
+                # portal instead of handing over a bundle (#74).
+                in_place=flatpakportal.portal_supported(),
+            )
             window.install_requested.connect(self._install_available_update)
             window.open_release_requested.connect(lambda: webbrowser.open(release.html_url))
             window.finished.connect(self._clear_update_window)
@@ -182,11 +204,88 @@ class NomnsParse(QApplication):
         release = self._available_release
         if release is None:
             return
+        if flatpakportal.portal_supported():
+            self._start_portal_update(release)
+        else:
+            self._start_download_install(release)
+
+    def _start_download_install(self, release):
+        """What "install" has always meant: download the artifact and open it."""
 
         def work():
             self.install_finished.emit(updater.install_action(release))
 
         threading.Thread(target=work, name="update-install", daemon=True).start()
+
+    def _start_portal_update(self, release):
+        """Install in place through the Flatpak portal (#74).
+
+        The portal call blocks for as long as the ostree pull takes, so it
+        runs on a worker thread and every Progress signal is marshalled back
+        through a queued Qt signal — the same crossing every other off-thread
+        result in this class uses.
+        """
+        self._portal_window = PortalUpdateDialog(release.version)
+        self._portal_window.show()
+
+        def work():
+            outcome = flatpakportal.install_update(
+                version=release.version, progress=self.portal_progress.emit
+            )
+            self.portal_finished.emit(outcome)
+
+        threading.Thread(target=work, name="update-portal", daemon=True).start()
+
+    def _on_portal_progress(self, progress):
+        if self._portal_window is not None:
+            self._portal_window.report(progress)
+
+    def _on_portal_finished(self, outcome):
+        """Report an in-place install — or quietly take the old route.
+
+        ``fall_back`` is the only status the user never hears about: it means
+        the portal was never reached (not sandboxed, no session bus, a portal
+        too old, a policy that refused the call), so nothing has been said and
+        the honest thing is to do what this app did before #74 rather than
+        explain a mechanism the user did not ask for.
+        """
+        window, self._portal_window = self._portal_window, None
+        if window is not None:
+            window.close()
+            window.deleteLater()
+        release = self._available_release
+        if outcome is None or outcome.fall_back:
+            if release is not None:
+                self._start_download_install(release)
+            return
+        url = release.html_url if release is not None else updater.releases_page_url()
+        dialog = PortalOutcomeDialog(outcome)
+        dialog.open_release_requested.connect(lambda: webbrowser.open(url))
+        # Deferred by one turn of the event loop: the click arrives inside
+        # dialog.exec(), and quitting from a nested loop leaves the outer one
+        # running. Let exec() return first, then spawn and quit.
+        dialog.restart_requested.connect(
+            lambda: QTimer.singleShot(0, self._restart_into_new_version)
+        )
+        dialog.exec()
+
+    def _restart_into_new_version(self):
+        """Hand off to a fresh sandbox instance running the new deploy.
+
+        The portal's Spawn is the only way back in: re-executing this process
+        would come up on the deploy it is already running from. If the portal
+        refuses, the update is still installed — say so and leave the user to
+        restart when they like, rather than quitting into nothing.
+        """
+        if not flatpakportal.relaunch():
+            QMessageBox.information(
+                None,
+                "nParse+ Update",
+                "The update is installed, but nParse+ could not start the new "
+                "version automatically. Quit and start it again to use it.",
+            )
+            return
+        self._quit_app()
 
     def _on_install_finished(self, outcome):
         """Report a download that did not simply install (#93).
@@ -203,6 +302,16 @@ class NomnsParse(QApplication):
         dialog = DownloadOutcomeDialog(outcome)
         dialog.open_release_requested.connect(lambda: webbrowser.open(url))
         dialog.exec()
+
+    def _quit_app(self):
+        """The tray Quit path, shared with the post-update restart (#74)."""
+        if self._toggled:
+            self._toggle()
+
+        self._system_tray.setVisible(False)
+        config.APP_EXIT = True
+        appquit.mark_quitting()  # new-core windows skip their shown=False clobber
+        self.quit()
 
     @property
     def maps_window(self):
@@ -440,13 +549,7 @@ class NomnsParse(QApplication):
             self._parsers_dict["discord"].show_settings()
 
         elif action == actions["quit"]:
-            if self._toggled:
-                self._toggle()
-
-            self._system_tray.setVisible(False)
-            config.APP_EXIT = True
-            appquit.mark_quitting()  # new-core windows skip their shown=False clobber
-            self.quit()
+            self._quit_app()
 
         elif action in actions["parser_toggles"]:
             parser = [parser for parser in self._parsers if parser.name == action.text().lower()][0]

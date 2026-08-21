@@ -443,6 +443,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jeepney"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/6f/357efd7602486741aa73ffc0617fb310a29b588ed0fd69c2399acbb85b0c/jeepney-0.9.0.tar.gz", hash = "sha256:cf0e9e845622b81e4a28df94c40345400256ec608d0e55bb8a3feaa9163f5732", size = 106758, upload-time = "2025-02-27T18:51:01.684Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/a3/e137168c9c44d18eff0376253da9f1e9234d0239e0ee230d2fee6cea8e55/jeepney-0.9.0-py3-none-any.whl", hash = "sha256:97e5714520c16fc0a45695e5365a2e11b81ea79bba796e26f9f1d178cb182683", size = 49010, upload-time = "2025-02-27T18:51:00.104Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -857,6 +866,7 @@ dependencies = [
     { name = "certifi" },
     { name = "colorhash" },
     { name = "httpx" },
+    { name = "jeepney", marker = "sys_platform == 'linux'" },
     { name = "nparseplus-sdk" },
     { name = "packaging" },
     { name = "pathvalidate" },
@@ -874,6 +884,7 @@ build = [
     { name = "pyinstaller" },
 ]
 dev = [
+    { name = "jeepney" },
     { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest" },
@@ -896,6 +907,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2024.2.2" },
     { name = "colorhash", specifier = ">=2.0" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "jeepney", marker = "sys_platform == 'linux'", specifier = ">=0.8" },
     { name = "nparseplus-sdk", editable = "sdk" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "pathvalidate", specifier = ">=3.2" },
@@ -913,6 +925,7 @@ build = [
     { name = "pyinstaller", specifier = ">=6.8" },
 ]
 dev = [
+    { name = "jeepney", specifier = ">=0.8" },
     { name = "jsonschema", specifier = ">=4.22" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pytest", specifier = ">=8.2" },

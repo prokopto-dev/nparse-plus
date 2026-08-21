@@ -46,3 +46,26 @@ def test_the_poison_actually_bites(poisoned_import) -> None:
     result = poisoned_import(["PySide6"], "import PySide6\nprint('ok')\n")
     assert result.returncode != 0, "the Qt poison no longer blocks PySide6"
     assert "forbidden" in result.stderr
+
+
+_MODULE_BODY = """
+import importlib
+importlib.import_module("{mod}")
+print("ok")
+"""
+
+
+@pytest.mark.parametrize("mod", ["nparseplus.updater", "nparseplus.flatpakportal"])
+def test_the_update_path_is_qt_free(mod: str, poisoned_import) -> None:
+    """The updater and its Flatpak portal client marshal to the UI, not from it.
+
+    Neither lives under ``core``/``config``/``net``, so the package sweep above
+    does not reach them — but both carry the prose their dialogs render
+    (``DownloadOutcome.message``, ``PortalOutcome.message``) precisely so the
+    wording is testable without a window, and that only holds while they stay
+    importable without Qt.
+    """
+    result = poisoned_import(["PySide6"], _MODULE_BODY.replace("{mod}", mod))
+    assert result.returncode == 0 and "ok" in result.stdout, (
+        f"{mod} imports PySide6 or fails to import:\n{result.stderr}"
+    )
