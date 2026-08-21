@@ -6,6 +6,38 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.24.0 (2026-08-21)
+
+### Bug Fixes
+
+- **dps**: Bind Reset best to the character that confirmed it
+  ([`af0650c`](https://github.com/prokopto-dev/nparse-plus/commit/af0650c0f8e1711c19720c649c32db90660dd77b))
+
+- **dps**: Decide the notable-kill copy on the driver thread
+  ([`fad3110`](https://github.com/prokopto-dev/nparse-plus/commit/fad3110fc31298d0b39cd198e315e44f3f828540))
+
+- **dps**: Judge a notable kill against the zone it happened in
+  ([`1a29ea5`](https://github.com/prokopto-dev/nparse-plus/commit/1a29ea5b18aead88c0bb09b7f9fbac979f08162d))
+
+- **dps**: Raise the reset refusal from the driver's answer, not a local check
+  ([`60e720c`](https://github.com/prokopto-dev/nparse-plus/commit/60e720c30eaba6fa7e8b4ba746965fd8c4e9ccd6))
+
+### Documentation
+
+- **dps**: Say which thread FightTracker.on_change actually fires on
+  ([`c70ef4d`](https://github.com/prokopto-dev/nparse-plus/commit/c70ef4d0afb8e74383f9f48677f686c4acb5a0d7))
+
+### Features
+
+- **dps**: Copy a fight parse to the clipboard
+  ([#78](https://github.com/prokopto-dev/nparse-plus/pull/78),
+  [`04df622`](https://github.com/prokopto-dev/nparse-plus/commit/04df6228c6b97e70a14bb97cdaa1652427a8b851))
+
+- **dps**: Persist best DPS and highest hit per character
+  ([#83](https://github.com/prokopto-dev/nparse-plus/pull/83),
+  [`6bc4967`](https://github.com/prokopto-dev/nparse-plus/commit/6bc49671f59afc7d5be36479b79379312dbab24d))
+
+
 ## v2.23.0 (2026-08-21)
 
 ### Bug Fixes
