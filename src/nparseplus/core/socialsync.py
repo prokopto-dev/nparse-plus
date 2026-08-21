@@ -20,10 +20,10 @@ without waiting for a launch/quit cycle. Mtimes gate the actual work, so a
 character whose file has not changed costs one ``stat``.
 
 **The tick itself does none of that work.** Asking whether EQ is running
-spawns ``pgrep`` (17.6 ms mean, and a subprocess ceiling of seconds), and
-the sync reads every character ini and rewrites its mirror — neither belongs
-on the thread that tails the log and ticks every countdown. The tick decides
-only *whether* a scan is due and hands it to a
+spawns ``pgrep`` on POSIX (17.6 ms mean, and a subprocess ceiling of
+seconds), and the sync reads every character ini and rewrites its mirror —
+neither belongs on the thread that tails the log and ticks every countdown.
+The tick decides only *whether* a scan is due and hands it to a
 :class:`~nparseplus.core.background.BackgroundJob`, which will not start a
 second scan while one is in flight. Nothing here touches the bus or
 TimersService, which is what makes that safe.

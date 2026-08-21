@@ -167,11 +167,15 @@ class PluginContext(Protocol):
         startup (``eqhost.txt``) will not be re-read until it restarts. Warn
         the user; do not block on it.
 
-        **Spawns a process (~18 ms).** Call it from a settings-page button or
-        your own thread, never from an ``add_tick`` callback — the driver
-        supervises plugin ticks against a 0.25 s budget and evicts repeat
-        offenders. Best-effort: any failure answers False rather than
-        raising, and it cannot detect anything on Windows (no ``pgrep``).
+        **Spawns a process on macOS/Linux (~18 ms).** Call it from a
+        settings-page button or your own thread, never from an ``add_tick``
+        callback — the driver supervises plugin ticks against a 0.25 s budget
+        and evicts repeat offenders. The Windows host answers from a process
+        snapshot instead and is far cheaper, but write your plugin to the
+        expensive case: you do not choose the platform it runs on.
+
+        Best-effort: any failure answers False rather than raising, so a
+        False is "not running, as far as the host can tell".
         """
         ...
 

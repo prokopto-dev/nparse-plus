@@ -53,7 +53,7 @@ implements it in `nparseplus.core.plugins.context.HostPluginContext`,
 | Member | Meaning |
 | --- | --- |
 | `eq_dir` | `pathlib.Path` of the user's EverQuest directory, or `None` when they have not set one. Read **live** from the app's settings — do not cache it at `activate` time |
-| `eq_is_running()` | best-effort "is the client up?", for the *restart EQ for this to take effect* warning. **Spawns a process (~18 ms): never call it from a tick.** Answers `False` on failure, and always on Windows |
+| `eq_is_running()` | best-effort "is the client up?", for the *restart EQ for this to take effect* warning. **Spawns a process on macOS/Linux (~18 ms): never call it from a tick.** Windows answers from a process snapshot instead, which is far cheaper — but write for the expensive case, since you do not pick the platform. Answers `False` on failure |
 
 `None` is the normal first-run state, not an error — the app works with only
 a log directory set. Treat it as "not available yet".

@@ -301,9 +301,11 @@ class HostPluginContext:
     def eq_is_running(self) -> bool:
         """Whether the EQ client appears to be running (best effort).
 
-        Spawns ``pgrep`` (~18 ms), so the SDK docstring tells plugins to keep
-        it off their ticks; exposed rather than left to each plugin precisely
-        because #88 was this call landing on the wrong thread.
+        Spawns ``pgrep`` on POSIX (~18 ms), so the SDK docstring tells plugins
+        to keep it off their ticks; exposed rather than left to each plugin
+        precisely because #88 was this call landing on the wrong thread. The
+        Windows branch (#33) is a Toolhelp snapshot and costs nothing like
+        that, but the advice is the same one either way.
         """
         from nparseplus.core.eqprocess import eq_is_running
 

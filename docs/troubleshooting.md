@@ -170,9 +170,11 @@ public](https://github.com/prokopto-dev/nparse-plus) and
 Almost always the EQ client overwriting the file: it rewrites the whole
 `<Name>_<Server>.ini` when you camp or log out, discarding anything edited
 while it was running. Edit macros while that character is **logged out**.
-nParse+ warns when it detects the client running, but that check uses
-`pgrep` and so [does not fire on
-Windows](https://github.com/prokopto-dev/nparse-plus/issues/33) yet.
+nParse+ warns when it detects the client running — on every platform, and
+including a client running under wine or CrossOver. The check is best
+effort, though: if it cannot tell, it stays quiet rather than nagging, so
+treat a missing warning as "no news" rather than "the game is definitely
+closed".
 
 If it already happened: open the [Macro Editor](windows/macro-editor.md),
 Load that character, and check the **Local library** tab — macros nParse+

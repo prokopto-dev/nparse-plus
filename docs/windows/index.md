@@ -76,8 +76,10 @@ toggle_dps        show_maps        hide_console
 The pattern is `show_`, `hide_`, or `toggle_` plus the window key: `maps`,
 `spells` (the [Timers](timers.md) window — the key predates the rename and
 stays put so existing macros keep working), `dps`, `mobinfo`, `console`,
-`discord`, `triggereditor`, or `dumps`. Only messages *you* send count — a
-groupmate can't blank your overlays.
+`discord`, `triggereditor`, `macroeditor`, or `dumps`. Only messages *you*
+send count — a groupmate can't blank your overlays.
 
-The Macro Editor and any plugin windows are
-[not reachable this way yet](https://github.com/prokopto-dev/nparse-plus/issues/50).
+Plugin windows answer to their own key too: `toggle_<plugin-id>_<window-key>`
+unless the add-on declared a different one (see [the plugin
+API](../plugins/api.md#window-settings-page-specs)). A key nothing answers
+to is simply ignored.
