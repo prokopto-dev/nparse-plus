@@ -205,6 +205,73 @@ def test_pick_asset_self_update_changes_nothing_off_darwin() -> None:
         assert pick_asset(release, platform, **kwargs, self_update=True) == plain
 
 
+# The v2.21.0 asset list, verbatim and in API order — the shape that armed
+# #160. Since #75 every release ships a ditto zip of the macOS .app beside each
+# DMG, and those sort BEFORE the Windows zip, so a bare ``.zip`` sweep picked a
+# macOS bundle for Windows. The per-platform tests above pass without this list
+# only because their fixtures predate the macOS zips.
+FULL_RELEASE_ASSETS = (
+    "nParse+-2.21.0-macos-arm64.dmg",
+    "nParse+-2.21.0-macos-arm64.zip",
+    "nParse+-2.21.0-macos-x86_64.dmg",
+    "nParse+-2.21.0-macos-x86_64.zip",
+    "nparseplus-2.21.0-linux-x86_64.flatpak",
+    "nparseplus-2.21.0-linux-x86_64.tar.gz",
+    "nparseplus-2.21.0-win64.zip",
+)
+
+
+def _full_release() -> ReleaseInfo:
+    return ReleaseInfo(
+        version="2.21.0",
+        html_url="https://example/release",
+        assets=tuple(_dmg(name) for name in FULL_RELEASE_ASSETS),
+    )
+
+
+def test_pick_asset_over_a_full_release_is_distinct_and_correctly_tagged() -> None:
+    release = _full_release()
+    picks = {
+        "win32": pick_asset(release, "win32"),
+        "linux-tarball": pick_asset(release, "linux", in_flatpak=False),
+        "linux-flatpak": pick_asset(release, "linux", in_flatpak=True),
+        "darwin-arm64": pick_asset(release, "darwin", machine="arm64"),
+        "darwin-x86_64": pick_asset(release, "darwin", machine="x86_64"),
+    }
+    # #160: this was nParse+-2.21.0-macos-arm64.zip — the first .zip in the list.
+    assert picks["win32"].name == "nparseplus-2.21.0-win64.zip"
+    assert picks["linux-tarball"].name == "nparseplus-2.21.0-linux-x86_64.tar.gz"
+    assert picks["linux-flatpak"].name == "nparseplus-2.21.0-linux-x86_64.flatpak"
+    assert picks["darwin-arm64"].name == "nParse+-2.21.0-macos-arm64.dmg"
+    assert picks["darwin-x86_64"].name == "nParse+-2.21.0-macos-x86_64.dmg"
+    # No two platforms may resolve to one artifact: sharing a container format
+    # is exactly how the wrong build reaches a user.
+    names = [asset.name for asset in picks.values()]
+    assert len(set(names)) == len(names)
+
+
+def test_pick_asset_full_release_macos_self_update_takes_the_macos_zip() -> None:
+    # The zip a swap helper unpacks is legitimately what macOS wants here — and
+    # it is the arch-tagged macOS one, never the Windows zip beside it.
+    release = _full_release()
+    for arch in ("arm64", "x86_64"):
+        picked = pick_asset(release, "darwin", machine=arch, self_update=True)
+        assert picked.name == f"nParse+-2.21.0-macos-{arch}.zip"
+    # The flag moves nothing on Windows: still the win64 build, both ways.
+    assert pick_asset(release, "win32", self_update=True).name == "nparseplus-2.21.0-win64.zip"
+
+
+def test_pick_asset_refuses_an_untagged_artifact_rather_than_guessing() -> None:
+    # A release carrying only a foreign zip resolves to None — the caller opens
+    # the release page, which shows, unlike silently installing a macOS bundle.
+    release = ReleaseInfo(
+        version="2.21.0",
+        html_url="https://example/release",
+        assets=(_dmg("nParse+-2.21.0-macos-arm64.zip"),),
+    )
+    assert pick_asset(release, "win32") is None
+
+
 def test_running_in_flatpak_detection(tmp_path: Path) -> None:
     marker = tmp_path / ".flatpak-info"
     assert not updater.running_in_flatpak(marker)
