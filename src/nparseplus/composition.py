@@ -336,9 +336,17 @@ class Backend:
         the player-change pair, which runs there. With no driver thread
         running, that seam runs the closure inline — which is exactly right,
         because then there is nothing to race with.
+
+        Fire-and-forget by design. The outcome is not returned to this caller
+        because this caller is not the one that needs it and is no longer
+        waiting — the command drains up to a poll interval later. The handler
+        publishes ``DpsBestResetEvent`` instead, which reaches the window the
+        one way the driver thread may reach it.
         """
         handler = self.dps_persistence
         if handler is None:
+            # No profile persistence wired (a Backend built without it): there
+            # is no character to bind to and nothing on disk to protect.
             self.fights.reset_best()
             return
         self.driver.submit_to_driver(lambda: handler.reset_best(expect), label="dps:reset-best")

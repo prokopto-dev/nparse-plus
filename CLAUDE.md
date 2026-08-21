@@ -1612,7 +1612,18 @@ character, and exports the zero over their profile — the lifetime record of
 someone the user was not even looking at. So `Backend.dps_best_owner()` is
 captured before the dialog and handed back to `reset_dps_best`, which
 re-checks it on the driver thread, where the player-change pair also runs and
-so cannot overtake the comparison. The rule the whole layer follows: a
+so cannot overtake the comparison.
+
+**The window deliberately does not re-check locally, and that is the whole
+point of `DpsBestResetEvent`.** A local check after the dialog looks like a
+free fast path and is not: `submit_to_driver` queues the command and the
+driver drains it up to a poll interval later, so the switch can still land
+after the local check passed — leaving two deciders that disagree in exactly
+the window that matters, with the reporting one wrong. The driver publishes
+its answer instead, and `reset_refused` is raised only from that. A command
+outcome on the bus rather than a return value because the caller is on
+another thread and is no longer waiting, and the bus is the only way back to
+the GUI. The rule the whole layer follows: a
 GUI-thread write to driver state is fine when nothing can happen in the
 middle of it, and needs the driver the moment something can.
 

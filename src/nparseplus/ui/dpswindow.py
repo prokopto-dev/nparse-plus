@@ -42,7 +42,7 @@ from nparseplus.core.dps import (
     SessionSummary,
     fight_parse,
 )
-from nparseplus.core.events import NotableKillEvent
+from nparseplus.core.events import DpsBestResetEvent, NotableKillEvent
 from nparseplus.ui import skins, theme
 from nparseplus.ui.clipboard import system_clipboard_copy
 from nparseplus.ui.overlaybase import OverlayWindowBase
@@ -212,8 +212,10 @@ class DpsMeterWindow(OverlayWindowBase):
     parse_copied = Signal(str)
 
     #: A confirmed "Reset best" did NOT happen, because the active character
-    #: changed while the dialog was open. The user asked for something
-    #: irreversible and got nothing; saying so beats silence.
+    #: changed before the driver ran it. The user asked for something
+    #: irreversible and got nothing; saying so beats silence. Raised from the
+    #: driver's own answer (``DpsBestResetEvent``), never from a local guess —
+    #: see ``reset_best``.
     reset_refused = Signal()
 
     def __init__(
@@ -496,6 +498,12 @@ class DpsMeterWindow(OverlayWindowBase):
         here is genuinely the UI's: the setting (mutated by the settings
         window on this thread) and the clipboard.
         """
+        if isinstance(event, DpsBestResetEvent):
+            # The driver has run (or refused) the reset the user confirmed.
+            if not event.cleared:
+                self.reset_refused.emit()
+            self.refresh()
+            return
         if not isinstance(event, NotableKillEvent):
             return
         if not self._backend.settings.dps.auto_copy_notable_kills:
@@ -580,10 +588,18 @@ class DpsMeterWindow(OverlayWindowBase):
         profile: the lifetime record of someone the user was not even looking
         at, gone irreversibly.
 
-        So the owner is captured BEFORE the dialog and handed back after it.
-        The check here is the one that gives the user an answer; the
-        authoritative one is on the driver thread, where the player-change
+        So the owner is captured BEFORE the dialog and handed back after it,
+        and the check happens on the driver thread, where the player-change
         pair also runs and so cannot overtake it.
+
+        **There is deliberately no second check here.** An obvious one —
+        re-read the owner after the dialog and refuse locally — looks like a
+        free fast path and is not: the command is queued and drains up to a
+        poll interval later, so the switch can still land after a local check
+        passed. That leaves two places that decide, disagreeing exactly in the
+        window that matters, and the one that reports to the user is the one
+        that is wrong. The driver's answer comes back as ``DpsBestResetEvent``
+        and is the only thing ``reset_refused`` is raised from.
         """
         owner = self._backend.dps_best_owner()
         if not self._confirm_reset(
@@ -594,12 +610,7 @@ class DpsMeterWindow(OverlayWindowBase):
             "is left alone.",
         ):
             return
-        if self._backend.dps_best_owner() != owner:
-            # Answered for a character who is no longer the one on screen.
-            self.reset_refused.emit()
-            return
         self._backend.reset_dps_best(owner)
-        self.refresh()
 
     @staticmethod
     def _format_summary(summary: SessionSummary) -> str:

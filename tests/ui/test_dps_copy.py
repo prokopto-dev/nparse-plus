@@ -16,6 +16,7 @@ from nparseplus.core.enums import Server
 from nparseplus.core.events import (
     AfterPlayerChangedEvent,
     DamageEvent,
+    DpsBestResetEvent,
     NotableKillEvent,
     SlainEvent,
     YouZonedEvent,
@@ -309,6 +310,10 @@ def test_reset_best_clears_the_record_but_not_the_session(qtbot, backend: _FakeB
     summary = backend.fights.session_summary()
     assert summary.best.total_damage == 0
     assert summary.current_session.total_damage == 900
+
+    # The footer follows the driver's answer, not the click — the reset is
+    # dispatched, so there is nothing to render until it comes back.
+    window.handle_event(DpsBestResetEvent(timestamp=T0, cleared=True))
     assert window.footer_text().startswith("Best 0 dps")
 
 
@@ -336,12 +341,33 @@ def test_a_character_change_during_the_dialog_cancels_the_reset(
         backend, copy_to_clipboard=_Clipboard(), confirm_reset=_SwitchWhileOpen(answer=True)
     )
     qtbot.addWidget(window)
+    window.reset_best()
+
+    # Dispatched with the stale token, and the backend's own check refuses it.
+    assert backend.reset_calls == [("genartik", "green")]
+    assert backend.fights.session_summary().best.total_damage == 900
+
+
+def test_the_refusal_is_raised_from_the_driver_s_answer(qtbot, backend: _FakeBackend) -> None:
+    """Not from a local guess: the window cannot see the switch that matters.
+
+    ``submit_to_driver`` queues the reset and the driver drains it up to a
+    poll interval later, so a GUI-side check can pass and the reset still be
+    refused. Only ``DpsBestResetEvent`` knows which happened.
+    """
+    window = _window(qtbot, backend, _Clipboard())
 
     with qtbot.waitSignal(window.reset_refused, timeout=500):
-        window.reset_best()
+        window.handle_event(DpsBestResetEvent(timestamp=T0, cleared=False))
 
-    assert backend.reset_calls == []  # never even dispatched
-    assert backend.fights.session_summary().best.total_damage == 900
+
+def test_a_reset_that_succeeded_announces_nothing(qtbot, backend: _FakeBackend) -> None:
+    window = _window(qtbot, backend, _Clipboard())
+    refused: list[int] = []
+    window.reset_refused.connect(lambda: refused.append(1))
+
+    window.handle_event(DpsBestResetEvent(timestamp=T0, cleared=True))
+    assert refused == []
 
 
 def test_the_reset_carries_the_character_it_was_asked_for(qtbot, backend: _FakeBackend) -> None:
@@ -355,7 +381,7 @@ def test_the_reset_carries_the_character_it_was_asked_for(qtbot, backend: _FakeB
     assert backend.reset_calls == [("genartik", "green")]
 
 
-def test_a_refusal_does_not_announce_anything(qtbot, backend: _FakeBackend) -> None:
+def test_saying_no_dispatches_nothing_and_announces_nothing(qtbot, backend: _FakeBackend) -> None:
     """Saying No is not the same as being overtaken by a character change."""
     window = DpsMeterWindow(
         backend, copy_to_clipboard=_Clipboard(), confirm_reset=_Confirm(answer=False)

@@ -147,6 +147,24 @@ class NotableKillEvent(LogEvent):
     parse: str
 
 
+class DpsBestResetEvent(LogEvent):
+    """Outcome of a user-confirmed "Reset best" (#83).
+
+    Not a log fact — a command result, published so it can reach the GUI the
+    only way anything on the driver thread may: the bus, and from there
+    ``QtEventBridge``. The reset is dispatched to the driver so its identity
+    check cannot be overtaken by a character switch, which means the answer is
+    only known there, one poll interval or so after the user clicked Yes.
+
+    ``cleared`` is False when the check refused — the active character changed
+    between the click and the command being drained. Carried rather than
+    publishing only on refusal so there is ONE authoritative path for the
+    outcome instead of a fast path and a slow one that can disagree.
+    """
+
+    cleared: bool
+
+
 class WhoPlayer(BaseModel):
     model_config = ConfigDict(frozen=True)
 

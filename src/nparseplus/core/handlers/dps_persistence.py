@@ -69,12 +69,17 @@ which is thread-safe and coalesces bursts — so it is safe from either thread.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from nparseplus.config.settings import SavedPlayerDamage, get_player
 from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker, PlayerDamage
-from nparseplus.core.events import AfterPlayerChangedEvent, BeforePlayerChangedEvent
+from nparseplus.core.events import (
+    AfterPlayerChangedEvent,
+    BeforePlayerChangedEvent,
+    DpsBestResetEvent,
+)
 from nparseplus.core.player import ActivePlayer
 
 if TYPE_CHECKING:
@@ -90,6 +95,7 @@ class DpsPersistenceHandler:
         tracker: FightTracker,
         request_save: Callable[[], None] | None = None,
     ) -> None:
+        self.bus = bus
         self.player = player
         self.settings = settings
         self.tracker = tracker
@@ -214,12 +220,23 @@ class DpsPersistenceHandler:
         So the caller captures ``best_owner()`` before showing the dialog and
         hands it back here, and here is on the driver thread — the same thread
         that runs the player-change pair, so the comparison cannot be overtaken
-        by the switch it is checking for. Returns whether the reset happened.
+        by the switch it is checking for.
+
+        The outcome is published as well as returned. The caller is the GUI,
+        and it is not on this thread and not still waiting: the command was
+        queued and drains up to a poll interval later, during which the switch
+        this guards against can happen. Discarding the answer would leave a
+        confirmed reset silently doing nothing, which is the failure the
+        confirmation exists to avoid. The bus is the only way back to the GUI
+        (``QtEventBridge``). The stamp is the wall clock rather than the log's,
+        because a command the user issued did not come from a log line; nothing
+        reads it, and naive-local matches every other timestamp in the pipeline.
         """
-        if self.best_owner() != expect:
-            return False
-        self.tracker.reset_best()
-        return True
+        cleared = self.best_owner() == expect
+        if cleared:
+            self.tracker.reset_best()
+        self.bus.publish(DpsBestResetEvent(timestamp=datetime.now(), cleared=cleared))
+        return cleared
 
     def _load(self, best: PlayerDamage) -> None:
         self._restoring = True
