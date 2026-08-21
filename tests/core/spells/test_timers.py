@@ -275,6 +275,72 @@ def test_remove_owner_of_nothing_never_means_everything(
     assert len(timers.snapshot()) == 1
 
 
+def test_reinstate_puts_a_removed_row_back_untouched(
+    timers: TimersService, spell_book: SpellBook
+) -> None:
+    """The undo half of ``remove_row`` (#85): the row object itself, with the
+    state it had, and none of the ``add_*`` side effects."""
+    mine = timers.add_timer(
+        TimerRow(
+            name="Paralyzing Earth",
+            group=" a shady goblin",
+            updated_at=T0,
+            ends_at=T0 + timedelta(seconds=45),
+            total_duration_s=45.0,
+        )
+    )
+    ends_at = mine.ends_at
+    assert timers.remove_row(mine) is True
+
+    calls: list[int] = []
+    timers.on_change.append(lambda: calls.append(1))
+    assert timers.reinstate([mine]) == 1
+    assert timers.snapshot() == [mine]
+    assert mine.ends_at == ends_at and mine.owner == ""
+    assert calls == [1]
+
+    # Idempotent, and a no-op does not notify.
+    assert timers.reinstate([mine]) == 0
+    assert calls == [1]
+
+
+def test_reinstate_does_not_reset_a_roll_group_the_way_add_roll_would(
+    timers: TimersService,
+) -> None:
+    """Why it is not routed through ``add_roll``: that resets every window in
+    the group, which would be a second mutation rather than an undo."""
+    kept = timers.add_roll(
+        RollRow(
+            name="Kept",
+            group=" Random -- 1000",
+            updated_at=T0,
+            roll=500,
+            max_roll=1000,
+            ends_at=T0 + timedelta(seconds=90),
+            total_duration_s=180.0,
+        )
+    )
+    gone = timers.add_roll(
+        RollRow(
+            name="Gone",
+            group=" Random -- 1000",
+            updated_at=T0,
+            roll=200,
+            max_roll=1000,
+            ends_at=T0 + timedelta(seconds=90),
+            total_duration_s=180.0,
+        )
+    )
+    timers.remove_row(gone)
+    kept_ends_at = kept.ends_at
+
+    gone.ends_at = T0 + timedelta(seconds=30)  # a different window than the group's
+    timers.reinstate([gone])
+
+    assert kept.ends_at == kept_ends_at
+    assert gone.ends_at == T0 + timedelta(seconds=30)
+
+
 def test_on_change_fires(timers: TimersService, spell_book: SpellBook) -> None:
     calls: list[int] = []
     timers.on_change.append(lambda: calls.append(1))

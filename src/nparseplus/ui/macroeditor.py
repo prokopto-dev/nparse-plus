@@ -200,6 +200,32 @@ class _MacroLineEdit(QLineEdit):
         super().keyPressEvent(event)
 
 
+def describe_import(summary: dict[str, int]) -> str:
+    """The one-line account of an import, for the confirmation box.
+
+    Pure so the wording can be tested without a dialog. The relocation line is
+    what #34 asks for: a pack that lands somewhere other than its own slots
+    has to say *how* it landed, or "my macros moved" has no answer.
+    """
+    parts = [f"Imported {summary['imported']} macro(s)"]
+    if summary["duplicates"]:
+        parts.append(f"{summary['duplicates']} already present")
+    if summary["overwritten"]:
+        parts.append(f"{summary['overwritten']} overwritten")
+    if summary["skipped"]:
+        parts.append(f"{summary['skipped']} skipped")
+    if summary["moved"]:
+        parts.append(
+            f"{summary['moved']} moved together to page {summary['moved_page']}, "
+            "keeping their button positions"
+            if summary["moved_intact"]
+            else f"{summary['moved']} moved to free slots"
+        )
+    if summary["unplaceable"]:
+        parts.append(f"{summary['unplaceable']} did not fit")
+    return " — ".join(parts) + "."
+
+
 class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
     """Framed macro-editor tool window.
 
@@ -981,12 +1007,28 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         Duplicates and conflicts are different things and are reported apart:
         a macro the character already has *somewhere* is a duplicate; a
         different macro occupying the target slot is a conflict.
+
+        Macros the user sends to a free slot are **placed together, last**
+        (#34): a pack whose macros shared one page keeps its arrangement if a
+        whole page is free, and deciding that needs the whole group and the
+        final occupancy, neither of which exists mid-loop.
         """
         data = json.loads(raw.decode("utf-8", errors="replace"))
         incoming = sanitize_all(parse_socials(data))
         label = pack_label(data)
 
-        summary = {"imported": 0, "duplicates": 0, "overwritten": 0, "skipped": 0, "unplaceable": 0}
+        summary = {
+            "imported": 0,
+            "duplicates": 0,
+            "overwritten": 0,
+            "skipped": 0,
+            "unplaceable": 0,
+            # How the relocated group landed: how many moved, whether they
+            # kept their relative buttons, and the page they kept them on.
+            "moved": 0,
+            "moved_intact": 0,
+            "moved_page": 0,
+        }
         existing_keys = {socials_core.social_key(s): s for s in self._working}
 
         survivors: list[Social] = []
@@ -1002,6 +1044,7 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             else:
                 summary["skipped"] += 1
 
+        relocate: list[Social] = []
         for social in survivors:
             result = socials_core.place_socials([social], self.grid(), strategy=Placement.EXACT)
             if result.unplaceable:
@@ -1014,17 +1057,22 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                     summary["skipped"] += 1
                     continue
                 if choice == CONFLICT_FREE:
-                    moved = socials_core.place_socials(
-                        [social], self.grid(), strategy=Placement.FREE
-                    )
-                    if not moved.placed:
-                        summary["unplaceable"] += 1
-                        continue
-                    social = moved.placed[0]
-                else:
-                    summary["overwritten"] += 1
+                    relocate.append(social)
+                    continue
+                summary["overwritten"] += 1
             self._place(social, label)
             summary["imported"] += 1
+
+        if relocate:
+            moved = socials_core.place_socials(relocate, self.grid(), strategy=Placement.PAGE)
+            for social in moved.placed:
+                self._place(social, label)
+            summary["imported"] += len(moved.placed)
+            summary["moved"] = len(moved.placed)
+            summary["unplaceable"] += len(moved.unplaceable)
+            if moved.kept_layout and moved.placed:
+                summary["moved_intact"] = 1
+                summary["moved_page"] = moved.placed[0].page
 
         if summary["imported"]:
             self._dirty = True
@@ -1080,19 +1128,10 @@ class MacroEditorWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             QMessageBox.warning(self, "Import Macros", f"That is not a macro pack:\n{exc}")
             return
 
-        parts = [f"Imported {summary['imported']} macro(s)"]
-        if summary["duplicates"]:
-            parts.append(f"{summary['duplicates']} already present")
-        if summary["overwritten"]:
-            parts.append(f"{summary['overwritten']} overwritten")
-        if summary["skipped"]:
-            parts.append(f"{summary['skipped']} skipped")
-        if summary["unplaceable"]:
-            parts.append(f"{summary['unplaceable']} did not fit")
         QMessageBox.information(
             self,
             "Import Macros",
-            " — ".join(parts) + ".\n\nClick Save to character to write them.",
+            describe_import(summary) + "\n\nClick Save to character to write them.",
         )
 
     def _ask_conflict(self, incoming: Social, occupant: Social | None) -> str:

@@ -64,6 +64,7 @@ from nparseplus.core.player import ActivePlayer
 from nparseplus.core.sharing import SharingClient, SharingCoordinator, sharing_gated_submit
 from nparseplus.core.socialsync import SocialSyncWatcher
 from nparseplus.core.spells.spells_us import SpellBook, load_master_npc_list, load_spell_book
+from nparseplus.core.testalerts import AlertTestRunner
 from nparseplus.core.timers import TRIGGER_TIMER_GROUP, TimerRow, TimersService
 from nparseplus.core.triggers.builtin import sync_builtin_triggers
 from nparseplus.core.triggers.chat_commands import CustomTimerChatCommands
@@ -252,6 +253,7 @@ class Backend:
     pipeline: LogPipeline
     driver: LogDriver
     fights: FightTracker
+    test_alerts: AlertTestRunner
     mob_info: MobInfoState
     player_pet: PlayerPet
     speaker: _SwappableSpeaker
@@ -767,6 +769,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         pipeline=pipeline,
         driver=driver,
         fights=fights,
+        test_alerts=AlertTestRunner(pipeline, timers, driver.submit_to_driver),
         mob_info=mob_info,
         player_pet=player_pet,
         speaker=speaker,

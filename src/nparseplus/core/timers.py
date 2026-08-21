@@ -527,6 +527,33 @@ class TimersService:
             self._notify()
         return removed
 
+    def reinstate(self, rows: Sequence[Row]) -> int:
+        """Put rows back that an operation removed which had no business to.
+
+        The counterpart to ``remove_row``, and deliberately dumb: the row
+        object itself goes back with the state it had, rather than being
+        rebuilt through the ``add_*`` overloads. Those carry side effects — the
+        overwrite in ``add_spell``/``add_timer``, the group-wide window reset
+        in ``add_roll`` — which would make this a second mutation instead of an
+        undo. A row still present is skipped, so this is idempotent.
+
+        Appending is enough: display order is recomputed from the rows on every
+        refresh (``group_rows_for_display`` and the window's own sort), so a
+        row's position in this list is not what the user sees.
+
+        The caller is ``core.testalerts`` (#85), where a rehearsed line reaches
+        every real handler — including the one whose answer to a root wearing
+        off is to drop the matching row. A rehearsal may add rows; it may never
+        take one away, and once a row is gone no later cleanup can find it.
+        """
+        present = {id(row) for row in self._rows}
+        restored = [row for row in rows if id(row) not in present]
+        if not restored:
+            return 0
+        self._rows.extend(restored)
+        self._notify()
+        return len(restored)
+
     def remove_series(self, series: str) -> int:
         """Drop every candidate window of one spawn (#125). Returns the count.
 
@@ -834,10 +861,15 @@ class TimersService:
         The filter is ``expires_at`` rather than ``ends_at`` so a row whose pop
         window is open — whose ``ends_at`` is by definition in the past — is
         saved rather than dropped at exactly the moment it matters most (#125).
+
+        An **owned** row is skipped: the snapshot has no ``owner`` field, so a
+        plugin's row (#45) or a rehearsed alert's (#85) would come back after a
+        restart as a row nothing owns and ``remove_owner`` can no longer take
+        back. A row must not outlive whatever put it there.
         """
         out: list[RespawnTimerSnapshot] = []
         for row in self._rows:
-            if not isinstance(row, TimerRow) or not _eq(row.group, group):
+            if not isinstance(row, TimerRow) or not _eq(row.group, group) or row.owner:
                 continue
             end = expires_at(row)
             if end is None or end <= now:

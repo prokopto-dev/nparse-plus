@@ -17,6 +17,7 @@ from nparseplus.core.socials import (
     copy_socials,
     find_duplicates,
     for_display,
+    free_page_for,
     from_display,
     normalize_socials,
     place_socials,
@@ -321,6 +322,102 @@ def test_place_socials_free_overflow_is_unplaceable() -> None:
     )
     assert result.placed == []
     assert [s.name for s in result.unplaceable] == ["Extra"]
+
+
+def test_place_page_keeps_a_group_together_on_the_first_free_page() -> None:
+    """The #34 case: a pull rotation stays a pull rotation."""
+    existing = _grid(
+        *[Social(page=1, button=b, name=f"1-{b}", lines=["/x"]) for b in range(1, 5)],
+        Social(page=2, button=7, name="Lone", lines=["/lone"]),
+    )
+    incoming = [
+        Social(page=4, button=2, name="Pull", lines=["/p"]),
+        Social(page=4, button=5, name="Snare", lines=["/s"]),
+        Social(page=4, button=9, name="Med", lines=["/m"]),
+    ]
+    result = place_socials(incoming, existing, strategy=Placement.PAGE)
+    assert result.kept_layout is True
+    # Page 1 has macros and page 2 has one, so page 3 is the first free one —
+    # and every button is exactly where it was in the pack.
+    assert [s.slot for s in result.placed] == [(3, 2), (3, 5), (3, 9)]
+    assert [s.name for s in result.placed] == ["Pull", "Snare", "Med"]
+
+
+def test_place_page_falls_back_to_the_flat_fill_when_no_page_is_free() -> None:
+    existing = _grid(
+        *[
+            Social(page=p, button=1, name=f"{p}-1", lines=["/x"])
+            for p in range(1, DEFAULT_PAGES + 1)
+        ]
+    )
+    incoming = [
+        Social(page=4, button=2, name="A", lines=["/a"]),
+        Social(page=4, button=5, name="B", lines=["/b"]),
+    ]
+    result = place_socials(incoming, existing, strategy=Placement.PAGE)
+    assert result.kept_layout is False
+    assert [s.slot for s in result.placed] == [(1, 2), (1, 3)]
+
+
+def test_place_page_refuses_a_group_that_spans_pages() -> None:
+    existing = _grid(Social(page=1, button=1, name="Mine", lines=["/mine"]))
+    incoming = [
+        Social(page=3, button=2, name="A", lines=["/a"]),
+        Social(page=4, button=2, name="B", lines=["/b"]),
+    ]
+    result = place_socials(incoming, existing, strategy=Placement.PAGE)
+    assert result.kept_layout is False
+    assert [s.slot for s in result.placed] == [(1, 2), (1, 3)]
+
+
+def test_place_page_does_not_spend_a_whole_page_on_one_macro() -> None:
+    """One macro has no arrangement relative to anything."""
+    existing = _grid(Social(page=1, button=1, name="Mine", lines=["/mine"]))
+    result = place_socials(
+        [Social(page=6, button=6, name="Solo", lines=["/s"])], existing, strategy=Placement.PAGE
+    )
+    assert result.kept_layout is False
+    assert [s.slot for s in result.placed] == [(1, 2)]
+
+
+def test_place_page_will_not_land_a_button_outside_a_narrower_grid() -> None:
+    """The clamp still holds: the pack's page may be wider than this one's."""
+    narrow = SocialGrid(pages=4, buttons_per_page=6, socials=[])
+    incoming = [
+        Social(page=2, button=2, name="A", lines=["/a"]),
+        Social(page=2, button=9, name="B", lines=["/b"]),  # past this grid's 6
+    ]
+    result = place_socials(incoming, narrow, strategy=Placement.PAGE)
+    assert result.kept_layout is False
+    assert [s.slot for s in result.placed] == [(1, 1), (1, 2)]
+    assert all(narrow.contains_slot(*s.slot) for s in result.placed)
+
+
+def test_place_page_never_exceeds_the_grid_when_it_falls_back() -> None:
+    full = _grid(
+        *[
+            Social(page=p, button=b, name=f"{p}-{b}", lines=["/x"])
+            for p in range(1, DEFAULT_PAGES + 1)
+            for b in range(1, DEFAULT_BUTTONS + 1)
+        ]
+    )
+    incoming = [
+        Social(page=1, button=1, name="A", lines=["/a"]),
+        Social(page=1, button=2, name="B", lines=["/b"]),
+    ]
+    result = place_socials(incoming, full, strategy=Placement.PAGE)
+    assert result.placed == []
+    assert [s.name for s in result.unplaceable] == ["A", "B"]
+
+
+def test_free_page_for_skips_a_page_holding_anything() -> None:
+    existing = _grid(Social(page=2, button=4, name="One", lines=["/one"]))
+    assert free_page_for([1, 2], existing) == 1
+    existing = _grid(
+        Social(page=1, button=4, name="One", lines=["/one"]),
+        Social(page=2, button=4, name="Two", lines=["/two"]),
+    )
+    assert free_page_for([1, 2], existing) == 3
 
 
 def test_place_socials_never_exceeds_the_grid() -> None:

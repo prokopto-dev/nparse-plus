@@ -386,12 +386,60 @@ def copy_socials(
 class Placement(StrEnum):
     EXACT = "exact"
     FREE = "free"
+    PAGE = "page"
 
 
 class PlacementResult(BaseModel):
     placed: list[Social] = Field(default_factory=list)
     conflicts: list[Social] = Field(default_factory=list)
     unplaceable: list[Social] = Field(default_factory=list)
+    #: ``PAGE`` only: the group landed intact on one free page and every
+    #: macro kept the button it had. False means the fallback fill ran, and
+    #: the caller owes the user that difference — "my macros moved" has to be
+    #: explainable (#34).
+    kept_layout: bool = False
+
+
+def free_page_for(buttons: Sequence[int], existing: SocialGrid) -> int | None:
+    """The first wholly empty page of ``existing`` that holds every button.
+
+    "Wholly empty" is judged the way :meth:`SocialGrid.free_slots` judges a
+    slot — no social occupies it — so an ini that stores blank slots and one
+    that omits them answer the same. ``None`` when no page qualifies, either
+    because every page is in use or because the target grid has fewer buttons
+    per page than the group needs.
+    """
+    taken = {social.slot for social in existing.socials}
+    for page in range(existing.page_origin, existing.page_origin + existing.pages):
+        if not all(existing.contains_slot(page, button) for button in buttons):
+            continue
+        if any((page, button) in taken for button in _page_buttons(existing)):
+            continue
+        return page
+    return None
+
+
+def _page_buttons(existing: SocialGrid) -> range:
+    return range(existing.button_origin, existing.button_origin + existing.buttons_per_page)
+
+
+def _place_keeping_layout(incoming: Sequence[Social], existing: SocialGrid) -> int | None:
+    """The page ``incoming`` can move to intact, or None if there isn't one.
+
+    A group qualifies when it is **two or more macros that shared one page**:
+    a single macro has no arrangement relative to anything, and giving it a
+    whole empty page would cost a page to say nothing. Holes in the source
+    page are part of the layout and are carried across; buttons must be
+    distinct, or "keeping the relative positions" is not defined.
+    """
+    if len(incoming) < 2:
+        return None
+    if len({social.page for social in incoming}) != 1:
+        return None
+    buttons = [social.button for social in incoming]
+    if len(set(buttons)) != len(buttons):
+        return None
+    return free_page_for(buttons, existing)
 
 
 def place_socials(
@@ -401,12 +449,16 @@ def place_socials(
 
     ``EXACT`` keeps each social's own slot and reports occupied targets as
     ``conflicts`` for the caller to resolve. ``FREE`` reassigns them to empty
-    slots in order. Neither ever emits a slot outside the grid — anything that
-    doesn't fit is returned in ``unplaceable``.
+    slots in order. ``PAGE`` moves a group that shared one page onto the first
+    wholly empty page, **keeping every button where it was**, and falls back to
+    ``FREE`` when there is no whole page to take. No strategy ever emits a slot
+    outside the grid — anything that doesn't fit is returned in ``unplaceable``.
 
-    ``FREE`` is a flat sequential fill, so a pack that occupied one coherent
-    page gets smeared across whatever holes exist — TODO(#34) prefer a wholly
-    empty page when the group is contiguous.
+    ``PAGE`` exists because ``FREE`` is a flat sequential fill (#34): a pack
+    whose macros occupied one coherent page — a pull rotation, say — gets
+    smeared across whatever isolated holes the target grid has, and muscle
+    memory is positional. The absolute slots can't always be kept; the
+    *relative* arrangement usually can.
     """
     result = PlacementResult()
     if strategy is Placement.EXACT:
@@ -418,6 +470,13 @@ def place_socials(
             else:
                 result.placed.append(social)
         return result
+
+    if strategy is Placement.PAGE:
+        page = _place_keeping_layout(incoming, existing)
+        if page is not None:
+            result.kept_layout = True
+            result.placed = [social.model_copy(update={"page": page}) for social in incoming]
+            return result
 
     free = existing.free_slots()
     for social in incoming:

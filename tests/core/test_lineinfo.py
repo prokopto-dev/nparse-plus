@@ -7,7 +7,12 @@ from datetime import datetime
 import pytest
 
 from nparseplus.core import lineinfo
-from nparseplus.core.lineinfo import parse_line, parse_timestamp
+from nparseplus.core.lineinfo import (
+    format_line,
+    format_timestamp,
+    parse_line,
+    parse_timestamp,
+)
 
 LINE = "[Wed Jul 15 12:00:00 2026] You begin casting Clarity."
 STAMP = datetime(2026, 7, 15, 12, 0, 0)
@@ -110,3 +115,23 @@ def test_parses_under_a_non_english_lc_time(name: str, restore_lc_time: None) ->
     info = parse_line(LINE, 1)
     assert info is not None
     assert info.timestamp == STAMP
+
+
+def test_format_line_round_trips_through_the_parser() -> None:
+    raw = format_line("You begin casting Clarity.", STAMP)
+    assert raw == LINE
+    info = parse_line(raw, 1)
+    assert info is not None
+    assert info.timestamp == STAMP
+    assert info.message == "You begin casting Clarity."
+
+
+@pytest.mark.parametrize("name", ["de_DE.UTF-8", "fr_FR.UTF-8", "ru_RU.UTF-8", "ja_JP.UTF-8"])
+def test_formats_english_under_a_non_english_lc_time(name: str, restore_lc_time: None) -> None:
+    # The other half of the reason the parse is hand-rolled: a line built with
+    # strftime under this locale is one parse_line cannot read back.
+    try:
+        locale.setlocale(locale.LC_TIME, name)
+    except locale.Error:
+        pytest.skip(f"locale {name} is not installed on this runner")
+    assert format_timestamp(STAMP) == "Wed Jul 15 12:00:00 2026"

@@ -406,6 +406,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         backend_player=backend.player,
         zones=backend.zones,
         socials_sync=backend.socials_sync,
+        test_alerts=backend.test_alerts,
         extra_pages=extra_pages,
     )
     layout_windows = {

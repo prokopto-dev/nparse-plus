@@ -53,7 +53,7 @@ from nparseplus import updater
 from nparseplus.audio.tts import default_speaker, list_voices
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState
 from nparseplus.core import dps as dps_engine
-from nparseplus.core import eqprocess, friends, visionfix
+from nparseplus.core import eqprocess, friends, testalerts, visionfix
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import (
     AfterPlayerChangedEvent,
@@ -293,6 +293,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         backend_player: ActivePlayer | None = None,
         zones: ZoneDatabase | None = None,
         socials_sync: SocialSyncWatcher | None = None,
+        test_alerts: testalerts.AlertTestRunner | None = None,
         extra_pages: Sequence[Any] | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -340,6 +341,9 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._backend_player = backend_player
         self._zones = zones
         self._socials_sync = socials_sync
+        # Rehearsed alerts go through the driver's own inbox (#85); the
+        # window only ever names a sample.
+        self._test_alerts = test_alerts
         self._discord_login = discord_login_fn
         self._discord_auth_done.connect(self._finish_discord_login)
         self._update_status_ready.connect(self._on_update_status_ready)
@@ -945,6 +949,14 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             self._refresh_character_fields(level=True)
         elif isinstance(event, YouZonedEvent):
             self._refresh_character_fields(zone=True)
+
+    def hideEvent(self, event) -> None:
+        # A rehearsal lasts exactly as long as the rehearsal (#85): the two
+        # samples that leave a row take it back when this window goes away,
+        # however it goes away — Close, the frameless ✕, or the tray toggle.
+        if self._test_alerts is not None:
+            self._test_alerts.clear()
+        super().hideEvent(event)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -1746,7 +1758,50 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         mob_form.addRow("Show mob picture", self._mobinfo_image)
         mob_box.setLayout(mob_form)
         form.addRow(mob_box)
+        form.addRow(self._build_test_alerts())
         return self._page(form)
+
+    def _build_test_alerts(self) -> QGroupBox:
+        """Rehearse an alert without waiting for the pull (#85).
+
+        Every button pushes synthetic lines through the **real** pipeline (see
+        ``core.testalerts``), so it exercises the parser, the handler, the
+        overlay and TTS exactly as a live event does — including the toggles
+        above, which is why the hint says to Apply first. With no runner
+        injected (a settings window under test) the group is not built.
+        """
+        box = QGroupBox("Test alerts", self)
+        form = QFormLayout()
+        if self._test_alerts is None:
+            form.addRow(chromewidgets.hint("Unavailable — the log driver is not running.", self))
+            box.setLayout(form)
+            return box
+        form.addRow(
+            chromewidgets.hint(
+                "Each button pushes a sample line through the real parser, so the "
+                "overlay and the voice answer exactly as they would in game. Your "
+                "saved settings decide what fires — Apply first if you have just "
+                "changed one.",
+                self,
+            )
+        )
+        for sample in testalerts.SAMPLES:
+            button = QPushButton("▶  " + sample.label, self)
+            tip = sample.blurb
+            if sample.leaves:
+                tip += (
+                    f"\n\nLeaves {sample.leaves} until the next test or until this "
+                    "window closes. Never saved."
+                )
+            button.setToolTip(tip)
+            button.clicked.connect(lambda _checked=False, key=sample.key: self._fire_test(key))
+            form.addRow("", button)
+        box.setLayout(form)
+        return box
+
+    def _fire_test(self, key: str) -> None:
+        if self._test_alerts is not None:
+            self._test_alerts.fire(key)
 
     def _test_voice(self) -> None:
         voice = self._voice.currentData() or ""  # id in userData; index 0 -> ""

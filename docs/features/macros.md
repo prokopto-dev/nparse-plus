@@ -48,8 +48,20 @@ muscle memory survives, so when the slot is taken you get a choice:
 | Choice | What happens |
 |---|---|
 | **Overwrite** | The imported macro takes the slot. |
-| **Move to free slot** | It lands on the first empty button instead. |
+| **Move to free slot** | It lands somewhere else — see below. |
 | **Skip** | It is not imported. |
+
+Macros you send to a free slot are placed **together, once the rest of the
+pack has landed**. If they all came from one page of the pack and this
+character has a wholly empty page, the whole group moves there and every
+macro keeps the button it had: a pull rotation stays a pull rotation, just a
+page over. Muscle memory is positional, and the *relative* arrangement
+usually survives even when the absolute slots can't.
+
+When no whole page is free — or only one macro is moving, which has no
+arrangement to keep — they fall back to filling the first empty buttons in
+order. Either way the import summary says which happened, so "my macros
+moved" always has an answer.
 
 **Find duplicates…** lists every duplicate group in the current character
 and jumps to any slot. It never changes anything — clear a slot yourself

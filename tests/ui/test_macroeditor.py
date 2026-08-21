@@ -18,6 +18,7 @@ from nparseplus.ui.macroeditor import (
     CONFLICT_SKIP,
     DUPLICATE_PLACE,
     MacroEditorWindow,
+    describe_import,
 )
 
 pytestmark = pytest.mark.qt
@@ -529,3 +530,96 @@ def test_unsaved_changes_prompt_can_save(env: Env, monkeypatch: pytest.MonkeyPat
     win.name_edit.setText("Saved On Close")
     win.close()
     assert "Page1Button1Name=Saved On Close" in env.xantik.read_text()
+
+
+# -- import: relative page layout (#34) --------------------------------------
+
+TRIO = """[Socials]
+Page1Button1Name=Held one
+Page1Button1Color=1
+Page1Button1Line1=/one
+Page1Button4Name=Held two
+Page1Button4Color=1
+Page1Button4Line1=/two
+Page1Button7Name=Held three
+Page1Button7Color=1
+Page1Button7Line1=/three
+"""
+
+
+def _trio(env: Env) -> MacroEditorWindow:
+    """A character whose page 1 holds the three slots the pack wants."""
+    (env.eq_dir / "Trio_P1999Green.ini").write_text(TRIO)
+    env.window._refresh_characters()  # pick up the file just written
+    return _loaded(env, "Trio")
+
+
+def _rotation() -> bytes:
+    return _pack(
+        Social(page=1, button=1, name="Pull", lines=["/shout pulling"]),
+        Social(page=1, button=4, name="Snare", lines=["/cast 2"]),
+        Social(page=1, button=7, name="Med", lines=["/sit"]),
+    )
+
+
+def test_import_keeps_a_displaced_page_group_together(env: Env) -> None:
+    win = _trio(env)
+    summary = win.import_pack(_rotation(), conflict_resolver=lambda _i, _o: CONFLICT_FREE)
+
+    assert summary["imported"] == 3
+    assert summary["moved"] == 3 and summary["moved_intact"] == 1
+    # Page 1 is full of the character's own; page 2 is the first wholly free
+    # one, and every button is where the pack had it.
+    assert summary["moved_page"] == 2
+    assert [win.social_at(2, b).name for b in (1, 4, 7)] == ["Pull", "Snare", "Med"]
+    # Nothing the character already had moved.
+    assert [win.social_at(1, b).name for b in (1, 4, 7)] == ["Held one", "Held two", "Held three"]
+
+
+def test_import_falls_back_to_the_flat_fill_with_no_free_page(env: Env) -> None:
+    win = _trio(env)
+    # Leave one macro on every page, so no page is wholly free.
+    for page in range(2, win.grid().pages + 1):
+        win.import_pack(
+            _pack(Social(page=page, button=10, name=f"Filler {page}", lines=[f"/f{page}"]))
+        )
+
+    summary = win.import_pack(_rotation(), conflict_resolver=lambda _i, _o: CONFLICT_FREE)
+    assert summary["imported"] == 3
+    assert summary["moved"] == 3 and summary["moved_intact"] == 0
+    assert summary["moved_page"] == 0
+    placed = {s.name: s.slot for s in win.grid().socials}
+    assert placed["Pull"] == (1, 2)  # the first hole, in order
+    assert placed["Snare"] == (1, 3)
+
+
+def test_import_moving_one_macro_still_takes_the_next_free_slot(env: Env) -> None:
+    """A single macro has no relative arrangement; it must not claim a page."""
+    win = _loaded(env)
+    summary = win.import_pack(
+        _pack(Social(page=1, button=1, name="Theirs", lines=["/theirs"])),
+        conflict_resolver=lambda _i, _o: CONFLICT_FREE,
+    )
+    assert summary["moved"] == 1 and summary["moved_intact"] == 0
+    assert win.social_at(1, 2).name == "Theirs"
+
+
+def test_import_summary_says_which_strategy_moved_them() -> None:
+    base = {
+        "imported": 3,
+        "duplicates": 0,
+        "overwritten": 0,
+        "skipped": 0,
+        "unplaceable": 0,
+        "moved": 3,
+        "moved_intact": 1,
+        "moved_page": 2,
+    }
+    intact = describe_import(base)
+    assert "3 moved together to page 2, keeping their button positions" in intact
+
+    flat = describe_import({**base, "moved_intact": 0, "moved_page": 0})
+    assert "3 moved to free slots" in flat
+
+    quiet = describe_import({**base, "moved": 0})
+    assert "moved" not in quiet
