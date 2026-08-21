@@ -224,17 +224,36 @@ def pick_asset(
 ) -> ReleaseAsset | None:
     """The artifact for this platform: macOS .dmg (arch-matched, or the .app
     zip when ``self_update``), Windows .zip, Linux .flatpak inside the sandbox
-    / .tar.gz outside; None when unknown."""
+    / .tar.gz outside; None when unknown.
+
+    **The match is on the platform TAG, never on the suffix alone** — the same
+    guard ``_pick_macos_asset`` documents, now on every branch. A container
+    format is not a platform: #75 put a ditto zip of the macOS ``.app`` beside
+    the Windows ``.zip``, and those sort first, so the bare
+    ``endswith(".zip")`` sweep this used to do handed every Windows user a
+    macOS bundle (#160). The tag is explicit for the Linux artifacts too even
+    though ``.tar.gz`` and ``.flatpak`` are unique today, so that a future
+    artifact in an existing container cannot arm the same trap a third time.
+
+    Windows carries its tag right before the suffix (``…-win64.zip``); Linux
+    carries the architecture in between (``…-linux-x86_64.tar.gz``), so the tag
+    is matched as a substring rather than hardcoding an arch this picker does
+    not choose. Nothing matching is ``None``, which the caller degrades to the
+    release page — a failure that shows, unlike the wrong platform's build.
+    """
     if platform == "darwin":
         return _pick_macos_asset(release, machine, self_update)
     if platform.startswith("linux"):
         flatpak = running_in_flatpak() if in_flatpak is None else in_flatpak
-        suffix = ".flatpak" if flatpak else ".tar.gz"
+        tag, suffix = "-linux", (".flatpak" if flatpak else ".tar.gz")
+    elif platform == "win32":
+        tag, suffix = "-win", ".zip"
     else:
-        suffix = {"win32": ".zip"}.get(platform)
-    if suffix is None:
         return None
-    return next((a for a in release.assets if a.name.lower().endswith(suffix)), None)
+    return next(
+        (a for a in release.assets if (name := a.name.lower()).endswith(suffix) and tag in name),
+        None,
+    )
 
 
 class DownloadStatus(StrEnum):
