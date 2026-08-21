@@ -48,6 +48,71 @@ def test_template_files_present_and_consistent() -> None:
     assert "/api/v1/plugins/" not in release
 
 
+def _compose_release_body_script() -> str:
+    """The `python - <<'EOF'` block out of the template's compose step.
+
+    Run for real below rather than string-matched: this body is what the
+    README tells an author to copy their publish request out of, so what it
+    *omits* is a silent bug in somebody else's release, not ours.
+    """
+    text = (TEMPLATE / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    step = text[text.index("- name: Compose release body") :]
+    start = step.index("<<'EOF'\n") + len("<<'EOF'\n")
+    block = step[start : step.index("EOF", start)]
+    lines = block.splitlines()
+    indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
+    return "\n".join(line[indent:] for line in lines)
+
+
+def _run_compose(tmp_path, monkeypatch, **meta_kwargs) -> str:
+    """Execute that script against a stand-in plugin, return the body."""
+    import nparseplus_sdk.loading as loading
+    from nparseplus_sdk import PluginMeta
+
+    meta = PluginMeta(id="my-nparse-plugin", name="My Plugin", version="1.2.0", **meta_kwargs)
+    plugin = type("Stub", (), {"meta": meta})()
+    monkeypatch.setattr(loading, "load_plugin_factory", lambda _dir: lambda: plugin)
+    monkeypatch.setenv("PLUGIN_DIR", "my_nparse_plugin")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "someone/my-nparse-plugin")
+    monkeypatch.setenv("GITHUB_REF_NAME", "v1.2.0")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "my_nparse_plugin.zip").write_bytes(b"not really a zip")
+
+    exec(compile(_compose_release_body_script(), "release.yml", "exec"), {"__name__": "__main__"})
+    return (tmp_path / "release-body.md").read_text(encoding="utf-8")
+
+
+def test_release_body_carries_every_value_a_publish_request_needs(tmp_path, monkeypatch) -> None:
+    """The registry POST's inputs, so following the README is copying.
+
+    The digest is the cross-check the registry compares its own against, not
+    the value it publishes — but an author still has to send one.
+    """
+    import hashlib
+
+    body = _run_compose(tmp_path, monkeypatch, requires_sdk=">=1.1,<2")
+    assert "https://github.com/someone/my-nparse-plugin/releases/download/v1.2.0/" in body
+    assert hashlib.sha256(b"not really a zip").hexdigest() in body
+    assert ">=1.1,<2" in body
+
+
+def test_release_body_keeps_an_authors_app_version_floor(tmp_path, monkeypatch) -> None:
+    """min_app_version is optional, and dropping it is not a cosmetic loss.
+
+    It is the mechanism that stops a release needing a newer nParse+ from
+    being offered to a build that cannot load it, so a body that quietly
+    leaves it out costs the author their compatibility floor.
+    """
+    body = _run_compose(tmp_path, monkeypatch, min_app_version="2.20.0")
+    assert "min_app_version: `2.20.0`" in body
+
+
+def test_release_body_omits_the_floor_when_there_is_none(tmp_path, monkeypatch) -> None:
+    """The default: no floor declared, nothing to copy into the request."""
+    body = _run_compose(tmp_path, monkeypatch)
+    assert "min_app_version" not in body
+
+
 def test_template_unit_tests_pass_standalone() -> None:
     """Run the template's own pytest suite in a subprocess from its root.
 

@@ -70,9 +70,15 @@ publish a release yourself, from your own pipeline.
 2. Claim your plugin id once, from that signed-in session. Ids are
    first-come and permanent.
 3. `POST` each release to `/api/v1/plugins/<id>/releases` with that token and
-   an `Idempotency-Key` header, carrying the artifact URL, its sha256, and
-   the SDK specifier from your `PluginMeta` — the three values the release
-   body above prints.
+   an `Idempotency-Key` header, carrying the artifact URL, its sha256, the SDK
+   specifier from your `PluginMeta`, and your minimum app version if you
+   declared one — the release body above prints exactly those values, so this
+   step is a copy.
+
+   Send `min_app_version` whenever your `PluginMeta` sets it. It is what stops
+   a release that needs a newer nParse+ from being offered to a build that
+   cannot load it; leave it out and older apps will be told the update is for
+   them.
 
 Your artifact stays on your GitHub release. The digest you send is a
 **cross-check, not the published value**: the registry downloads the zip and
