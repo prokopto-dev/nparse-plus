@@ -82,6 +82,24 @@ def test_a_widget_without_the_documented_pair_is_skipped(caplog) -> None:
     assert "showy_main" in caplog.text
 
 
+def test_a_widget_whose_attribute_lookup_raises_does_not_escape(caplog) -> None:
+    """``hasattr`` is not a safe question to ask a stranger.
+
+    It runs the object's own lookup and swallows only ``AttributeError``, so
+    a property that raises — or PySide6 answering for a widget whose C++ half
+    is already deleted, which is a real state during plugin teardown — has to
+    be asked from inside the guard, not in front of it.
+    """
+
+    class Tearing:
+        def __getattr__(self, name: str):
+            raise RuntimeError(f"Internal C++ object already deleted ({name})")
+
+    with caplog.at_level("ERROR"):
+        _apply_window_command(command("showy_main", "toggle"), {"showy_main": Tearing()})
+    assert "already deleted" in caplog.text
+
+
 def test_a_widget_that_raises_does_not_escape(caplog) -> None:
     class Exploding:
         def isVisible(self) -> bool:

@@ -147,21 +147,28 @@ def _apply_window_command(event: object, window_handles: dict[str, object]) -> N
     a plugin that ships something else is a bug in that plugin and must not
     take the GUI thread down with it, so both the shape and the call are
     guarded and the failure is logged against the command that caused it.
+
+    **The capability check sits inside that guard, not in front of it.**
+    ``hasattr`` runs the object's own attribute lookup — a ``__getattr__``, a
+    property, or PySide6 answering for a widget whose C++ half is already
+    deleted — and it only swallows ``AttributeError``, so a ``RuntimeError``
+    from a tearing-down widget would escape a check placed ahead of the
+    ``try`` and reach the bridge callback on the GUI thread.
     """
     if not isinstance(event, WindowCommandEvent):
         return
     window = window_handles.get(event.window)
     if window is None:
         return
-    if not hasattr(window, "toggle") or not hasattr(window, "isVisible"):
-        logger.warning(
-            "chat command %s_%s: %s has no toggle()/isVisible()",
-            event.action,
-            event.window,
-            type(window).__name__,
-        )
-        return
     try:
+        if not hasattr(window, "toggle") or not hasattr(window, "isVisible"):
+            logger.warning(
+                "chat command %s_%s: %s has no toggle()/isVisible()",
+                event.action,
+                event.window,
+                type(window).__name__,
+            )
+            return
         if event.action == "toggle" or (event.action == "show") != window.isVisible():  # type: ignore[attr-defined]
             window.toggle()  # type: ignore[attr-defined]
     except Exception:
