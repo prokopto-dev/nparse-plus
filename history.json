@@ -1,0 +1,258 @@
+{
+  "runs": [
+    {
+      "benchmarks": {
+        "test_bench_bus_publish[0]": {
+          "extra": {},
+          "group": "bus",
+          "max": 3.898923075404617e-07,
+          "mean": 1.3586589850973194e-07,
+          "median": 1.3497692306757996e-07,
+          "min": 1.3227692319945233e-07,
+          "rounds": 56095,
+          "stddev": 6.9740851825496555e-09
+        },
+        "test_bench_bus_publish[10]": {
+          "extra": {},
+          "group": "bus",
+          "max": 5.140799999026058e-06,
+          "mean": 5.294432082006984e-07,
+          "median": 5.227999992030163e-07,
+          "min": 5.076999997299936e-07,
+          "rounds": 162365,
+          "stddev": 5.535025128743859e-08
+        },
+        "test_bench_bus_publish[1]": {
+          "extra": {},
+          "group": "bus",
+          "max": 1.0757931040094765e-06,
+          "mean": 1.8200189012725523e-07,
+          "median": 1.8062068965389636e-07,
+          "min": 1.7165517314079525e-07,
+          "rounds": 195389,
+          "stddev": 1.5292896560551995e-08
+        },
+        "test_bench_bus_publish[50]": {
+          "extra": {},
+          "group": "bus",
+          "max": 2.3391999993312613e-05,
+          "mean": 1.8875183473816564e-06,
+          "median": 1.8726666629239237e-06,
+          "min": 1.8193333346516738e-06,
+          "rounds": 169234,
+          "stddev": 1.6713988163724194e-07
+        },
+        "test_bench_bus_publish_to_firehose": {
+          "extra": {},
+          "group": "bus",
+          "max": 1.1123928577002777e-06,
+          "mean": 1.9323127376974342e-07,
+          "median": 1.9100000006996458e-07,
+          "min": 1.7707142875776428e-07,
+          "rounds": 195772,
+          "stddev": 1.6629041913037268e-08
+        },
+        "test_bench_latency_append_to_ui": {
+          "extra": {},
+          "group": "latency",
+          "max": 0.10049513199999183,
+          "mean": 0.10028948523999588,
+          "median": 0.10024737700001651,
+          "min": 0.10016771800002289,
+          "rounds": 25,
+          "stddev": 9.841259955518254e-05
+        },
+        "test_bench_latency_parse_to_ui": {
+          "extra": {},
+          "group": "latency",
+          "max": 0.00015511399999468267,
+          "mean": 8.85968199997933e-05,
+          "median": 8.447799999089511e-05,
+          "min": 8.129299999382056e-05,
+          "rounds": 50,
+          "stddev": 1.2582723585711926e-05
+        },
+        "test_bench_map_location_burst": {
+          "extra": {},
+          "group": "maps",
+          "max": 0.0005050430000039796,
+          "mean": 0.00044174370510652864,
+          "median": 0.0004409659999851101,
+          "min": 0.00043447600000945386,
+          "rounds": 607,
+          "stddev": 6.6758202246442196e-06
+        },
+        "test_bench_pipeline_cold_backend": {
+          "extra": {},
+          "group": "pipeline",
+          "max": 0.24212087999998744,
+          "mean": 0.15490316580000324,
+          "median": 0.11240926000000684,
+          "min": 0.1075557450000133,
+          "rounds": 20,
+          "stddev": 0.056016031773909195
+        },
+        "test_bench_pipeline_corpus": {
+          "extra": {
+            "lines": 93
+          },
+          "group": "pipeline",
+          "max": 0.0020521990000190726,
+          "mean": 0.002008015100000193,
+          "median": 0.0020092095000023846,
+          "min": 0.0019797900000071422,
+          "rounds": 20,
+          "stddev": 2.1228685431498605e-05
+        },
+        "test_bench_pipeline_profile[group]": {
+          "extra": {
+            "lines": 440
+          },
+          "group": "pipeline",
+          "max": 0.013735953999997719,
+          "mean": 0.013182320699998229,
+          "median": 0.013125015999989387,
+          "min": 0.0128935919999833,
+          "rounds": 20,
+          "stddev": 0.00021633056992742224
+        },
+        "test_bench_pipeline_profile[raid]": {
+          "extra": {
+            "lines": 1264
+          },
+          "group": "pipeline",
+          "max": 0.036911093000014716,
+          "mean": 0.03525107245000072,
+          "median": 0.03523470100000736,
+          "min": 0.0342332479999925,
+          "rounds": 20,
+          "stddev": 0.0006013484487696406
+        },
+        "test_bench_pipeline_profile[solo]": {
+          "extra": {
+            "lines": 167
+          },
+          "group": "pipeline",
+          "max": 0.0052182739999864225,
+          "mean": 0.005050922750000098,
+          "median": 0.0050529134999948155,
+          "min": 0.0047530810000182555,
+          "rounds": 20,
+          "stddev": 9.725865449885063e-05
+        },
+        "test_bench_plugin_dispatch[1-off]": {
+          "extra": {},
+          "group": "plugin-dispatch",
+          "max": 2.224160000423581e-06,
+          "mean": 2.0036818955698143e-07,
+          "median": 1.9872000052600926e-07,
+          "min": 1.914799997848604e-07,
+          "rounds": 199283,
+          "stddev": 1.906089756162216e-08
+        },
+        "test_bench_plugin_dispatch[1-on]": {
+          "extra": {},
+          "group": "plugin-dispatch",
+          "max": 1.552400001969545e-05,
+          "mean": 5.93673943178125e-07,
+          "median": 5.709999868486193e-07,
+          "min": 5.299999941144051e-07,
+          "rounds": 64087,
+          "stddev": 2.43083438462628e-07
+        },
+        "test_bench_plugin_dispatch[10-off]": {
+          "extra": {},
+          "group": "plugin-dispatch",
+          "max": 5.1779000017404545e-06,
+          "mean": 7.133128019184403e-07,
+          "median": 7.081000006792237e-07,
+          "min": 6.909999996196348e-07,
+          "rounds": 135300,
+          "stddev": 5.4937638248797885e-08
+        },
+        "test_bench_plugin_dispatch[10-on]": {
+          "extra": {},
+          "group": "plugin-dispatch",
+          "max": 5.530300001055366e-05,
+          "mean": 3.420704433998572e-06,
+          "median": 3.3649999977569678e-06,
+          "min": 3.104999990455326e-06,
+          "rounds": 89310,
+          "stddev": 4.7620324812519535e-07
+        },
+        "test_bench_plugin_dispatch[50-off]": {
+          "extra": {},
+          "group": "plugin-dispatch",
+          "max": 6.529899999918598e-05,
+          "mean": 3.2384557916981858e-06,
+          "median": 3.1840000076499564e-06,
+          "min": 3.074000005653943e-06,
+          "rounds": 194251,
+          "stddev": 4.94361062435533e-07
+        },
+        "test_bench_plugin_dispatch[50-on]": {
+          "extra": {},
+          "group": "plugin-dispatch",
+          "max": 4.62099999936072e-05,
+          "mean": 1.5918380810647717e-05,
+          "median": 1.567300000715477e-05,
+          "min": 1.4722000003075664e-05,
+          "rounds": 44358,
+          "stddev": 1.4531220894175395e-06
+        },
+        "test_bench_plugin_parser[off]": {
+          "extra": {
+            "lines": 633
+          },
+          "group": "plugin-parser",
+          "max": 0.019344779999983075,
+          "mean": 0.018112867049993042,
+          "median": 0.017866741999995384,
+          "min": 0.0173272709999992,
+          "rounds": 20,
+          "stddev": 0.0006107561057184345
+        },
+        "test_bench_plugin_parser[on]": {
+          "extra": {
+            "lines": 633
+          },
+          "group": "plugin-parser",
+          "max": 0.018749020000001337,
+          "mean": 0.017906331200006776,
+          "median": 0.01783249000000353,
+          "min": 0.01738907500001119,
+          "rounds": 20,
+          "stddev": 0.0003365173643915244
+        },
+        "test_bench_qt_bridge_batch_only": {
+          "extra": {},
+          "group": "qt-bridge",
+          "max": 0.0013609249999717576,
+          "mean": 0.0011901552744856508,
+          "median": 0.0011910579999607762,
+          "min": 0.0011410530000262042,
+          "rounds": 827,
+          "stddev": 2.2107268948486657e-05
+        },
+        "test_bench_qt_bridge_burst": {
+          "extra": {},
+          "group": "qt-bridge",
+          "max": 0.0016708149999828947,
+          "mean": 0.0014502639094944605,
+          "median": 0.0014492990000007921,
+          "min": 0.0014334250000160864,
+          "rounds": 674,
+          "stddev": 1.1349397469158051e-05
+        }
+      },
+      "commit": "d690d3e8acfad0e99ace0548f9de8e3994c78985",
+      "python": "3.12.3",
+      "ref": "refs/heads/master",
+      "run_id": "32446746831",
+      "runner": "ubuntu-latest",
+      "schema": 1,
+      "timestamp": "2026-08-21T04:24:03.351298+00:00"
+    }
+  ],
+  "schema": 1
+}
