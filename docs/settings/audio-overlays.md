@@ -24,3 +24,43 @@ voice or volume change reaches the trigger engine and the alert handlers that
 are already running; the durations take effect on the next alert and the next
 lane; and the alert toggles are read at the moment something would fire, so
 un-ticking one silences it immediately.
+
+## Test alerts
+
+You find out whether the overlay is where you want it, whether the voice is
+audible over the game, and whether the alert you configured actually fires —
+at the moment it needs to already work. **Test alerts** lets you rehearse it
+instead.
+
+Each button pushes a sample log line through the **real** parser, so what you
+see and hear is what a live event produces, not a preview of it: the parser
+chain runs, the handler speaks and raises the alert, and the Event Overlay
+draws it. Nothing is faked, and nothing new is read from your log.
+
+| Button | What it rehearses |
+|---|---|
+| **First to engage** | The yellow FTE banner and its callout, from `a training dummy engages Testcharacter!` |
+| **Engage rule timer** | The same banner for a mob that carries a raid engage rule (`Zlandicar`), plus the `--97% Rule--` countdown it starts in the [Timers](../windows/timers.md) window |
+| **Root break** | The red root-break alert, honouring the two root-break toggles above |
+| **/random rolls** | Three sample rolls out of 1000, as the Timers window draws a roll group |
+
+Your **saved** settings decide what fires. That is deliberate — an alert that
+only speaks in test mode has told you nothing — so if you have just changed a
+toggle, hit Apply first. (EQTool's equivalent forces the alert's toggles on
+before testing; nParse+ does not.)
+
+A rehearsal lasts as long as the rehearsal. The two samples that leave a row
+in the Timers window take it back when you fire another one or when you close
+this window, and neither is ever saved to disk. The other two leave nothing
+at all.
+
+!!! note "Why there is no death-loop test"
+
+    EQTool offers one; nParse+ deliberately does not. It fires on four of
+    your own deaths, and your own death is one of the most consequential
+    lines the log has: nParse+ persists a corpse marker to the map and
+    broadcasts a waypoint to everyone sharing with you, drops the pet it was
+    tracking, and freezes every fight targeting you into your session stats.
+    None of that is undoable, and a rehearsal may not cost you any of it. The
+    alert itself — a red overlay plus speech — is exactly what **Root break**
+    puts on screen.

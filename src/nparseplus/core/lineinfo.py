@@ -106,3 +106,32 @@ def parse_line(raw: str, line_number: int, now: datetime | None = None) -> LineI
     if timestamp is None:
         timestamp = now or datetime.now()
     return LineInfo(raw=raw, message=message, timestamp=timestamp, line_number=line_number)
+
+
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+# Derived from the parse table rather than written out twice: by month
+# number, so the two can never disagree about what "Sep" means.
+_MONTH_NAMES = tuple(name for name, _ in sorted(_MONTHS.items(), key=lambda kv: kv[1]))
+
+
+def format_timestamp(when: datetime) -> str:
+    """``datetime`` -> ``Wed Jul 08 21:59:36 2026``: the inverse of the parse above.
+
+    Hand-rolled for the same reason the parse is: ``strftime``'s ``%a``/``%b``
+    read the process ``LC_TIME`` and the client always writes English, so a
+    line built under another locale would be one this app cannot read back.
+    """
+    return (
+        f"{_WEEKDAYS[when.weekday()]} {_MONTH_NAMES[when.month - 1]} "
+        f"{when.day:02d} {when.hour:02d}:{when.minute:02d}:{when.second:02d} {when.year:04d}"
+    )
+
+
+def format_line(message: str, when: datetime) -> str:
+    """``message`` wrapped in the log's own ``[stamp] `` prefix.
+
+    The one caller is ``core.testalerts``, which pushes synthetic lines through
+    the real pipeline; it lives here so it stays paired with the parse it has
+    to satisfy.
+    """
+    return f"[{format_timestamp(when)}] {message}"

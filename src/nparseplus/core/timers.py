@@ -834,10 +834,15 @@ class TimersService:
         The filter is ``expires_at`` rather than ``ends_at`` so a row whose pop
         window is open — whose ``ends_at`` is by definition in the past — is
         saved rather than dropped at exactly the moment it matters most (#125).
+
+        An **owned** row is skipped: the snapshot has no ``owner`` field, so a
+        plugin's row (#45) or a rehearsed alert's (#85) would come back after a
+        restart as a row nothing owns and ``remove_owner`` can no longer take
+        back. A row must not outlive whatever put it there.
         """
         out: list[RespawnTimerSnapshot] = []
         for row in self._rows:
-            if not isinstance(row, TimerRow) or not _eq(row.group, group):
+            if not isinstance(row, TimerRow) or not _eq(row.group, group) or row.owner:
                 continue
             end = expires_at(row)
             if end is None or end <= now:
