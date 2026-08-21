@@ -2,19 +2,20 @@
 """Generate the plugin-registry JSON Schema from the app's pydantic models.
 
 Produces templates/registry-repo/schema/index-v1.schema.json — the schema the
-registry validates listings against, vendored verbatim by the registry server
-(prokopto-dev/nparse-plugin-regserve, whose SCHEMA001 gate diffs what it
-renders against this file) and by the curated repo's submission CI.
-Generating it means neither has to install nParse+ to know what a valid entry
-is, while the app (src/nparseplus/core/plugins/registry.py) stays the single
-source of truth for the wire format.
+registry index is checked against, vendored verbatim by the registry server
+(prokopto-dev/nparse-plugin-regserve, whose SCHEMA001 gate diffs the document
+it renders against this file). Generating it means the server does not have
+to install nParse+ to know what the client will accept, while the app
+(src/nparseplus/core/plugins/registry.py) stays the single source of truth
+for the wire format — a format the server cannot change, because released
+clients parse it and cannot be patched.
 
 `RegistryIndex.model_json_schema()` alone is NOT enough: the string
 constraints live in `field_validator`s (https-only urls, 64-hex sha256, the
 SDK's plugin-id regex), which pydantic cannot express in JSON Schema. This
 script re-applies each of them from the same live regexes/validators, and
 asserts every injection target still exists so a model rename fails loudly
-here instead of silently loosening the registry's CI.
+here instead of silently loosening what the registry is checked against.
 
 Usage:
     uv run python tools/gen_registry_schema.py [--check]
@@ -50,9 +51,9 @@ OUTPUT_PATH = (
 
 # Names the registry this document describes, on the host that now serves it
 # (#130). It is an identifier, not a fetch target: the app parses an index
-# with the pydantic models below, and every consumer of this schema reads a
-# committed copy of the file — the curated repo's CI and the registry
-# server's own SCHEMA001 gate, which vendors it verbatim.
+# with the pydantic models below, and the one consumer of this schema reads a
+# committed copy of the file — the registry server's own SCHEMA001 gate,
+# which vendors it verbatim.
 SCHEMA_ID = (
     f"https://nparseplugins.prokopto.dev/schema/index-v{REGISTRY_SCHEMA_VERSION}.schema.json"
 )
@@ -108,9 +109,10 @@ def build_schema() -> dict[str, Any]:
             "GENERATED FILE — do not edit by hand. Produced by "
             "tools/gen_registry_schema.py in prokopto-dev/nparse-plus from the "
             f"pydantic models in {SOURCE_MODULE}, which are the source of truth "
-            "for this wire format. Note that plugin-id uniqueness and ownership "
-            "are NOT expressible here; the registry's validate-index workflow "
-            "checks those in Python."
+            "for this wire format. Note that plugin-id ownership, version "
+            "ordering and the provenance of a sha256 are NOT expressible here: "
+            "the registry server enforces those, and the digest it publishes is "
+            "one it computed from bytes it downloaded itself."
         ),
     }
     # Extra properties are tolerated, matching the client: its models do not

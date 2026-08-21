@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QTimer, QUrl, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -160,6 +161,31 @@ def update_suffix(update: PluginUpdate | None) -> str:
     return f" — update available (v{update.offered_version})"
 
 
+# How much of a release's notes a confirmation dialog carries. The registry
+# caps them at 2048 bytes, which is a paragraph too many for a message box;
+# the Browse pane below shows whatever is there in full.
+_NOTES_IN_DIALOG_CHARS = 600
+
+
+def release_notes_block(version: str, notes: str) -> str:
+    """The "What's new" paragraph for a release, or "" when there is none.
+
+    The text is the author's, carried by the registry as PLAIN TEXT and
+    deliberately not interpreted: no Markdown, no HTML, no sanitiser (the
+    registry's ADR-0013 chose plain text precisely so that no client needs
+    one). This trims and truncates for the space available and does nothing
+    else — every caller must render the result somewhere that shows text as
+    text, which for Qt means a widget whose text format is PlainText, never
+    a tooltip or an auto-format label.
+    """
+    text = notes.strip()
+    if not text:
+        return ""
+    if len(text) > _NOTES_IN_DIALOG_CHARS:
+        text = text[:_NOTES_IN_DIALOG_CHARS].rstrip() + "…"
+    return f"What's new in v{version}:\n{text}"
+
+
 def update_confirm_text(update: PluginUpdate) -> str:
     """The body of the "this comes from somewhere else" confirmation.
 
@@ -189,6 +215,9 @@ def update_confirm_text(update: PluginUpdate) -> str:
         "The same plugin id from a different source may be entirely different "
         "code. Your settings and this plugin's stored data are kept.",
     ]
+    notes = release_notes_block(update.offered_version, update.listing.plugin.latest.notes)
+    if notes:
+        body += ["", notes]
     return "\n".join(body)
 
 
@@ -744,14 +773,19 @@ class PluginManagerPage(QWidget):
     def _update_one(self, update: PluginUpdate) -> None:
         """Install one update, confirming first if the source changed."""
         if update.needs_confirmation:
-            confirm = QMessageBox.question(
-                self,
-                "Update from a different source?",
-                update_confirm_text(update),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel,
+            box = QMessageBox(self)
+            box.setWindowTitle("Update from a different source?")
+            # PlainText, not the QMessageBox default of AutoText: this body
+            # carries a registry's display name and the author's release
+            # notes, and Qt::AutoText would hand anything tag-shaped in
+            # either of them to a rich-text renderer. Text is shown as text.
+            box.setTextFormat(Qt.TextFormat.PlainText)
+            box.setText(update_confirm_text(update))
+            box.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
             )
-            if confirm != QMessageBox.StandardButton.Yes:
+            box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+            if box.exec() != QMessageBox.StandardButton.Yes:
                 return
         self._start_update(update)
 
@@ -1104,6 +1138,7 @@ class RegistryBrowserDialog(QDialog):
         # and "Update to vX" rather than just whether to grey the button out.
         self._installed = installed or (lambda: {})
         self._fetching = False
+        self._listings: list[MergedListing] = []
 
         self._status = QLabel("Fetching the plugin registries…", self)
         self._status.setWordWrap(True)
@@ -1113,6 +1148,18 @@ class RegistryBrowserDialog(QDialog):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setVisible(False)
+        self._table.itemSelectionChanged.connect(self._show_selected_notes)
+        # The selected release's notes. A read-only QPlainTextEdit rather
+        # than a label or a tooltip because it is the one Qt sink that can
+        # never interpret what it is given: the registry promises this field
+        # is plain text and carries whatever the author wrote, so a widget
+        # that auto-detects rich text would be rendering markup from a
+        # publish request. It scrolls, which a 2 KiB note in a label would
+        # not, and it costs no height when there is nothing to show.
+        self._notes = QPlainTextEdit(self)
+        self._notes.setReadOnly(True)
+        self._notes.setMaximumHeight(84)
+        self._notes.setVisible(False)
         self._refresh_button = QPushButton("Refresh", self)
         self._refresh_button.clicked.connect(self._start_fetch)
         close_button = QPushButton("Close", self)
@@ -1126,6 +1173,7 @@ class RegistryBrowserDialog(QDialog):
         layout = QVBoxLayout()
         layout.addWidget(self._status)
         layout.addWidget(self._table, 1)
+        layout.addWidget(self._notes)
         layout.addLayout(buttons)
         self.setLayout(layout)
 
@@ -1164,6 +1212,8 @@ class RegistryBrowserDialog(QDialog):
             # failed, or they are all genuinely empty. summary_lines covers
             # the first two; the third needs saying here.
             self._table.setVisible(False)
+            self._listings = []
+            self._show_selected_notes()
             if summary:
                 lines = [*summary, _FILE_OR_URL_HINT]
             else:
@@ -1177,8 +1227,10 @@ class RegistryBrowserDialog(QDialog):
         installed = self._installed()
         duplicates = duplicate_listing_ids(listings)
         self._table.setRowCount(len(listings))
+        self._listings = list(listings)
         for row, merged in enumerate(listings):
             self._fill_row(row, merged, listings, duplicates, installed)
+        self._show_selected_notes()
 
     def _fill_row(
         self,
@@ -1224,6 +1276,23 @@ class RegistryBrowserDialog(QDialog):
         self._table.setCellWidget(
             row, _BROWSER_ACTION_COLUMN, self._action_button(merged, action, current)
         )
+
+    def _show_selected_notes(self) -> None:
+        """Show the selected listing's release notes, or nothing.
+
+        Notes are optional and most listings will not carry any until the
+        registry starts serving them, so an empty one leaves the pane hidden
+        rather than showing an empty box.
+        """
+        row = self._table.currentRow()
+        merged = self._listings[row] if 0 <= row < len(self._listings) else None
+        notes = merged.plugin.latest.notes.strip() if merged is not None else ""
+        if not notes:
+            self._notes.clear()
+            self._notes.setVisible(False)
+            return
+        self._notes.setPlainText(f"What's new in v{merged.plugin.latest.version}\n\n{notes}")
+        self._notes.setVisible(True)
 
     def _action_button(
         self,

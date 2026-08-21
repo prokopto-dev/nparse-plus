@@ -1,7 +1,12 @@
 name: Release
 
 # Tag vX.Y.Z (matching PluginMeta.version) to publish a GitHub release with
-# the installable zip, its sha256, and a ready-made registry entry JSON.
+# the installable zip and its sha256.
+#
+# Listing the plugin in the nParse+ registry is a separate, authenticated
+# POST from this job — see the README. Deliberately not written here: the
+# registry publishes a reusable publish-on-tag workflow to call, and writing
+# the request twice is how the two versions of it start disagreeing.
 
 on:
   push:
@@ -50,10 +55,10 @@ jobs:
             -x "*/__pycache__/*" -x "*.pyc"
           sha256sum "${PLUGIN_DIR}.zip" | tee sha256.txt
 
-      - name: Compose release body (includes the registry entry JSON)
+      - name: Compose release body
         run: |
           python - <<'EOF'
-          import hashlib, json, os
+          import hashlib, os
           from nparseplus_sdk.loading import load_plugin_factory
 
           plugin_dir = os.environ["PLUGIN_DIR"]
@@ -64,34 +69,33 @@ jobs:
               f"https://github.com/{repo}/releases/download/{tag}/{plugin_dir}.zip"
           )
           digest = hashlib.sha256(open(f"{plugin_dir}.zip", "rb").read()).hexdigest()
-          entry = {
-              "id": meta.id,
-              "name": meta.name,
-              "description": meta.description,
-              "author": meta.author,
-              "homepage": meta.homepage or f"https://github.com/{repo}",
-              "latest": {
-                  "version": meta.version,
-                  "url": url,
-                  "sha256": digest,
-                  "requires_sdk": meta.requires_sdk,
-                  **(
-                      {"min_app_version": meta.min_app_version}
-                      if meta.min_app_version
-                      else {}
-                  ),
-              },
-          }
+          # Every value a registry publish request carries, so following the
+          # README is a matter of copying them. The digest is NOT the value
+          # that gets published: the registry downloads the artifact and
+          # hashes the bytes itself, and yours is the cross-check.
+          #
+          # min_app_version is conditional because it is optional — and it
+          # is here at all because omitting it silently drops a plugin's
+          # compatibility floor, so a release that needs a newer nParse+
+          # would be offered to older builds that cannot load it.
           body = (
               f"## {meta.name} v{meta.version}\n\n"
               f"Install: nParse+ → Settings → Plugins → *Install from URL* with the "
-              f"zip asset below, or wait for the registry listing.\n\n"
-              f"`sha256: {digest}`\n\n"
-              "### Registry entry (for the nParse+ plugin registry)\n\n"
-              "```json\n" + json.dumps(entry, indent=2) + "\n```\n"
+              f"zip asset below, or from the registry once this release is listed."
+              f"\n\n"
+              f"- artifact: {url}\n"
+              f"- sha256: `{digest}`\n"
+              f"- requires_sdk: `{meta.requires_sdk}`\n"
           )
-          open("release-body.md", "w").write(body)
-          open("registry-entry.json", "w").write(json.dumps(entry, indent=2))
+          if meta.min_app_version:
+              body += f"- min_app_version: `{meta.min_app_version}`\n"
+          # encoding is explicit because the body is not ASCII (the arrows
+          # above) and Python's default follows the platform — cp1252 on a
+          # Windows runner, which raises UnicodeEncodeError rather than
+          # mangling anything. This job is `runs-on: ubuntu-latest` today;
+          # the failure would arrive the day somebody changes that.
+          with open("release-body.md", "w", encoding="utf-8") as handle:
+              handle.write(body)
           EOF
 
       - name: Publish GitHub release
@@ -101,4 +105,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-body.md \
-            "${PLUGIN_DIR}.zip" registry-entry.json
+            "${PLUGIN_DIR}.zip"

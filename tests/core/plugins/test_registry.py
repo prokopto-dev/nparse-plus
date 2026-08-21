@@ -103,6 +103,45 @@ class TestParseIndex:
         assert index.plugins[0].latest.sha256 == GOOD_SHA
 
 
+class TestReleaseNotes:
+    """The additive plain-text notes field (#147, regserve ADR-0013).
+
+    Shipped ahead of the server surfacing it on ``latest``, which is why
+    both spellings load: the index document calls it ``release_notes`` and
+    the publish request calls it ``notes``.
+    """
+
+    def test_absent_notes_are_empty_not_missing(self) -> None:
+        """Every listing published so far has none, and none of them break."""
+        index = parse_index(json.dumps(GOOD_INDEX))
+        assert index.plugins[0].latest.notes == ""
+
+    @pytest.mark.parametrize("key", ["release_notes", "notes"])
+    def test_either_spelling_populates_the_field(self, key: str) -> None:
+        payload = json.loads(json.dumps(GOOD_INDEX))
+        payload["plugins"][0]["latest"][key] = "Fixed the price cache."
+        assert parse_index(json.dumps(payload)).plugins[0].latest.notes == "Fixed the price cache."
+
+    def test_notes_are_carried_verbatim(self) -> None:
+        """Not markup, and not sanitised either: the client is not a renderer.
+
+        The registry's promise is that the field is *not* markup, so nothing
+        here strips or escapes anything — that is the callers' problem, and
+        they solve it by showing text in a plain-text widget.
+        """
+        raw = "Fixed **everything**\n<b>really</b>"
+        assert release(notes=raw).notes == raw
+
+    def test_the_field_can_still_be_set_by_its_python_name(self) -> None:
+        """populate_by_name: an alias must not break construction in code."""
+        assert (
+            RegistryRelease(
+                version="1.0.0", url="https://example.com/p.zip", sha256=GOOD_SHA, notes="hi"
+            ).notes
+            == "hi"
+        )
+
+
 class TestFetchIndex:
     def test_https_only(self) -> None:
         with pytest.raises(ValueError, match="https"):

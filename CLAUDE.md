@@ -144,11 +144,14 @@ examples/plugins/       # reference add-ons (hello_timer.py, merchant_prices/);
                         # tests/core/plugins/test_examples.py keeps them loading
 templates/              # plugin-repo/ = ready-to-push content of the plugin
                         #   template repo (not created yet; see TEMPLATE_SETUP.md).
-                        #   registry-repo/ = the mirror of the curated index
-                        #   repo (the registry server is what the app fetches
-                        #   now), kept here because tools/gen_registry_schema.py
-                        #   --check guards its schema against drift — the
-                        #   server vendors that file verbatim (see SETUP.md)
+                        #   registry-repo/ = TWO files and nothing else (#147):
+                        #   the generated schema, kept because
+                        #   tools/gen_registry_schema.py --check guards it
+                        #   against drift and the registry server vendors it
+                        #   verbatim, plus the seed index the tests parse.
+                        #   Everything documenting the old PR-submission
+                        #   route is deleted; a test asserts the directory
+                        #   stays those two files
 tools/                  # one-shot converters (Zones.cs -> zones.json etc.); outputs committed
 tests/                  # pytest; tests/fixtures = EQtoolsTests golden corpus
   perf/                 #   the benchmark suite + profiles.py (solo/group/raid
@@ -343,7 +346,10 @@ Generated-artifact convention beyond `tools/convert_*.py`:
 models in `core/plugins/registry.py` (re-applying the constraints that live
 in `field_validator`s and JSON Schema can't express). Output is committed;
 `--check` fails on staleness and `tests/core/plugins/test_registry_schema.py`
-runs it.
+runs it. The one consumer is the registry server's `SCHEMA001` gate, which
+diffs the document it renders against this file — so the schema is how "what
+the server serves" and "what the app parses" are kept from drifting, and a
+regeneration has to be copied over there.
 
 ## Sharing wire cheatsheet (see tools/pigparse_probe_transcript.md)
 
@@ -1238,12 +1244,14 @@ because that import gate is what keeps a plugins-off launch from touching the
 SDK. `core.plugins.registry` re-exports it as `DEFAULT_REGISTRY_URL`, which
 stays the name everything else uses. The URL-pin test was **refocused, not
 deleted** — it now asserts the shape (`https://…/index.json`) and that
-`templates/registry-repo/SETUP.md` and `docs/plugins/registry.md` both name
-whatever the constant says, so moving the catalogue again is a one-line change
-plus the two documents that tell a human where it went. `SCHEMA_ID` in
-`tools/gen_registry_schema.py` names the new host too; the generated schema is
-vendored verbatim by the server (its `SCHEMA001` gate) and by the curated
-repo's CI, so a regeneration has to be copied to both.
+`docs/plugins/registry.md` and `docs/plugins/security.md` both name whatever
+the constant says, so moving the catalogue again is a one-line change plus the
+two documents that tell a human where it went. (It used to point at
+`templates/registry-repo/SETUP.md`, which #147 deleted along with the rest of
+the submission scaffolding — refocused a second time, never dropped.)
+`SCHEMA_ID` in `tools/gen_registry_schema.py` names the new host too; the
+generated schema is vendored verbatim by the server (its `SCHEMA001` gate), so
+a regeneration has to be copied there.
 
 **Add-ons load and unload without a restart** (post-2.17, ~2834 tests, #45):
 install, uninstall, enable and disable all take effect the moment you click,
@@ -1387,6 +1395,62 @@ that runner's `baseline-<runner>.json`, and until then the page says out loud
 that it is comparing across hardware. `tests/perf/baseline.json` is the
 committed seed (recorded locally, labelled as such) so `compare` works for a
 developer with no history branch.
+
+**The registry move finished** (post-2.20, #147): #130 repointed the
+constant at the live server; this repointed the *story*, which was still the
+old one in six places, and picked up the one wire field that was waiting.
+
+*The trust argument was rewritten, not quietly dropped.*
+`docs/plugins/registry.md` still said there was deliberately no server, that
+submission was a pull request against `nparseplus-plugins`, and that a
+maintainer confirmed each listing. What is true: publishing is
+`POST /api/v1/plugins/{id}/releases` with a scoped PAT and an
+`Idempotency-Key`, from the plugin's own release pipeline; **the server
+downloads the artifact and hashes it ITSELF and a submitted hash is never
+stored** (regserve ADR-0008), so the published digest is a measurement
+rather than a claim; a brand-new id always waits for a human and trusted
+owners' version bumps publish automatically unless a quarantine rule fires
+(ADR-0007); ownership is a permanent, never-recycled database row, not
+`owners.json`; artifacts stay on GitHub Releases, so the URL is transport
+and the hash is the security boundary (ADR-0002). The docs say the
+re-hashing is **stronger** than the human confirmation it replaced instead
+of letting the old claim lapse silently — a trust document that goes vague
+costs more than one that is wrong and obvious — and they state the two
+things that got weaker in the same breath: a trusted owner (or a stolen
+token) can ship unreviewed code to that plugin's existing users, and a
+server-computed digest proves the server measured those bytes, not that the
+server is honest. That last one is what index signing would be for, and it
+is still the only thing on the registry roadmap here.
+
+*`templates/registry-repo/` is two files.* README, SETUP, CONTRIBUTING,
+`owners.json` and `validate-index.yml` all documented the vanished route —
+SETUP's Pages-enablement runbook actively pointed a reader at standing up
+the wrong thing. The generated `schema/index-v1.schema.json` and the seed
+`index.json` stay, because the schema drift guard is the only reason the
+directory ever survived, and `test_registry_schema.py` now asserts the
+directory holds *exactly* those two. Its URL-in-docs test lost SETUP.md as
+one of its two documents and was refocused onto `docs/plugins/security.md`
+rather than halved. `templates/plugin-repo` stops composing a
+`registry-entry.json` for a PR nobody opens; it prints the artifact URL and
+digest a publish request carries, and a test asserts it does **not** grow
+the request itself — the reusable publish-on-tag workflow is the registry
+server's own next phase, and writing it twice is how two versions of it
+start disagreeing.
+
+*`RegistryRelease.notes` ships ahead of the server serving it.* The field is
+additive on a format the server cannot change (released clients parse it),
+so landing the client half now means it lights up with no app release. **Two
+spellings are accepted deliberately**: the index document calls it
+`release_notes` while the publish request calls it `notes` — the server's
+conventions forbid a column named after a wire field — and only one of those
+is on this wire yet. Rendering is the whole constraint: ADR-0013 chose plain
+text precisely so that **no client needs a sanitiser or a Markdown
+renderer**, so every sink is one that cannot interpret the text — a
+read-only `QPlainTextEdit` under the Browse table, and a constructed
+`QMessageBox` with `setTextFormat(PlainText)` for the cross-source update
+confirmation. The static `QMessageBox.question` helper had to go for that:
+its default `AutoText` would hand anything tag-shaped in a registry's
+display name or an author's notes to a rich-text renderer.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

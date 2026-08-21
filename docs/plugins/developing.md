@@ -494,8 +494,9 @@ ships a working starter plugin, unit tests on `FakePluginContext`, a CI
 workflow that runs `nparseplus-plugin validate` on every push, and a
 release workflow that — on a `vX.Y.Z` tag matching your `meta.version` —
 builds the installable zip, computes its sha256, and publishes a GitHub
-release whose body contains the ready-made [registry](registry.md) entry
-JSON. See also the [versioning rules](versioning.md).
+release carrying both. Listing it is a separate authenticated `POST` to the
+[registry](registry.md#publishing-a-plugin) from your own pipeline. See also
+the [versioning rules](versioning.md).
 
 ## Learn from the examples
 
