@@ -34,6 +34,7 @@ from nparseplus.flatpakportal import (
     install_update,
     parse_progress,
     portal_supported,
+    progress_filter_rule,
     progress_match_rule,
     relaunch,
     spawn_message,
@@ -49,6 +50,13 @@ MANIFEST_FILE = MANIFEST / "io.github.prokopto_dev.nparse_plus.yml"
 # -- fake bus ------------------------------------------------------------------------
 
 
+#: What the bus puts in a signal's ``sender`` header. It is ALWAYS the sending
+#: connection's unique name — the daemon rewrites the field, and a well-known
+#: name never appears there. Getting this wrong in the fake is what let a rule
+#: that matches nothing in production pass its tests.
+PORTAL_UNIQUE_NAME = ":1.42"
+
+
 def progress_signal(
     status: int = flatpakportal.PROGRESS_RUNNING,
     *,
@@ -58,6 +66,7 @@ def progress_signal(
     error: str = "",
     error_message: str = "",
     path: str = MONITOR_PATH,
+    sender: str = PORTAL_UNIQUE_NAME,
 ) -> jeepney.low_level.Message:
     info = {
         "n_ops": ("u", n_ops),
@@ -74,7 +83,9 @@ def progress_signal(
         bus_name=flatpakportal.PORTAL_BUS_NAME,
         interface=flatpakportal.MONITOR_INTERFACE,
     )
-    return jeepney.new_signal(emitter, "Progress", "a{sv}", (info,))
+    message = jeepney.new_signal(emitter, "Progress", "a{sv}", (info,))
+    message.header.fields[HeaderFields.sender] = sender
+    return message
 
 
 class FakeConnection:
@@ -100,6 +111,7 @@ class FakeConnection:
         self.calls: list[str] = []
         self.sent: list = []
         self.closed = False
+        self._rule = None
         self._queue: deque | None = None
 
     def send_and_get_reply(self, message, timeout=None):
@@ -113,7 +125,10 @@ class FakeConnection:
         if member == "CreateUpdateMonitor":
             return jeepney.new_method_return(message, "o", (self.monitor_path,))
         if member == "Update" and self._queue is not None:
-            self._queue.extend(self.signals)
+            # Route through the client's own rule, exactly as jeepney's
+            # recv_messages does. Extending the queue blindly would make any
+            # rule pass, including one that matches nothing on a real bus.
+            self._queue.extend(s for s in self.signals if self._rule.matches(s))
         if member == "Spawn":
             return jeepney.new_method_return(message, "u", (4242,))
         return jeepney.new_method_return(message)
@@ -121,6 +136,7 @@ class FakeConnection:
     @contextmanager
     def filter(self, rule, *, queue=None, bufsize=1):
         self.rule = rule
+        self._rule = rule
         self._queue = deque(maxlen=bufsize) if queue is None else queue
         try:
             yield self._queue
@@ -262,6 +278,41 @@ def test_the_progress_rule_is_scoped_to_this_monitor() -> None:
     assert f"interface='{flatpakportal.MONITOR_INTERFACE}'" in rule
     assert "member='Progress'" in rule
     assert "type='signal'" in rule
+
+
+def test_the_wire_rule_names_the_portal_and_the_local_one_must_not() -> None:
+    """One rule cannot do both jobs, and sharing it drops every signal.
+
+    ``AddMatch`` is read by the bus daemon, which tracks name ownership and
+    resolves a well-known name. ``connection.filter`` is jeepney matching
+    in-process against the header the daemon wrote — and that header is always
+    the sender's *unique* name. A local rule naming the portal therefore
+    matches nothing, and the install runs to its idle timeout reporting a
+    failure that never happened.
+    """
+    assert (
+        f"sender='{flatpakportal.PORTAL_BUS_NAME}'" in progress_match_rule(MONITOR_PATH).serialise()
+    )
+    assert "sender=" not in progress_filter_rule(MONITOR_PATH).serialise()
+
+
+def test_the_local_filter_accepts_a_signal_as_the_bus_actually_stamps_it() -> None:
+    """The real matcher, against a real signal carrying a unique-name sender."""
+    signal = round_trip(progress_signal(sender=PORTAL_UNIQUE_NAME))
+    assert signal.header.fields[HeaderFields.sender] == PORTAL_UNIQUE_NAME
+    assert progress_filter_rule(MONITOR_PATH).matches(signal)
+    # ...and the wire rule does not, which is exactly why they are two rules.
+    assert not progress_match_rule(MONITOR_PATH).matches(signal)
+
+
+def test_the_local_filter_still_rejects_another_monitors_signals() -> None:
+    """Dropping `sender` must not widen the rule to anything else's progress."""
+    rule = progress_filter_rule(MONITOR_PATH)
+    assert not rule.matches(round_trip(progress_signal(path="/org/freedesktop/portal/Flatpak")))
+    other = jeepney.DBusAddress(
+        MONITOR_PATH, bus_name=flatpakportal.PORTAL_BUS_NAME, interface="com.example.Other"
+    )
+    assert not rule.matches(jeepney.new_signal(other, "Progress", "a{sv}", ({},)))
 
 
 # -- decoding ------------------------------------------------------------------------

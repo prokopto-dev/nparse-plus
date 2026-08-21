@@ -307,7 +307,24 @@ arrive either as a D-Bus error reply *or* as a failed `Progress` — the portal
 does the work in a thread, so both paths classify to the same status. The
 sandbox probe is `updater.running_in_flatpak` itself, not a second
 `/.flatpak-info` check that could disagree with the one picking `.flatpak` vs
-`.tar.gz`. What CI structurally cannot check (does the portal answer under the
+`.tar.gz`.
+
+**The `Progress` subscription needs TWO match rules, and sharing one silently
+drops every signal.** `AddMatch` is read by the bus daemon, which tracks name
+ownership and resolves the well-known `org.freedesktop.portal.Flatpak`, so the
+wire rule names it — that is what stops the daemon forwarding somebody else's
+signals. `connection.filter()` is jeepney matching **in-process**, and
+`MatchRule.matches` compares the `sender` header literally against what the
+daemon wrote there, which is always the sending connection's *unique* name
+(`:1.42`); a well-known name never appears in that field. One rule for both
+therefore matches nothing, the queue stays empty, and the install runs to its
+idle timeout reporting a failure that never happened — while every test
+passes, because a fake that enqueues signals directly never calls `matches`.
+`progress_match_rule` (with sender) and `progress_filter_rule` (without) are
+the split, and `FakeConnection` routes signals through the client's own rule
+precisely so this cannot pass again. Nothing is given up by dropping `sender`
+locally: the monitor's object path is minted per sender by the portal and
+handed to us privately. What CI structurally cannot check (does the portal answer under the
 real D-Bus policy, does `Update` find the origin remote, does `Spawn` come
 back on the new deploy) is listed in `docs/development/releasing.md`.
 

@@ -350,10 +350,40 @@ def spawn_message(argv: tuple[str, ...], cwd: str) -> Message:
     )
 
 
+# The same rule cannot serve both jobs, and using one for both silently
+# discards every signal the portal sends.
+#
+# `AddMatch` is interpreted by the bus daemon, which tracks name ownership and
+# happily resolves the well-known `org.freedesktop.portal.Flatpak` — naming it
+# there is what stops the daemon forwarding some other connection's signals.
+# `connection.filter()` is jeepney matching in-process, and `MatchRule.matches`
+# compares the `sender` header **literally**. That header never holds a
+# well-known name: the daemon rewrites it to the sending connection's unique
+# name (`:1.42`), so a local rule naming the portal matches nothing, the queue
+# stays empty, and the install runs to its idle timeout and reports a failure
+# that never happened.
+#
+# So: the wire rule keeps `sender` and the local rule drops it. Nothing is
+# given up by dropping it — the monitor's object path is minted per sender by
+# the portal and handed to us privately, and the interface and member are
+# pinned, so the remaining triple is already tighter than the sender check.
+
+
 def progress_match_rule(monitor_path: str) -> Any:
+    """The rule sent to the bus, naming the portal by its well-known name."""
     return MatchRule(
         type="signal",
         sender=PORTAL_BUS_NAME,
+        interface=MONITOR_INTERFACE,
+        member="Progress",
+        path=monitor_path,
+    )
+
+
+def progress_filter_rule(monitor_path: str) -> Any:
+    """The rule jeepney matches in-process — deliberately without ``sender``."""
+    return MatchRule(
+        type="signal",
         interface=MONITOR_INTERFACE,
         member="Progress",
         path=monitor_path,
@@ -542,13 +572,12 @@ def install_update(
                 f"UpdateMonitor needs {MIN_PORTAL_VERSION}",
             )
         monitor_path = str(_call(connection, create_update_monitor_message())[0])
-        rule = progress_match_rule(monitor_path)
-        _subscribe(connection, rule)
+        _subscribe(connection, progress_match_rule(monitor_path))
         # Filter first, send second: a Progress signal emitted between the two
         # would otherwise be dropped on the floor. send_and_get_reply feeds
         # non-reply messages through the filters while it waits, so nothing
         # arriving during Update() is lost either.
-        with connection.filter(rule, bufsize=64) as queue:
+        with connection.filter(progress_filter_rule(monitor_path), bufsize=64) as queue:
             _call(connection, update_message(monitor_path, parent_window))
             outcome = _await_completion(
                 connection,
