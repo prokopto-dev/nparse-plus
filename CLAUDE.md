@@ -276,6 +276,41 @@ binding ever needs more than `--call`, the correct arg is
 `--talk-name=org.freedesktop.portal.Flatpak`, scoped to the portal. The
 manifest carries this as a comment so nobody re-adds the wrong one.
 
+**A Flatpak now updates itself in place** (#74). `flatpakportal.py` is the
+client — a sibling of `updater.py` and Qt-free for the same reason, with
+`PortalOutcome.title()/message()` carrying the prose so `ui/updatewindow.py`
+stays a renderer. Four calls over **jeepney** (pure Python, `sys_platform ==
+'linux'` in pyproject; PyInstaller traces every module it needs with **no**
+hiddenimport, including the function-scoped `jeepney.io.blocking`, and the
+spec says so): `CreateUpdateMonitor`, `UpdateMonitor.Update`, the `Progress`
+signals, then `Spawn` with `FLATPAK_SPAWN_FLAGS_LATEST_VERSION` to relaunch.
+**`UpdateAvailable` is deliberately not waited on** — the portal polls its
+remotes on its own schedule, and the GitHub release check already told us a
+version exists, so gating on the portal's poll would make "Install" do nothing
+for an arbitrary interval. "Nothing to pull" comes back as `Progress` status 1
+instead, which on release day means the OSTree repo has not caught up yet and
+is a better thing to say than silence. `Spawn`'s argv is `/app/bin/nparseplus`
+and NOT `sys.executable`: the latter skips `packaging/flatpak/nparseplus.sh`,
+which is what sets `QT_QPA_PLATFORM=xcb`, so the overlays would come back on
+native Wayland with no keep-above. A test ties the constant to the manifest's
+install line.
+
+**`PortalStatus.UNAVAILABLE` is the only outcome the user never hears about**,
+and that split is the degrade rule: not sandboxed, no jeepney, no session bus,
+a portal older than 2, or a call the D-Bus policy refused all mean *the portal
+was never reached* — nothing has been said, so `_on_portal_finished` quietly
+runs the download path that existed before. Every other status means the
+portal answered, so it is reported rather than retried more slowly behind the
+user's back; `NOT_SUPPORTED` (the permission-widening hop above) names
+`flatpak update <app-id>` instead of reading as a generic failure, and can
+arrive either as a D-Bus error reply *or* as a failed `Progress` — the portal
+does the work in a thread, so both paths classify to the same status. The
+sandbox probe is `updater.running_in_flatpak` itself, not a second
+`/.flatpak-info` check that could disagree with the one picking `.flatpak` vs
+`.tar.gz`. What CI structurally cannot check (does the portal answer under the
+real D-Bus policy, does `Update` find the origin remote, does `Spawn` come
+back on the new deploy) is listed in `docs/development/releasing.md`.
+
 Update downloads are verified (issue #73): `updater.stream_https_to_file` is
 the streaming sibling of the plugin installer's `fetch_https_bytes` — same
 hop-by-hop https re-assertion, its own `MAX_ASSET_BYTES` budget (release

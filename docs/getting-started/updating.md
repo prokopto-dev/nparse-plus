@@ -12,24 +12,39 @@ What "install" means depends on your platform:
 | macOS DMG | The new `.dmg` for your Mac's architecture (Apple Silicon or Intel) downloads and opens | Drag to Applications, re-run the [`xattr` command](install-macos.md#2-clear-the-quarantine-flag) |
 | Windows zip | The new `.zip` downloads | Extract over (or beside) the old folder, run `nparseplus.exe` |
 | Linux tarball | The new `.tar.gz` downloads | Unpack over the old directory |
-| Linux Flatpak | The new `.flatpak` is handed to your software installer — **but see below**, `flatpak update` is better | Confirm the install prompt |
+| Linux Flatpak | The update installs **in place** through Flatpak, then offers to restart | Press **Install Update**, then **Restart Now** |
 
 Your settings always survive updates — they live in a
 [separate config directory](first-run.md#where-settings-live), not in the
 app folder.
 
-## Flatpak: just use `flatpak update`
+## Flatpak: one click, no download
 
-Flatpak installs have a better path than downloading bundles: every release
-publishes a GPG-signed OSTree repository, and bundles from v1.4.1 onward
-configure it as their update origin automatically. That means:
+Inside a Flatpak the update dialog's button says **Install Update**, and it
+does exactly that — nParse+ asks Flatpak to update it in place from the
+GPG-signed OSTree repository every release publishes, so only the parts that
+actually changed download. When it finishes, **Restart Now** brings the app
+back on the new version.
+
+Two things it may say instead:
+
+- **"Nothing to install yet"** — the update repository lags the GitHub
+  release by a few minutes on release day. Try again shortly.
+- **"This update needs the Flatpak tools"** — the new version asks for a
+  sandbox permission the installed one does not have, and Flatpak only allows
+  an in-app update when the permissions are the same or fewer. Run
+  `flatpak update io.github.prokopto_dev.nparse_plus` (or use your software
+  manager) instead. Release notes call this out when it applies.
+
+If the in-app route is not available at all — an old Flatpak, or a desktop
+without the portal — nParse+ falls back to downloading the `.flatpak` bundle
+for your software installer, and
 
 ```bash
 flatpak update
 ```
 
-picks up new nParse+ releases alongside everything else on your system, and
-downloads only what changed. Details (including wiring up installs from
+always works from a terminal. Details (including wiring up installs from
 pre-1.4.1 bundles) in the
 [Flatpak guide](install-flatpak.md#5-updating).
 

@@ -118,6 +118,12 @@ the EQ install, with backups).
   (If you previously added the remote with `--no-gpg-verify`, run
   `flatpak remote-delete --user nparseplus` first and re-add it as above to
   get signature verification.)
+- **Or let nParse+ do it.** Inside a Flatpak the update dialog's button
+  says **Install Update**: it runs the same update through the
+  desktop portal — no bundle download, no software installer — and offers
+  **Restart Now** when it is done. This needs no extra sandbox permission and
+  falls back to downloading a `.flatpak` if the portal is unavailable. See
+  [Updating](updating.md#flatpak-one-click-no-download).
 - The in-app update check still notifies you from the tray either way, and
   downloading a newer `.flatpak` over the top keeps working too.
 

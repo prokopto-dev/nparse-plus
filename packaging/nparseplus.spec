@@ -68,6 +68,15 @@ a = Analysis(  # noqa: F821
         "nparseplus_sdk.ui",
         "nparseplus_sdk.validate",
         "nparseplus.ui.pluginwindow",
+        # jeepney (the Flatpak portal client, #74) deliberately does NOT
+        # appear here. Its every import — including the function-scoped
+        # `from jeepney.io.blocking import open_dbus_connection` — is a plain
+        # import statement, so modulegraph traces jeepney, .io.blocking,
+        # .bus_messages, .auth, .bus, .fds, .low_level and .wrappers on its
+        # own, and skips the asyncio/trio backends nothing imports. It is a
+        # Linux-only dependency (see pyproject): on the macOS and Windows
+        # builds it is simply absent, which nparseplus/flatpakportal.py's
+        # guarded import already handles.
     ],
     excludes=[
         "PySide6.Qt3DAnimation",

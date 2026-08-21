@@ -118,6 +118,48 @@ similar-looking **`org.freedesktop.Flatpak`** is a different service,
 the host outside the sandbox; that one is a real privilege grant and is
 deliberately absent from the manifest.
 
+## Flatpak: the in-app one-click update
+
+Inside a sandbox the update dialog's button says **Install Update** and
+installs in place instead of handing over a ~200 MB bundle
+(`src/nparseplus/flatpakportal.py`). The flow is four portal calls —
+`CreateUpdateMonitor`, `UpdateMonitor.Update`, the `UpdateMonitor.Progress`
+signals, then `Spawn` with `FLATPAK_SPAWN_FLAGS_LATEST_VERSION` to relaunch —
+over [jeepney](https://pypi.org/project/jeepney/), a pure-Python D-Bus client
+declared `sys_platform == 'linux'` in `pyproject.toml`. It needs **no**
+`finish-args` change, for the reason the section above gives.
+
+Everything degrades to the download path that came before it. A `PortalStatus`
+of `UNAVAILABLE` — not sandboxed, no jeepney, no session bus, a portal older
+than version 2, or a call the sandbox's D-Bus policy refused — is the one
+outcome the user never hears about: nothing has been said, so the app quietly
+downloads the bundle instead. Every other status is reported, and
+`NOT_SUPPORTED` names `flatpak update io.github.prokopto_dev.nparse_plus`
+rather than reading as a generic failure.
+
+### What CI cannot check
+
+The wire is asserted in `tests/test_flatpak_portal.py` — real jeepney messages
+round-tripped through jeepney's own parser, and the whole flow driven over a
+fake connection — but no CI runner has a Flatpak sandbox with a portal in it.
+**These need a human on a real install, once:**
+
+- The portal answers `CreateUpdateMonitor` under the sandbox's actual D-Bus
+  policy with only the default `--call=org.freedesktop.portal.*=*`. If a
+  binding turns out to need more, the correct arg is
+  `--talk-name=org.freedesktop.portal.Flatpak` — scoped to the portal, never
+  `org.freedesktop.Flatpak` — and it would cost the one release hop above.
+- `Progress` signals arrive at all. They are emitted directly at our unique
+  name, so `AddMatch` should be unnecessary; the client sends one anyway and
+  ignores a refusal.
+- `Update` finds the origin remote the bundle configured with `--repo-url`,
+  and reports `status = 2` (done) rather than `1` (nothing to pull). On
+  release day the OSTree repo can lag the GitHub release by a few minutes,
+  which is exactly the `1` case and says so.
+- `Spawn` relaunches onto the **new** deploy — check the version in
+  Settings → General after the restart, not just that a window came back.
+- An install from a `.tar.gz` (no `/.flatpak-info`) still downloads a tarball.
+
 ## gh-pages layout
 
 One branch serves both consumers:
