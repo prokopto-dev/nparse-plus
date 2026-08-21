@@ -6,6 +6,35 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.21.0 (2026-08-21)
+
+### Bug Fixes
+
+- **templates**: Keep an author's min_app_version in the release body
+  ([`1798f4d`](https://github.com/prokopto-dev/nparse-plus/commit/1798f4d11306f4b499ad48334819b56a39fd15ef))
+
+- **templates**: Write the release body as UTF-8, not as the platform default
+  ([`70e450e`](https://github.com/prokopto-dev/nparse-plus/commit/70e450e4727ee36c369f8fd85e738722befa1ce1))
+
+### Documentation
+
+- **plugins**: Note where the URL-pin test was refocused a second time
+  ([`0049d9a`](https://github.com/prokopto-dev/nparse-plus/commit/0049d9a5883d4c03fb05800a8d581cd5e48ae61a))
+
+- **plugins**: Retire the pull-request submission model
+  ([`2bcad04`](https://github.com/prokopto-dev/nparse-plus/commit/2bcad04a8ef5def97bec17e1575cb0e9e4b79d37))
+
+### Features
+
+- **plugins**: Pick up release notes, and rewrite the registry trust argument
+  ([`b4464b7`](https://github.com/prokopto-dev/nparse-plus/commit/b4464b71968dc6052a8e2ab261e9619b97cedef5))
+
+### Testing
+
+- **plugins**: Pin the wire spelling of release notes
+  ([`daa1277`](https://github.com/prokopto-dev/nparse-plus/commit/daa12779c1a8655a623c6cc20875727b38abbbf0))
+
+
 ## v2.20.0 (2026-08-20)
 
 ### Bug Fixes
