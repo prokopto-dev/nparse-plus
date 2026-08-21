@@ -116,6 +116,55 @@ class ConfirmedDeathEvent(LogEvent):
     killer: str = ""
 
 
+class NotableKillEvent(LogEvent):
+    """A kill worth copying the fight parse for (#78).
+
+    nparseplus addition, with no counterpart in ``LogEvents.cs`` — EQTool asked
+    the question inline in ``DPSMeter.xaml.cs LogParser_DeathEvent`` and copied
+    straight from there, which it could do because WPF gave it no thread to
+    cross. Here the decision and the clipboard write land on different threads,
+    and the decision is the half that must not move: it depends on the zone the
+    kill happened in, and ``ActivePlayer.zone`` is mutated on the driver thread
+    while the Qt bridge is still buffering events the GUI has not drained. So
+    ``DpsHandler`` answers it where the answer is unambiguous and states the
+    fact in the ordered stream; the window only decides whether the user asked
+    for a copy, and writes one.
+
+    ``zone`` is the short key the kill was judged in, carried so a subscriber
+    never has to re-derive it — re-deriving it later is precisely the bug.
+
+    ``parse`` is the finished clipboard line, formatted at the kill for the
+    same reason. Zoning out clears the meter (``DpsHandler._on_zoned``), and
+    the zone line lands on the driver thread while the bridge is still holding
+    the batch — so a boss killed on the way out has no rows left to format by
+    the time the GUI wakes up, and a consumer that formatted then would copy
+    nothing at all. A parse is a statement about a fight that has ended; there
+    is nothing to gain by building it later and a fight to lose.
+    """
+
+    victim: str
+    zone: str
+    parse: str
+
+
+class DpsBestResetEvent(LogEvent):
+    """Outcome of a user-confirmed "Reset best" (#83).
+
+    Not a log fact — a command result, published so it can reach the GUI the
+    only way anything on the driver thread may: the bus, and from there
+    ``QtEventBridge``. The reset is dispatched to the driver so its identity
+    check cannot be overtaken by a character switch, which means the answer is
+    only known there, one poll interval or so after the user clicked Yes.
+
+    ``cleared`` is False when the check refused — the active character changed
+    between the click and the command being drained. Carried rather than
+    publishing only on refusal so there is ONE authoritative path for the
+    outcome instead of a fast path and a slow one that can disagree.
+    """
+
+    cleared: bool
+
+
 class WhoPlayer(BaseModel):
     model_config = ConfigDict(frozen=True)
 

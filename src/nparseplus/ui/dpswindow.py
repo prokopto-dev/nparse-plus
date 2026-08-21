@@ -4,6 +4,15 @@ The UI analogue of EQTool's UI/DPSMeter.xaml + DPSWindowViewModel grouping:
 one header per fight target (name + group total damage), one row per
 attacker under it (name, total damage, trailing DPS, percent of the group
 total), your own row highlighted, plus a session Best/Current/Last footer.
+
+Right-clicking copies a fight's parse (#78) — EQTool put a copy button in
+every group header; a context menu is the same affordance without spending
+14 pixels of a frameless overlay on it. The parse string itself is built by
+the Qt-free ``core.dps.format_fight_details``, and whether a kill deserves an
+automatic copy is answered on the driver thread and arrives as
+``NotableKillEvent`` (see ``core.handlers.dps``), so all this window
+contributes is the two things that really are the UI's: whether the user
+asked for automatic copies, and the clipboard.
 """
 
 from __future__ import annotations
@@ -12,9 +21,17 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dps import (
@@ -23,8 +40,11 @@ from nparseplus.core.dps import (
     DEFAULT_DAMAGE_SOURCES,
     FightRow,
     SessionSummary,
+    fight_parse,
 )
+from nparseplus.core.events import DpsBestResetEvent, NotableKillEvent
 from nparseplus.ui import skins, theme
+from nparseplus.ui.clipboard import system_clipboard_copy
 from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus.ui.skinwidgets import (
     SkinPanel,
@@ -49,6 +69,23 @@ OTHERS_BAR = "#75798c"
 PET_SUFFIX = " (pet)"
 
 
+def confirm(parent: QWidget, title: str, text: str) -> bool:
+    """A yes/no box that defaults to No. Injected so tests never block on it.
+
+    Constructed rather than ``QMessageBox.question`` for the reason #147
+    retired that helper: its default ``AutoText`` hands anything tag-shaped in
+    the text to a rich-text renderer, and a character name comes from the log.
+    """
+    box = QMessageBox(parent)
+    box.setWindowTitle(title)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setText(text)
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    box.setDefaultButton(QMessageBox.StandardButton.No)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
 class FightsLike(Protocol):
     #: The live counting mode — read off the tracker rather than the settings
     #: object so the title marker follows an Apply without the window being
@@ -57,6 +94,9 @@ class FightsLike(Protocol):
 
     def snapshot(self, now: datetime) -> list[FightRow]: ...
     def session_summary(self) -> SessionSummary: ...
+    def end_session(self) -> None: ...
+    def remove_last_session(self) -> None: ...
+    def reset_best(self) -> None: ...
 
 
 class BackendLike(Protocol):
@@ -64,6 +104,9 @@ class BackendLike(Protocol):
 
     fights: FightsLike
     settings: Settings
+
+    def dps_best_owner(self) -> object | None: ...
+    def reset_dps_best(self, expect: object) -> None: ...
 
 
 class _AttackerRow(QFrame):
@@ -80,6 +123,10 @@ class _AttackerRow(QFrame):
         super().__init__(parent)
         self.setObjectName("DpsRow")
         self.attacker_name = ""
+        #: The fight group this row sits under — a right-click on an attacker
+        #: copies that attacker's whole group, the way EQTool's per-group
+        #: button did.
+        self.target_name = ""
         self.is_you = False
         self._skin = skin if skin is not None else skins.skin()
         self._percent_fraction = 0.0
@@ -133,6 +180,7 @@ class _AttackerRow(QFrame):
 
     def update_row(self, row: FightRow) -> None:
         self.attacker_name = row.attacker_name
+        self.target_name = row.target_name
         name = row.attacker_name
         if row.level:
             name = f"{name} ({row.level})"
@@ -158,11 +206,25 @@ class _AttackerRow(QFrame):
 class DpsMeterWindow(OverlayWindowBase):
     """Frameless always-on-top overlay listing the tracker's fights."""
 
+    #: A parse reached the clipboard, carrying the target's name. EQTool
+    #: raised a balloon tip from inside ``copytoclipboard``; the window has no
+    #: tray, so it says so and ``app.py`` decides where that is shown.
+    parse_copied = Signal(str)
+
+    #: A confirmed "Reset best" did NOT happen, because the active character
+    #: changed before the driver ran it. The user asked for something
+    #: irreversible and got nothing; saying so beats silence. Raised from the
+    #: driver's own answer (``DpsBestResetEvent``), never from a local guess —
+    #: see ``reset_best``.
+    reset_refused = Signal()
+
     def __init__(
         self,
         backend: BackendLike,
         on_save: Callable[[], None] | None = None,
         parent: QWidget | None = None,
+        copy_to_clipboard: Callable[[str], bool] = system_clipboard_copy,
+        confirm_reset: Callable[[QWidget, str, str], bool] = confirm,
     ) -> None:
         super().__init__(
             settings=backend.settings,
@@ -173,6 +235,8 @@ class DpsMeterWindow(OverlayWindowBase):
             parent=parent,
         )
         self._backend = backend
+        self._copy_to_clipboard = copy_to_clipboard
+        self._confirm_reset = confirm_reset
         self._headers: dict[str, QLabel] = {}
         self._rows: dict[tuple[str, str], _AttackerRow] = {}
 
@@ -374,6 +438,180 @@ class DpsMeterWindow(OverlayWindowBase):
             self._rows_layout.addWidget(widget)
             widget.show()
 
+    # -- copying a parse (#78) ---------------------------------------------------
+
+    def current_targets(self) -> list[str]:
+        """Fight targets on screen, in render order (one per group header)."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, QLabel):
+                out.append(widget.property("target_key"))
+        return out
+
+    def _target_at(self, pos) -> str | None:
+        """The fight group under a point in this window's coordinates.
+
+        Both a group header and any attacker row beneath it answer with the
+        group, because EQTool's copy button lived in the header and a user
+        aiming at "this fight" reasonably clicks either.
+        """
+        widget = self.childAt(pos)
+        while widget is not None and widget is not self:
+            if isinstance(widget, _AttackerRow):
+                return widget.target_name or None
+            if isinstance(widget, QLabel):
+                target = widget.property("target_key")
+                if target:
+                    return str(target)
+            widget = widget.parentWidget()
+        return None
+
+    def copy_fight(self, target_name: str) -> bool:
+        """Put one fight group's parse on the clipboard. False if there is none.
+
+        The rows come from a fresh snapshot rather than from the widgets, so
+        the copied numbers are the tracker's and not whatever the 500 ms
+        refresh last rendered.
+        """
+        text = fight_parse(self._backend.fights.snapshot(datetime.now()), target_name)
+        if not text:
+            return False
+        if not self._copy_to_clipboard(text):
+            return False
+        self.parse_copied.emit(target_name)
+        return True
+
+    def handle_event(self, event: object) -> None:
+        """Copy the parse for a kill core has judged notable (#78).
+
+        Wired to the Qt bridge, so this runs on the GUI thread; the fight is
+        still on screen because ``end_fight`` only marks a group dead and
+        retirement is ``fight_retention_seconds`` away.
+
+        The window deliberately does NOT decide whether the kill was notable.
+        That turns on the zone the kill happened in, and the bridge delivers a
+        coalesced batch some time after the driver parsed it — long enough for
+        ``ActivePlayer.zone`` to have moved on, so any answer computed here
+        would be an answer about the wrong zone. ``DpsHandler`` answers it on
+        the driver thread and the fact arrives in stream order. What is left
+        here is genuinely the UI's: the setting (mutated by the settings
+        window on this thread) and the clipboard.
+        """
+        if isinstance(event, DpsBestResetEvent):
+            # The driver has run (or refused) the reset the user confirmed.
+            if not event.cleared:
+                self.reset_refused.emit()
+            self.refresh()
+            return
+        if not isinstance(event, NotableKillEvent):
+            return
+        if not self._backend.settings.dps.auto_copy_notable_kills:
+            return
+        # The parse is the one built at the kill, not a fresh one: zoning out
+        # clears the meter on the driver thread while this batch is still in
+        # flight, so re-reading the rows here would find a boss killed on the
+        # way out already gone.
+        if self._copy_to_clipboard(event.parse):
+            self.parse_copied.emit(event.victim)
+
+    def menu_targets(self, pos) -> list[str]:
+        """Which fights a right-click at ``pos`` offers to copy.
+
+        Clicking inside a group copies that group, the way EQTool's per-group
+        button did; clicking the frame or the footer offers every group on
+        screen, which is usually one and never many. Separate from
+        ``contextMenuEvent`` so the choice can be asserted without a menu that
+        would block on ``exec``.
+        """
+        target = self._target_at(pos)
+        return [target] if target is not None else self.current_targets()
+
+    def contextMenuEvent(self, event) -> None:
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        targets = self.menu_targets(event.pos())
+        for name in targets:
+            menu.addAction(f"Copy parse for '{name}'", lambda n=name: self.copy_fight(n))
+        if not targets:
+            empty = menu.addAction("No fight to copy")
+            empty.setEnabled(False)
+        menu.addSeparator()
+        # The three session controls, together (#83). EQTool had two of them
+        # as buttons in the meter and ``end_session``/``remove_last_session``
+        # had no caller here at all; the footer is three label cells with
+        # nowhere to put a button, so this menu is where they land — and it is
+        # where "reset the stored best" has to sit beside them, since the
+        # footer's Best cell is what it resets.
+        menu.addAction("Start new session", self.end_session)
+        clear_last = menu.addAction("Clear last session", self.clear_last_session)
+        clear_last.setEnabled(self._backend.fights.session_summary().last_session is not None)
+        menu.addAction("Reset best…", self.reset_best)
+        menu.exec(event.globalPos())
+
+    # -- session controls (the DPSMeter session buttons) ---------------------------
+    #
+    # The two session controls below mutate FightTracker from the GUI thread,
+    # the same way ``Backend.apply_dps_settings`` already does on Apply: each
+    # rebinds a whole PlayerDamage rather than editing one in place, so the
+    # driver merging a reading at the same moment cannot tear anything, and
+    # neither value is per-character so a log-file switch cannot make the
+    # write land on the wrong profile.
+    #
+    # ``reset_best`` is neither of those things — it is per-character AND it
+    # waits on a modal — so it goes through the driver instead. See its
+    # docstring, and ``core.handlers.dps_persistence``.
+
+    def end_session(self) -> None:
+        """Now becomes Last and a fresh Now starts (MoveCurrentToLastSession)."""
+        self._backend.fights.end_session()
+        self.refresh()
+
+    def clear_last_session(self) -> None:
+        """Drop the Last column (RemoveLastSession)."""
+        self._backend.fights.remove_last_session()
+        self.refresh()
+
+    def reset_best(self) -> None:
+        """Clear this character's lifetime best, on confirmation (#83).
+
+        The one irreversible action in the menu — the value it drops may be
+        months old and is persisted per character — so it asks, defaulting to
+        No. It deliberately does not touch Now: resetting a record is not
+        abandoning the session you are in.
+
+        **Bound to the character the dialog was opened for.** The confirmation
+        runs a modal event loop, and the driver keeps parsing underneath it —
+        it checks for a log-file switch every three seconds. Switch characters
+        with this dialog open and an unbound reset would zero the best just
+        restored for the INCOMING character and export the zero over their
+        profile: the lifetime record of someone the user was not even looking
+        at, gone irreversibly.
+
+        So the owner is captured BEFORE the dialog and handed back after it,
+        and the check happens on the driver thread, where the player-change
+        pair also runs and so cannot overtake it.
+
+        **There is deliberately no second check here.** An obvious one —
+        re-read the owner after the dialog and refuse locally — looks like a
+        free fast path and is not: the command is queued and drains up to a
+        poll interval later, so the switch can still land after a local check
+        passed. That leaves two places that decide, disagreeing exactly in the
+        window that matters, and the one that reports to the user is the one
+        that is wrong. The driver's answer comes back as ``DpsBestResetEvent``
+        and is the only thing ``reset_refused`` is raised from.
+        """
+        owner = self._backend.dps_best_owner()
+        if not self._confirm_reset(
+            self,
+            "Reset best",
+            "Clear the best DPS, best damage and highest hit recorded for "
+            "this character?\n\nThis cannot be undone. The current session "
+            "is left alone.",
+        ):
+            return
+        self._backend.reset_dps_best(owner)
+
     @staticmethod
     def _format_summary(summary: SessionSummary) -> str:
         last = f"{summary.last_session.highest_dps}" if summary.last_session else "—"
@@ -384,15 +622,6 @@ class DpsMeterWindow(OverlayWindowBase):
         )
 
     # -- test/debug hooks --------------------------------------------------------
-
-    def current_targets(self) -> list[str]:
-        """Target header keys in on-screen order."""
-        out: list[str] = []
-        for i in range(self._rows_layout.count()):
-            widget = self._rows_layout.itemAt(i).widget()
-            if isinstance(widget, QLabel):
-                out.append(widget.property("target_key"))
-        return out
 
     def current_attackers(self) -> list[str]:
         """Attacker row names in on-screen order."""

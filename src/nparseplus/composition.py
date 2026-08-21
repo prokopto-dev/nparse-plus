@@ -36,6 +36,7 @@ from nparseplus.core.handlers.corpse import CorpseWaypointHandler
 from nparseplus.core.handlers.death_loop import DeathLoopHandler
 from nparseplus.core.handlers.discipline_cooldown import DisciplineCooldownHandler
 from nparseplus.core.handlers.dps import DpsHandler
+from nparseplus.core.handlers.dps_persistence import DpsPersistenceHandler
 from nparseplus.core.handlers.fte import FTEHandler
 from nparseplus.core.handlers.group_leader import GroupLeaderHandler
 from nparseplus.core.handlers.inventory_upload import InventoryUploadHandler
@@ -263,6 +264,7 @@ class Backend:
     net_worker: NetWorker | None = None
     player_tracker: PlayerTrackerHandler | None = None
     timer_persistence: TimerPersistenceHandler | None = None
+    dps_persistence: DpsPersistenceHandler | None = None
     socials_sync: SocialSyncWatcher | None = None
     dumps: DumpLibrary | None = None
     dump_watcher: DumpWatcher | None = None
@@ -313,6 +315,41 @@ class Backend:
             spell_credit_window_s=dps.spell_credit_window_seconds,
             count_pet_damage=dps.count_pet_damage,
         )
+
+    def dps_best_owner(self) -> object | None:
+        """Which character the DPS meter's lifetime best belongs to (#83).
+
+        An opaque token for ``reset_dps_best`` — captured before a
+        confirmation dialog and handed back after it, so a reset the user
+        agreed to cannot land on whoever the driver switched to while they
+        were reading it.
+        """
+        if self.dps_persistence is None:
+            return None
+        return self.dps_persistence.best_owner()
+
+    def reset_dps_best(self, expect: object) -> None:
+        """Clear the lifetime best on the driver thread, refusing if stale.
+
+        Goes through ``submit_to_driver`` rather than mutating from the GUI
+        thread: the check and the reset have to be one step with respect to
+        the player-change pair, which runs there. With no driver thread
+        running, that seam runs the closure inline — which is exactly right,
+        because then there is nothing to race with.
+
+        Fire-and-forget by design. The outcome is not returned to this caller
+        because this caller is not the one that needs it and is no longer
+        waiting — the command drains up to a poll interval later. The handler
+        publishes ``DpsBestResetEvent`` instead, which reaches the window the
+        one way the driver thread may reach it.
+        """
+        handler = self.dps_persistence
+        if handler is None:
+            # No profile persistence wired (a Backend built without it): there
+            # is no character to bind to and nothing on disk to protect.
+            self.fights.reset_best()
+            return
+        self.driver.submit_to_driver(lambda: handler.reset_best(expect), label="dps:reset-best")
 
     def apply_overlay_timings(self) -> None:
         """Push the overlay durations onto the live trigger engine — the
@@ -633,6 +670,11 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         want_image=lambda: settings.mobinfo.show_image,
     )
     profile_handler = PlayerProfileHandler(bus, player, settings, request_save=request_save)
+    # Held rather than built inline: the DPS window's Reset best action has to
+    # ask it who the current best belongs to, and hand that back (#83).
+    dps_persistence = DpsPersistenceHandler(
+        bus, player, settings, fights, request_save=request_save
+    )
     # Constructed (= subscribed) after PlayerProfileHandler: restore-on-player-
     # change needs the profile's class/level already loaded into ActivePlayer.
     timer_persistence = TimerPersistenceHandler(
@@ -660,7 +702,8 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             spell_settings=settings.spellwindow,
             timer_recast=timer_recast,
         ),
-        DpsHandler(bus, player, fights, player_pet=player_pet),
+        DpsHandler(bus, player, fights, player_pet=player_pet, zones=zones),
+        dps_persistence,
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),
         TimerWindowNotifier(bus, timers),
@@ -779,6 +822,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         net_worker=net_worker,
         player_tracker=player_tracker,
         timer_persistence=timer_persistence,
+        dps_persistence=dps_persistence,
         socials_sync=socials_sync,
         dumps=dumps,
         dump_watcher=dump_watcher,

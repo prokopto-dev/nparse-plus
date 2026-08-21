@@ -12,6 +12,7 @@ including on fights already running.
 | **Attacker dropoff** | How long a target's group stays on screen after the last hit against it from anyone (default 40 s; `never` keeps groups until you zone, camp or die). Individual attackers are never dropped, so an opener who stops swinging does not vanish mid-fight. |
 | **DPS averaging window** | The span each row's `dps` number is averaged over (default 12 s, EQTool's value). Damage is always divided by the full window, so a burst reads low until the window fills: 400 damage two seconds in shows 33 dps at 12 s. Shorter reacts faster; longer is steadier. |
 | **Session stat minimum fight** | A fight must run longer than this before it counts toward the footer (default 20 s, EQTool's rule). Most trash dies faster, which is why that footer can sit at zero all session. |
+| **Copy parse on notable kills** | On by default, as it is in EQTool. When a notable NPC in your zone dies, its fight parse goes on the clipboard by itself, ready to paste into raid chat. Kael's faction giants are excluded — they are listed as notable and die by the hundred. Right-clicking the meter copies any fight on screen whatever this says; see [Copying a parse](../windows/dps-meter.md#copying-a-parse). |
 
 ## What each mode counts
 
@@ -51,6 +52,13 @@ deliberately.
 
 **Attacker dropoff** does not clear anything: it decides how long a row is
 displayed, never what a reading measured.
+
+**Best** is saved per character, so this reaches across a restart too: the
+stored record carries which rules it was measured under, and one taken under
+rules that no longer apply is dropped rather than restored. That is what
+covers the case a live reset cannot — a character who was not logged in when
+you moved the knob. See
+[Best, Now and Last](../windows/dps-meter.md#best-now-and-last).
 
 ## Counting your pet
 

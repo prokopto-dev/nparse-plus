@@ -1362,6 +1362,19 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         )
         form.addRow("Session stat minimum fight", self._dps_session_min)
 
+        self._dps_auto_copy = QCheckBox(self)
+        self._dps_auto_copy.setChecked(dps.auto_copy_notable_kills)
+        self._dps_auto_copy.setToolTip(
+            "Put the fight parse on your clipboard by itself when a notable "
+            "NPC in your zone dies, ready to paste into raid chat.\n\n"
+            "Only NPCs the zone data lists as notable count, and Kael's "
+            "faction giants are excluded — they are notable but killed by "
+            "the hundred, and every one would overwrite your clipboard.\n\n"
+            "Right-clicking the DPS meter copies any fight on screen "
+            "whatever this says."
+        )
+        form.addRow("Copy parse on notable kills", self._dps_auto_copy)
+
         form.addRow(
             chromewidgets.hint(
                 "These apply as soon as you hit Apply — no restart. Damage "
@@ -2212,6 +2225,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         dps.fight_retention_seconds = self._dps_retention.value()
         dps.trailing_window_seconds = self._dps_window.value()
         dps.session_min_fight_seconds = self._dps_session_min.value()
+        dps.auto_copy_notable_kills = self._dps_auto_copy.isChecked()
         plugins = self._settings.plugins
         plugins_was_enabled = plugins.enabled
         plugins.enabled = self._plugins_enabled_box.isChecked()

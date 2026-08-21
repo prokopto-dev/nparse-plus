@@ -354,6 +354,12 @@ class DpsSettings(BaseModel):
     # Best/Now/Last footer (EQTool's TotalSeconds > 20). Most trash dies
     # faster, which is why that footer often sits at zero.
     session_min_fight_seconds: float = Field(default=20.0, ge=0.0, le=600.0)
+    # Put the fight parse on the clipboard by itself when a zone-notable NPC
+    # dies (EQTool's LogParser_DeathEvent). On by default, as it is there:
+    # the raid case is the reason the feature exists, and a fight is only
+    # copyable by hand while its group is still on screen. The manual copy in
+    # the window's context menu is always available regardless.
+    auto_copy_notable_kills: bool = True
 
     @model_validator(mode="after")
     def _fold_in_legacy_melee_only(self) -> DpsSettings:
@@ -583,6 +589,29 @@ class SavedCounter(BaseModel):
     updated_at: datetime
 
 
+class SavedPlayerDamage(BaseModel):
+    """This character's lifetime best (EQTool PlayerInfo.BestPlayerDamage, #83).
+
+    Per character because that is the only granularity at which the number
+    means anything — a level 60 rogue's best hit says nothing about your level
+    12 cleric, and EQTool hangs it on the player profile for the same reason.
+
+    ``measurement_rules`` fingerprints the counting knobs the reading was
+    taken under (``FightTracker.measurement_rules_key``). ``reset_session_stats``
+    already drops the live best when one of those moves, on the grounds that a
+    best-dps over a 12 s window is not comparable to one over 4 s; storing the
+    reading without storing what it is a reading OF would let a restart — or
+    simply switching to a character who was not logged in when the knob moved
+    — bring the incomparable number back. A record whose fingerprint disagrees
+    with the current rules is dropped on restore and overwritten.
+    """
+
+    highest_dps: int = 0
+    total_damage: int = 0
+    highest_hit: int = 0
+    measurement_rules: str = ""
+
+
 class PlayerInfo(BaseModel):
     name: str
     server: str
@@ -606,6 +635,10 @@ class PlayerInfo(BaseModel):
     # time, so they are stored as absolute ends rather than seconds-left.
     you_cooldowns: list[SavedCooldown] = Field(default_factory=list)
     you_counters: list[SavedCounter] = Field(default_factory=list)
+    # This character's lifetime Best row (#83). None until a fight long enough
+    # to count has been measured; ``last_session`` deliberately has no
+    # counterpart here — it is a within-session record, not a lifetime one.
+    best_damage: SavedPlayerDamage | None = None
 
 
 class PluginEntry(BaseModel):

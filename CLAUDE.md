@@ -1504,6 +1504,129 @@ confirmation. The static `QMessageBox.question` helper had to go for that:
 its default `AutoText` would hand anything tag-shaped in a registry's
 display name or an author's notes to a rich-text renderer.
 
+**A parse leaves the meter, and Best stops resetting daily** (post-2.21,
+~3000 tests): the DPS parity cluster, #78 then #83 — one branch, because they
+share `core/dps.py` and `ui/dpswindow.py`.
+
+*Copying a parse* (#78). The single most common thing a raider does with a
+meter had no affordance at all: no copy, no export, no right-click on
+`ui/dpswindow.py`. `core.dps.format_fight_details` is the port of
+`DPSMeter.xaml.cs copytoclipboard`, and the format is a **wire format** —
+EQTool users paste these into the same raid channels — so the four spaces
+after the group total, the `" / "` between attackers and `DPS:` being
+`TotalDPS` rather than the trailing-window number the row displays are pinned
+by exact-string tests. There is no `EQtoolsTests` case for it; the call site
+at `d8e8084f` is the spec. `snapshot()` already sorted by total damage
+descending, which IS the copy order, and it re-sorts anyway so the function is
+true to `OrderByDescending` on any input.
+
+Auto-copy on a notable kill ports `LogParser_DeathEvent`, and its gate is
+`ZoneDatabase.is_notable_kill`: notable in the zone you are standing in,
+**minus** `kael_faction_mobs`. That second clause is the whole reason the
+predicate is not "is this notable" — Kael's faction giants are listed as
+notable so the map and spawn timers treat them properly, and they die by the
+hundred. The decision stays Qt-free in core and the window only writes the
+clipboard; the balloon EQTool raised from inside the copy is a `parse_copied`
+signal `app.py` connects to the tray. DEVIATION, commented: the C# compares
+NPC names with `==`, this casefolds, like every other lookup in
+`ZoneDatabase` — a raid target that silently fails to copy is
+indistinguishable from the feature not working.
+**Both halves of the auto-copy are decided on the driver thread, and that is
+not a stylistic choice.** `QtEventBridge` delivers a coalesced batch some time
+after the driver parsed it, and two things keep moving in the meantime.
+`player.zone` does, so a `SlainEvent` judged when the GUI drained it is judged
+against a zone reached *after* the kill — kill the boss, take the zone line
+out, and the copy is silently skipped. And the meter itself does: zoning
+CLEARS it (`DpsHandler._on_zoned`), so by the time that batch is drained the
+boss has no rows left and a window that formatted then would copy nothing at
+all. So `DpsHandler` answers "is this notable" against `player.zone` one
+statement after the slain line, formats the parse there too, and publishes
+`NotableKillEvent(victim, zone, parse)`. Formatting at the kill also dates the
+numbers to the kill rather than to whenever the GUI woke up. The window keeps
+only what really is the UI's: whether the user asked for automatic copies, and
+the clipboard — which is what #78 said the split should be before the first
+attempt put the gate in the window.
+
+`NotableKillEvent` has no `LogEvents.cs` counterpart; EQTool asked the
+question inline in `LogParser_DeathEvent` and copied from the same method,
+which WPF let it do because there was no thread to cross. One ordering quirk
+is pinned by a test rather than left to surprise someone: `EventBus.publish`
+runs typed subscribers before the firehose, so the nested announcement
+completes before the `SlainEvent` that caused it reaches the bridge, and the
+batch reads `NotableKillEvent, SlainEvent, YouZonedEvent`. Harmless — what
+matters is that it is ahead of everything the log said next.
+
+`system_clipboard_copy` moved out of `dumpswindow` into `ui/clipboard.py`, so
+the two windows that write to the clipboard share one injectable seam.
+
+*Best is a record again* (#83). It reset every launch, which makes it a second
+copy of "this session". It now persists per character in
+`PlayerInfo.best_damage` — EQTool's granularity and the only one that means
+anything — through `core/handlers/dps_persistence.py` on the same
+`Before/AfterPlayerChangedEvent` pair `TimerPersistenceHandler` uses.
+`last_session` is deliberately NOT persisted: it is explicitly a
+within-session record.
+
+**A stored best carries what it is a reading OF.** `reset_session_stats`
+already drops the live best when a counting knob moves — a best-dps over 12 s
+is not comparable to one over 4 s — and persisting the number alone would let
+a restart bring the incomparable reading back. Worse, a live reset **cannot
+reach a character who was not logged in when the knob moved**. So the record
+stores `measurement_rules_key()` and a record whose fingerprint disagrees with
+the current rules is dropped on restore *and overwritten*, so it is gone from
+disk rather than merely hidden. The key normalizes numbers, or `20` and `20.0`
+would be different rules.
+
+Two things the export path needs. `FightTracker.on_change` fires on every
+damage line and `request_save` arms a fresh `threading.Timer` per call, so the
+guard is a three-integer comparison — the fingerprint is deliberately left out
+of it, because the only thing that changes the rules is `configure()`, which
+resets a non-empty best to zero on its way through, and a reset IS a change of
+reading. And `DpsHandler` now clears the meter on **`BeforePlayerChangedEvent`**
+— Before, not After, so the outgoing character's last fight folds into their
+own stats while they are still the active one, and so nothing mutates the
+tracker between After firing and the restore. Without it the previous
+character's still-live fight was re-merged into the incoming one's session by
+the next `end_fight` or `tick`: a bleed the per-character best exists to
+prevent.
+
+*The three session controls, together.* `end_session()` and
+`remove_last_session()` had **zero callers outside `core/dps.py`** — EQTool had
+them as buttons and the port never grew any — and #83's "user-visible way to
+reset the stored best" had nowhere to sit, since the footer is three label
+cells. All three land in #78's new context menu: Start new session, Clear last
+session (disabled when there is none), and Reset best… `FightTracker.reset_best`
+is narrower than `reset_session_stats` on purpose (resetting a record is not
+abandoning the session you are in) and is the one irreversible action in the
+menu, so it confirms, defaulting to No, through an explicitly constructed
+`QMessageBox` in `PlainText` — the reason #147 retired `QMessageBox.question`,
+and a character name comes from the log.
+
+**That confirmation is also why the reset is the one session control that
+goes through `submit_to_driver`.** Start/Clear session rebind app-level
+values and finish in microseconds; a reset waits on a MODAL event loop while
+the driver keeps parsing and checks for a log-file switch every three
+seconds. Switch characters with that dialog open and an unbound reset zeroes
+the best `DpsPersistenceHandler` has just restored for the INCOMING
+character, and exports the zero over their profile — the lifetime record of
+someone the user was not even looking at. So `Backend.dps_best_owner()` is
+captured before the dialog and handed back to `reset_dps_best`, which
+re-checks it on the driver thread, where the player-change pair also runs and
+so cannot overtake the comparison.
+
+**The window deliberately does not re-check locally, and that is the whole
+point of `DpsBestResetEvent`.** A local check after the dialog looks like a
+free fast path and is not: `submit_to_driver` queues the command and the
+driver drains it up to a poll interval later, so the switch can still land
+after the local check passed — leaving two deciders that disagree in exactly
+the window that matters, with the reporting one wrong. The driver publishes
+its answer instead, and `reset_refused` is raised only from that. A command
+outcome on the bus rather than a return value because the caller is on
+another thread and is no longer waiting, and the bus is the only way back to
+the GUI. The rule the whole layer follows: a
+GUI-thread write to driver state is fine when nothing can happen in the
+middle of it, and needs the driver the moment something can.
+
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
 through v1.10.0 (semantic-release + platform builds + flatpak repo publish).

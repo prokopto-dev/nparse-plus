@@ -94,6 +94,34 @@ class ZoneDatabase:
         long_name = self._who_to_name.get(who, who)
         return self._name_to_short.get(long_name)
 
+    def is_notable_kill(self, victim: str, short_zone: str | None) -> bool:
+        """Whether this kill is one EQTool copies the fight parse for (#78).
+
+        Port of ``UI/DPSMeter.xaml.cs LogParser_DeathEvent``: the victim is in
+        the current zone's ``NotableNPCs`` **and not** in the global
+        ``KaelFactionMobs`` list. That second clause is why the predicate is
+        not simply "is this notable" — Kael's faction-grind giants are listed
+        as notable so the map and timers treat them properly, but they are
+        killed by the hundred, and auto-copying each one would overwrite the
+        clipboard all evening.
+
+        DEVIATION from the C#, which compares with ``==``: matching is
+        casefolded here, the way every other name lookup in this class already
+        is (``spawn_time``, ``short_name``, ``short_name_from_who``). The
+        slain line does not reliably reproduce the article capitalization the
+        zone data carries, and a raid target that silently fails to copy is
+        indistinguishable from the feature not working.
+        """
+        name = victim.strip().casefold()
+        if not name:
+            return False
+        zone = self.zones.get((short_zone or "").lower())
+        if zone is None:
+            return False
+        if not any(notable.casefold() == name for notable in zone.notable_npcs):
+            return False
+        return not any(mob.casefold() == name for mob in self.kael_faction_mobs)
+
     def spawn_time(self, npc_name: str, short_zone: str | None) -> int:
         """EQTool's ZoneSpawnTimes.GetSpawnTime lookup order: exact NPC match,
         substring match, zone default, global 6:40."""

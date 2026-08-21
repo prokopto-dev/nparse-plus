@@ -24,7 +24,7 @@ recognised as yours and folded into the session footer
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Literal
@@ -425,6 +425,55 @@ class FightRow:
     total_seconds: int
 
 
+def format_fight_details(rows: Sequence[FightRow]) -> str:
+    """One fight group as EQTool's clipboard line (#78).
+
+    Port of ``UI/DPSMeter.xaml.cs copytoclipboard(string name)``, verbatim
+    down to the separators::
+
+        Fight Details: <target> Dmg: <total>    <atk> <pct>% DPS:<dps> DMG:<dmg> / ...
+
+    The four spaces after the group total and the ``" / "`` between attackers
+    are the C#'s, not a choice: EQTool users paste these into the same raid
+    channels this app's users do, and a parse that reads differently is noise
+    in a channel where everyone else's looks the same.
+
+    ``rows`` is ONE target's group; the first row names the target and carries
+    the group total (``items.FirstOrDefault()?.TargetTotalDamage ?? 0``, which
+    is the same number on every row of a group). Attackers are ordered by
+    total damage descending — already ``snapshot()``'s order, but sorted here
+    too so the function is true to ``OrderByDescending`` on any input.
+
+    ``DPS:`` is the whole-fight ``total_dps``, deliberately NOT the trailing
+    window number the row displays: a parse pasted after the mob dies is a
+    statement about the fight, and a 12-second average taken at the end of one
+    is a statement about its last twelve seconds.
+
+    An empty group has no target to name, so it formats to the empty string
+    rather than to EQTool's ``Dmg: 0`` line — the C# reaches that branch only
+    through a button attached to a group that exists.
+    """
+    if not rows:
+        return ""
+    first = rows[0]
+    attackers = " / ".join(
+        f"{row.attacker_name} {row.percent_of_total}% DPS:{row.total_dps} DMG:{row.total_damage}"
+        for row in sorted(rows, key=lambda row: row.total_damage, reverse=True)
+    )
+    return f"Fight Details: {first.target_name} Dmg: {first.target_total_damage}    {attackers}"
+
+
+def fight_parse(rows: Sequence[FightRow], target_name: str) -> str:
+    """One target's parse out of a whole ``snapshot()`` (#78).
+
+    The pairing of "pick the group" and "format it" that both copy paths need,
+    in one place so they cannot drift. Casefolded, like ``end_fight`` and every
+    other name comparison here.
+    """
+    wanted = target_name.casefold()
+    return format_fight_details([row for row in rows if row.target_name.casefold() == wanted])
+
+
 @dataclass
 class PlayerDamage:
     """Session damage stats (Models/PlayerInfo.cs PlayerDamage)."""
@@ -481,7 +530,9 @@ class FightTracker:
     ) -> None:
         self._fights: list[Fight] = []
         self.on_change: list[Callable[[], None]] = []
-        # BestPlayerDamage persists per character in EQTool; in-memory here.
+        # BestPlayerDamage, persisted per character by DpsPersistenceHandler
+        # (#83) — the tracker stays value-in/value-out and knows nothing about
+        # settings, exactly as it knows nothing about pets or spell books.
         self.best = PlayerDamage()
         self.current_session = PlayerDamage()
         self.last_session: PlayerDamage | None = None
@@ -581,6 +632,46 @@ class FightTracker:
         """
         self.best = PlayerDamage()
         self.current_session = PlayerDamage()
+
+    def measurement_rules_key(self) -> str:
+        """``_measurement_rules`` as one stable string, for the persisted best.
+
+        A stored best has to carry what it is a reading OF, or a restart brings
+        back a number ``reset_session_stats`` would have dropped — see
+        ``config.settings.SavedPlayerDamage``. A string rather than the tuple
+        because it is written to settings.json and compared on the way back,
+        and because the shape of the tuple is free to change: an old key simply
+        stops matching, which is the conservative answer.
+
+        Numbers are normalized, so a tunable that arrives as ``20`` and one
+        that arrives as ``20.0`` produce the same key: they are the same rule,
+        and settings.json round-trips whichever pydantic happens to hold.
+        """
+        parts = []
+        for rule in self._measurement_rules():
+            numeric = isinstance(rule, (int, float)) and not isinstance(rule, bool)
+            parts.append(f"{rule:g}" if numeric else str(rule))
+        return "|".join(parts)
+
+    def reset_best(self) -> None:
+        """Clear the lifetime best only (the window's Reset best action, #83).
+
+        Narrower than ``reset_session_stats``, which also drops Now: the user
+        asking to reset a record is not asking to discard the session they are
+        in the middle of.
+        """
+        self.best = PlayerDamage()
+        self._notify()
+
+    def load_best(self, best: PlayerDamage) -> None:
+        """Adopt a restored lifetime best (character switch, #83).
+
+        Assignment rather than a max-merge: switching characters must SWAP the
+        displayed best, and merging would bleed a rogue's record onto a cleric
+        the first time the two shared a session.
+        """
+        self.best = best
+        self._notify()
 
     @property
     def trailing_window(self) -> timedelta:
