@@ -40,7 +40,7 @@ from nparseplus.core.dps import (
     SessionSummary,
     format_fight_details,
 )
-from nparseplus.core.events import SlainEvent
+from nparseplus.core.events import AfterPlayerChangedEvent, SlainEvent, YouZonedEvent
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import ZoneDatabase
 from nparseplus.ui import skins, theme
@@ -104,10 +104,12 @@ class BackendLike(Protocol):
 
     fights: FightsLike
     settings: Settings
-    #: Auto-copy on a notable kill asks two questions of the world outside the
-    #: meter — which zone you are in, and what that zone considers notable —
-    #: so both come in through the backend rather than being re-derived here.
+    #: What the current zone considers notable. Static data, so reading it
+    #: from any thread is safe.
     zones: ZoneDatabase
+    #: Only ever read to SEED the window's own event-ordered zone — see
+    #: ``handle_event``. ``ActivePlayer.zone`` is mutated on the parser thread
+    #: and must not be sampled to decide something about a past event.
     player: ActivePlayer
 
 
@@ -232,6 +234,9 @@ class DpsMeterWindow(OverlayWindowBase):
         self._backend = backend
         self._copy_to_clipboard = copy_to_clipboard
         self._confirm_reset = confirm_reset
+        #: The zone as of the event currently being handled — NOT
+        #: ``player.zone``. See ``handle_event``.
+        self._zone = backend.player.zone
         self._headers: dict[str, QLabel] = {}
         self._rows: dict[tuple[str, str], _AttackerRow] = {}
 
@@ -489,12 +494,37 @@ class DpsMeterWindow(OverlayWindowBase):
         Wired to the Qt bridge, so this runs on the GUI thread; the fight is
         still on screen because ``end_fight`` only marks a group dead and
         retirement is ``fight_retention_seconds`` away.
+
+        **The zone is tracked here, in event order, rather than read off
+        ``ActivePlayer``.** The bridge buffers what the parser thread publishes
+        and delivers it in one coalesced flush, while ``YouZonedHandler``
+        moves ``player.zone`` synchronously as the line is parsed. So by the
+        time a ``SlainEvent`` reaches this method, ``player.zone`` may already
+        name a zone the player reached *after* that kill — kill the boss, take
+        the zone line out, and the gate would be asked about the wrong zone,
+        skipping the copy the feature exists for. ``YouZonedEvent`` rides the
+        same ordered stream and carries the short name the gate wants, so
+        mirroring it is both the fix and cheaper than the attribute read.
+
+        The mirror is seeded from ``player.zone`` on ``AfterPlayerChangedEvent``
+        — in stream order, the moment the character's profile zone became the
+        current one, and the only way the app knows where a player who was
+        already logged in is standing (the tail attaches at end-of-file, so no
+        "You have entered" line replays). A zone change buffered behind that
+        event is applied immediately after it and corrects the seed before any
+        later kill is judged.
         """
+        if isinstance(event, YouZonedEvent):
+            self._zone = event.short_name
+            return
+        if isinstance(event, AfterPlayerChangedEvent):
+            self._zone = self._backend.player.zone
+            return
         if not isinstance(event, SlainEvent):
             return
         if not self._backend.settings.dps.auto_copy_notable_kills:
             return
-        if not self._backend.zones.is_notable_kill(event.victim, self._backend.player.zone):
+        if not self._backend.zones.is_notable_kill(event.victim, self._zone):
             return
         self.copy_fight(event.victim)
 

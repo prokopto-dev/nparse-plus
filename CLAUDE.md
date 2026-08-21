@@ -1531,6 +1531,21 @@ signal `app.py` connects to the tray. DEVIATION, commented: the C# compares
 NPC names with `==`, this casefolds, like every other lookup in
 `ZoneDatabase` — a raid target that silently fails to copy is
 indistinguishable from the feature not working.
+**The zone the gate asks about is tracked in event order, not read off
+`ActivePlayer`.** `QtEventBridge` buffers what the parser thread publishes and
+delivers it in one coalesced flush, while `YouZonedHandler` moves
+`player.zone` synchronously as the line is parsed — so by the time a
+`SlainEvent` reaches the window, `player.zone` can already name a zone the
+player reached *after* that kill. Kill the boss, take the zone line out, and
+both events land in the same flush: sampling the attribute asks the gate about
+the wrong zone and skips the copy the feature exists for. `YouZonedEvent`
+rides the same ordered stream and carries the short name, so the window
+mirrors it. The mirror is seeded from `player.zone` on
+`AfterPlayerChangedEvent` — in stream order, the moment the profile's zone
+became current, and the only thing that knows where a player who was already
+logged in is standing, since `LogTail.attach` starts at end-of-file and no
+"You have entered" line replays.
+
 `system_clipboard_copy` moved out of `dumpswindow` into `ui/clipboard.py`, so
 the two windows that write to the clipboard share one injectable seam.
 

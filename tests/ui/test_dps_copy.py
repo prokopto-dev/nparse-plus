@@ -11,7 +11,12 @@ from PySide6.QtCore import QPoint
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightTracker
-from nparseplus.core.events import DamageEvent, SlainEvent
+from nparseplus.core.events import (
+    AfterPlayerChangedEvent,
+    DamageEvent,
+    SlainEvent,
+    YouZonedEvent,
+)
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.dpswindow import DpsMeterWindow, _AttackerRow
@@ -135,6 +140,66 @@ def test_ordinary_trash_does_not(qtbot, backend: _FakeBackend, clipboard: _Clipb
     window = _window(qtbot, backend, clipboard)
     window.handle_event(_slain("a decaying skeleton"))
     assert clipboard.texts == []
+
+
+def _zoned(short_name: str, long_name: str = "") -> YouZonedEvent:
+    return YouZonedEvent(
+        timestamp=T0 + timedelta(seconds=31),
+        long_name=long_name or short_name,
+        short_name=short_name,
+    )
+
+
+def test_the_kill_is_judged_against_the_zone_it_happened_in(
+    qtbot, backend: _FakeBackend, clipboard: _Clipboard
+) -> None:
+    """The bridge batches, so ``player.zone`` can already name a later zone.
+
+    Kill the boss, take the zone line out, and both events sit in one flush —
+    by the time the slain event is delivered the parser thread has long since
+    moved ``ActivePlayer.zone`` on. Reading it here would ask the gate about
+    Kael and skip the copy the feature exists for.
+    """
+    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
+    window = _window(qtbot, backend, clipboard)
+
+    # The parser thread has already zoned; the GUI has not drained the bridge.
+    backend.player.zone = "kael"
+    window.handle_event(_slain("Lady Vox"))
+
+    assert clipboard.texts and "Fight Details: Lady Vox" in clipboard.texts[0]
+
+
+def test_the_zone_follows_the_event_stream(
+    qtbot, backend: _FakeBackend, clipboard: _Clipboard
+) -> None:
+    """And once the zone line is actually delivered, the gate moves with it."""
+    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
+    window = _window(qtbot, backend, clipboard)
+
+    window.handle_event(_zoned("kael", "Kael Drakkel"))
+    window.handle_event(_slain("Lady Vox"))
+
+    # Lady Vox is Permafrost's notable, not Kael's.
+    assert clipboard.texts == []
+
+
+def test_a_character_change_seeds_the_zone_from_the_restored_profile(
+    qtbot, clipboard: _Clipboard
+) -> None:
+    """The tail attaches at end-of-file, so no "You have entered" line
+    replays for a player who was already logged in — the profile's zone,
+    delivered in stream order, is the only thing that knows where they are."""
+    backend = _FakeBackend(zone="")
+    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
+    window = _window(qtbot, backend, clipboard)
+    assert not window.copy_fight("nothing")  # the mirror starts empty
+
+    backend.player.zone = "permafrost"  # PlayerProfileHandler loaded it
+    window.handle_event(AfterPlayerChangedEvent(timestamp=T0))
+    window.handle_event(_slain("Lady Vox"))
+
+    assert clipboard.texts and "Fight Details: Lady Vox" in clipboard.texts[0]
 
 
 def test_the_setting_turns_auto_copy_off_but_not_the_manual_copy(
