@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.22.1 (2026-08-21)
+
+### Bug Fixes
+
+- **updater**: Match the platform tag, not the container suffix
+  ([`e6556e2`](https://github.com/prokopto-dev/nparse-plus/commit/e6556e2f26bc1ba2b12c2000cdb8ed257f65944f))
+
+
 ## v2.22.0 (2026-08-21)
 
 ### Bug Fixes
