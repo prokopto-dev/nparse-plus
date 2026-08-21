@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.23.0 (2026-08-21)
+
+### Bug Fixes
+
+- **updater**: Match portal Progress on the sender the bus actually stamps
+  ([`c17191e`](https://github.com/prokopto-dev/nparse-plus/commit/c17191eab78f5cbc0471eb60ab4b4b8986494202))
+
+### Features
+
+- **updater**: Install Flatpak updates in place through the portal
+  ([`0f522af`](https://github.com/prokopto-dev/nparse-plus/commit/0f522afff0a8d15261fee157d9260a896b8c166a))
+
+
 ## v2.22.1 (2026-08-21)
 
 ### Bug Fixes
