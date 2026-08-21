@@ -104,7 +104,9 @@ included, is EQTool's, so a parse pasted from nParse+ reads the same as one
 pasted from EQTool in the same channel.
 
 When a **notable NPC** in your zone dies, the parse is copied automatically —
-raid targets, in other words, not trash. Kael's faction giants are excluded:
+raid targets, in other words, not trash. It is taken at the moment of the
+kill, so killing a boss and zoning straight out still leaves the parse on your
+clipboard even though the meter clears when you zone. Kael's faction giants are excluded:
 they are listed as notable, and they die by the hundred. Turn this off with
 **Copy parse on notable kills** in
 [Settings → DPS Meter](../settings/dps-meter.md); the right-click copy stays

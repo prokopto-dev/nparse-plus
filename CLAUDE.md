@@ -1531,20 +1531,30 @@ signal `app.py` connects to the tray. DEVIATION, commented: the C# compares
 NPC names with `==`, this casefolds, like every other lookup in
 `ZoneDatabase` — a raid target that silently fails to copy is
 indistinguishable from the feature not working.
-**The zone the gate asks about is tracked in event order, not read off
-`ActivePlayer`.** `QtEventBridge` buffers what the parser thread publishes and
-delivers it in one coalesced flush, while `YouZonedHandler` moves
-`player.zone` synchronously as the line is parsed — so by the time a
-`SlainEvent` reaches the window, `player.zone` can already name a zone the
-player reached *after* that kill. Kill the boss, take the zone line out, and
-both events land in the same flush: sampling the attribute asks the gate about
-the wrong zone and skips the copy the feature exists for. `YouZonedEvent`
-rides the same ordered stream and carries the short name, so the window
-mirrors it. The mirror is seeded from `player.zone` on
-`AfterPlayerChangedEvent` — in stream order, the moment the profile's zone
-became current, and the only thing that knows where a player who was already
-logged in is standing, since `LogTail.attach` starts at end-of-file and no
-"You have entered" line replays.
+**Both halves of the auto-copy are decided on the driver thread, and that is
+not a stylistic choice.** `QtEventBridge` delivers a coalesced batch some time
+after the driver parsed it, and two things keep moving in the meantime.
+`player.zone` does, so a `SlainEvent` judged when the GUI drained it is judged
+against a zone reached *after* the kill — kill the boss, take the zone line
+out, and the copy is silently skipped. And the meter itself does: zoning
+CLEARS it (`DpsHandler._on_zoned`), so by the time that batch is drained the
+boss has no rows left and a window that formatted then would copy nothing at
+all. So `DpsHandler` answers "is this notable" against `player.zone` one
+statement after the slain line, formats the parse there too, and publishes
+`NotableKillEvent(victim, zone, parse)`. Formatting at the kill also dates the
+numbers to the kill rather than to whenever the GUI woke up. The window keeps
+only what really is the UI's: whether the user asked for automatic copies, and
+the clipboard — which is what #78 said the split should be before the first
+attempt put the gate in the window.
+
+`NotableKillEvent` has no `LogEvents.cs` counterpart; EQTool asked the
+question inline in `LogParser_DeathEvent` and copied from the same method,
+which WPF let it do because there was no thread to cross. One ordering quirk
+is pinned by a test rather than left to surprise someone: `EventBus.publish`
+runs typed subscribers before the firehose, so the nested announcement
+completes before the `SlainEvent` that caused it reaches the bridge, and the
+batch reads `NotableKillEvent, SlainEvent, YouZonedEvent`. Harmless — what
+matters is that it is ahead of everything the log said next.
 
 `system_clipboard_copy` moved out of `dumpswindow` into `ui/clipboard.py`, so
 the two windows that write to the clipboard share one injectable seam.

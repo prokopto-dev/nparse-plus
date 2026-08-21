@@ -463,6 +463,17 @@ def format_fight_details(rows: Sequence[FightRow]) -> str:
     return f"Fight Details: {first.target_name} Dmg: {first.target_total_damage}    {attackers}"
 
 
+def fight_parse(rows: Sequence[FightRow], target_name: str) -> str:
+    """One target's parse out of a whole ``snapshot()`` (#78).
+
+    The pairing of "pick the group" and "format it" that both copy paths need,
+    in one place so they cannot drift. Casefolded, like ``end_fight`` and every
+    other name comparison here.
+    """
+    wanted = target_name.casefold()
+    return format_fight_details([row for row in rows if row.target_name.casefold() == wanted])
+
+
 @dataclass
 class PlayerDamage:
     """Session damage stats (Models/PlayerInfo.cs PlayerDamage)."""

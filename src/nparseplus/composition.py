@@ -661,7 +661,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
             spell_settings=settings.spellwindow,
             timer_recast=timer_recast,
         ),
-        DpsHandler(bus, player, fights, player_pet=player_pet),
+        DpsHandler(bus, player, fights, player_pet=player_pet, zones=zones),
         DpsPersistenceHandler(bus, player, settings, fights, request_save=request_save),
         SpawnTimerHandler(bus, player, timers, zones, npcs=npcs, timer_recast=timer_recast),
         RespawnExpiryNotifier(timers, speaker, settings.spellwindow),

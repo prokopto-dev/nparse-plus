@@ -9,17 +9,24 @@ from datetime import datetime, timedelta
 import pytest
 from PySide6.QtCore import QPoint
 
-from nparseplus.config.settings import Settings
+from nparseplus.config.settings import Settings, get_player
+from nparseplus.core.bus import EventBus
 from nparseplus.core.dps import FightTracker
+from nparseplus.core.enums import Server
 from nparseplus.core.events import (
     AfterPlayerChangedEvent,
     DamageEvent,
+    NotableKillEvent,
     SlainEvent,
     YouZonedEvent,
 )
+from nparseplus.core.handlers.dps import DpsHandler
+from nparseplus.core.handlers.player_profile import PlayerProfileHandler
+from nparseplus.core.handlers.you_zoned import YouZonedHandler
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.dpswindow import DpsMeterWindow, _AttackerRow
+from nparseplus.ui.qtbridge import QtEventBridge
 
 pytestmark = pytest.mark.qt
 
@@ -37,11 +44,9 @@ def _damage(seconds: float, attacker: str, target: str, dmg: int) -> DamageEvent
 
 
 class _FakeBackend:
-    def __init__(self, zone: str = "permafrost") -> None:
+    def __init__(self) -> None:
         self.settings = Settings()
         self.fights = FightTracker()
-        self.zones = load_zone_database()
-        self.player = ActivePlayer(name="Genartik", zone=zone)
 
 
 class _Clipboard:
@@ -98,8 +103,8 @@ def test_a_copy_announces_itself(qtbot, backend: _FakeBackend, clipboard: _Clipb
     backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
     window = _window(qtbot, backend, clipboard)
     with qtbot.waitSignal(window.parse_copied, timeout=500) as caught:
-        window.copy_fight("lady vox")  # casefolded, like end_fight
-    assert caught.args == ["Lady Vox"]
+        assert window.copy_fight("lady vox")  # casefolded, like end_fight
+    assert caught.args == ["lady vox"]
 
 
 def test_a_failed_clipboard_write_is_not_announced(qtbot, backend: _FakeBackend) -> None:
@@ -113,93 +118,42 @@ def test_a_failed_clipboard_write_is_not_announced(qtbot, backend: _FakeBackend)
 
 
 # -- auto-copy on a notable kill -------------------------------------------------
+#
+# Whether a kill IS notable is decided on the driver thread and tested in
+# tests/core/dps/test_notable_kill.py — it turns on the zone the kill happened
+# in, which this thread cannot observe correctly. All the window owes the
+# feature is the setting and the clipboard.
 
 
-def _slain(victim: str) -> SlainEvent:
-    return SlainEvent(timestamp=T0 + timedelta(seconds=30), victim=victim)
+def _notable(victim: str, parse: str = "", zone: str = "permafrost") -> NotableKillEvent:
+    return NotableKillEvent(
+        timestamp=T0 + timedelta(seconds=30),
+        victim=victim,
+        zone=zone,
+        parse=parse or f"Fight Details: {victim} Dmg: 70    You 100% DPS:2 DMG:70",
+    )
 
 
 def test_a_notable_kill_copies_itself(qtbot, backend: _FakeBackend, clipboard: _Clipboard) -> None:
     backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
     window = _window(qtbot, backend, clipboard)
-    window.handle_event(_slain("Lady Vox"))
+    window.handle_event(_notable("Lady Vox"))
     assert clipboard.texts and "Fight Details: Lady Vox" in clipboard.texts[0]
 
 
-def test_a_kael_faction_kill_does_not(qtbot, clipboard: _Clipboard) -> None:
-    backend = _FakeBackend(zone="kael")
-    victim = backend.zones.kael_faction_mobs[0]
-    backend.fights.add_damage(_damage(0, "You", victim, 70))
-    window = _window(qtbot, backend, clipboard)
-    window.handle_event(_slain(victim))
-    assert clipboard.texts == []
-
-
-def test_ordinary_trash_does_not(qtbot, backend: _FakeBackend, clipboard: _Clipboard) -> None:
-    backend.fights.add_damage(_damage(0, "You", "a decaying skeleton", 70))
-    window = _window(qtbot, backend, clipboard)
-    window.handle_event(_slain("a decaying skeleton"))
-    assert clipboard.texts == []
-
-
-def _zoned(short_name: str, long_name: str = "") -> YouZonedEvent:
-    return YouZonedEvent(
-        timestamp=T0 + timedelta(seconds=31),
-        long_name=long_name or short_name,
-        short_name=short_name,
-    )
-
-
-def test_the_kill_is_judged_against_the_zone_it_happened_in(
+def test_the_carried_parse_is_copied_even_with_no_rows_left(
     qtbot, backend: _FakeBackend, clipboard: _Clipboard
 ) -> None:
-    """The bridge batches, so ``player.zone`` can already name a later zone.
+    """The meter is empty — zoning out cleared it before the GUI woke up.
 
-    Kill the boss, take the zone line out, and both events sit in one flush —
-    by the time the slain event is delivered the parser thread has long since
-    moved ``ActivePlayer.zone`` on. Reading it here would ask the gate about
-    Kael and skip the copy the feature exists for.
+    The window must still copy, because the parse it is copying was built at
+    the kill. Re-reading the rows here is exactly what would lose a boss
+    killed on the way out of the zone.
     """
-    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
     window = _window(qtbot, backend, clipboard)
-
-    # The parser thread has already zoned; the GUI has not drained the bridge.
-    backend.player.zone = "kael"
-    window.handle_event(_slain("Lady Vox"))
-
-    assert clipboard.texts and "Fight Details: Lady Vox" in clipboard.texts[0]
-
-
-def test_the_zone_follows_the_event_stream(
-    qtbot, backend: _FakeBackend, clipboard: _Clipboard
-) -> None:
-    """And once the zone line is actually delivered, the gate moves with it."""
-    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
-    window = _window(qtbot, backend, clipboard)
-
-    window.handle_event(_zoned("kael", "Kael Drakkel"))
-    window.handle_event(_slain("Lady Vox"))
-
-    # Lady Vox is Permafrost's notable, not Kael's.
-    assert clipboard.texts == []
-
-
-def test_a_character_change_seeds_the_zone_from_the_restored_profile(
-    qtbot, clipboard: _Clipboard
-) -> None:
-    """The tail attaches at end-of-file, so no "You have entered" line
-    replays for a player who was already logged in — the profile's zone,
-    delivered in stream order, is the only thing that knows where they are."""
-    backend = _FakeBackend(zone="")
-    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
-    window = _window(qtbot, backend, clipboard)
-    assert not window.copy_fight("nothing")  # the mirror starts empty
-
-    backend.player.zone = "permafrost"  # PlayerProfileHandler loaded it
-    window.handle_event(AfterPlayerChangedEvent(timestamp=T0))
-    window.handle_event(_slain("Lady Vox"))
-
-    assert clipboard.texts and "Fight Details: Lady Vox" in clipboard.texts[0]
+    assert backend.fights.snapshot(T0) == []
+    window.handle_event(_notable("Lady Vox"))
+    assert clipboard.texts == ["Fight Details: Lady Vox Dmg: 70    You 100% DPS:2 DMG:70"]
 
 
 def test_the_setting_turns_auto_copy_off_but_not_the_manual_copy(
@@ -208,7 +162,7 @@ def test_the_setting_turns_auto_copy_off_but_not_the_manual_copy(
     backend.settings.dps.auto_copy_notable_kills = False
     backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
     window = _window(qtbot, backend, clipboard)
-    window.handle_event(_slain("Lady Vox"))
+    window.handle_event(_notable("Lady Vox"))
     assert clipboard.texts == []
     assert window.copy_fight("Lady Vox")
 
@@ -218,8 +172,10 @@ def test_auto_copy_defaults_on_to_match_eqtool() -> None:
 
 
 def test_other_events_are_ignored(qtbot, backend: _FakeBackend, clipboard: _Clipboard) -> None:
+    """Including the slain line itself: the window never re-judges a kill."""
+    backend.fights.add_damage(_damage(0, "You", "Lady Vox", 70))
     window = _window(qtbot, backend, clipboard)
-    window.handle_event(_damage(0, "You", "Lady Vox", 70))
+    window.handle_event(_damage(1, "You", "Lady Vox", 70))
     assert clipboard.texts == []
 
 
@@ -338,3 +294,53 @@ def test_reset_best_clears_the_record_but_not_the_session(qtbot, backend: _FakeB
     assert summary.best.total_damage == 0
     assert summary.current_session.total_damage == 900
     assert window.footer_text().startswith("Best 0 dps")
+
+
+# -- end to end: the batch the bridge really delivers -----------------------------
+
+
+def test_the_after_slain_youzoned_batch_still_copies(qtbot) -> None:
+    """The whole path: driver publishes, the bridge buffers, the window drains.
+
+    ``AfterPlayerChangedEvent`` restores Permafrost from the profile, Lady Vox
+    dies there, and the player zones to Kael — all parsed before the GUI wakes
+    up, which is exactly what ``QtEventBridge`` is for. By the time the window
+    sees anything, ``player.zone`` is Kael, so any zone this thread sampled
+    would lose the kill. Nothing here samples one.
+    """
+    settings = Settings()
+    get_player(settings, "Genartik", "green").zone = "permafrost"
+
+    bus = EventBus()
+    player = ActivePlayer(name="Genartik", server=Server.GREEN, zone="")
+    tracker = FightTracker()
+    YouZonedHandler(bus, player)
+    PlayerProfileHandler(bus, player, settings)
+    DpsHandler(bus, player, tracker, zones=load_zone_database())
+
+    backend = _FakeBackend()
+    backend.settings = settings
+    backend.fights = tracker
+    clipboard = _Clipboard()
+    window = DpsMeterWindow(backend, copy_to_clipboard=clipboard)
+    qtbot.addWidget(window)
+
+    bridge = QtEventBridge(bus)
+    bridge.event_received.connect(window.handle_event)
+
+    # One poll of the log: everything below is parsed before the GUI runs.
+    bus.publish(_damage(0, "You", "Lady Vox", 70))
+    bus.publish(AfterPlayerChangedEvent(timestamp=T0))
+    bus.publish(SlainEvent(timestamp=T0 + timedelta(seconds=1), victim="Lady Vox"))
+    bus.publish(
+        YouZonedEvent(
+            timestamp=T0 + timedelta(seconds=2), long_name="Kael Drakkel", short_name="kael"
+        )
+    )
+    assert player.zone == "kael"
+    assert clipboard.texts == []  # nothing has reached the GUI thread yet
+
+    bridge.flush_now()
+
+    assert clipboard.texts and "Fight Details: Lady Vox" in clipboard.texts[0]
+    bridge.detach()
