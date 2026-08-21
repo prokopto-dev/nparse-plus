@@ -22,6 +22,7 @@ from nparseplus.core.handlers.consider import MobInfoState
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.timers import YOU_GROUP, SpellRow, TimersService
+from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.dpswindow import WINDOW_KEY as DPS_KEY
 from nparseplus.ui.dpswindow import DpsMeterWindow
 from nparseplus.ui.eventoverlay import EventOverlayWindow
@@ -36,7 +37,12 @@ NOW = datetime(2026, 7, 14, 12, 0, 0)
 
 
 def _dps_backend(settings: Settings | None = None) -> types.SimpleNamespace:
-    return types.SimpleNamespace(settings=settings or Settings(), fights=FightTracker())
+    return types.SimpleNamespace(
+        settings=settings or Settings(),
+        fights=FightTracker(),
+        zones=load_zone_database(),
+        player=ActivePlayer(),
+    )
 
 
 def _spell_backend(settings: Settings | None = None) -> types.SimpleNamespace:

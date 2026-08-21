@@ -9,7 +9,9 @@ from nparseplus.config.settings import Settings
 from nparseplus.core.dps import FightTracker
 from nparseplus.core.events import DamageEvent, LineEvent, OverlayEvent, TimerBarEvent
 from nparseplus.core.handlers.consider import MobInfoState
+from nparseplus.core.player import ActivePlayer
 from nparseplus.core.timers import seconds_left
+from nparseplus.core.zones import load_zone_database
 from nparseplus.ui.consolewindow import ConsoleWindow
 from nparseplus.ui.dpswindow import DpsMeterWindow
 from nparseplus.ui.eventoverlay import EventOverlayWindow, _ChainLane
@@ -35,6 +37,8 @@ class _FakeBackend:
     def __init__(self) -> None:
         self.settings = Settings()
         self.fights = FightTracker()
+        self.zones = load_zone_database()
+        self.player = ActivePlayer()
 
 
 @pytest.fixture

@@ -15,6 +15,8 @@ import pytest
 
 from nparseplus.config.settings import Settings, WindowState
 from nparseplus.core.dps import FightTracker
+from nparseplus.core.player import ActivePlayer
+from nparseplus.core.zones import load_zone_database
 from nparseplus.ui import appquit
 from nparseplus.ui.consolewindow import WINDOW_KEY as CONSOLE_KEY
 from nparseplus.ui.consolewindow import ConsoleWindow
@@ -37,7 +39,12 @@ def _console(settings: Settings) -> ConsoleWindow:
 
 
 def _dps_backend() -> types.SimpleNamespace:
-    return types.SimpleNamespace(settings=Settings(), fights=FightTracker())
+    return types.SimpleNamespace(
+        settings=Settings(),
+        fights=FightTracker(),
+        zones=load_zone_database(),
+        player=ActivePlayer(),
+    )
 
 
 def test_shown_true_restores_visible(qtbot):

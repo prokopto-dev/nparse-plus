@@ -87,6 +87,33 @@ yours — you no longer have a pet — but the damage it already did stays in
 your footer for that fight. A pet you resummon mid-fight gets its own row,
 and both count.
 
+## Copying a parse
+
+Right-click the meter and pick **Copy parse for '&lt;target&gt;'** to put that
+fight on your clipboard, ready to paste into raid or guild chat:
+
+```
+Fight Details: Lady Vox Dmg: 41230    You 34% DPS:412 DMG:14018 / Vebanab 28% DPS:339 DMG:11544 / ...
+```
+
+Right-clicking an attacker row copies that row's whole fight; right-clicking
+anywhere else offers each fight on screen. `DPS:` is the whole-fight number,
+not the trailing-window one the row displays — a parse is a statement about
+the fight, not about its last twelve seconds. The format, separators
+included, is EQTool's, so a parse pasted from nParse+ reads the same as one
+pasted from EQTool in the same channel.
+
+When a **notable NPC** in your zone dies, the parse is copied automatically —
+raid targets, in other words, not trash. Kael's faction giants are excluded:
+they are listed as notable, and they die by the hundred. Turn this off with
+**Copy parse on notable kills** in
+[Settings → DPS Meter](../settings/dps-meter.md); the right-click copy stays
+available either way.
+
+Fights leave the meter `Attacker dropoff` seconds after the last hit
+(40 s by default), so a manual copy is only possible while the group is still
+on screen. The automatic copy on a notable kill is what covers the raid case.
+
 ## How fights are tracked
 
 - A fight starts when damage lands on a target and ends when the target

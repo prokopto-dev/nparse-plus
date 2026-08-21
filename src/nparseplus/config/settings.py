@@ -354,6 +354,12 @@ class DpsSettings(BaseModel):
     # Best/Now/Last footer (EQTool's TotalSeconds > 20). Most trash dies
     # faster, which is why that footer often sits at zero.
     session_min_fight_seconds: float = Field(default=20.0, ge=0.0, le=600.0)
+    # Put the fight parse on the clipboard by itself when a zone-notable NPC
+    # dies (EQTool's LogParser_DeathEvent). On by default, as it is there:
+    # the raid case is the reason the feature exists, and a fight is only
+    # copyable by hand while its group is still on screen. The manual copy in
+    # the window's context menu is always available regardless.
+    auto_copy_notable_kills: bool = True
 
     @model_validator(mode="after")
     def _fold_in_legacy_melee_only(self) -> DpsSettings:

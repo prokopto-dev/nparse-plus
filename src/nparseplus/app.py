@@ -466,6 +466,17 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
     bridge.event_received.connect(lambda event: _apply_window_command(event, window_handles))
     bridge.event_received.connect(event_overlay.handle_event)
+    # Auto-copy the parse when a zone-notable NPC dies (#78). EQTool raised
+    # its balloon from inside copytoclipboard; the overlay has no tray, so it
+    # reports the copy and the tray it is connected to here says so.
+    bridge.event_received.connect(dps_window.handle_event)
+    dps_window.parse_copied.connect(
+        lambda target: app._system_tray.showMessage(
+            "DPS copied",
+            f"The parse for the fight with {target} is on your clipboard.",
+            msecs=4000,
+        )
+    )
     bridge.events_batch.connect(console_window.handle_events)
     # Console right-click -> a prefilled trigger (#82). Both halves point at
     # the editor: it owns creating the trigger, and its test-box character is

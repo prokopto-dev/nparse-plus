@@ -25,7 +25,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -60,6 +59,7 @@ from nparseplus.core.dumps import (
 )
 from nparseplus.core.handlers.inventory_upload import InventoryUploadHandler
 from nparseplus.ui import chromewidgets
+from nparseplus.ui.clipboard import system_clipboard_copy
 from nparseplus.ui.overlaybase import OverlayWindowBase
 
 WINDOW_KEY = "dumps"
@@ -77,23 +77,6 @@ _ROLE_KIND = int(Qt.ItemDataRole.UserRole) + 2
 
 _INVENTORY_HEADERS = ("Location", "Item", "Count", "ID")
 _SPELLBOOK_HEADERS = ("Level", "Spell")
-
-
-def system_clipboard_copy(text: str) -> bool:
-    """Put ``text`` on the system clipboard. False if there isn't one.
-
-    Injected into the window rather than called inline so tests never touch
-    the real clipboard — on Windows that goes through OLE and hands data to
-    the OS, which outlives the test and crashed a CI run when the GC later
-    reaped it under the offscreen platform. Same reason ``open_browser`` is
-    injected into the upload handler: global machine state does not belong in
-    a unit test.
-    """
-    clipboard = QGuiApplication.clipboard()
-    if clipboard is None:  # pragma: no cover - no platform clipboard
-        return False
-    clipboard.setText(text)
-    return True
 
 
 class CharacterDumpsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):

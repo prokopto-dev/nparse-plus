@@ -4,6 +4,13 @@ The UI analogue of EQTool's UI/DPSMeter.xaml + DPSWindowViewModel grouping:
 one header per fight target (name + group total damage), one row per
 attacker under it (name, total damage, trailing DPS, percent of the group
 total), your own row highlighted, plus a session Best/Current/Last footer.
+
+Right-clicking copies a fight's parse (#78) — EQTool put a copy button in
+every group header; a context menu is the same affordance without spending
+14 pixels of a frameless overlay on it. The parse string itself is built by
+the Qt-free ``core.dps.format_fight_details``, and the decision of whether a
+kill deserves an automatic copy is ``ZoneDatabase.is_notable_kill``, so all
+this window contributes is the clipboard write.
 """
 
 from __future__ import annotations
@@ -12,9 +19,9 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
 
 from nparseplus.config.settings import Settings
 from nparseplus.core.dps import (
@@ -23,8 +30,13 @@ from nparseplus.core.dps import (
     DEFAULT_DAMAGE_SOURCES,
     FightRow,
     SessionSummary,
+    format_fight_details,
 )
+from nparseplus.core.events import SlainEvent
+from nparseplus.core.player import ActivePlayer
+from nparseplus.core.zones import ZoneDatabase
 from nparseplus.ui import skins, theme
+from nparseplus.ui.clipboard import system_clipboard_copy
 from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus.ui.skinwidgets import (
     SkinPanel,
@@ -64,6 +76,11 @@ class BackendLike(Protocol):
 
     fights: FightsLike
     settings: Settings
+    #: Auto-copy on a notable kill asks two questions of the world outside the
+    #: meter — which zone you are in, and what that zone considers notable —
+    #: so both come in through the backend rather than being re-derived here.
+    zones: ZoneDatabase
+    player: ActivePlayer
 
 
 class _AttackerRow(QFrame):
@@ -80,6 +97,10 @@ class _AttackerRow(QFrame):
         super().__init__(parent)
         self.setObjectName("DpsRow")
         self.attacker_name = ""
+        #: The fight group this row sits under — a right-click on an attacker
+        #: copies that attacker's whole group, the way EQTool's per-group
+        #: button did.
+        self.target_name = ""
         self.is_you = False
         self._skin = skin if skin is not None else skins.skin()
         self._percent_fraction = 0.0
@@ -133,6 +154,7 @@ class _AttackerRow(QFrame):
 
     def update_row(self, row: FightRow) -> None:
         self.attacker_name = row.attacker_name
+        self.target_name = row.target_name
         name = row.attacker_name
         if row.level:
             name = f"{name} ({row.level})"
@@ -158,11 +180,17 @@ class _AttackerRow(QFrame):
 class DpsMeterWindow(OverlayWindowBase):
     """Frameless always-on-top overlay listing the tracker's fights."""
 
+    #: A parse reached the clipboard, carrying the target's name. EQTool
+    #: raised a balloon tip from inside ``copytoclipboard``; the window has no
+    #: tray, so it says so and ``app.py`` decides where that is shown.
+    parse_copied = Signal(str)
+
     def __init__(
         self,
         backend: BackendLike,
         on_save: Callable[[], None] | None = None,
         parent: QWidget | None = None,
+        copy_to_clipboard: Callable[[str], bool] = system_clipboard_copy,
     ) -> None:
         super().__init__(
             settings=backend.settings,
@@ -173,6 +201,7 @@ class DpsMeterWindow(OverlayWindowBase):
             parent=parent,
         )
         self._backend = backend
+        self._copy_to_clipboard = copy_to_clipboard
         self._headers: dict[str, QLabel] = {}
         self._rows: dict[tuple[str, str], _AttackerRow] = {}
 
@@ -374,6 +403,94 @@ class DpsMeterWindow(OverlayWindowBase):
             self._rows_layout.addWidget(widget)
             widget.show()
 
+    # -- copying a parse (#78) ---------------------------------------------------
+
+    def current_targets(self) -> list[str]:
+        """Fight targets on screen, in render order (one per group header)."""
+        out: list[str] = []
+        for i in range(self._rows_layout.count()):
+            widget = self._rows_layout.itemAt(i).widget()
+            if isinstance(widget, QLabel):
+                out.append(widget.property("target_key"))
+        return out
+
+    def _target_at(self, pos) -> str | None:
+        """The fight group under a point in this window's coordinates.
+
+        Both a group header and any attacker row beneath it answer with the
+        group, because EQTool's copy button lived in the header and a user
+        aiming at "this fight" reasonably clicks either.
+        """
+        widget = self.childAt(pos)
+        while widget is not None and widget is not self:
+            if isinstance(widget, _AttackerRow):
+                return widget.target_name or None
+            if isinstance(widget, QLabel):
+                target = widget.property("target_key")
+                if target:
+                    return str(target)
+            widget = widget.parentWidget()
+        return None
+
+    def copy_fight(self, target_name: str) -> bool:
+        """Put one fight group's parse on the clipboard. False if there is none.
+
+        The rows come from a fresh snapshot rather than from the widgets, so
+        the copied numbers are the tracker's and not whatever the 500 ms
+        refresh last rendered.
+        """
+        wanted = target_name.casefold()
+        rows = [
+            row
+            for row in self._backend.fights.snapshot(datetime.now())
+            if row.target_name.casefold() == wanted
+        ]
+        text = format_fight_details(rows)
+        if not text:
+            return False
+        if not self._copy_to_clipboard(text):
+            return False
+        self.parse_copied.emit(rows[0].target_name)
+        return True
+
+    def handle_event(self, event: object) -> None:
+        """Auto-copy a notable kill's parse (EQTool LogParser_DeathEvent).
+
+        Wired to the Qt bridge, so this runs on the GUI thread; the fight is
+        still on screen because ``end_fight`` only marks a group dead and
+        retirement is ``fight_retention_seconds`` away.
+        """
+        if not isinstance(event, SlainEvent):
+            return
+        if not self._backend.settings.dps.auto_copy_notable_kills:
+            return
+        if not self._backend.zones.is_notable_kill(event.victim, self._backend.player.zone):
+            return
+        self.copy_fight(event.victim)
+
+    def menu_targets(self, pos) -> list[str]:
+        """Which fights a right-click at ``pos`` offers to copy.
+
+        Clicking inside a group copies that group, the way EQTool's per-group
+        button did; clicking the frame or the footer offers every group on
+        screen, which is usually one and never many. Separate from
+        ``contextMenuEvent`` so the choice can be asserted without a menu that
+        would block on ``exec``.
+        """
+        target = self._target_at(pos)
+        return [target] if target is not None else self.current_targets()
+
+    def contextMenuEvent(self, event) -> None:
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        targets = self.menu_targets(event.pos())
+        for name in targets:
+            menu.addAction(f"Copy parse for '{name}'", lambda n=name: self.copy_fight(n))
+        if not targets:
+            empty = menu.addAction("No fight to copy")
+            empty.setEnabled(False)
+        menu.exec(event.globalPos())
+
     @staticmethod
     def _format_summary(summary: SessionSummary) -> str:
         last = f"{summary.last_session.highest_dps}" if summary.last_session else "—"
@@ -384,15 +501,6 @@ class DpsMeterWindow(OverlayWindowBase):
         )
 
     # -- test/debug hooks --------------------------------------------------------
-
-    def current_targets(self) -> list[str]:
-        """Target header keys in on-screen order."""
-        out: list[str] = []
-        for i in range(self._rows_layout.count()):
-            widget = self._rows_layout.itemAt(i).widget()
-            if isinstance(widget, QLabel):
-                out.append(widget.property("target_key"))
-        return out
 
     def current_attackers(self) -> list[str]:
         """Attacker row names in on-screen order."""

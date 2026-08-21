@@ -24,7 +24,7 @@ recognised as yours and folded into the session footer
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Literal
@@ -423,6 +423,44 @@ class FightRow:
     total_dps: int
     highest_hit: int
     total_seconds: int
+
+
+def format_fight_details(rows: Sequence[FightRow]) -> str:
+    """One fight group as EQTool's clipboard line (#78).
+
+    Port of ``UI/DPSMeter.xaml.cs copytoclipboard(string name)``, verbatim
+    down to the separators::
+
+        Fight Details: <target> Dmg: <total>    <atk> <pct>% DPS:<dps> DMG:<dmg> / ...
+
+    The four spaces after the group total and the ``" / "`` between attackers
+    are the C#'s, not a choice: EQTool users paste these into the same raid
+    channels this app's users do, and a parse that reads differently is noise
+    in a channel where everyone else's looks the same.
+
+    ``rows`` is ONE target's group; the first row names the target and carries
+    the group total (``items.FirstOrDefault()?.TargetTotalDamage ?? 0``, which
+    is the same number on every row of a group). Attackers are ordered by
+    total damage descending — already ``snapshot()``'s order, but sorted here
+    too so the function is true to ``OrderByDescending`` on any input.
+
+    ``DPS:`` is the whole-fight ``total_dps``, deliberately NOT the trailing
+    window number the row displays: a parse pasted after the mob dies is a
+    statement about the fight, and a 12-second average taken at the end of one
+    is a statement about its last twelve seconds.
+
+    An empty group has no target to name, so it formats to the empty string
+    rather than to EQTool's ``Dmg: 0`` line — the C# reaches that branch only
+    through a button attached to a group that exists.
+    """
+    if not rows:
+        return ""
+    first = rows[0]
+    attackers = " / ".join(
+        f"{row.attacker_name} {row.percent_of_total}% DPS:{row.total_dps} DMG:{row.total_damage}"
+        for row in sorted(rows, key=lambda row: row.total_damage, reverse=True)
+    )
+    return f"Fight Details: {first.target_name} Dmg: {first.target_total_damage}    {attackers}"
 
 
 @dataclass
