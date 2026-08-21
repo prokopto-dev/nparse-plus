@@ -35,9 +35,28 @@ incoming one's profile. That holds because ``DpsHandler`` clears the meter on
 ``BeforePlayerChangedEvent`` rather than After, which is the other half of
 this pair and is commented as such there.
 
-Runs on the driver thread (the bus and ``FightTracker.on_change`` are both
-driver-thread), and persistence goes through ``request_save`` — the app's
-DebouncedSaver, which is thread-safe and coalesces bursts.
+The bus half runs on the driver thread. **``FightTracker.on_change`` does
+not, always**: this is its only subscriber, and two callers fire it from the
+GUI thread — ``Backend.apply_dps_settings`` (settings Apply, the seam that
+makes a counting rule change clear the best) and the DPS window's session
+controls. Tolerated rather than routed through ``LogDriver.submit_to_driver``,
+for reasons that are specific and worth stating rather than assuming:
+
+* Every write on that path REBINDS an attribute (``self.best = PlayerDamage()``),
+  never read-modify-writes one, so there is nothing to tear. A
+  ``_update_session_stats`` already holding the old object writes into one
+  that has been discarded — the reset stands — and one that arrives after the
+  rebind merges into the new object, which is a fight legitimately setting a
+  new best.
+* ``export_now`` is likewise a rebind of ``info.best_damage`` plus one of
+  ``_last``. Two threads racing it cost at worst one stale reading, which the
+  next damage line re-exports.
+* The window already reads live tracker state from the GUI thread every
+  500 ms (``snapshot``), so this is not a new crossing — and an inbox for
+  three scalar writes, while that read stays direct, would buy nothing.
+
+Persistence itself goes through ``request_save`` — the app's DebouncedSaver,
+which is thread-safe and coalesces bursts — so it is safe from either thread.
 """
 
 from __future__ import annotations

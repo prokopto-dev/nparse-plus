@@ -534,6 +534,13 @@ class DpsMeterWindow(OverlayWindowBase):
         menu.exec(event.globalPos())
 
     # -- session controls (the DPSMeter session buttons) ---------------------------
+    #
+    # These mutate FightTracker from the GUI thread, the same way
+    # ``Backend.apply_dps_settings`` already does on Apply. Each one rebinds a
+    # whole PlayerDamage rather than editing one in place, which is what makes
+    # that safe against the driver thread merging a reading at the same
+    # moment; ``core.handlers.dps_persistence`` documents the argument, since
+    # its export is what rides on the resulting notification.
 
     def end_session(self) -> None:
         """Now becomes Last and a fresh Now starts (MoveCurrentToLastSession)."""
