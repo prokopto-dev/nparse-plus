@@ -63,7 +63,7 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
 
 ## Ecosystem increment (same branch, post-v1)
 
-11. **Registry = curated static index** (`core/plugins/registry.py`):
+11. **Registry = curated index** (`core/plugins/registry.py`):
     pydantic schema (schema_version gate, https-only URLs, validated
     sha256), injectable fetch, `release_compat` reusing the SDK handshake,
     `update_available` via packaging.version. Live since 1.18; the default
@@ -174,8 +174,11 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     unreviewed PR code on the registry's infrastructure on every
     submission. CI downloads artifacts, hashes them, and discards them —
     never extracts, never executes — and runs on `pull_request`, so fork
-    PRs get a read-only token and no secrets. docs/plugins/registry.md says
-    so explicitly.
+    PRs get a read-only token and no secrets. **Superseded by item 38**:
+    everything in that list except the seed index and the generated schema
+    is gone, because the submission route it describes no longer exists.
+    The never-execute-a-submitted-artifact rule survived the move — the
+    server makes the same choice for the same reason.
 
 ## Multiple registries increment (post-1.18)
 
@@ -369,6 +372,59 @@ Internal notes for the v1 plugin/addon system. User-facing docs live in
     unwind and `deleteLater()`s the widget — hiding it would leave the
     plugin's QTimers firing into a live widget nobody manages — hiding
     first, since `deleteLater` only schedules.
+
+## Registry-publishing increment (#147)
+
+38. **The submission scaffolding is gone, and the drift guard is why the
+    directory survived.** `templates/registry-repo/` is down to two files:
+    the seed `index.json` and the generated
+    `schema/index-v1.schema.json`. README, SETUP, CONTRIBUTING,
+    `owners.json` and `validate-index.yml` all described a route that no
+    longer exists — a plugin is published with an authenticated `POST` to
+    the registry server, ids are database rows rather than a JSON file, and
+    SETUP's Pages-enablement runbook actively pointed a reader at standing
+    up the wrong thing. What is left has a test behind it:
+    `test_registry_schema.py` now asserts the directory contains *exactly*
+    those two files, so the next person to add a document here has to
+    justify it. `templates/plugin-repo` stops composing a
+    `registry-entry.json` for a pull request nobody opens; it prints the
+    artifact URL and digest a publish request needs, and
+    `test_template.py` asserts it does **not** grow the request itself —
+    the reusable publish-on-tag workflow is the registry server's own next
+    piece of work, and writing it twice is how two versions of it start
+    disagreeing.
+39. **The trust argument was rewritten, not quietly dropped.**
+    docs/plugins/registry.md's guarantee used to be the merge: a maintainer
+    confirmed a submitted digest matched a release, and because the hash
+    pinned reviewed bytes, changing what users received required another
+    review. The replacement is *stronger on that question* and the docs say
+    so out loud, because a trust document that lets an old claim lapse
+    silently is worse than one that is wrong and obvious. **The server
+    downloads the artifact and hashes it itself; a submitted hash is
+    compared, then discarded** (regserve ADR-0008), so the published digest
+    is a measurement rather than a claim. What is *weaker* is stated in the
+    same place: a trusted owner — or a stolen token — can ship unreviewed
+    code to that plugin's existing users, and a server-computed digest
+    proves the server measured those bytes, not that the server is honest
+    (which is what index signing would be for). A new plugin id always
+    waits for a human, and the quarantine rules that outrank trust are
+    listed as a table because each is a named, testable condition.
+40. **`RegistryRelease.notes` ships ahead of the server serving it.** The
+    field is additive on a format the server cannot change (released
+    clients parse it), so landing the client half early means it lights up
+    without an app release. Two spellings are accepted, and that is not
+    belt-and-braces: the index document calls it `release_notes` while the
+    publish request calls it `notes`, because the server's own conventions
+    forbid a column named after a wire field, and only one of those is on
+    this wire yet. **Rendering is the whole design constraint**: the
+    registry promises the field is *not markup* rather than filtering it
+    (ADR-0013 chose plain text precisely so no client needs a sanitiser),
+    so every sink here is one that cannot interpret it — a read-only
+    `QPlainTextEdit` under the Browse table, and a constructed
+    `QMessageBox` with `setTextFormat(PlainText)` for the cross-source
+    confirmation. The static `QMessageBox.question` helper had to go for
+    that: its default `AutoText` would hand anything tag-shaped in a
+    registry name or an author's notes to a rich-text renderer.
 
 ## Follow-ups (open as issues)
 

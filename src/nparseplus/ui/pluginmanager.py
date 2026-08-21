@@ -1287,7 +1287,7 @@ class RegistryBrowserDialog(QDialog):
         row = self._table.currentRow()
         merged = self._listings[row] if 0 <= row < len(self._listings) else None
         notes = merged.plugin.latest.notes.strip() if merged is not None else ""
-        if not notes or not self._table.isVisible():
+        if not notes:
             self._notes.clear()
             self._notes.setVisible(False)
             return

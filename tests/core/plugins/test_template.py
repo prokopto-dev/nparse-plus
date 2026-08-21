@@ -34,9 +34,18 @@ def test_template_files_present_and_consistent() -> None:
     for workflow in ("ci.yml", "release.yml"):
         text = (TEMPLATE / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
         assert "PLUGIN_DIR: my_nparse_plugin" in text, workflow
-    # The release flow packages the single-root layout the installer expects.
+    # The release flow packages the single-root layout the installer expects
+    # and publishes the digest a registry publish cross-checks against.
     release = (TEMPLATE / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    assert "sha256" in release and "registry-entry.json" in release
+    assert "sha256" in release
+    # It must NOT compose a registry entry, and must NOT grow the publish
+    # request itself (#147). The listing route is an authenticated POST to
+    # the registry server, and a reusable workflow for it is that server's
+    # own next piece of work — writing it here means writing it twice, and
+    # a template that publishes half-correctly is worse than one that
+    # points at the real thing.
+    assert "registry-entry.json" not in release
+    assert "/api/v1/plugins/" not in release
 
 
 def test_template_unit_tests_pass_standalone() -> None:

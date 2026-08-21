@@ -103,13 +103,18 @@ change in any release.
 3. Run `nparseplus-plugin validate` one more time against the version of the
    app you expect users to run (`--app-version`).
 4. Tag `v<version>` — the template's release workflow refuses a tag that
-   doesn't match `meta.version`, then builds the zip, computes its sha256,
-   and emits the registry entry JSON.
-5. Publish the release, then open a PR against the
-   [registry](registry.md#submitting-a-plugin) index — it is a copy-paste of
-   the `registry-entry.json` your release workflow produced. Listing gets
-   your users one-click installs, a verified sha256, and "update available"
-   notices on every later release.
+   doesn't match `meta.version`, then builds the zip and computes its
+   sha256.
+5. Publish the release, then
+   [`POST` it to the registry](registry.md#publishing-a-plugin) with your
+   scoped token. The registry re-downloads the artifact and hashes it
+   itself, so the digest you send is a cross-check rather than the published
+   value. Listing gets your users one-click installs, a verified sha256, and
+   "update available" notices on every later release.
+
+    Optionally include plain-text release notes with that request — what
+    changed, in a couple of sentences. nParse+ shows them beside the listing
+    verbatim; they are not Markdown, so asterisks arrive as asterisks.
 
     If you'd rather not list it, distribution still works without the
     registry:
@@ -119,8 +124,9 @@ change in any release.
       careful users can check the download themselves — the app does not
       verify a hash on URL installs.
     - Or tell them to download the zip and use *Install from file…*.
-    - Keep the `registry-entry.json` anyway: listing later is the same
-      copy-paste, and update notices start from then on.
+    - Or declare an [update feed](developing.md#shipping-updates-without-a-registry)
+      so those copies can still update themselves. Listing later changes
+      none of this; it just adds Browse and the pinned hash.
 
 ## Where the SDK lives
 

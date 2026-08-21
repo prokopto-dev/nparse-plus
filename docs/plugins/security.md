@@ -76,13 +76,26 @@ same document supplies the download URL *and* the hash it is checked
 against, so the guarantee is only ever as good as the registry it came
 from.
 
-That is true of the built-in catalogue as much as any other. It is served
-by a live registry server (<https://nparseplugins.prokopto.dev/index.json>)
-rather than the static file it began as, and that changes nothing about
-where the boundary sits: the app fetches over https, re-asserts it on every
-redirect hop, and checks the bytes against the digest that document carries.
-What a host can do is serve a different document; what it cannot do is make
-nParse+ accept an artifact that does not hash to what the document says.
+The built-in catalogue is served by a live registry server
+(<https://nparseplugins.prokopto.dev/index.json>) rather than the static file
+it began as, and one thing about that is worth stating rather than leaving
+implied: **the digests in it are the server's own measurements.** It
+downloads each artifact from the URL an author gave it, hashes the bytes it
+received, publishes that value, and discards the hash the author submitted
+after comparing the two. A mismatch — or an artifact it could not fetch at
+all — does not get published; it goes to a human with the reason recorded.
+That is a stronger claim than the arrangement it replaced, where a maintainer
+confirmed by hand that a submitted digest matched a release, and it is the
+one the app's pinning actually rests on. The details, and the honest limits,
+are in [the registry's trust argument](registry.md#the-digest-is-one-the-registry-computed).
+
+None of that changes where the boundary sits for the client: the app fetches
+over https, re-asserts it on every redirect hop, and checks the bytes against
+the digest that document carries. What a host can do is serve a different
+document; what it cannot do is make nParse+ accept an artifact that does not
+hash to what the document says. And a digest the registry computed proves the
+registry measured those bytes — not that the registry is honest, which is
+what index signing would be for.
 
 That matters because the registry list is yours to extend: nParse+ ships
 with one built-in catalogue and merges in any you add under **Settings >
@@ -186,7 +199,7 @@ data. It no longer can.
 
 - Prefer plugins with public source you (or someone you trust) can read.
 - Prefer registry installs over raw URLs when a plugin is listed — the hash
-  pins the bytes a human reviewed.
+  pins bytes the registry measured, and a raw URL pins nothing at all.
 - Keep the registry list short. Every extra registry is another party that
   can offer you code; untick or remove any you no longer have a reason to
   trust (plugins already installed from it stay installed, and the Source

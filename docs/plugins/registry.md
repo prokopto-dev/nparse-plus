@@ -330,8 +330,11 @@ repository to fork and nothing to paste anywhere.
    prints its sha256.
 4. **`POST` the release** to `/api/v1/plugins/{id}/releases` with your token
    and an `Idempotency-Key` header, carrying the artifact URL, the sha256
-   your build computed, your `requires_sdk` specifier, an optional minimum
-   app version, and optional plain-text release notes. Re-running the
+   your build computed, the SDK specifier from your `PluginMeta`, an optional
+   minimum app version, and optional plain-text release notes. (The request's
+   field names are the registry's own and are not the index document's — that
+   format belongs to released clients, and the API may version where it may
+   not.) Re-running the
    workflow with the same key returns the original result instead of
    publishing a second time — which is the behaviour you want from a job
    somebody will inevitably re-run.

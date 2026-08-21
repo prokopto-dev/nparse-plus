@@ -58,7 +58,7 @@ Two annotations can be appended to any of the above:
 
 | Source | Meaning |
 |---|---|
-| `nParse+ registry (built-in) · a1b2c3d4e5f6…` | Listed by that registry, which is also where the pinned sha256 came from. Hover for the registry URL, the artifact URL, and the full hash. |
+| `nParse+ registry (built-in) · a1b2c3d4e5f6…` | Listed by that registry, which is also where the pinned sha256 came from — the built-in one computes its digests from the artifact itself. Hover for the registry URL, the artifact URL, and the full hash. |
 | `https://… (a1b2c3d4e5f6…)` | Downloaded from that URL with **Install from URL…**; no registry vouched for it. The digest is the sha256 of the bytes that were installed. |
 | `Local file (a1b2c3d4e5f6…)` | Installed from a file on this machine, with the sha256 of what was installed. |
 | **Sideloaded** | Copied into the plugins folder by hand. nParse+ has no record of where it came from and no checksum for it. |
@@ -119,8 +119,18 @@ rest; a single summary at the end lists what was updated and what was not.
 at once and merges the listings into one table: name, version, author,
 **Source**, and whether it can load here. Registry installs are the only
 ones that are **sha256-pinned** — the index records the hash of the artifact
-it listed and the installer refuses a download whose bytes don't match.
+it listed and the installer refuses a download whose bytes don't match. (For
+the built-in catalogue that hash is one
+[the registry computed itself](../plugins/registry.md#the-digest-is-one-the-registry-computed)
+from the artifact it downloaded, not one an author supplied.)
 **Refresh** re-fetches without closing the dialog.
+
+Selecting a row shows that release's **notes** underneath, when it has any:
+what the author says changed, shown as plain text. It is never rendered as
+Markdown or HTML — the registry carries the field on the promise that it is
+*not* markup, and nParse+ keeps that promise rather than interpreting
+somebody's release notes inside your client. Most listings carry none, and
+those rows simply show nothing.
 
 The button on each row reads:
 

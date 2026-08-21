@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QFileDialog, QMessageBox
 
 from nparseplus.audio.tts import NullSpeaker
@@ -377,7 +378,12 @@ def _write_zip(directory: Path, payload: bytes) -> Path:
     return target
 
 
-def _index(version: str = "9.9.9", plugin_id: str = "demo", requires_sdk: str = ">=1.0,<2"):
+def _index(
+    version: str = "9.9.9",
+    plugin_id: str = "demo",
+    requires_sdk: str = ">=1.0,<2",
+    notes: str = "",
+):
     from nparseplus.core.plugins.registry import RegistryIndex
 
     return RegistryIndex.model_validate(
@@ -394,6 +400,7 @@ def _index(version: str = "9.9.9", plugin_id: str = "demo", requires_sdk: str = 
                         "url": f"https://example.com/{plugin_id}.zip",
                         "sha256": "a" * 64,
                         "requires_sdk": requires_sdk,
+                        "release_notes": notes,
                     },
                 }
             ],
@@ -452,6 +459,68 @@ def test_browser_lists_and_installs_with_pinned_hash(qtbot, host) -> None:
     assert button.text() == "Install" and button.isEnabled()
     button.click()
     assert installs == [("https://example.com/shiny.zip", "a" * 64, DEFAULT.url)]
+
+
+def test_browser_shows_the_selected_releases_notes_as_text(qtbot, host) -> None:
+    """The notes pane renders what the author wrote, uninterpreted.
+
+    A read-only QPlainTextEdit is the sink precisely because it cannot do
+    anything else with the text: the registry promises the field is not
+    markup rather than filtering it, so a tag-shaped note must arrive as
+    literal characters.
+    """
+    dialog, _ = make_dialog(qtbot, host)
+    dialog._on_index_ready(_result((DEFAULT, _index(notes="Fixed <b>everything</b>"))))
+    dialog._table.selectRow(0)
+
+    assert dialog._notes.isVisible() or dialog._notes.isVisibleTo(dialog)
+    shown = dialog._notes.toPlainText()
+    assert "Fixed <b>everything</b>" in shown
+    assert "What's new in v9.9.9" in shown
+
+
+def test_browser_hides_the_notes_pane_when_a_listing_carries_none(qtbot, host) -> None:
+    """Which is every listing until the registry starts serving the field."""
+    dialog, _ = make_dialog(qtbot, host)
+    dialog._on_index_ready(_result((DEFAULT, _index())))
+    dialog._table.selectRow(0)
+
+    assert not dialog._notes.isVisibleTo(dialog)
+    assert dialog._notes.toPlainText() == ""
+
+
+def test_browser_notes_pane_clears_when_a_refetch_empties_the_table(qtbot, host) -> None:
+    dialog, _ = make_dialog(qtbot, host)
+    dialog._on_index_ready(_result((DEFAULT, _index(notes="Something changed"))))
+    dialog._table.selectRow(0)
+    assert dialog._notes.toPlainText()
+
+    dialog._on_index_ready(_result((DEFAULT, "connection refused")))
+    assert dialog._notes.toPlainText() == ""
+    assert not dialog._notes.isVisibleTo(dialog)
+
+
+def test_release_notes_block_is_plain_and_bounded() -> None:
+    assert pluginmanager.release_notes_block("1.2.0", "   ") == ""
+    assert (
+        pluginmanager.release_notes_block("1.2.0", "Fixed it") == "What's new in v1.2.0:\nFixed it"
+    )
+    long = pluginmanager.release_notes_block("1.2.0", "x" * 5000)
+    assert long.endswith("…") and len(long) < 700
+    # No interpretation whatsoever: markup is characters.
+    assert "**bold**" in pluginmanager.release_notes_block("1.2.0", "**bold**")
+
+
+def test_a_cross_source_confirmation_carries_the_release_notes(qtbot, host, monkeypatch) -> None:
+    host.entry_for("demo").registry_url = GUILD.url
+    _fake_update_install(monkeypatch)
+    boxes: list[QMessageBox] = []
+    _answer_confirmation(monkeypatch, QMessageBox.StandardButton.Cancel, boxes)
+    page = make_page(qtbot, host)
+    _seed_offer(page, notes="Stops eating your bank slots")
+    page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN).click()
+
+    assert "Stops eating your bank slots" in boxes[0].text()
 
 
 def test_browser_incompatible_row_disabled_with_reason(qtbot, host) -> None:
@@ -833,8 +902,10 @@ def _fake_update_install(monkeypatch, *, version: str = "2.0.0", fail: set[str] 
     return calls
 
 
-def _seed_offer(page, *, registry=DEFAULT, version="9.9.9", plugin_id="demo"):
-    page._set_listings(_result((registry, _index(version=version, plugin_id=plugin_id))))
+def _seed_offer(page, *, registry=DEFAULT, version="9.9.9", plugin_id="demo", notes=""):
+    page._set_listings(
+        _result((registry, _index(version=version, plugin_id=plugin_id, notes=notes)))
+    )
 
 
 def test_update_button_appears_for_a_same_source_offer(qtbot, host) -> None:
@@ -875,19 +946,28 @@ def test_update_installs_in_place_and_keeps_consent_and_data(qtbot, host, monkey
     assert page._pending_update is None
 
 
+def _answer_confirmation(monkeypatch, answer, seen: list[QMessageBox] | None = None) -> None:
+    """Stand in for the cross-source confirmation's exec().
+
+    It is a constructed QMessageBox rather than the static ``question``
+    helper because the body has to be PlainText — a registry's display name
+    and an author's release notes both reach it, and AutoText would hand
+    anything tag-shaped in either to a rich-text renderer.
+    """
+
+    def fake_exec(box: QMessageBox) -> int:
+        if seen is not None:
+            seen.append(box)
+        return int(answer)
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+
+
 def test_a_cross_source_update_asks_first(qtbot, host, monkeypatch) -> None:
     host.entry_for("demo").registry_url = GUILD.url
     calls = _fake_update_install(monkeypatch)
-    asked: list[str] = []
-    monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        staticmethod(
-            lambda parent, title, text, *a, **k: (
-                asked.append(text) or QMessageBox.StandardButton.Cancel
-            )
-        ),
-    )
+    boxes: list[QMessageBox] = []
+    _answer_confirmation(monkeypatch, QMessageBox.StandardButton.Cancel, boxes)
     page = make_page(qtbot, host)
     _seed_offer(page)
     page._table.cellWidget(0, pluginmanager._UPDATE_COLUMN).click()
@@ -895,19 +975,18 @@ def test_a_cross_source_update_asks_first(qtbot, host, monkeypatch) -> None:
     assert calls == []  # declined: nothing was installed
     assert page._pending_update is None
     # ...and the dialog named both ends of the swap.
-    assert "guild.example" in asked[0]
-    assert "built-in.example" in asked[0] or "Built-in" in asked[0]
+    asked = boxes[0].text()
+    assert "guild.example" in asked
+    assert "built-in.example" in asked or "Built-in" in asked
+    # Third-party text in a dialog is text, never markup.
+    assert boxes[0].textFormat() == Qt.TextFormat.PlainText
 
 
 def test_a_cross_source_update_proceeds_when_confirmed(qtbot, host, monkeypatch) -> None:
     host.entry_for("demo").registry_url = GUILD.url
     calls = _fake_update_install(monkeypatch)
     monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
-    monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
-    )
+    _answer_confirmation(monkeypatch, QMessageBox.StandardButton.Yes)
     page = make_page(qtbot, host)
     _seed_offer(page)
     with qtbot.waitSignal(page._install_finished, timeout=5000):

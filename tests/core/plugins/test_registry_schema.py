@@ -1,13 +1,16 @@
-"""Guards for templates/registry-repo — the seed of the curated registry.
+"""Guards for templates/registry-repo — the schema and the seed catalogue.
 
-The registry validates listings with a JSON Schema *generated* from this
-app's pydantic models, so neither its CI nor the registry server has to
-install nParse+ to know what a valid entry is. That only holds if the
-committed schema tracks the models, which is what these tests assert.
+The registry server checks the index it renders against a JSON Schema
+*generated* from this app's pydantic models, so it does not have to install
+nParse+ to know what the client will accept. That only holds if the committed
+schema tracks the models, which is what these tests assert. The drift guard
+is the whole reason this directory outlived the pull-request submission
+route it was scaffolded for (#147); everything documenting that route is
+gone, and the two files left are the ones with a test behind them.
 
 They also pin the other thing a client cannot discover for itself: the URL of
-the built-in catalogue, and that the two documents telling a human where it
-lives say the same thing the constant does.
+the built-in catalogue, and that the documents telling a human where it lives
+say the same thing the constant does.
 """
 
 from __future__ import annotations
@@ -24,7 +27,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REGISTRY_REPO = REPO_ROOT / "templates" / "registry-repo"
 SCHEMA_PATH = REGISTRY_REPO / "schema" / f"index-v{REGISTRY_SCHEMA_VERSION}.schema.json"
 INDEX_PATH = REGISTRY_REPO / "index.json"
-OWNERS_PATH = REGISTRY_REPO / "owners.json"
 
 
 @pytest.fixture(scope="module")
@@ -39,7 +41,7 @@ def generator():
 
 
 def test_committed_schema_matches_the_models(generator) -> None:
-    """A model change without regeneration fails here, not in the registry's CI."""
+    """A model change without regeneration fails here, not in the server's gate."""
     expected = json.dumps(generator.build_schema(), indent=2) + "\n"
     actual = SCHEMA_PATH.read_text(encoding="utf-8")
     assert actual == expected, (
@@ -96,25 +98,24 @@ def test_seed_index_validates_against_the_committed_schema() -> None:
     jsonschema.validate(json.loads(INDEX_PATH.read_text(encoding="utf-8")), schema)
 
 
-def test_seed_owners_file_has_the_documented_shape() -> None:
-    owners = json.loads(OWNERS_PATH.read_text(encoding="utf-8"))
-    assert owners["owners"] == {}, "the seed ownership record starts empty"
-    # Documentation keys the registry workflow deliberately ignores.
-    assert isinstance(owners["_readme"], list)
-    assert all(isinstance(handles, list) for handles in owners["_example"].values())
+def test_registry_repo_holds_the_drift_guard_and_nothing_that_documents_a_pr() -> None:
+    """Exactly two files, and the absent ones are the point.
 
-
-def test_registry_repo_is_complete() -> None:
-    for relative in (
+    Ownership, submission and the Pages runbook moved to the registry server
+    (#147): ids are database rows, publishing is an authenticated POST, and
+    a document here describing a pull request would be a false trust claim
+    with nothing testing it. What is left is the generated schema — the
+    server vendors it verbatim — and the seed catalogue the client parses.
+    """
+    present = sorted(
+        path.relative_to(REGISTRY_REPO).as_posix()
+        for path in REGISTRY_REPO.rglob("*")
+        if path.is_file()
+    )
+    assert present == [
         "index.json",
-        "owners.json",
-        "README.md",
-        "CONTRIBUTING.md",
-        "SETUP.md",
         f"schema/index-v{REGISTRY_SCHEMA_VERSION}.schema.json",
-        ".github/workflows/validate-index.yml",
-    ):
-        assert (REGISTRY_REPO / relative).is_file(), f"registry repo file missing: {relative}"
+    ]
 
 
 def test_the_default_registry_url_is_a_fetchable_index_url() -> None:
@@ -151,20 +152,22 @@ def test_the_url_has_exactly_one_definition() -> None:
 @pytest.mark.parametrize(
     "document",
     [
-        REGISTRY_REPO / "SETUP.md",
         REPO_ROOT / "docs" / "plugins" / "registry.md",
+        REPO_ROOT / "docs" / "plugins" / "security.md",
     ],
-    ids=["registry-repo-setup", "registry-docs"],
+    ids=["registry-spec", "security-docs"],
 )
 def test_the_documents_that_name_the_registry_url_track_the_constant(document: Path) -> None:
     """Where the built-in catalogue lives is documented, not folklore.
 
     The URL is the one thing a user cannot change and the app cannot
-    discover: it is compiled in. So the maintainer runbook and the public
-    specification both have to name whatever the constant currently says, or
-    the first person to follow either one stands up a registry nothing
-    fetches. This is the hardest gate on the URL — refocus it, never delete
-    it.
+    discover: it is compiled in. So the specification and the trust argument
+    both have to name whatever the constant currently says, or a reader
+    checking where their plugins come from is checking the wrong host. (The
+    maintainer runbook used to be the second document here; it described
+    standing up GitHub Pages and went with the rest of the submission
+    scaffolding in #147.) This is the hardest gate on the URL — refocus it,
+    never delete it.
     """
     from nparseplus.core.plugins.registry import DEFAULT_REGISTRY_URL
 

@@ -72,8 +72,10 @@ Recently off this list:
   **Enable plugins** switch, and updating an add-on you already have.
 - **A live plugin registry** — the curated index is served by the registry
   server at <https://nparseplugins.prokopto.dev/index.json>, so **Browse
-  registry…** works and the app follows the catalogue wherever it lives; see
-  [the registry](plugins/registry.md).
+  registry…** works and the app follows the catalogue wherever it lives.
+  Publishing into it is an authenticated `POST` from a plugin's own release
+  pipeline, and the digest it lists is one the server computed from the
+  artifact itself; see [the registry](plugins/registry.md).
 - **`nparseplus-sdk` on PyPI** — `pip install nparseplus-sdk` is all a
   plugin author needs; see [developing plugins](plugins/developing.md).
 
