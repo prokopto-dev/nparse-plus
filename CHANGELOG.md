@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.25.0 (2026-08-22)
+
+### Features
+
+- **packaging**: Ship a Debian 12 build alongside the Linux tarball
+  ([`63699c5`](https://github.com/prokopto-dev/nparse-plus/commit/63699c5fdf70c1954c4eb132f45e0b2183de1851))
+
+### Testing
+
+- **packaging**: Pin the update path against the new Debian artifact
+  ([`ea46831`](https://github.com/prokopto-dev/nparse-plus/commit/ea468312c4c5ff3a573b55b3c8c7379b602f30bd))
+
+
 ## v2.24.0 (2026-08-21)
 
 ### Bug Fixes
