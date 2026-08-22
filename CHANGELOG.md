@@ -6,6 +6,20 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.25.1 (2026-08-22)
+
+### Bug Fixes
+
+- **packaging**: Give the Debian build QtWebEngine's missing library
+  ([`1a21927`](https://github.com/prokopto-dev/nparse-plus/commit/1a219270219fddba398e67d2e33e894c6474a0f2))
+
+- **packaging**: Make espeak-ng a hard dependency of the Debian package
+  ([`ff7d8b7`](https://github.com/prokopto-dev/nparse-plus/commit/ff7d8b7ca570d019bf23d8a51e62e807ed9f6fe8))
+
+- **test**: Make the .deb maintainer-script mode check POSIX-only
+  ([`d98f3cc`](https://github.com/prokopto-dev/nparse-plus/commit/d98f3ccf6a027779f761620d5421ca16bd26f1e3))
+
+
 ## v2.25.0 (2026-08-22)
 
 ### Features
