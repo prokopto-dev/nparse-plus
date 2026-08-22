@@ -150,6 +150,25 @@ def test_the_debian_job_measures_the_glibc_floor_and_feeds_it_to_the_package() -
     assert "packaging/deb/build_deb.py" in script
 
 
+def test_the_debian_job_checks_the_bundle_before_packaging_it() -> None:
+    """Without this the .deb ships whatever the container happened to resolve.
+
+    The first Debian release build lost QtWebEngine this way and produced a
+    perfectly healthy-looking artifact. The check is what turns that into a
+    failed build instead of a broken Discord overlay.
+    """
+    closure = next(
+        step for step in steps("build-linux-debian12") if "check_bundle.py" in str(step.get("run"))
+    )
+    body = str(closure["run"])
+    # It must not be piped. This job's shell is `sh -e` (dash), which has no
+    # pipefail, so a pipeline reports the LAST command's status — piping the
+    # check into `tee` for the step summary would swallow the failure whole
+    # and hand us a broken .deb with a green tick.
+    assert "check_bundle.py" in body
+    assert "|" not in body.replace("||", ""), "the closure check must not be piped"
+
+
 def test_the_package_is_verified_on_a_clean_container() -> None:
     """``Depends:`` cannot be validated where the build ran.
 

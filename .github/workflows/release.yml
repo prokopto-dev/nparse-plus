@@ -451,6 +451,9 @@ jobs:
       # actions/checkout silently degrades to a REST tarball without git.
       # No sudo — a container job already runs as root.
       #
+      # libxkbfile1 is the one every QtWebEngine binary needs and the one the
+      # first Debian build was missing — see the check step below.
+      #
       # The long library list is NOT optional padding. PyInstaller bundles
       # whatever `ldd` resolves AT BUILD TIME, and the GitHub runner image
       # carries far more than this base image does. A library that is simply
@@ -472,7 +475,7 @@ jobs:
             libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
             libxext6 libxrender1 libxi6 libsm6 libice6 \
             libnss3 libnspr4 libxcomposite1 libxdamage1 libxrandr2 \
-            libxfixes3 libxtst6 libasound2 libcups2 libatk1.0-0 \
+            libxfixes3 libxtst6 libxkbfile1 libasound2 libcups2 libatk1.0-0 \
             libatk-bridge2.0-0 libatspi2.0-0 libdrm2 libgbm1 libexpat1 \
             libpango-1.0-0 libcairo2 zlib1g
       - uses: actions/checkout@v4
@@ -494,20 +497,26 @@ jobs:
           uv sync --frozen --group build
       - name: Build
         run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
-      - name: No bundled library may have unresolved dependencies
+      - name: Check the bundle's shared-library closure
         run: |
-          # The gate on the failure mode described above. A library missing
-          # from the container is not bundled, and the only trace is an
-          # unresolved NEEDED entry in whatever wanted it.
-          find dist/nparseplus -type f \( -name '*.so' -o -name '*.so.*' \
-            -o -name nparseplus \) -exec sh -c \
-            'ldd "$1" 2>/dev/null | grep -q "not found" && echo "$1"' _ {} \; \
-            > unresolved.txt || true
-          if [ -s unresolved.txt ]; then
-            cat unresolved.txt
-            echo "::error::bundled libraries have unresolved dependencies"
-            exit 1
+          # The gate on the failure mode described above. Fatal only for the
+          # components the app actually needs: PySide6 also ships plugins for
+          # Qt modules this app never loads (TIFF, Wayland, GTK theming,
+          # PulseAudio), and failing the build on those would just get the
+          # check disabled. Those are reported instead — see the script.
+          #
+          # NOT piped into tee: this step's shell is `sh -e` (dash), which has
+          # no pipefail, so a pipeline would report tee's exit status and
+          # swallow a fatal result entirely.
+          if uv run python packaging/deb/check_bundle.py \
+              --dist-dir dist/nparseplus > closure.txt; then
+            failed=0
+          else
+            failed=1
           fi
+          cat closure.txt
+          cat closure.txt >> "$GITHUB_STEP_SUMMARY"
+          [ "$failed" -eq 0 ]
       - name: Measure the glibc floor
         id: glibc
         run: |

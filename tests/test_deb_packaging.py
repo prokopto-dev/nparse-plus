@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "packaging" / "deb"))
 
 import build_deb  # noqa: E402
+import check_bundle  # noqa: E402
 
 FLATPAK_MANIFEST = REPO_ROOT / "packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml"
 
@@ -154,3 +155,88 @@ def test_maintainer_scripts_never_fail_the_install(staged: Path) -> None:
         assert script.stat().st_mode & 0o111, f"{name} must be executable"
         body = script.read_text(encoding="utf-8")
         assert "command -v" in body and "|| true" in body
+
+
+# --- the shared-library closure check ---------------------------------------
+#
+# The first Debian 12 release build failed here for real: the container had no
+# libxkbfile1, so every QtWebEngine binary came out with an unresolved
+# libxkbfile.so.1 and the Discord overlay would have shipped broken. These
+# assert the classification that decides whether that is fatal.
+
+# Verbatim from that failed run (github.com/prokopto-dev/nparse-plus/actions/
+# runs/32575040827), trimmed to one file per distinct case.
+REAL_FAILURE = {
+    "PySide6/QtWebEngineCore.abi3.so": ["libxkbfile.so.1"],
+    "PySide6/Qt/lib/libQt6WebEngineCore.so.6": ["libxkbfile.so.1"],
+    "PySide6/Qt/libexec/QtWebEngineProcess": ["libxkbfile.so.1"],
+    "PySide6/Qt/plugins/platforms/libqwayland.so": ["libwayland-client.so.0"],
+    "PySide6/Qt/plugins/platformthemes/libqgtk3.so": ["libgtk-3.so.0"],
+    "PySide6/Qt/plugins/imageformats/libqtiff.so": ["libtiff.so.5"],
+    "PySide6/Qt/lib/libQt6Multimedia.so.6": ["libpulse.so.0"],
+}
+
+
+def test_a_broken_webengine_is_fatal() -> None:
+    """The regression that actually happened. The Discord overlay is the app.
+
+    A build that loses QtWebEngine still produces a perfectly good-looking
+    .deb — that is precisely why this has to fail the build rather than warn.
+    """
+    fatal, _ = check_bundle.classify(REAL_FAILURE)
+    assert set(fatal) == {
+        "PySide6/QtWebEngineCore.abi3.so",
+        "PySide6/Qt/lib/libQt6WebEngineCore.so.6",
+        "PySide6/Qt/libexec/QtWebEngineProcess",
+    }
+
+
+def test_plugins_the_app_never_loads_are_not_fatal() -> None:
+    """A gate that fails on things that do not matter is a gate that gets turned off.
+
+    libtiff.so.5 cannot be satisfied on bookworm at all (it ships
+    libtiff.so.6) and the Ubuntu tarball carries the same unresolved entry
+    unnoticed; Wayland is deliberately unused (the app pins xcb); GTK theming
+    and PulseAudio belong to Qt modules the spec excludes.
+    """
+    _, tolerated = check_bundle.classify(REAL_FAILURE)
+    assert set(tolerated) == {
+        "PySide6/Qt/plugins/platforms/libqwayland.so",
+        "PySide6/Qt/plugins/platformthemes/libqgtk3.so",
+        "PySide6/Qt/plugins/imageformats/libqtiff.so",
+        "PySide6/Qt/lib/libQt6Multimedia.so.6",
+    }
+
+
+def test_a_clean_bundle_passes() -> None:
+    fatal, tolerated = check_bundle.classify({})
+    assert not fatal and not tolerated
+    assert "resolves" in check_bundle.report(fatal, tolerated)
+
+
+def test_the_report_names_every_unresolved_soname() -> None:
+    """Tolerated is not silent — the report is how a NEW gap gets noticed."""
+    fatal, tolerated = check_bundle.classify(REAL_FAILURE)
+    text = check_bundle.report(fatal, tolerated)
+    for soname in ("libwayland-client.so.0", "libgtk-3.so.0", "libtiff.so.5", "libpulse.so.0"):
+        assert soname in text
+    # And a known-absent one carries its reason, so nobody re-investigates it.
+    assert "bookworm ships libtiff.so.6" in text
+    assert "libxkbfile.so.1" in text
+
+
+def test_the_xcb_platform_plugin_is_critical_and_wayland_is_not() -> None:
+    """app._runtime_env_defaults pins QT_QPA_PLATFORM=xcb.
+
+    Without libqxcb.so nothing renders at all, so it is fatal. Its Wayland
+    sibling is deliberately absent from the critical set: the overlays cannot
+    stay on top under native Wayland, which is why the app does not use it.
+    """
+    assert "libqxcb.so" in check_bundle.CRITICAL
+    assert "libqwayland.so" not in check_bundle.CRITICAL
+
+
+def test_the_package_depends_on_what_webengine_needs() -> None:
+    """libxkbfile1 is what the first build was missing; apt must guarantee it."""
+    control = (REPO_ROOT / "packaging/deb/control.in").read_text(encoding="utf-8")
+    assert "libxkbfile1" in control

@@ -11,7 +11,7 @@ Depends: libc6 (>= @GLIBC_FLOOR@), libgl1, libegl1, libglib2.0-0, libfontconfig1
  libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0,
  libxcb-keysyms1, libxcb-randr0, libxcb-render-util0, libxcb-shape0,
  libxcb-shm0, libxcb-sync1, libxcb-xfixes0, libxcb-xinerama0, libxcb-xkb1,
- libxext6, libxrender1, libxi6, libsm6, libice6, libnss3, libnspr4,
+ libxext6, libxrender1, libxi6, libsm6, libice6, libxkbfile1, libnss3, libnspr4,
  libxcomposite1, libxdamage1, libxrandr2, libxfixes3, libxtst6, libasound2,
  libcups2, libatk1.0-0, libatk-bridge2.0-0, libatspi2.0-0, libdrm2, libgbm1,
  libexpat1, libpango-1.0-0, libcairo2, zlib1g
