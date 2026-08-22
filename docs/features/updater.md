@@ -23,7 +23,16 @@ When an update exists:
 | macOS | the `.dmg` matching your Mac's architecture (`arm64` / `x86_64`) |
 | Windows | `.zip` |
 | Linux (tarball install) | `.tar.gz` |
+| Linux (Debian package install) | `.tar.gz` — **not** the `.deb`; see below |
 | Linux (running inside the Flatpak sandbox) | `.flatpak`, handed to your software installer |
+
+!!! warning "The Debian package is not offered to its own installs yet"
+
+    `pick_asset` has one non-Flatpak Linux branch and it selects the tarball,
+    so a `.deb` install is offered the build made on Ubuntu 24.04 — which
+    does not start on Debian 12. Take the `.deb` from the releases page by
+    hand instead. Tracked in
+    [#163](https://github.com/prokopto-dev/nparse-plus/issues/163).
 
 If the expected asset isn't on the release, the release page opens in your
 browser instead.

@@ -78,6 +78,7 @@ nav:
       - Install on macOS: getting-started/install-macos.md
       - Install on Windows: getting-started/install-windows.md
       - Install on Linux (Flatpak): getting-started/install-flatpak.md
+      - Install on Linux (Debian package): getting-started/install-debian.md
       - Install on Linux (tarball): getting-started/install-linux-tarball.md
       - First run: getting-started/first-run.md
       - Updating: getting-started/updating.md

@@ -58,8 +58,11 @@ Grab the [latest release](https://github.com/prokopto-dev/nparse-plus/releases/l
   `nparseplus.exe`
   ([full guide](https://prokopto-dev.github.io/nparse-plus/latest/getting-started/install-windows/))
 - **Linux** — `flatpak install --user nparseplus-<version>-linux-x86_64.flatpak`
-  (then plain `flatpak update` keeps it current), or use the tarball
+  (then plain `flatpak update` keeps it current). On Debian 12 use
+  `sudo apt install ./nparseplus_<version>_amd64.deb`; the tarball needs
+  glibc 2.39+
   ([Flatpak guide](https://prokopto-dev.github.io/nparse-plus/latest/getting-started/install-flatpak/) ·
+  [Debian guide](https://prokopto-dev.github.io/nparse-plus/latest/getting-started/install-debian/) ·
   [tarball guide](https://prokopto-dev.github.io/nparse-plus/latest/getting-started/install-linux-tarball/))
 
 Then: turn on `/log on` in game, point nParse+ at your EQ **Logs** folder

@@ -4,7 +4,9 @@ Each release ships a `nparseplus-<version>-linux-x86_64.flatpak` bundle on the
 [releases page](https://github.com/prokopto-dev/nparse-plus/releases). It runs
 on any distro with Flatpak — Fedora, Ubuntu, Arch, SteamOS (desktop mode),
 etc. — and is the recommended install if you don't want to manage the tarball
-by hand.
+by hand. It is also the only Linux download with no glibc requirement of its
+own: the sandbox supplies its runtime, so an older distribution that cannot
+run the [tarball](install-linux-tarball.md) runs this fine.
 
 nParse+ is not (yet) on Flathub, so this is a "sideloaded" bundle: you install
 the file directly. Updates still work the normal Flatpak way — every release

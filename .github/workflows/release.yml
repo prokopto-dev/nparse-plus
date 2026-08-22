@@ -419,8 +419,226 @@ jobs:
             dist/*.flatpak
           if-no-files-found: error
 
+  # The Debian 12 build. SEPARATE from build-linux on purpose: that job's
+  # artifacts are untouched by anything here.
+  #
+  # Why it exists: PyInstaller does not bundle glibc, so an artifact's glibc
+  # floor is its BUILD HOST's. build-linux runs on ubuntu-latest (24.04, glibc
+  # 2.39), so its tarball cannot start on Debian 12 (2.36) — the symptom is
+  # `version 'GLIBC_2.3x' not found` at exec. Building in a debian:12
+  # container puts the floor at bookworm's instead.
+  #
+  # Why a container and not `runs-on: ubuntu-22.04`: that image begins
+  # deprecation 2026-09-17 and is unsupported by 2027-04-17, so pinning it
+  # would buy under a year. The container decouples the floor from whatever
+  # GitHub's runner image happens to be, permanently.
+  #
+  # Why debian:12 and not a manylinux image: PySide6 6.11.1's Linux wheels are
+  # tagged manylinux_2_34, so the build host needs glibc >= 2.34. That rules
+  # out manylinux_2_28 (AlmaLinux 8). Bookworm's 2.36 clears it.
+  build-linux-debian12:
+    needs: check-version
+    runs-on: ubuntu-latest
+    container: debian:12
+    # Matches the macOS x86_64 leg: a hiccup in this build must never block a
+    # release of the artifacts that already worked. The cost is that a release
+    # can publish without the .deb — see docs/development/releasing.md.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      # First, before checkout: a bare debian:12 has none of this, and
+      # actions/checkout silently degrades to a REST tarball without git.
+      # No sudo — a container job already runs as root.
+      #
+      # The long library list is NOT optional padding. PyInstaller bundles
+      # whatever `ldd` resolves AT BUILD TIME, and the GitHub runner image
+      # carries far more than this base image does. A library that is simply
+      # absent is not bundled and the build still SUCCEEDS — the artifact just
+      # quietly loses whatever needed it (QtWebEngine, i.e. the Discord
+      # overlay, is the casualty: it wants libnss3/libnspr4 and the Chromium
+      # X set). The unresolved-library gate below is what makes that loud.
+      - name: Container prerequisites
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils binutils dbus \
+            libgl1 libegl1 libglib2.0-0 libfontconfig1 libfreetype6 libdbus-1-3 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-6 libx11-xcb1 libxcb1 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-shm0 \
+            libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
+            libxext6 libxrender1 libxi6 libsm6 libice6 \
+            libnss3 libnspr4 libxcomposite1 libxdamage1 libxrandr2 \
+            libxfixes3 libxtst6 libasound2 libcups2 libatk1.0-0 \
+            libatk-bridge2.0-0 libatspi2.0-0 libdrm2 libgbm1 libexpat1 \
+            libpango-1.0-0 libcairo2 zlib1g
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          # Without a suffix this shares build-linux's cache key (same
+          # runner.os, same lock hash) across two different glibc lines.
+          cache-suffix: debian12
+      - name: Sync dependencies (with build group)
+        run: |
+          # Bookworm ships Python 3.11 and the project needs >=3.12, so uv
+          # fetches its own. python-build-standalone targets glibc 2.17, so
+          # the interpreter never raises the floor. Explicit, so a download
+          # failure reports itself rather than failing inside the sync.
+          uv python install 3.12
+          uv sync --frozen --group build
+      - name: Build
+        run: uv run pyinstaller packaging/nparseplus.spec --noconfirm
+      - name: No bundled library may have unresolved dependencies
+        run: |
+          # The gate on the failure mode described above. A library missing
+          # from the container is not bundled, and the only trace is an
+          # unresolved NEEDED entry in whatever wanted it.
+          find dist/nparseplus -type f \( -name '*.so' -o -name '*.so.*' \
+            -o -name nparseplus \) -exec sh -c \
+            'ldd "$1" 2>/dev/null | grep -q "not found" && echo "$1"' _ {} \; \
+            > unresolved.txt || true
+          if [ -s unresolved.txt ]; then
+            cat unresolved.txt
+            echo "::error::bundled libraries have unresolved dependencies"
+            exit 1
+          fi
+      - name: Measure the glibc floor
+        id: glibc
+        run: |
+          # The floor is a measurement, not a claim: take the highest
+          # versioned glibc symbol any bundled ELF asks for. This is what goes
+          # into the package's `Depends: libc6 (>= ...)`, so a dependency that
+          # raises it fails the build here instead of a user's launch.
+          FLOOR=$(find dist/nparseplus -type f \( -name '*.so' -o -name '*.so.*' \
+            -o -name nparseplus \) -print0 \
+            | xargs -0 -r objdump -T 2>/dev/null \
+            | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -1)
+          FLOOR="${FLOOR#GLIBC_}"
+          : "${FLOOR:=2.36}"
+          echo "measured glibc floor: $FLOOR" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$(printf '%s\n2.36\n' "$FLOOR" | sort -V | tail -1)" != "2.36" ]; then
+            echo "::error::floor $FLOOR exceeds Debian 12's 2.36"
+            exit 1
+          fi
+          echo "floor=$FLOOR" >> "$GITHUB_OUTPUT"
+      - name: Smoke-test the binary
+        run: |
+          # build-linux never executes its tarball — only the flatpak bundle
+          # is booted — so this is new coverage. Exit 124 means `timeout`
+          # killed it, i.e. it was still running after 20 s. app.py only fills
+          # QT_QPA_PLATFORM when unset, so forcing offscreen is honoured.
+          LOG_DIR=$(uv run python -c \
+            "from platformdirs import user_log_dir; print(user_log_dir('nparseplus'))")
+          echo "log dir: $LOG_DIR"
+          # Same as the Windows step: start from nothing, or a log left by an
+          # earlier step decides the result instead of this run.
+          rm -rf "$LOG_DIR"
+          export QT_QPA_PLATFORM=offscreen
+          set +e
+          dbus-run-session -- timeout 20 dist/nparseplus/nparseplus
+          code=$?
+          set -e
+          # Explicit ifs, not `[ -f x ] && ...`: the runner's shell is
+          # `bash -e`, and a short-circuiting && list is a poor thing to bet
+          # a build step on.
+          if [ -f "$LOG_DIR/nparseplus.log" ]; then
+            echo "--- nparseplus.log ---"
+            cat "$LOG_DIR/nparseplus.log"
+          fi
+          if [ -f "$LOG_DIR/crash.log" ]; then
+            echo "--- crash.log ---"
+            cat "$LOG_DIR/crash.log"
+          fi
+          if [ "$code" -ne 124 ]; then
+            echo "::error::app exited early (code $code)"
+            exit 1
+          fi
+          # "Still running" alone is weak: it must have reached run_app() far
+          # enough to open its log, and must not have crashed on the way.
+          if [ ! -f "$LOG_DIR/nparseplus.log" ]; then
+            echo "::error::app never opened its log file — it did not reach run_app()"
+            exit 1
+          fi
+          if [ -f "$LOG_DIR/crash.log" ]; then
+            echo "::error::app wrote a crash log on startup"
+            exit 1
+          fi
+      - name: Build the .deb
+        run: |
+          uv run python packaging/deb/build_deb.py \
+            --dist-dir dist/nparseplus \
+            --version "${RELEASE_TAG#v}" \
+            --outdir dist \
+            --glibc-floor "${{ steps.glibc.outputs.floor }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          # Distinct from linux-builds: the release job downloads every
+          # artifact with merge-multiple, and the two must not collide.
+          name: linux-deb-debian12
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # Installs the .deb on a PRISTINE debian:12 and boots it. This is the only
+  # thing that validates `Depends:` — the build container has every library
+  # installed by hand, so a missing dependency cannot fail there. `apt-get
+  # install ./file.deb` (not `dpkg -i`) is the point: apt resolves the
+  # declared dependencies from the archive.
+  verify-deb-debian12:
+    needs: build-linux-debian12
+    runs-on: ubuntu-latest
+    container: debian:12
+    # build-linux-debian12 is continue-on-error, so a failure there still
+    # reports success to this job and it fails at download. That is visible
+    # and harmless — it is red beside an already-red job.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      # Before download-artifact, not after: the node action needs a trust
+      # store, and apt needs its lists before it can resolve the package's
+      # Depends. dbus is here because a session bus is a desktop given, not
+      # something the package should declare.
+      - name: Container prerequisites
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates dbus
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-deb-debian12
+          path: .
+      - name: Install through apt
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get install -y ./nparseplus_*.deb
+      - name: Boot the installed app
+        run: |
+          export QT_QPA_PLATFORM=offscreen
+          set +e
+          dbus-run-session -- timeout 20 /usr/bin/nparseplus
+          code=$?
+          set -e
+          if [ "$code" -ne 124 ]; then
+            echo "::error::installed app exited early (code $code)"
+            exit 1
+          fi
+      - name: Layout assertions
+        run: |
+          test -x /usr/bin/nparseplus
+          test -f /usr/share/applications/io.github.prokopto_dev.nparse_plus.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/io.github.prokopto_dev.nparse_plus.png
+          dpkg -s nparseplus | grep -E '^(Version|Architecture|Depends):'
+
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos, build-windows, build-linux, build-linux-debian12, verify-deb-debian12]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -132,6 +132,18 @@ public](https://github.com/prokopto-dev/nparse-plus) and
 
 ## Linux
 
+### `GLIBC_2.xx not found` when launching
+
+Your distribution's glibc is older than the download's. nParse+ bundles its
+own Python and Qt but cannot bundle glibc, so the tarball — built on Ubuntu
+24.04 — needs 2.39 or newer. Check with `ldd --version`.
+
+On Debian 12 (bookworm) use the
+[Debian package](getting-started/install-debian.md), built on bookworm itself.
+On any other distribution that is too old, use the
+[Flatpak](getting-started/install-flatpak.md): its sandbox brings its own
+glibc, so the host's version is irrelevant.
+
 - **No tray icon on GNOME** — install the
   [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/).
 - **Flatpak can't see the EQ folder** — it's outside `$HOME`; grant

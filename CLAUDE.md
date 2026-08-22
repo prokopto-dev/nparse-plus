@@ -252,6 +252,35 @@ build — CI does it, don't try locally on macOS), built with `--repo-url` and
 publishes the OSTree repo to the single-commit `gh-pages` branch (GitHub
 Pages) so `flatpak update` works for bundle installs.
 
+**Linux ships TWO native builds, because glibc is the one thing PyInstaller
+cannot bundle** — so an artifact's glibc floor is its BUILD HOST's.
+`build-linux` runs on `ubuntu-latest` (24.04, glibc 2.39) and its `.tar.gz`
+cannot start on Debian 12 (2.36). `build-linux-debian12` builds the same
+onedir inside a `debian:12` container and packages it with
+`packaging/deb/build_deb.py` as `nparseplus_<version>_amd64.deb`; a second
+job, `verify-deb-debian12`, `apt install`s it on a PRISTINE `debian:12` and
+boots it, which is the only thing that validates `Depends:` (the build
+container has every library installed by hand). Not `ubuntu-22.04` — that
+image is unsupported from 2027-04-17. Not a manylinux image — PySide6's wheels
+are `manylinux_2_34`, so the host itself needs glibc >= 2.34. **The long
+`apt-get install` list in that job is load-bearing**: PyInstaller bundles
+whatever `ldd` resolves at build time, and a library merely absent from the
+container is not bundled while the build still SUCCEEDS (QtWebEngine, i.e. the
+Discord overlay, is the casualty) — hence the unresolved-dependency gate, and
+an `objdump` step that MEASURES the floor rather than asserting it, so a
+dependency raising it fails the build instead of a user's launch.
+
+**Every new Linux release asset must be inert to `updater.pick_asset`.** It
+sweeps for `"-linux" in name` plus a suffix and takes the FIRST match, and
+that predicate ships compiled into every already-released binary — it cannot
+be fixed retroactively for anyone. So at most one asset may both contain
+`-linux` and end in `.tar.gz`; the Debian filename satisfies that by
+construction, which is why a `.deb` and not a second tarball (#160 was this
+bug one artifact over). `tests/test_updater.py` carries a test that
+reimplements the DEPLOYED predicate literally rather than calling
+`pick_asset` — do not "fix" it to call the real function. Known gap, #163: a
+`.deb` install is still offered the tarball by the update check.
+
 **Flatpak `finish-args` are release-notes-worthy, permanently.** Flatpak
 refuses any in-app/portal update whose new version asks for a permission the
 installed version does not have — `UpdateMonitor.Update` fails with
