@@ -12,6 +12,7 @@ the updater, and the packaging cannot drift away from the Flatpak's.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "packaging" / "deb"))
 
 import build_deb  # noqa: E402
+import check_bundle  # noqa: E402
 
 FLATPAK_MANIFEST = REPO_ROOT / "packaging/flatpak/io.github.prokopto_dev.nparse_plus.yml"
 
@@ -82,13 +84,38 @@ def test_the_glibc_floor_is_declared(staged: Path) -> None:
     assert "libc6 (>= 2.36)" in control
 
 
-def test_tts_is_recommended_not_required(staged: Path) -> None:
-    """``audio/tts.py`` finds espeak on PATH; its absence degrades, not breaks."""
+def test_audio_is_a_hard_dependency(staged: Path) -> None:
+    """Trigger audio and TTS are core features, so espeak is Depends, not Recommends.
+
+    ``audio/tts.default_speaker`` returns ``EspeakSpeaker`` only when
+    ``find_espeak()`` locates an espeak binary on PATH, and **NullSpeaker
+    otherwise** — no error, no log line, just silence. Silent degradation is
+    the worst failure mode an alerting tool has, and a Recommends is skippable
+    (``--no-install-recommends``, and some minimal installs default to it).
+
+    espeak is also the ONLY audio path on Linux: the trigger engine's
+    ``sound_player`` seam is never wired, and the spec excludes Qt Multimedia
+    and QtTextToSpeech from the bindings entirely. The Flatpak bundles
+    espeak-ng and pcaudiolib for this same reason; a .deb declares it instead.
+    """
     control = (staged / "DEBIAN" / "control").read_text(encoding="utf-8")
+    depends = control.split("Depends:", 1)[1].split("Recommends:", 1)[0]
+    assert "espeak-ng" in depends
     recommends = next(line for line in control.splitlines() if line.startswith("Recommends:"))
-    assert "espeak-ng" in recommends
-    depends_block = control.split("Depends:", 1)[1].split("Recommends:", 1)[0]
-    assert "espeak" not in depends_block
+    assert "espeak" not in recommends
+
+
+def test_the_silent_fallback_that_makes_audio_a_dependency_still_exists() -> None:
+    """Ties the Depends above to the behaviour that justifies it.
+
+    If ``default_speaker`` ever grew a loud failure — a raised error, a
+    user-visible warning — espeak could go back to Recommends. While it
+    silently returns NullSpeaker, it cannot.
+    """
+    source = (REPO_ROOT / "src/nparseplus/audio/tts.py").read_text(encoding="utf-8")
+    body = source.split("def default_speaker", 1)[1].split("\ndef ", 1)[0]
+    assert "find_espeak()" in body
+    assert "NullSpeaker()" in body
 
 
 # --- layout, and not drifting from the Flatpak ------------------------------
@@ -150,7 +177,105 @@ def test_the_payload_lands_under_opt(staged: Path) -> None:
 def test_maintainer_scripts_never_fail_the_install(staged: Path) -> None:
     """Desktop/icon caches are a nicety; a headless box has neither tool."""
     for name in ("postinst", "postrm"):
+        body = (staged / "DEBIAN" / name).read_text(encoding="utf-8")
+        assert "command -v" in body and "|| true" in body
+
+
+@pytest.mark.skipif(os.name == "nt", reason="NTFS has no POSIX executable bit")
+def test_maintainer_scripts_are_executable(staged: Path) -> None:
+    """dpkg refuses to run a maintainer script that is not executable.
+
+    POSIX-only: ``Path.chmod(0o755)`` cannot set an executable bit on NTFS, so
+    on Windows this asserts nothing about the package. That costs no coverage
+    — the .deb is only ever built inside the debian:12 container — but the
+    assertion has to be skipped rather than dropped, or a lost ``chmod``
+    reaches users as a failing install.
+    """
+    for name in ("postinst", "postrm"):
         script = staged / "DEBIAN" / name
         assert script.stat().st_mode & 0o111, f"{name} must be executable"
-        body = script.read_text(encoding="utf-8")
-        assert "command -v" in body and "|| true" in body
+
+
+# --- the shared-library closure check ---------------------------------------
+#
+# The first Debian 12 release build failed here for real: the container had no
+# libxkbfile1, so every QtWebEngine binary came out with an unresolved
+# libxkbfile.so.1 and the Discord overlay would have shipped broken. These
+# assert the classification that decides whether that is fatal.
+
+# Verbatim from that failed run (github.com/prokopto-dev/nparse-plus/actions/
+# runs/32575040827), trimmed to one file per distinct case.
+REAL_FAILURE = {
+    "PySide6/QtWebEngineCore.abi3.so": ["libxkbfile.so.1"],
+    "PySide6/Qt/lib/libQt6WebEngineCore.so.6": ["libxkbfile.so.1"],
+    "PySide6/Qt/libexec/QtWebEngineProcess": ["libxkbfile.so.1"],
+    "PySide6/Qt/plugins/platforms/libqwayland.so": ["libwayland-client.so.0"],
+    "PySide6/Qt/plugins/platformthemes/libqgtk3.so": ["libgtk-3.so.0"],
+    "PySide6/Qt/plugins/imageformats/libqtiff.so": ["libtiff.so.5"],
+    "PySide6/Qt/lib/libQt6Multimedia.so.6": ["libpulse.so.0"],
+}
+
+
+def test_a_broken_webengine_is_fatal() -> None:
+    """The regression that actually happened. The Discord overlay is the app.
+
+    A build that loses QtWebEngine still produces a perfectly good-looking
+    .deb — that is precisely why this has to fail the build rather than warn.
+    """
+    fatal, _ = check_bundle.classify(REAL_FAILURE)
+    assert set(fatal) == {
+        "PySide6/QtWebEngineCore.abi3.so",
+        "PySide6/Qt/lib/libQt6WebEngineCore.so.6",
+        "PySide6/Qt/libexec/QtWebEngineProcess",
+    }
+
+
+def test_plugins_the_app_never_loads_are_not_fatal() -> None:
+    """A gate that fails on things that do not matter is a gate that gets turned off.
+
+    libtiff.so.5 cannot be satisfied on bookworm at all (it ships
+    libtiff.so.6) and the Ubuntu tarball carries the same unresolved entry
+    unnoticed; Wayland is deliberately unused (the app pins xcb); GTK theming
+    and PulseAudio belong to Qt modules the spec excludes.
+    """
+    _, tolerated = check_bundle.classify(REAL_FAILURE)
+    assert set(tolerated) == {
+        "PySide6/Qt/plugins/platforms/libqwayland.so",
+        "PySide6/Qt/plugins/platformthemes/libqgtk3.so",
+        "PySide6/Qt/plugins/imageformats/libqtiff.so",
+        "PySide6/Qt/lib/libQt6Multimedia.so.6",
+    }
+
+
+def test_a_clean_bundle_passes() -> None:
+    fatal, tolerated = check_bundle.classify({})
+    assert not fatal and not tolerated
+    assert "resolves" in check_bundle.report(fatal, tolerated)
+
+
+def test_the_report_names_every_unresolved_soname() -> None:
+    """Tolerated is not silent — the report is how a NEW gap gets noticed."""
+    fatal, tolerated = check_bundle.classify(REAL_FAILURE)
+    text = check_bundle.report(fatal, tolerated)
+    for soname in ("libwayland-client.so.0", "libgtk-3.so.0", "libtiff.so.5", "libpulse.so.0"):
+        assert soname in text
+    # And a known-absent one carries its reason, so nobody re-investigates it.
+    assert "bookworm ships libtiff.so.6" in text
+    assert "libxkbfile.so.1" in text
+
+
+def test_the_xcb_platform_plugin_is_critical_and_wayland_is_not() -> None:
+    """app._runtime_env_defaults pins QT_QPA_PLATFORM=xcb.
+
+    Without libqxcb.so nothing renders at all, so it is fatal. Its Wayland
+    sibling is deliberately absent from the critical set: the overlays cannot
+    stay on top under native Wayland, which is why the app does not use it.
+    """
+    assert "libqxcb.so" in check_bundle.CRITICAL
+    assert "libqwayland.so" not in check_bundle.CRITICAL
+
+
+def test_the_package_depends_on_what_webengine_needs() -> None:
+    """libxkbfile1 is what the first build was missing; apt must guarantee it."""
+    control = (REPO_ROOT / "packaging/deb/control.in").read_text(encoding="utf-8")
+    assert "libxkbfile1" in control

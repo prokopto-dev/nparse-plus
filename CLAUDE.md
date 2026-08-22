@@ -265,10 +265,22 @@ image is unsupported from 2027-04-17. Not a manylinux image — PySide6's wheels
 are `manylinux_2_34`, so the host itself needs glibc >= 2.34. **The long
 `apt-get install` list in that job is load-bearing**: PyInstaller bundles
 whatever `ldd` resolves at build time, and a library merely absent from the
-container is not bundled while the build still SUCCEEDS (QtWebEngine, i.e. the
-Discord overlay, is the casualty) — hence the unresolved-dependency gate, and
-an `objdump` step that MEASURES the floor rather than asserting it, so a
-dependency raising it fails the build instead of a user's launch.
+container is not bundled while the build still SUCCEEDS — v2.25.0's Debian job
+lost QtWebEngine (the Discord overlay) to a missing `libxkbfile1` exactly that
+way. `packaging/deb/check_bundle.py` is the gate, and an `objdump` step
+MEASURES the glibc floor rather than asserting it, so a dependency raising it
+fails the build instead of a user's launch. **That gate is deliberately not
+"nothing unresolved"**: PySide6 ships plugins for Qt modules this app never
+loads (TIFF — unsatisfiable on bookworm and equally unresolved in the Ubuntu
+tarball — plus Wayland, GTK theming, PulseAudio), so it is fatal only for
+`CRITICAL` (core Qt, the xcb plugin, QtWebEngine, the launcher) and reports
+the rest. A gate that fails on what does not matter is a gate that gets
+turned off. **`espeak-ng` is a `Depends`, not a `Recommends`**: it is the ONLY
+audio path on Linux (the trigger engine's `sound_player` seam is unwired and
+the spec excludes Qt Multimedia/TextToSpeech), and `default_speaker` falls
+back to `NullSpeaker` without it — silently, which is the worst failure an
+alerting tool has. The Flatpak bundles espeak-ng + pcaudiolib for the same
+reason; declaring it is the packaging-native equivalent.
 
 **Every new Linux release asset must be inert to `updater.pick_asset`.** It
 sweeps for `"-linux" in name` plus a suffix and takes the FIRST match, and

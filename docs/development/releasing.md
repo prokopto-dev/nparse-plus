@@ -71,10 +71,22 @@ Three choices in that job are worth knowing:
   whatever `ldd` resolves *at build time*, and the GitHub runner image carries
   far more than a bare `debian:12`. A library that is simply absent is not
   bundled and **the build still succeeds** — the artifact just quietly loses
-  whatever needed it (QtWebEngine, i.e. the Discord overlay, is the casualty).
-  The job's unresolved-dependency gate is what makes that loud, and the
-  `objdump` step *measures* the resulting floor rather than asserting it, so a
-  dependency that raises it fails the build instead of a user's launch.
+  whatever needed it. This is not hypothetical: the first Debian build (v2.25.0)
+  had no `libxkbfile1`, so every QtWebEngine binary came out unresolved and the
+  Discord overlay would have shipped broken. `packaging/deb/check_bundle.py` is
+  what makes that loud, and the `objdump` step *measures* the resulting glibc
+  floor rather than asserting it, so a dependency that raises it fails the
+  build instead of a user's launch.
+
+  That check is deliberately **not** "nothing may be unresolved". PySide6 ships
+  plugins for Qt modules this app never loads — TIFF images, Wayland, GTK
+  theming, PulseAudio multimedia — and one of those failing to load costs
+  nothing. `libtiff.so.5` cannot even be satisfied on bookworm, which ships
+  `libtiff.so.6`; the Ubuntu tarball has carried that same unresolved entry its
+  whole life unnoticed. So the script fails only on the components the app
+  genuinely needs (`CRITICAL` in that file: core Qt, the xcb platform plugin,
+  QtWebEngine, the launcher) and *reports* the rest into the job summary. A
+  gate that fails on things that do not matter is a gate that gets turned off.
 
 `verify-deb-debian12` then installs the package on a **pristine** `debian:12`
 with `apt-get install ./…deb` and boots it. That is the only thing validating
