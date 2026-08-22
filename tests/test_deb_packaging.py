@@ -12,6 +12,7 @@ the updater, and the packaging cannot drift away from the Flatpak's.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -176,10 +177,23 @@ def test_the_payload_lands_under_opt(staged: Path) -> None:
 def test_maintainer_scripts_never_fail_the_install(staged: Path) -> None:
     """Desktop/icon caches are a nicety; a headless box has neither tool."""
     for name in ("postinst", "postrm"):
+        body = (staged / "DEBIAN" / name).read_text(encoding="utf-8")
+        assert "command -v" in body and "|| true" in body
+
+
+@pytest.mark.skipif(os.name == "nt", reason="NTFS has no POSIX executable bit")
+def test_maintainer_scripts_are_executable(staged: Path) -> None:
+    """dpkg refuses to run a maintainer script that is not executable.
+
+    POSIX-only: ``Path.chmod(0o755)`` cannot set an executable bit on NTFS, so
+    on Windows this asserts nothing about the package. That costs no coverage
+    — the .deb is only ever built inside the debian:12 container — but the
+    assertion has to be skipped rather than dropped, or a lost ``chmod``
+    reaches users as a failing install.
+    """
+    for name in ("postinst", "postrm"):
         script = staged / "DEBIAN" / name
         assert script.stat().st_mode & 0o111, f"{name} must be executable"
-        body = script.read_text(encoding="utf-8")
-        assert "command -v" in body and "|| true" in body
 
 
 # --- the shared-library closure check ---------------------------------------
