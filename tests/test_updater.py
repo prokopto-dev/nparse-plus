@@ -218,6 +218,9 @@ FULL_RELEASE_ASSETS = (
     "nparseplus-2.21.0-linux-x86_64.flatpak",
     "nparseplus-2.21.0-linux-x86_64.tar.gz",
     "nparseplus-2.21.0-win64.zip",
+    # The Debian 12 package. It is deliberately shaped to be INERT here: no
+    # "-linux" substring, and no suffix any branch of pick_asset looks for.
+    "nparseplus_2.21.0_amd64.deb",
 )
 
 
@@ -248,6 +251,70 @@ def test_pick_asset_over_a_full_release_is_distinct_and_correctly_tagged() -> No
     # is exactly how the wrong build reaches a user.
     names = [asset.name for asset in picks.values()]
     assert len(set(names)) == len(names)
+
+
+def test_the_debian_package_is_invisible_to_every_platform() -> None:
+    """The .deb is a separate artifact; nobody may be handed it by accident.
+
+    It is built in a debian:12 container so it runs where the generic tarball
+    (built on ubuntu-latest, glibc 2.39) cannot. Teaching pick_asset to PREFER
+    it for Debian users is follow-up work; what must hold today is that adding
+    it to a release changes nobody's pick.
+    """
+    release = _full_release()
+    for platform, kwargs in (
+        ("win32", {}),
+        ("linux", {"in_flatpak": False}),
+        ("linux", {"in_flatpak": True}),
+        ("darwin", {"machine": "arm64"}),
+        ("darwin", {"machine": "x86_64"}),
+    ):
+        pick = pick_asset(release, platform, **kwargs)
+        assert pick is not None
+        assert not pick.name.endswith(".deb")
+
+
+def test_pick_asset_does_not_depend_on_asset_order() -> None:
+    """``next()`` takes the FIRST match, so ordering must not decide anything.
+
+    GitHub's asset order is not a contract. Any predicate two artifacts can
+    both satisfy turns that into a coin flip — which is what #160 was.
+    """
+    forward = _full_release()
+    backward = ReleaseInfo(
+        version="2.21.0",
+        html_url="https://example/release",
+        assets=tuple(reversed(forward.assets)),
+    )
+    for platform, kwargs in (
+        ("win32", {}),
+        ("linux", {"in_flatpak": False}),
+        ("linux", {"in_flatpak": True}),
+        ("darwin", {"machine": "arm64"}),
+        ("darwin", {"machine": "x86_64"}),
+    ):
+        first = pick_asset(forward, platform, **kwargs)
+        second = pick_asset(backward, platform, **kwargs)
+        assert first is not None and second is not None
+        assert first.name == second.name
+
+
+def test_the_deployed_picker_still_resolves_to_the_generic_tarball() -> None:
+    """A literal copy of the predicate every ALREADY-RELEASED binary runs.
+
+    This repo can change ``pick_asset``; it cannot change the copy compiled
+    into the build sitting on a user's disk. That copy sweeps for
+    ``"-linux" in name and name.endswith(".tar.gz")`` and takes the first
+    match, so the real constraint on any new Linux release asset is that this
+    predicate keeps finding the generic tarball. Do not "fix" this test to
+    call pick_asset — reimplementing it here is the whole point.
+    """
+    for assets in (FULL_RELEASE_ASSETS, tuple(reversed(FULL_RELEASE_ASSETS))):
+        legacy = next(
+            (n for n in assets if (low := n.lower()).endswith(".tar.gz") and "-linux" in low),
+            None,
+        )
+        assert legacy == "nparseplus-2.21.0-linux-x86_64.tar.gz"
 
 
 def test_pick_asset_full_release_macos_self_update_takes_the_macos_zip() -> None:

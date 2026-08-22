@@ -36,6 +36,8 @@ versioning.
    - Windows zip
    - Linux tarball **and** Flatpak bundle (GPG-signed; smoke-tested
      headless inside the sandbox)
+   - Linux Debian package, built in a `debian:12` container so it runs where
+     the tarball cannot (see [below](#linux-two-builds-two-glibc-floors))
    - publishes the Flatpak OSTree repo to the `gh-pages` branch —
      preserving the deployed docs — so `flatpak update` works
 3. The **release job** collects the artifacts, extracts that version's
@@ -46,6 +48,66 @@ versioning.
 
 Between releases, pushes to `master` that touch `docs/` redeploy the
 **dev** docs version automatically (`docs-dev.yml`).
+
+## Linux: two builds, two glibc floors
+
+PyInstaller bundles Python and Qt but **not glibc**, so an artifact's glibc
+floor is whatever its build host shipped. `build-linux` runs on
+`ubuntu-latest` — Ubuntu 24.04, glibc 2.39 — so its tarball cannot start on
+Debian 12 (2.36), which reports `version 'GLIBC_2.3x' not found` at exec.
+`build-linux-debian12` builds the same application inside a `debian:12`
+container and packages it as a `.deb`, putting the floor at bookworm's.
+
+Three choices in that job are worth knowing:
+
+- **A container, not `runs-on: ubuntu-22.04`.** That image begins deprecation
+  on 2026-09-17 and is unsupported by 2027-04-17, so pinning it would buy
+  under a year. A container decouples the floor from GitHub's runner image
+  permanently.
+- **`debian:12`, not a manylinux image.** PySide6's Linux wheels are tagged
+  `manylinux_2_34`, so the build host itself needs glibc ≥ 2.34 — which rules
+  out `manylinux_2_28` (AlmaLinux 8). Bookworm's 2.36 clears it.
+- **The long `apt-get install` list is load-bearing.** PyInstaller bundles
+  whatever `ldd` resolves *at build time*, and the GitHub runner image carries
+  far more than a bare `debian:12`. A library that is simply absent is not
+  bundled and **the build still succeeds** — the artifact just quietly loses
+  whatever needed it (QtWebEngine, i.e. the Discord overlay, is the casualty).
+  The job's unresolved-dependency gate is what makes that loud, and the
+  `objdump` step *measures* the resulting floor rather than asserting it, so a
+  dependency that raises it fails the build instead of a user's launch.
+
+`verify-deb-debian12` then installs the package on a **pristine** `debian:12`
+with `apt-get install ./…deb` and boots it. That is the only thing validating
+`Depends:` — the build container has every library installed by hand, so a
+missing dependency cannot fail there. It also exercises what a `/opt` install
+has and the tarball never does: a frozen app whose `sys._MEIPASS` is
+root-owned and read-only.
+
+Both jobs are `continue-on-error`, like the macOS x86_64 leg, so a Debian
+hiccup never blocks a release of the artifacts that already worked. The cost
+is that a release can then publish **without** the `.deb` and nothing says so
+— `download-artifact` simply finds fewer files. Worth removing once the jobs
+have proven stable.
+
+### The release-asset naming rule
+
+`updater.pick_asset` finds the Linux tarball with `"-linux" in name` plus a
+suffix, and takes the first match. **That predicate ships compiled into every
+already-released binary**, so it cannot be fixed retroactively for anyone
+already running nParse+. Any new Linux release asset must therefore be inert
+to it: at most one asset may both contain `-linux` and end in `.tar.gz`.
+`nparseplus_<version>_amd64.deb` satisfies that by construction. This is what
+[#160](https://github.com/prokopto-dev/nparse-plus/issues/160) was, one
+artifact over; `tests/test_updater.py` and `tests/test_release_workflow.py`
+guard both halves.
+
+### What CI cannot check
+
+Nothing here proves the package runs on a real Debian 12 desktop. The
+offscreen boot exercises no xcb path, no compositor, no tray, no always-on-top
+or window opacity, and never starts QtWebEngine's render process. The clean
+`apt` install is the strongest available signal and is still headless. One
+human on a real bookworm install, once.
 
 ## Windows: the bootloader is rebuilt from source
 

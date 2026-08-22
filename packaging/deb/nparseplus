@@ -1,0 +1,10 @@
+#!/bin/sh
+# /usr/bin/nparseplus — the .deb's launcher.
+#
+# Deliberately a bare exec. The Flatpak's launcher (packaging/flatpak/
+# nparseplus.sh) exports QT_QPA_PLATFORM and QTWEBENGINE_DISABLE_SANDBOX
+# because flatpakportal.py's relaunch path can bypass it; nothing bypasses
+# this one. app._runtime_env_defaults() already applies both on Linux and
+# never overrides a value the user set, so setting them here would only
+# create a second place to keep in sync.
+exec /opt/nparseplus/nparseplus "$@"

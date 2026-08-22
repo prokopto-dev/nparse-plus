@@ -5,6 +5,22 @@ incremental `flatpak update` support and a sandbox. The tarball
 (`nparseplus-<version>-linux-x86_64.tar.gz`) is for systems without Flatpak
 or users who prefer a plain unpacked build.
 
+!!! warning "This tarball needs glibc 2.39 or newer"
+
+    It is built on Ubuntu 24.04, and a program built against one glibc cannot
+    run on an older one. Check yours with `ldd --version`. Ubuntu 24.04+,
+    Fedora 40+ and Debian 13+ are fine; **Debian 12 (bookworm) and Ubuntu
+    22.04 are not** — the symptom is
+
+    ```
+    /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
+    ```
+
+    On Debian 12 use the [Debian package](install-debian.md), which is built
+    on bookworm. On anything else that is too old, use the
+    [Flatpak](install-flatpak.md) — its sandbox brings its own glibc, so the
+    host's version does not matter at all.
+
 ## Install and run
 
 ```bash
@@ -45,7 +61,9 @@ the log folder is just a directory under your prefix.
 
 nParse+ checks GitHub for new releases at startup; on a tarball install it
 offers the new `.tar.gz` (a Flatpak install is offered the `.flatpak`
-instead). Unpack the new version over the old one — settings live separately
+instead; a [Debian package](install-debian.md) install is currently offered
+this tarball, which is
+[#163](https://github.com/prokopto-dev/nparse-plus/issues/163)). Unpack the new version over the old one — settings live separately
 under `~/.config/nparseplus/`. See [Updating](updating.md).
 
 ## Uninstall

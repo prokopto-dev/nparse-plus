@@ -47,13 +47,29 @@ macOS and Linux stay on the wheel. The macOS bootloader build is
 byte-reproducible (a local `waf` build of 6.21.0 reproduces the published
 `runw` exactly), so rebuilding it there would change nothing.
 
-## Linux (tarball + Flatpak)
+## Linux (tarball + Flatpak + Debian package)
 
 ```bash
 uv sync --group build
 uv run pyinstaller packaging/nparseplus.spec --noconfirm
 tar -C dist -czf nparseplus-linux-x86_64.tar.gz nparseplus
 ```
+
+The Debian package wraps the same onedir build too:
+
+```bash
+uv run python packaging/deb/build_deb.py \
+    --dist-dir dist/nparseplus --version "$(uv run python -c \
+    'import nparseplus; print(nparseplus.__version__)')" --outdir dist
+```
+
+**Build it on Debian 12 or the artifact is pointless.** The whole reason it
+exists is that an artifact's glibc floor is its build host's, so producing it
+anywhere newer just makes a `.deb` with the tarball's floor. CI runs the build
+inside a `debian:12` container and passes the measured floor in with
+`--glibc-floor`; locally, `docker run --rm -v "$PWD:/src" -w /src debian:12`
+is the equivalent. See
+[Linux: two builds, two glibc floors](releasing.md#linux-two-builds-two-glibc-floors).
 
 The Flatpak wraps the same onedir build via the manifest in
 [`packaging/flatpak/`](https://github.com/prokopto-dev/nparse-plus/tree/master/packaging/flatpak)
