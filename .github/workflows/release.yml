@@ -533,23 +533,40 @@ jobs:
           # is booted — so this is new coverage. Exit 124 means `timeout`
           # killed it, i.e. it was still running after 20 s. app.py only fills
           # QT_QPA_PLATFORM when unset, so forcing offscreen is honoured.
+          LOG_DIR=$(uv run python -c \
+            "from platformdirs import user_log_dir; print(user_log_dir('nparseplus'))")
+          echo "log dir: $LOG_DIR"
+          # Same as the Windows step: start from nothing, or a log left by an
+          # earlier step decides the result instead of this run.
+          rm -rf "$LOG_DIR"
           export QT_QPA_PLATFORM=offscreen
           set +e
           dbus-run-session -- timeout 20 dist/nparseplus/nparseplus
           code=$?
           set -e
+          # Explicit ifs, not `[ -f x ] && ...`: the runner's shell is
+          # `bash -e`, and a short-circuiting && list is a poor thing to bet
+          # a build step on.
+          if [ -f "$LOG_DIR/nparseplus.log" ]; then
+            echo "--- nparseplus.log ---"
+            cat "$LOG_DIR/nparseplus.log"
+          fi
+          if [ -f "$LOG_DIR/crash.log" ]; then
+            echo "--- crash.log ---"
+            cat "$LOG_DIR/crash.log"
+          fi
           if [ "$code" -ne 124 ]; then
             echo "::error::app exited early (code $code)"
             exit 1
           fi
-          LOG_DIR=$(uv run python -c \
-            "from platformdirs import user_log_dir; print(user_log_dir('nparseplus'))")
-          # "Still running" alone is weak: a crash logged and a hung splash
-          # look the same from the outside.
-          test -f "$LOG_DIR/nparseplus.log"
+          # "Still running" alone is weak: it must have reached run_app() far
+          # enough to open its log, and must not have crashed on the way.
+          if [ ! -f "$LOG_DIR/nparseplus.log" ]; then
+            echo "::error::app never opened its log file — it did not reach run_app()"
+            exit 1
+          fi
           if [ -f "$LOG_DIR/crash.log" ]; then
-            cat "$LOG_DIR/crash.log"
-            echo "::error::app wrote a crash log"
+            echo "::error::app wrote a crash log on startup"
             exit 1
           fi
       - name: Build the .deb
@@ -583,6 +600,16 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Before download-artifact, not after: the node action needs a trust
+      # store, and apt needs its lists before it can resolve the package's
+      # Depends. dbus is here because a session bus is a desktop given, not
+      # something the package should declare.
+      - name: Container prerequisites
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates dbus
       - uses: actions/download-artifact@v4
         with:
           name: linux-deb-debian12
@@ -591,15 +618,9 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          apt-get update
           apt-get install -y ./nparseplus_*.deb
       - name: Boot the installed app
-        env:
-          DEBIAN_FRONTEND: noninteractive
         run: |
-          # A session bus is a desktop given, not something to declare in
-          # Depends, so it is installed here rather than by the package.
-          apt-get install -y --no-install-recommends dbus
           export QT_QPA_PLATFORM=offscreen
           set +e
           dbus-run-session -- timeout 20 /usr/bin/nparseplus

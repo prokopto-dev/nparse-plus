@@ -892,6 +892,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-qt" },
     { name = "python-semantic-release" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 docs = [
@@ -933,6 +934,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-qt" },
     { name = "python-semantic-release", specifier = ">=10.6.1" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.5" },
 ]
 docs = [

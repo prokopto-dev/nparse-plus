@@ -86,8 +86,11 @@ root-owned and read-only.
 Both jobs are `continue-on-error`, like the macOS x86_64 leg, so a Debian
 hiccup never blocks a release of the artifacts that already worked. The cost
 is that a release can then publish **without** the `.deb` and nothing says so
-— `download-artifact` simply finds fewer files. Worth removing once the jobs
-have proven stable.
+— `download-artifact` simply finds fewer files, and a `.deb` that failed
+verification still ships. The `release` job already *waits* on
+`verify-deb-debian12`, so dropping `continue-on-error` from these two is the
+only change needed to make verification gating; worth doing once they have
+proven stable on a few releases.
 
 ### The release-asset naming rule
 

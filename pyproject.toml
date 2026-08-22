@@ -69,6 +69,10 @@ dev = [
   "jsonschema>=4.22",
   # Unmarked on purpose — see the runtime dependency above.
   "jeepney>=0.8",
+  # tests/test_release_workflow.py parses .github/workflows/release.yml.
+  # Packaging runs only on tags, so a mistake there first shows up while
+  # cutting a release; parsing the graph beats regex over the text.
+  "PyYAML>=6.0",
   "pytest>=8.2",
   "pytest-benchmark>=4.0",
   "pytest-cov",
