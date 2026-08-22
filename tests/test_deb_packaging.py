@@ -83,13 +83,38 @@ def test_the_glibc_floor_is_declared(staged: Path) -> None:
     assert "libc6 (>= 2.36)" in control
 
 
-def test_tts_is_recommended_not_required(staged: Path) -> None:
-    """``audio/tts.py`` finds espeak on PATH; its absence degrades, not breaks."""
+def test_audio_is_a_hard_dependency(staged: Path) -> None:
+    """Trigger audio and TTS are core features, so espeak is Depends, not Recommends.
+
+    ``audio/tts.default_speaker`` returns ``EspeakSpeaker`` only when
+    ``find_espeak()`` locates an espeak binary on PATH, and **NullSpeaker
+    otherwise** — no error, no log line, just silence. Silent degradation is
+    the worst failure mode an alerting tool has, and a Recommends is skippable
+    (``--no-install-recommends``, and some minimal installs default to it).
+
+    espeak is also the ONLY audio path on Linux: the trigger engine's
+    ``sound_player`` seam is never wired, and the spec excludes Qt Multimedia
+    and QtTextToSpeech from the bindings entirely. The Flatpak bundles
+    espeak-ng and pcaudiolib for this same reason; a .deb declares it instead.
+    """
     control = (staged / "DEBIAN" / "control").read_text(encoding="utf-8")
+    depends = control.split("Depends:", 1)[1].split("Recommends:", 1)[0]
+    assert "espeak-ng" in depends
     recommends = next(line for line in control.splitlines() if line.startswith("Recommends:"))
-    assert "espeak-ng" in recommends
-    depends_block = control.split("Depends:", 1)[1].split("Recommends:", 1)[0]
-    assert "espeak" not in depends_block
+    assert "espeak" not in recommends
+
+
+def test_the_silent_fallback_that_makes_audio_a_dependency_still_exists() -> None:
+    """Ties the Depends above to the behaviour that justifies it.
+
+    If ``default_speaker`` ever grew a loud failure — a raised error, a
+    user-visible warning — espeak could go back to Recommends. While it
+    silently returns NullSpeaker, it cannot.
+    """
+    source = (REPO_ROOT / "src/nparseplus/audio/tts.py").read_text(encoding="utf-8")
+    body = source.split("def default_speaker", 1)[1].split("\ndef ", 1)[0]
+    assert "find_espeak()" in body
+    assert "NullSpeaker()" in body
 
 
 # --- layout, and not drifting from the Flatpak ------------------------------

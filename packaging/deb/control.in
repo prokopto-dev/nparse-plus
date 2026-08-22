@@ -14,8 +14,8 @@ Depends: libc6 (>= @GLIBC_FLOOR@), libgl1, libegl1, libglib2.0-0, libfontconfig1
  libxext6, libxrender1, libxi6, libsm6, libice6, libxkbfile1, libnss3, libnspr4,
  libxcomposite1, libxdamage1, libxrandr2, libxfixes3, libxtst6, libasound2,
  libcups2, libatk1.0-0, libatk-bridge2.0-0, libatspi2.0-0, libdrm2, libgbm1,
- libexpat1, libpango-1.0-0, libcairo2, zlib1g
-Recommends: espeak-ng, dbus-user-session
+ libexpat1, libpango-1.0-0, libcairo2, zlib1g, espeak-ng
+Recommends: dbus-user-session
 Description: EverQuest Project 1999 log-parsing overlay
  nParse+ tails your EverQuest Project 1999 log file and draws maps, spell and
  respawn timers, triggers, a DPS meter and sharing overlays over the game.
@@ -24,3 +24,9 @@ Description: EverQuest Project 1999 log-parsing overlay
  Qt, so no distribution Python packages are required. It is built on Debian 12
  (bookworm), which is what sets its glibc floor -- the generic Linux tarball on
  the releases page is built on a newer distribution and will not run here.
+ .
+ espeak-ng is a hard dependency rather than a recommendation: trigger audio
+ and text-to-speech are core features, and without an espeak binary on PATH
+ the app falls back to a silent speaker with no error. The Flatpak build
+ bundles espeak-ng and pcaudiolib for the same reason; declaring it is the
+ packaging-native equivalent.

@@ -36,14 +36,10 @@ unmet, which surfaces later as a failure to start.
 
 Then launch it from your desktop menu, or run `nparseplus`.
 
-For trigger text-to-speech, also install the engine:
-
-```bash
-sudo apt install espeak-ng
-```
-
-It is a `Recommends`, so most desktops pull it in automatically; TTS is the
-only thing that degrades without it.
+Trigger audio and text-to-speech work out of the box: `espeak-ng` is a hard
+dependency, so apt installs it with the package. (Without an espeak binary on
+PATH the app falls back to a silent speaker and says nothing about it, which
+is why it is a `Depends` and not a `Recommends`.)
 
 ### Without root
 
@@ -55,7 +51,8 @@ dpkg-deb -x nparseplus_<version>_amd64.deb ~/nparseplus
 ```
 
 You then own the dependencies yourself — the list is in
-`dpkg-deb -I nparseplus_<version>_amd64.deb`.
+`dpkg-deb -I nparseplus_<version>_amd64.deb`, and that includes `espeak-ng`,
+without which trigger audio is silently disabled.
 
 ## What it installs
 

@@ -275,7 +275,12 @@ loads (TIFF — unsatisfiable on bookworm and equally unresolved in the Ubuntu
 tarball — plus Wayland, GTK theming, PulseAudio), so it is fatal only for
 `CRITICAL` (core Qt, the xcb plugin, QtWebEngine, the launcher) and reports
 the rest. A gate that fails on what does not matter is a gate that gets
-turned off.
+turned off. **`espeak-ng` is a `Depends`, not a `Recommends`**: it is the ONLY
+audio path on Linux (the trigger engine's `sound_player` seam is unwired and
+the spec excludes Qt Multimedia/TextToSpeech), and `default_speaker` falls
+back to `NullSpeaker` without it — silently, which is the worst failure an
+alerting tool has. The Flatpak bundles espeak-ng + pcaudiolib for the same
+reason; declaring it is the packaging-native equivalent.
 
 **Every new Linux release asset must be inert to `updater.pick_asset`.** It
 sweeps for `"-linux" in name` plus a suffix and takes the FIRST match, and
