@@ -6,6 +6,19 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.26.1 (2026-08-25)
+
+### Bug Fixes
+
+- **overlays**: Offer click-through per window, not just the legacy rows
+  ([`70ce99a`](https://github.com/prokopto-dev/nparse-plus/commit/70ce99a281980e0e672d23ac8b4ec0c6ebd63fa8))
+
+### Refactoring
+
+- **overlays**: Make the event overlay's regions one record each
+  ([`e9c83fc`](https://github.com/prokopto-dev/nparse-plus/commit/e9c83fc8289741d6a852f98b07e78e79ffa3e643))
+
+
 ## v2.26.0 (2026-08-25)
 
 ### Features
