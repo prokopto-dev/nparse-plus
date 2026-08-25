@@ -55,6 +55,11 @@ class _PluginSurfaces:
     tray_labels: list[str] = field(default_factory=list)
     command_keys: list[str] = field(default_factory=list)
     page_specs: list[Any] = field(default_factory=list)
+    # Event-overlay regions (#155): keys are namespaced like window keys, and
+    # the widgets are kept separately from ``widgets`` because they are torn
+    # down through the overlay rather than through the layout manager.
+    region_keys: list[str] = field(default_factory=list)  # "plugin.<id>.<key>"
+    region_widgets: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -70,6 +75,10 @@ class PluginUi:
     """
 
     windows_by_key: dict[str, Any] = field(default_factory=dict)  # "plugin.<id>.<key>"
+    # Event-overlay regions by namespaced key. Not merged into any window
+    # table: a region has no tray entry, no chat toggle and no Settings >
+    # Windows row — it is not a window, it lives INSIDE one.
+    regions_by_key: dict[str, Any] = field(default_factory=dict)
     command_handles: dict[str, Any] = field(default_factory=dict)  # chat toggle_<name>
     # Tray label -> widget. Provisional until ``attach_live`` claims real
     # labels against the tray itself — at launch the tray does not exist yet,
@@ -95,6 +104,7 @@ class PluginUi:
         legacy_app: Any,
         chrome_surfaces: list[Any],
         apply_appearance: Callable[[], None],
+        event_overlay: Any = None,
     ) -> None:
         """Make plugin surfaces follow the plugin, for the rest of the session.
 
@@ -109,8 +119,9 @@ class PluginUi:
         plugin layer never holds a private copy that can drift: the chat
         command table and the tray dict are mutated in place (the tray menu
         re-reads its dict every time it opens), the layout manager and the
-        settings window grew add/remove methods, and ``chrome_surfaces`` is
-        the list a skin change sweeps.
+        settings window grew add/remove methods, ``chrome_surfaces`` is the
+        list a skin change sweeps, and ``event_overlay`` is the overlay whose
+        region registry a contributed region joins and leaves.
         """
         live = _LivePluginUi(
             ui=self,
@@ -124,12 +135,22 @@ class PluginUi:
             legacy_app=legacy_app,
             chrome_surfaces=chrome_surfaces,
             apply_appearance=apply_appearance,
+            event_overlay=event_overlay,
         )
         # The windows built at launch are in the tray dict provisionally; now
         # that the tray exists, claim real labels for them through exactly the
         # path a live enable uses.
         for plugin_id in list(self.surfaces):
             live.claim_tray_labels(plugin_id)
+        # Regions built at launch join the skin sweep here rather than in
+        # ``build_plugin_ui``: they are not windows, so ``create_app`` never
+        # sees them in ``layout_windows``, which is the list it fills
+        # ``chrome_surfaces`` from. Each is already dressed from the CURRENT
+        # skin by its own constructor; what it needs is to be swept on the
+        # NEXT change.
+        chrome_surfaces.extend(
+            widget for widget in self.regions_by_key.values() if widget not in chrome_surfaces
+        )
         plugin_host.on_ui_build.append(live.materialize)
         plugin_host.on_ui_teardown.append(live.retire)
 
@@ -169,8 +190,14 @@ def build_plugin_ui(
     save: Callable[[], None],
     bridge: QtEventBridge,
     window_handles: dict[str, Any],
+    event_overlay: Any = None,
 ) -> PluginUi:
-    """Run consent, activate, and materialize each plugin's Qt contributions."""
+    """Run consent, activate, and materialize each plugin's Qt contributions.
+
+    ``event_overlay`` is optional only so an embedder (and a test that builds
+    no overlay) can leave it out; without one, a plugin's declared overlay
+    regions are logged and dropped rather than silently forgotten.
+    """
     from nparseplus.ui.pluginconsent import run_consent_prompts
     from nparseplus.ui.pluginmanager import plugin_manager_page_spec
 
@@ -181,6 +208,13 @@ def build_plugin_ui(
 
     for loaded, spec, widget in _materialize_plugin_windows(plugin_host, settings, save, bridge):
         _register_window(ui, loaded, spec, widget, window_handles)
+
+    for loaded in _plugins_with_regions(plugin_host):
+        for spec, widget in _build_plugin_regions(loaded, settings, save, bridge, event_overlay):
+            if _register_region(ui, loaded, spec, widget, event_overlay) is None:
+                # Refused (a duplicate key): nothing holds it, and nothing ever
+                # will — the same disposal the live path does.
+                widget.deleteLater()
 
     for loaded, spec in plugin_host.page_specs():
         ui.extra_pages.append(spec)
@@ -242,6 +276,152 @@ def _register_window(
     return window_key, label
 
 
+def _register_region(
+    ui: PluginUi,
+    loaded: LoadedPlugin,
+    spec: Any,
+    widget: Any,
+    event_overlay: Any,
+) -> str | None:
+    """Put one built region on the overlay and record it. Returns its key.
+
+    Shared by the startup sweep and the live path, exactly like
+    ``_register_window`` — nothing about a region built at launch is special.
+    Returns None when the region was refused, in which case the caller owns
+    the widget it built.
+
+    A region is deliberately registered NOWHERE else: no tray entry, no chat
+    toggle, no Settings > Windows row. Those all belong to a top-level window,
+    and a region is not one — it lives inside the event overlay and is placed
+    from the overlay's own position mode.
+    """
+    assert loaded.meta is not None
+    region_key = f"plugin.{loaded.meta.id}.{spec.key}"
+    if region_key in ui.regions_by_key:
+        # add_overlay_region() does not enforce a unique spec.key, so a plugin
+        # can declare the same one twice. Two widgets sharing one region key
+        # would share one persisted placement, and the overlay's registry is
+        # keyed on it — the second would simply displace the first, leaving a
+        # widget nothing can ever remove. Keep the first and say so.
+        logger.warning(
+            "plugin %s declared overlay region key %r twice; the later region is ignored",
+            loaded.meta.id,
+            spec.key,
+        )
+        return None
+    placed = False
+    with _isolated(f"plugin {loaded.meta.id} overlay region {spec.key!r}"):
+        placed = bool(
+            event_overlay.add_region(
+                region_key,
+                widget,
+                title=spec.title or spec.key,
+                has_content=_guarded_has_content(spec, loaded.meta.id),
+                default=_region_default(spec, loaded.meta.id),
+                default_width=(
+                    (lambda width=spec.default_width: width)
+                    if spec.default_width is not None
+                    else None
+                ),
+                preview=_region_preview(widget, loaded.meta.id, spec.key),
+            )
+        )
+    if not placed:
+        # The overlay refuses a key it holds a BUILT-IN under, which is the
+        # one case a plugin cannot talk its way out of.
+        logger.warning(
+            "plugin %s overlay region %r was refused by the overlay", loaded.meta.id, spec.key
+        )
+        return None
+    surfaces = ui.surfaces.setdefault(loaded.meta.id, _PluginSurfaces())
+    ui.regions_by_key[region_key] = widget
+    surfaces.region_keys.append(region_key)
+    surfaces.region_widgets.append(widget)
+    return region_key
+
+
+def _region_default(spec: Any, plugin_id: str) -> Any:
+    """The placement a contributed region starts at, or the plain default.
+
+    ``OverlayRegion``'s own validator repairs an unusable size rather than
+    raising, but ``default_anchor`` is a Literal and a plugin can pass
+    anything — so a bad one costs that region its declared placement, not its
+    place on the overlay.
+    """
+    from nparseplus.config.settings import OverlayRegion
+
+    try:
+        return OverlayRegion(
+            anchor=spec.default_anchor,
+            dx=spec.default_dx,
+            dy=spec.default_dy,
+            height=spec.default_height,
+        )
+    except Exception:
+        logger.exception(
+            "plugin %s overlay region %r declared an unusable default placement; "
+            "using the overlay default",
+            plugin_id,
+            spec.key,
+        )
+        return OverlayRegion()
+
+
+def _guarded_has_content(spec: Any, plugin_id: str) -> Callable[[], bool]:
+    """``spec.has_content``, unable to break the overlay's visibility pass.
+
+    Asked on every visibility pass — which is every overlay event — so a
+    raising predicate would be a flood, not a line. It is logged ONCE per
+    region and answers False thereafter: a region that cannot say whether it
+    has anything is not a reason to keep an always-on-top window over the
+    game.
+    """
+    complained = False
+
+    def call() -> bool:
+        nonlocal complained
+        try:
+            return bool(spec.has_content())
+        except Exception:
+            if not complained:
+                complained = True
+                logger.exception(
+                    "plugin %s overlay region %r has_content() raised; treating it as empty "
+                    "for the rest of the session",
+                    plugin_id,
+                    spec.key,
+                )
+            return False
+
+    return call
+
+
+def _region_preview(widget: Any, plugin_id: str, key: str) -> Callable[[], list[Any]] | None:
+    """The region's position-mode sample content, guarded.
+
+    None for a widget with no ``sample()`` — the overlay reads that as "shows
+    nothing while positioning", which is already how a region with no preview
+    factory behaves.
+    """
+    sample = getattr(widget, "sample", None)
+    if not callable(sample):
+        return None
+
+    def build() -> list[Any]:
+        try:
+            made = sample()
+        except Exception:
+            logger.exception("plugin %s overlay region %r sample() raised", plugin_id, key)
+            return []
+        # The overlay takes these back out through the region's layout and
+        # then deletes them, so anything that is not a widget would raise
+        # from inside ``_clear_preview`` — on the way OUT of position mode,
+        # where there is nothing useful to do about it.
+        return [item for item in (made or []) if hasattr(item, "deleteLater")]
+
+    return build
+
+
 @dataclass
 class _LivePluginUi:
     """The subscriber that makes plugin surfaces follow the plugin (#45).
@@ -269,6 +449,7 @@ class _LivePluginUi:
     legacy_app: Any
     chrome_surfaces: list[Any]
     apply_appearance: Callable[[], None]
+    event_overlay: Any = None
 
     def materialize(self, loaded: LoadedPlugin) -> None:
         """Build and register everything a just-activated plugin declared."""
@@ -286,6 +467,15 @@ class _LivePluginUi:
                 self.layouts.add_window(window_key, widget)
             self.chrome_surfaces.append(widget)
             built = True
+        for spec, widget in _build_plugin_regions(
+            loaded, self.settings, self.save, self.bridge, self.event_overlay
+        ):
+            if _register_region(self.ui, loaded, spec, widget, self.event_overlay) is None:
+                widget.deleteLater()
+                continue
+            # Dressed from the current skin by its own constructor; this is
+            # what carries it through every LATER change.
+            self.chrome_surfaces.append(widget)
         for spec in list(loaded.page_specs):
             self.ui.extra_pages.append(spec)
             self.ui.surfaces.setdefault(plugin_id, _PluginSurfaces()).page_specs.append(spec)
@@ -376,6 +566,19 @@ class _LivePluginUi:
             self.ui.tray.pop(label, None)
             with _isolated(f"plugin {plugin_id} tray entry"):
                 self.legacy_app.remove_backend_window(label)
+        for region_key in surfaces.region_keys:
+            self.ui.regions_by_key.pop(region_key, None)
+            with _isolated(f"plugin {plugin_id} overlay region"):
+                # Hands the widget back hidden and unparented; the persisted
+                # placement stays behind on purpose, so re-enabling the plugin
+                # brings its region back where the user put it.
+                self.event_overlay.remove_region(region_key)
+        for widget in surfaces.region_widgets:
+            if widget in self.chrome_surfaces:
+                self.chrome_surfaces.remove(widget)
+            with _isolated(f"plugin {plugin_id} overlay region teardown"):
+                widget.hide()
+                widget.deleteLater()
         for window_key in surfaces.window_keys:
             self.ui.windows_by_key.pop(window_key, None)
             with _isolated(f"plugin {plugin_id} layout entry"):
@@ -524,6 +727,94 @@ def _build_plugin_windows(
             continue
         built.append((spec, widget))
     return built
+
+
+def _build_plugin_regions(
+    loaded: LoadedPlugin,
+    settings: Settings,
+    save: Callable[[], None],
+    bridge: QtEventBridge,
+    event_overlay: Any,
+) -> list[tuple[Any, Any]]:
+    """Build ONE plugin's declared event-overlay regions; factories guarded.
+
+    Per-plugin like ``_build_plugin_windows``, so a region built at launch and
+    one built for an add-on enabled mid-session go through the same code.
+
+    With no overlay to put them on, the regions are dropped with a line in the
+    log — an embedder without an event overlay is a legitimate configuration,
+    a plugin silently missing half its UI is not.
+    """
+    from nparseplus_sdk.plugin import OverlayRegionContext
+
+    assert loaded.meta is not None
+    specs = list(loaded.overlay_region_specs)
+    if not specs:
+        return []
+    if event_overlay is None:
+        logger.warning(
+            "plugin %s declared %d overlay region(s) but this app has no event overlay; "
+            "they are not shown",
+            loaded.meta.id,
+            len(specs),
+        )
+        return []
+    built: list[tuple[Any, Any]] = []
+    for spec in specs:
+        region_key = f"plugin.{loaded.meta.id}.{spec.key}"
+        rctx = OverlayRegionContext(
+            settings=settings,
+            region_key=region_key,
+            title=spec.title,
+            on_save=save,
+            # Bound to the key rather than to the record: the overlay ignores
+            # a key it no longer holds, so a region notifying after it was
+            # retired is a no-op rather than a reference into a dead record.
+            on_content_changed=_region_content_hook(event_overlay, region_key),
+            bridge=bridge,
+        )
+        try:
+            widget = spec.factory(rctx)
+        except Exception:
+            logger.exception(
+                "plugin %s overlay region %r factory failed; region skipped",
+                loaded.meta.id,
+                spec.key,
+            )
+            continue
+        if widget is None:
+            logger.warning(
+                "plugin %s overlay region %r factory returned None", loaded.meta.id, spec.key
+            )
+            continue
+        built.append((spec, widget))
+    return built
+
+
+def _region_content_hook(event_overlay: Any, region_key: str) -> Callable[[], None]:
+    """``OverlayRegionContext.on_content_changed`` for one region, guarded.
+
+    A plugin calls this from its own timers and signal handlers, where an
+    exception has nowhere to go but the Qt event loop of a translucent,
+    always-on-top window over a running game.
+    """
+
+    def notify() -> None:
+        try:
+            event_overlay.region_content_changed(region_key)
+        except Exception:
+            logger.exception("overlay region %r content change failed", region_key)
+
+    return notify
+
+
+def _plugins_with_regions(plugin_host: PluginHost) -> list[LoadedPlugin]:
+    """The active plugins declaring at least one region, in load order."""
+    seen: list[LoadedPlugin] = []
+    for loaded, _spec in plugin_host.overlay_region_specs():
+        if loaded not in seen:
+            seen.append(loaded)
+    return seen
 
 
 def _materialize_plugin_windows(

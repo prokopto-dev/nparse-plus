@@ -130,6 +130,10 @@ src/nparseplus/
                         #   pluginconsent.py (the one-time approval dialog),
                         #   pluginwindow.py (the PluginWindow base plugins
                         #   subclass — skinned by default since SDK 1.4),
+                        #   pluginregion.py (its region counterpart, SDK 1.5:
+                        #   the PluginOverlayRegion base an add-on's EVENT
+                        #   OVERLAY region subclasses — sealed non-interactive,
+                        #   skinned, with sample() for position mode),
                         #   pluginskin.py (THE host half of
                         #   nparseplus_sdk.skin: the curated AppSkin
                         #   snapshot an add-on dresses itself from —
@@ -146,7 +150,9 @@ sdk/                    # uv WORKSPACE MEMBER: nparseplus-sdk, the stable third-
                         # app (sdk-v* tags -> PyPI); __init__.py's exports are public
                         # API under an additive-only 1.x promise. sdk/tests runs in
                         # the root pytest. See CONTRIBUTING.md.
-examples/plugins/       # reference add-ons (hello_timer.py, merchant_prices/);
+examples/plugins/       # reference add-ons (hello_timer.py, tod_window.py,
+                        # merchant_prices/, kill_ticker.py = the overlay-region
+                        # reference);
                         # tests/core/plugins/test_examples.py keeps them loading
 templates/              # plugin-repo/ = ready-to-push content of the plugin
                         #   template repo (not created yet; see TEMPLATE_SETUP.md).
@@ -1794,6 +1800,61 @@ un-crashed. Removal is an SDK 2.0 decision.
 
 `examples/plugins/merchant_prices/window.py` is the reference consumer, and
 `docs/plugins/appearance.md` carries the rule with its counter-example.
+
+**An add-on can draw INSIDE the event overlay** (post-2.26, SDK 1.5, #155):
+`ctx.add_overlay_region(OverlayRegionSpec(...))` mirrors `add_window` — a
+one-line append cleared by `unwind()` alongside `window_specs`/`page_specs` —
+and the Qt half materializes it onto the region registry #154 made
+runtime-mutable. Region keys are namespaced `plugin.<id>.<key>` like window
+keys, and the surface is registered NOWHERE else: no tray entry, no chat
+toggle, no Settings > Windows row. A region is not a window; it lives inside
+one.
+
+**Display-only, permanently, and that is the whole design** (owner decision on
+#155). `WindowTransparentForInput` is a top-level flag with no per-child
+exemption, so carving input out for one region means a second always-on-top
+window stacked on the overlay — `PluginWindowSpec` with extra steps. So
+`OverlayRegionSpec` carries **no** input-related field and never will: an
+additive-only 1.x SDK makes a speculative `accepts_input` permanent, and
+`test_overlay_region_specs.py` asserts the field set directly rather than
+leaving that as intent. **Position mode is the trap** — it drops the flag so
+the overlay can be dragged, so a raw widget would receive real clicks there
+and nowhere else. `PluginOverlayRegion` seals itself and its whole subtree
+with `WA_TransparentForMouseEvents` + `NoFocus`, recursively on `ChildAdded`
+**and `ChildPolished`** (a widget class that sets its own focus policy —
+`QPushButton` — does so after its parent is assigned), re-swept on show and on
+`notify_content_changed`. Sealing rather than accept-and-ignore is load-bearing
+in the other direction too: the press must fall THROUGH to the overlay, which
+hit-tests the region rectangles itself, or the region could not be dragged at
+all. The docs say this in the first paragraph of `docs/plugins/overlay-regions.md`
+and name the alternative in the same breath, because "minimap" promises
+interactivity to most readers — and say out loud that a real minimap also
+needs #156 (player location + Qt-free zone geometry), which is not built.
+
+**`has_content` is required on the spec**, because `_update_visibility` ORs
+the per-region predicates and a region with no opinion could never keep the
+overlay on screen by itself. It is asked on every visibility pass — i.e. every
+overlay event — so the host wraps it in a guard that logs ONCE and answers
+False forever after: a region that cannot say whether it has anything is not a
+reason to keep an always-on-top window over the game.
+
+**The region tells the overlay; the overlay cannot look inside.**
+`OverlayRegionContext.on_content_changed` → `EventOverlayWindow.region_content_changed(key)`
+is one call covering three consequences: re-anchor at the new height, re-decide
+visibility, and **re-assert the position-mode chrome**. That last one is not
+tidiness — a skin change reaches a region as a `setStyleSheet`, and it can land
+while position mode is up, which silently dropped the dashed border the user
+was dragging by. `_apply_region_chrome` now reads the host's CURRENT sheet
+through `_region_own_style` (a suffix strip of `RegionRecord.chrome_suffix`)
+rather than trusting the snapshot taken at registration, so turning chrome off
+restores what the region actually wears rather than a pre-skin-change copy.
+
+Two smaller decisions. `PluginOverlayRegion` owns its widget's WHOLE
+stylesheet and deliberately does NOT adopt one set with `setStyleSheet` the
+way `PluginWindow` does — that adoption exists to keep pre-1.4 windows styled,
+and nothing predates 1.5. And the persisted placement is kept when a plugin is
+disabled or uninstalled (nothing prunes `overlay_regions`): a stale key is a
+few bytes, losing someone's placed chrome to a reinstall costs more.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised
