@@ -67,6 +67,13 @@ and on an `rgba(accent, .28)` tint of your own, 2.9:1. `heading` and `text`
 clear AA on every skin's band, which is the whole reason the value group is
 skin-independent.
 
+!!! warning "`accent_text` is deprecated (1.4.1)"
+    SDK 1.4.0 (bundled in app v2.26.0) offered `accent_text` as the text for
+    an accent band, carrying the skin's caps colour — the pairing measured
+    above. The name is kept for the whole 1.x line, because 1.x is
+    additive-only, but its value is now simply `heading`. Read `heading`
+    directly; `accent_text` goes away in SDK 2.0.
+
 ## The snapshot is live — read it when you paint
 
 `skin.current()` returns a frozen `AppSkin`. Read it **at the moment you
@@ -273,6 +280,7 @@ only as an accent on it.
 | --- | --- |
 | `accent` | hairlines, focus rings, group titles — a mark, never a ground |
 | `band` | the fill behind a selected row; pair with `heading` / `text` |
+| `accent_text` | **deprecated since 1.4.1** — now the same as `heading`; use `heading` with `band` |
 | `hairline` | the rule between sections |
 | `plate` / `plate_border` | the outer frame |
 | `glass` / `glass_border` | the inner surface |

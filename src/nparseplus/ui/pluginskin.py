@@ -148,9 +148,21 @@ class AppSkin:
     #: 22% wash and Velious's is opaque stone, so no single alpha serves
     #: both. Deliberately **not** paired with an accent-coloured foreground:
     #: :attr:`heading` and :attr:`text` are what stay legible on it under
-    #: every skin, while the app's own caps colour measures 3.4:1 on
+    #: every skin, while the skin's own caps colour measures 3.4:1 on
     #: Ledger's band and 2.9:1 on a naive tint of the accent.
     band: tuple[str, ...]
+    #: **Deprecated since 1.4.1** — text for a :attr:`band`. Prefer
+    #: :attr:`heading` (or :attr:`text`) with :attr:`band`; this is now the
+    #: same value as :attr:`heading`, and is kept only because SDK 1.x is
+    #: additive-only and app v2.26.0 shipped the field.
+    #:
+    #: It shipped carrying the skin's own caps colour — what the app's
+    #: *config* chrome puts on its sidebar band — but that pairing measures
+    #: 3.4:1 on Ledger, below WCAG AA, and 2.9:1 on the ``rgba(accent, .28)``
+    #: selection the reference plugin painted with it. Correcting the value
+    #: under the name is what keeps a plugin written against v2.26.0 both
+    #: loading AND readable; removal is reserved for SDK 2.0.
+    accent_text: str
     #: The hairline between sections.
     hairline: str
     #: The outer plate fill (one stop = flat, two = a vertical gradient)
@@ -338,6 +350,9 @@ def current() -> AppSkin:
         track=colors.bar_track,
         accent=host.chrome_accent,
         band=host.chrome_band,
+        # Deprecated: the palette's heading, not the skin's caps colour the
+        # field shipped with. See the field's docstring for why.
+        accent_text=colors.heading,
         hairline=host.glass_border,
         plate=host.plate,
         plate_border=host.plate_border,

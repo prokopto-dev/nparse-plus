@@ -211,6 +211,26 @@ def test_the_selection_band_takes_a_palette_foreground(skin_name: str) -> None:
     assert contrast(ground, app.surface) > 1.1
 
 
+@pytest.mark.parametrize("skin_name", skins.SKIN_ORDER)
+def test_accent_text_is_kept_for_the_plugins_that_shipped_against_it(skin_name: str) -> None:
+    """SDK 1.x is additive-only, and app v2.26.0 shipped ``accent_text``.
+
+    Whether the standalone wheel reached PyPI does not undo that: a plugin
+    written against the bundled façade reads the attribute, and dropping it
+    would raise on the user's next app update. So the NAME is kept for 1.x
+    (removal is an SDK 2.0 decision) and the VALUE is corrected — it shipped
+    carrying the skin's caps colour, which is 3.4:1 on Ledger's band.
+    """
+    skins.set_skin(skin_name)
+    app = pluginskin.current()
+
+    assert hasattr(app, "accent_text")
+    assert app.accent_text == app.heading
+    # Corrected, so a plugin still reading it is now readable rather than
+    # merely un-crashed — which is the whole point of correcting over keeping.
+    assert contrast(app.accent_text, composite(app.band[0], app.surface)) >= 4.5
+
+
 # -- sizes are multipliers, never px ---------------------------------------------
 
 

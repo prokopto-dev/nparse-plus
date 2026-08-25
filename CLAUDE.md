@@ -1759,6 +1759,31 @@ the split explicit instead of reconstructed; `apply_skin()` stays the hook for
 what QSS cannot express (the example rebuilds its price cells there, since
 their colours are on the items, not in a sheet).
 
+**Neither virtual runs during `super().__init__()`, and the reason is the
+host's own error handling.** `skin_stylesheet()` is as virtual as
+`apply_skin()`, so calling it from the base constructor runs it before the
+subclass has assigned `self._plugin` — and `pluginbootstrap` wraps the window
+factory in `try/except … continue`, so an `AttributeError` there does not
+degrade the styling, it makes the add-on **silently not appear**. Construction
+therefore applies `_dress_from_skin(with_hook=False)`, and `_finalize_skin()`
+consults the hook once the subclass is built: from `restore_visibility()` (the
+documented last call) and from `showEvent` (a window opened straight from the
+tray never called it), idempotent via `_skin_finalized`. The hook is *also*
+guarded and logged wherever it runs — a cosmetic callback must never be what
+stops a window from showing, and `showEvent` is not a place an exception can
+usefully go.
+
+**`AppSkin.accent_text` is deprecated, not removed, and that distinction is
+the SDK's whole promise.** The first cut of the fix dropped it on the
+reasoning that SDK 1.4.0 never reached PyPI so nobody could hold it. That
+reasoning is wrong twice: app **v2.26.0 shipped the bundled façade** and its
+docs told plugins to read the field, so the contract exists regardless of the
+wheel; and "who could possibly be depending on this" is exactly the judgment
+an additive-only promise exists to remove. So the NAME stays for the whole 1.x
+line and the VALUE is corrected to the palette's `heading` — which keeps a
+plugin written against v2.26.0 both loading AND readable, rather than merely
+un-crashed. Removal is an SDK 2.0 decision.
+
 `examples/plugins/merchant_prices/window.py` is the reference consumer, and
 `docs/plugins/appearance.md` carries the rule with its counter-example.
 

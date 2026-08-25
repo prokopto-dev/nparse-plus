@@ -23,12 +23,16 @@ anything a stylesheet cannot express. See ``nparseplus_sdk.skin`` and
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtGui import QPainter
 
 from nparseplus.config.settings import WindowState
 from nparseplus.ui import pluginskin, skins, skinwidgets
 from nparseplus.ui.overlaybase import OverlayWindowBase
 from nparseplus_sdk.plugin import PluginWindowContext
+
+logger = logging.getLogger(__name__)
 
 
 class PluginWindow(OverlayWindowBase):
@@ -57,11 +61,18 @@ class PluginWindow(OverlayWindowBase):
         #: Rules a subclass set with ``setStyleSheet`` rather than through
         #: :meth:`skin_stylesheet`, kept across re-dresses.
         self._adopted_sheet = ""
-        # The default dressing, not ``self.apply_skin()``: this runs inside
-        # the subclass's ``super().__init__(...)`` call, before a single one
-        # of its own widgets exists, and an override that touched them would
-        # raise. A skin change later calls the override, as it should.
-        self._dress_from_skin()
+        #: Whether :meth:`skin_stylesheet` has been consulted yet.
+        self._skin_finalized = False
+        # The DEFAULT dressing only — neither ``self.apply_skin()`` nor
+        # ``self.skin_stylesheet()``. Both are virtual, and this runs inside
+        # the subclass's ``super().__init__(...)`` call, before it has
+        # assigned ``self._plugin`` or anything else its rules might read;
+        # an override touching that state would raise AttributeError here.
+        # The host wraps the window factory in try/except and SKIPS the
+        # window on any exception, so that is not a cosmetic failure — it is
+        # the add-on silently not appearing. The override is evaluated later,
+        # by ``_finalize_skin``.
+        self._dress_from_skin(with_hook=False)
 
     # -- appearance --------------------------------------------------------
 
@@ -79,11 +90,37 @@ class PluginWindow(OverlayWindowBase):
                 return f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
 
         Read ``nparseplus_sdk.skin.current()`` inside it: it is called afresh
-        on every change, and never cached. It is also called from
-        ``__init__`` — before your own widgets exist — so return rules,
-        do not touch widgets.
+        on every change, and never cached. It is **not** called during
+        ``super().__init__()`` — the first call happens once your constructor
+        has finished (at ``restore_visibility()``, or before the window is
+        first shown), so anything you assign after ``super().__init__(...)``
+        is available to it.
         """
         return ""
+
+    def restore_visibility(self) -> None:
+        """Honour the persisted ``shown`` flag — call it last in ``__init__``.
+
+        Also the point at which :meth:`skin_stylesheet` is first consulted:
+        by convention this is the last thing a subclass does, so its own
+        state exists by now.
+        """
+        self._finalize_skin()
+        super().restore_visibility()
+
+    def showEvent(self, event) -> None:
+        """Finalize before the first paint, for a window that never called
+        ``restore_visibility`` (one opened straight from the tray)."""
+        self._finalize_skin()
+        super().showEvent(event)
+
+    def _finalize_skin(self) -> None:
+        """Consult :meth:`skin_stylesheet` for the first time, once the
+        subclass is fully built. Idempotent."""
+        if self._skin_finalized:
+            return
+        self._skin_finalized = True
+        self._dress_from_skin()
 
     def apply_skin(self) -> None:
         """Re-dress from the skin the user just picked.
@@ -103,7 +140,7 @@ class PluginWindow(OverlayWindowBase):
         """
         self._dress_from_skin()
 
-    def _dress_from_skin(self) -> None:
+    def _dress_from_skin(self, *, with_hook: bool = True) -> None:
         current = self.styleSheet()
         if current != self._skin_sheet:
             # Not what we wrote: a subclass called ``setStyleSheet`` itself,
@@ -123,9 +160,19 @@ class PluginWindow(OverlayWindowBase):
                 else current
             )
         appearance = pluginskin.current()
-        self._skin_sheet = (
-            appearance.overlay_stylesheet() + self._adopted_sheet + self.skin_stylesheet()
-        )
+        # Guarded even post-construction: a cosmetic hook must never be what
+        # stops a plugin's window from showing, and ``showEvent`` is not a
+        # place an exception can usefully go.
+        extra = ""
+        if with_hook:
+            try:
+                extra = self.skin_stylesheet()
+            except Exception:
+                logger.exception(
+                    "plugin window %r skin_stylesheet() failed; using the default dressing",
+                    self._window_key,
+                )
+        self._skin_sheet = appearance.overlay_stylesheet() + self._adopted_sheet + extra
         self.setStyleSheet(self._skin_sheet)
         # On the widget rather than on the layout: the plugin owns its layout
         # and its margins are its own, while clearing the painted frame is
