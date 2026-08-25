@@ -49,8 +49,12 @@ Overlay windows are frameless so they sit cleanly over the game:
   (handy for resizing).
 - Per-window **always-on-top**, **opacity**, and **click-through** live in
   [Settings → Windows](../settings/windows.md). Click-through lets game
-  clicks pass straight through an overlay — turn it off again from Settings
-  when you need to interact with the window.
+  clicks pass straight through an overlay — the window then ignores the
+  mouse completely, right-click menus included, so turn it off again from
+  Settings when you need to interact with it. The tool windows you drive
+  with the mouse (Console, the two editors, Character Dumps) don't offer it;
+  [that page](../settings/windows.md#which-rows-offer-click-through) says
+  which do.
 
 !!! tip "Keep EQ windowed"
     Overlays can only draw over the game when EQ runs in **windowed or
