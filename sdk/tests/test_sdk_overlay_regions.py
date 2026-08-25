@@ -70,6 +70,14 @@ def test_the_region_base_is_a_lazy_host_re_export() -> None:
         _ = sdk_ui.NotAThing
 
 
+def test_the_ui_module_claims_no_new_public_name() -> None:
+    """``skin``/``eqfiles`` publish an ``EXPORTS`` allowlist; this module
+    deliberately does not, because 1.x is additive-only and a new public name
+    here — a mapping where its siblings are frozensets — would be frozen."""
+    assert not hasattr(sdk_ui, "EXPORTS")
+    assert dir(sdk_ui) == ["PluginOverlayRegion", "PluginWindow"]
+
+
 def test_importing_the_sdk_still_pulls_no_qt() -> None:
     """The whole reason ``ui`` forwards lazily: a plugin's Qt-free unit tests
     and the validate CLI must be able to import the package."""

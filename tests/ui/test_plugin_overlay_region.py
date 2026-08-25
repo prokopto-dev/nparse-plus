@@ -205,6 +205,38 @@ def test_a_raising_skin_stylesheet_still_leaves_a_dressed_region(qtbot, caplog) 
     assert any("skin_stylesheet() failed" in record.message for record in caplog.records)
 
 
+def test_a_sheet_set_by_hand_is_replaced_but_said_once(qtbot, caplog) -> None:
+    """``PluginWindow`` ADOPTS such a sheet, because windows written before SDK
+    1.4 had no hook. A region cannot — the overlay appends its position-mode
+    chrome to this widget's sheet and strips it by suffix, so re-writing an
+    adopted sheet after that appendix would leave the border on. Replacing it
+    silently is the failure mode this line exists to prevent."""
+    widget = PluginOverlayRegion(make_context())
+    qtbot.addWidget(widget)
+    widget.setStyleSheet("#Mine { color: red; }")
+
+    with caplog.at_level("WARNING"):
+        widget.apply_skin()
+        widget.apply_skin()
+
+    assert "#Mine" not in widget.styleSheet()
+    assert sum("owns the whole" in record.message for record in caplog.records) == 1
+
+
+def test_the_overlays_own_chrome_is_not_mistaken_for_a_plugins_rules(
+    overlay, placed, caplog
+) -> None:
+    """The chrome is APPENDED to what this class wrote, so the sheet still
+    starts with ours — a false positive here would fire on every skin change
+    the user makes while positioning."""
+    overlay.set_edit_mode(True)
+
+    with caplog.at_level("WARNING"):
+        placed.apply_skin()
+
+    assert not [record for record in caplog.records if "owns the whole" in record.message]
+
+
 def test_showing_finalizes_the_skin_once(qtbot) -> None:
     """A region has no ``restore_visibility`` to hang the first dress on, and
     ``app._apply_appearance`` only runs on a CHANGE — so a region built at
