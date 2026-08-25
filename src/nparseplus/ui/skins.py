@@ -51,6 +51,17 @@ HEADER_KINDS = (KIND_YOU, KIND_PLAYER, KIND_DETRIMENTAL, KIND_TIMER, KIND_COOLDO
 # overlay deterministic when the desktop's default font differs by platform.
 NOTO_SANS = "Noto Sans"
 
+# -- the object-name contract --------------------------------------------------
+# ``overlay_window_style`` styles these three names, and ``ui/skinwidgets.py``
+# stamps the first one. They are constants rather than literals at both ends
+# because ``ui/pluginskin.py`` re-exports them to add-ons: a plugin sets one on
+# its own QLabel and gets the skin's treatment for that role with no rules of
+# its own, which only holds while the sheet and the name cannot drift apart.
+
+OBJ_TITLE = "SkinTitle"  # a window's own caps title
+OBJ_ROW_NAME = "SkinRowName"  # the left half of an overlay row
+OBJ_ROW_VALUE = "SkinRowValue"  # its countdown/number
+
 
 @dataclass(frozen=True)
 class TypographyRole:
@@ -600,6 +611,28 @@ def row_bar_style(skin_: Skin, color: str) -> str:
     )
 
 
+def overlay_bar_rules(skin_: Skin, color: str) -> str:
+    """QSS for a countdown bar **on the event overlay**, painted in ``color``.
+
+    Not :func:`row_bar_style`: that dresses the thin rule under a Timers-window
+    row, while this is the wide bar that sits directly on the game — its own
+    plate, its own fade, and Ledger's left rule instead of a border. Split out
+    of ``eventoverlay._style_bar`` so a plugin contributing a region can draw a
+    bar the user reads as part of the same overlay rather than as an add-on's
+    idea of one.
+    """
+    fill = (
+        f"qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,"
+        f" stop: 0 {rgba(color, 0.62)}, stop: 1 {rgba(color, 0.16)})"
+    )
+    chunk = f"QProgressBar::chunk {{ background: {fill};"
+    if skin_.overlay_bar_style == "full":
+        chunk += f" border-left: {skin_.row_rule}px solid {color};"
+    chunk += " }"
+    border = f"1px solid {skin_.overlay_bar_border}" if skin_.overlay_bar_border else "none"
+    return f"QProgressBar {{ background-color: {skin_.overlay_bar_bg}; border: {border}; }}" + chunk
+
+
 def scrollbar_style() -> str:
     """The thin, chrome-free scrollbar every skinned overlay shares."""
     return (
@@ -628,9 +661,9 @@ def overlay_window_style(skin_: Skin, colors: Palette, font_size: int) -> str:
         f'QWidget {{ font-family: "{NOTO_SANS}"; }}'
         f"QLabel {{ {typography_style(font_size, BODY_TEXT, color=colors.text)}"
         " background: transparent; }"
-        f"#SkinTitle {{ {title_style(skin_, font_size)} }}"
-        f"#SkinRowName {{ {row_name}"
+        f"#{OBJ_TITLE} {{ {title_style(skin_, font_size)} }}"
+        f"#{OBJ_ROW_NAME} {{ {row_name}"
         " background: transparent; }"
-        f"#SkinRowValue {{ {row_value}"
+        f"#{OBJ_ROW_VALUE} {{ {row_value}"
         " background: transparent; }" + scrollbar_style()
     )

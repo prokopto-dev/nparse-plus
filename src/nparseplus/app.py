@@ -238,7 +238,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
     from nparseplus.helpers.application import NomnsParse
-    from nparseplus.ui import appicon, chromewidgets
+    from nparseplus.ui import appicon, chromewidgets, pluginskin
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
     from nparseplus.ui.dumpswindow import CharacterDumpsWindow
@@ -261,6 +261,12 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     # Before any window is built: the overlays read the active skin in their
     # constructors, and a skin change is live thereafter.
     skins.set_skin(settings.general.skin)
+    # The other half of what a snapshot needs — the user's font size and frame
+    # opacity — lives in settings rather than in a module global, so point the
+    # plugin façade at the live tree once instead of pushing on every change.
+    # Settings is loaded once per process and its ``general`` section is
+    # mutated in place, so the reference cannot go stale (see ui/pluginskin.py).
+    pluginskin.use_settings(settings)
     # Fusion honours QPalette fully and identically on every platform. Without
     # it, a dark chrome ground gets the host's native (light) combo boxes and
     # spin buttons drawn inside it; with it, those internals come from the

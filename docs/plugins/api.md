@@ -129,6 +129,13 @@ and the window's own title bar.
 parent=None)` — the keyword arguments are passed through to
 `OverlayWindowBase`; `self.window_context` holds the `wctx` you were given.
 
+`PluginWindow.apply_skin()` *(SDK 1.4+)* — the app calls this on every skin,
+font-size and frame-opacity change, live. The default paints the active skin's
+plate and glass behind your window and applies the overlay stylesheet, so a
+window that overrides nothing is already skinned; override it and call
+`super().apply_skin()` first to add your own rules. See
+[Appearance & skins](appearance.md).
+
 **`PluginWindowContext`** (the `wctx` your factory receives) — a dataclass
 with six fields plus one extension point:
 
@@ -161,6 +168,23 @@ plugin stays possible in Qt-free/host-free environments:
 - **`nparseplus_sdk.ui`** — `PluginWindow`, forwarded from
   `nparseplus.ui.pluginwindow` (needs PySide6; keep it out of your plugin's
   top-level module — see [Windows](developing.md#windows)).
+- **`nparseplus_sdk.skin`** *(SDK 1.4+)* — what the app currently looks like,
+  forwarded from `nparseplus.ui.pluginskin`: `current()` returns a frozen
+  `AppSkin` snapshot (colours, the frame, the user's base font size), plus the
+  type roles (`SMALL_DISPLAY` / `BODY_TEXT` / `NUMERIC_TEXT`,
+  `typography_style`, `px`, `tracking`), the semantic accents (`GOOD`, `BAD`,
+  `COOLDOWN`, `TIMER`, `ROLL`, `POP_WINDOW`, `LINK`), the colour helpers
+  (`shade`, `rgba`, `gradient`) and the three object names the ready-made
+  stylesheets target (`TITLE`, `ROW_NAME`, `ROW_VALUE`). Qt-free, so it works
+  in a unit test with no `QApplication`. `AppSkin` also carries the ready-made
+  sheets — `overlay_stylesheet()` for a window over the game,
+  `config_stylesheet()` for a settings-style one, and
+  `bar_stylesheet(color)` / `overlay_bar_stylesheet(color)` for the two kinds
+  of countdown bar. A curated façade, **not** a re-export
+  of the app's skin layer — the forwarded set is the explicit `EXPORTS`
+  allowlist. Read the snapshot when you paint, never at `activate`: a skin
+  change is live. See [Appearance & skins](appearance.md), and the rule that
+  page exists for — **the palette owns value, the skin owns hue.**
 - **`nparseplus_sdk.eqfiles`** *(SDK 1.2+)* — EQ install-file plumbing,
   forwarded from `nparseplus.core.eqini`: `preflight` (is this really an
   install?), `backup_once` (keeps only the *first* copy, so re-applying never

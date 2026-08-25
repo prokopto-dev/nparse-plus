@@ -46,7 +46,7 @@ dependencies = [
   # SDK would advertise a contract narrower than the one this host implements
   # and refuse plugins it can actually run. The uv workspace hides that locally;
   # a plain pip/source install does not. tests/test_sdk_floor.py guards it.
-  "nparseplus-sdk>=1.3,<2",
+  "nparseplus-sdk>=1.4,<2",
   # Pure-Python D-Bus, for the Flatpak portal's in-place update (#74). Linux
   # only, because there is nothing else on the session bus we speak to: a
   # macOS or Windows build would carry a D-Bus client it can never use. It is

@@ -148,30 +148,39 @@ class SkinPanel(QFrame):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, bool(self._skin.notch))
-        skin = self._skin
-        opacity = self._frame_opacity
-
-        outer = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        plate = notched_path(outer, skin.notch)
-        painter.fillPath(plate, _fill(outer, skin.plate, opacity))
-        border = qcolor(skin.plate_border, opacity)
-        if border.alpha():
-            painter.strokePath(plate, QPen(border, 1))
-
-        pad = skin.plate_padding
-        inner = outer.adjusted(pad, pad, -pad, -pad)
-        if inner.width() <= 0 or inner.height() <= 0:
-            painter.end()
-            return
-        # The inner notch shrinks with the padding so the two outlines stay
-        # parallel instead of the inner one cutting through the outer bevel.
-        glass = notched_path(inner, max(0, skin.notch - pad))
-        painter.fillPath(glass, _fill(inner, skin.glass, opacity))
-        glass_border = qcolor(skin.glass_border, opacity)
-        if glass_border.alpha():
-            painter.strokePath(glass, QPen(glass_border, 1))
+        paint_skin_frame(painter, self.rect(), self._skin, self._frame_opacity)
         painter.end()
+
+
+def paint_skin_frame(painter: QPainter, rect: QRect, skin: Skin, opacity: float = 1.0) -> None:
+    """Paint a skin's two-layer frame into ``rect``.
+
+    Split out of :class:`SkinPanel` because a plugin window is the other
+    caller: ``PluginWindow`` has no container to wrap its content in (the
+    plugin owns its layout), so it paints the frame on itself instead, and
+    both must be the same frame or an add-on is visibly not part of the app.
+    The painter is left open for the caller to end.
+    """
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, bool(skin.notch))
+
+    outer = QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5)
+    plate = notched_path(outer, skin.notch)
+    painter.fillPath(plate, _fill(outer, skin.plate, opacity))
+    border = qcolor(skin.plate_border, opacity)
+    if border.alpha():
+        painter.strokePath(plate, QPen(border, 1))
+
+    pad = skin.plate_padding
+    inner = outer.adjusted(pad, pad, -pad, -pad)
+    if inner.width() <= 0 or inner.height() <= 0:
+        return
+    # The inner notch shrinks with the padding so the two outlines stay
+    # parallel instead of the inner one cutting through the outer bevel.
+    glass = notched_path(inner, max(0, skin.notch - pad))
+    painter.fillPath(glass, _fill(inner, skin.glass, opacity))
+    glass_border = qcolor(skin.glass_border, opacity)
+    if glass_border.alpha():
+        painter.strokePath(glass, QPen(glass_border, 1))
 
 
 class GemMark(QWidget):
