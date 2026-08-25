@@ -100,6 +100,25 @@ class BrokenHookWindow(PluginWindow):
         raise RuntimeError("plugin bug")
 
 
+class NonQssWindow(PluginWindow):
+    """The other half of the contract: an ``apply_skin`` override doing work
+    a stylesheet cannot express (a child widget, a painted colour, coloured
+    model items)."""
+
+    def __init__(self, wctx: PluginWindowContext) -> None:
+        super().__init__(wctx)
+        self.child = QLabel("row", self)
+        self.dressed: list[str] = []
+        self.setLayout(QVBoxLayout())
+        self.restore_visibility()
+
+    def apply_skin(self) -> None:
+        super().apply_skin()
+        app = pluginskin.current()
+        self.dressed.append(app.name)
+        self.child.setStyleSheet(f"color: {app.heading};")
+
+
 class LegacyWindow(PluginWindow):
     """A PluginWindow as written against SDK 1.3: sets its own sheet in
     __init__, knows nothing about apply_skin (there was nothing to know)."""
@@ -359,6 +378,43 @@ def test_a_raising_hook_costs_the_rules_not_the_window(qtbot) -> None:
 
     assert window.isVisible()
     assert window.styleSheet() == pluginskin.current().overlay_stylesheet()
+
+
+def test_non_qss_work_is_initialized_without_waiting_for_a_skin_change(qtbot) -> None:
+    """``app._apply_appearance`` only runs on a *change*, and a startup plugin
+    window never gets a sweep after construction — so if the first dress only
+    evaluated ``skin_stylesheet``, everything an ``apply_skin`` override does
+    would sit uninitialized until the user happened to switch skins."""
+    skins.set_skin("duxa")
+    window = _window(qtbot, NonQssWindow)
+
+    assert window.dressed == ["duxa"], "the override never ran after construction"
+    assert pluginskin.current().heading in window.child.styleSheet()
+
+    skins.set_skin("velious")
+    window.apply_skin()
+    assert window.dressed == ["duxa", "velious"]
+
+
+def test_a_raising_apply_skin_override_still_leaves_a_dressed_window(qtbot) -> None:
+    """First dress runs the override, so guard it the same way: a plugin bug
+    costs its own styling, never the window."""
+
+    class Broken(PluginWindow):
+        def __init__(self, wctx: PluginWindowContext) -> None:
+            super().__init__(wctx)
+            self.setLayout(QVBoxLayout())
+            self.restore_visibility()
+
+        def apply_skin(self) -> None:
+            super().apply_skin()
+            raise RuntimeError("plugin bug")
+
+    window = _window(qtbot, Broken)
+    window.show()
+
+    assert window.isVisible()
+    assert window.styleSheet()
 
 
 def test_the_duck_typed_sweep_finds_the_hook(qtbot) -> None:

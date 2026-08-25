@@ -94,17 +94,27 @@ class MyWindow(PluginWindow):
 class owns the whole sheet and re-assembles it from its dressing plus your
 rules on **every** skin, font-size and frame-opacity change — so it is called
 afresh each time, must not cache an `AppSkin`, and neither discards your rules
-nor accumulates a stale copy of them per change. It is also called from
-`__init__`, before your own widgets exist: return rules, do not touch widgets.
+nor accumulates a stale copy of them per change.
 
 For the work a stylesheet cannot do — styling child widgets, painted colours,
-sizes — override `apply_skin()` and call `super().apply_skin()` first:
+rebuilding coloured model items — override `apply_skin()` and call
+`super().apply_skin()` first:
 
 ```python
     def apply_skin(self) -> None:
         super().apply_skin()
         self._row.apply_skin()
 ```
+
+!!! note "When the first dress happens"
+    Neither hook runs during `super().__init__()` — both are virtual and your
+    constructor has not run yet, so anything you assign after
+    `super().__init__(...)` would not exist. The first dress is **deferred**
+    to `restore_visibility()`, which is why that stays the last call in your
+    `__init__`; a window that never calls it is dressed before its first show
+    instead. Both hooks run then, so non-QSS work is initialized without
+    waiting for the user to switch skins, and both run again on every
+    appearance change after that.
 
 !!! note "Windows written before SDK 1.4"
     A `PluginWindow` that sets its own sheet with `setStyleSheet` and knows

@@ -1766,12 +1766,20 @@ subclass has assigned `self._plugin` — and `pluginbootstrap` wraps the window
 factory in `try/except … continue`, so an `AttributeError` there does not
 degrade the styling, it makes the add-on **silently not appear**. Construction
 therefore applies `_dress_from_skin(with_hook=False)`, and `_finalize_skin()`
-consults the hook once the subclass is built: from `restore_visibility()` (the
+dresses the window once the subclass is built: from `restore_visibility()` (the
 documented last call) and from `showEvent` (a window opened straight from the
-tray never called it), idempotent via `_skin_finalized`. The hook is *also*
-guarded and logged wherever it runs — a cosmetic callback must never be what
+tray never called it), idempotent via `_skin_finalized`. Both hooks are
+guarded and logged wherever they run — a cosmetic callback must never be what
 stops a window from showing, and `showEvent` is not a place an exception can
 usefully go.
+
+**Finalization calls the full virtual `apply_skin()`, not just
+`_dress_from_skin`**, and that is not tidiness: `app._apply_appearance` runs
+only on a *change*, so a startup plugin window never receives a sweep, and an
+override doing what a stylesheet cannot express (child widgets, painted
+colours, coloured model items) would sit uninitialized until the user happened
+to switch skins. Deferring the first dress is what makes calling the virtual
+safe here, so the two halves of the fix are the same decision.
 
 **`AppSkin.accent_text` is deprecated, not removed, and that distinction is
 the SDK's whole promise.** The first cut of the fix dropped it on the

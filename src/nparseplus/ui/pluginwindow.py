@@ -101,9 +101,11 @@ class PluginWindow(OverlayWindowBase):
     def restore_visibility(self) -> None:
         """Honour the persisted ``shown`` flag — call it last in ``__init__``.
 
-        Also the point at which :meth:`skin_stylesheet` is first consulted:
-        by convention this is the last thing a subclass does, so its own
-        state exists by now.
+        Also the point at which the window is first dressed from the skin
+        (:meth:`skin_stylesheet` and any :meth:`apply_skin` override): by
+        convention this is the last thing a subclass does, so its own state
+        exists by now. A window that never calls it is dressed before its
+        first show instead.
         """
         self._finalize_skin()
         super().restore_visibility()
@@ -115,12 +117,31 @@ class PluginWindow(OverlayWindowBase):
         super().showEvent(event)
 
     def _finalize_skin(self) -> None:
-        """Consult :meth:`skin_stylesheet` for the first time, once the
-        subclass is fully built. Idempotent."""
+        """Dress the window for the first time, once the subclass is built.
+
+        Calls the full virtual :meth:`apply_skin`, not just
+        ``_dress_from_skin`` — a startup plugin window never receives an
+        appearance sweep (``app._apply_appearance`` only runs on a *change*),
+        so an override doing the work a stylesheet cannot express (styling
+        child widgets, painted colours, rebuilding coloured model items)
+        would otherwise sit uninitialized until the user happened to switch
+        skin. Safe here and not in ``__init__`` for the reason the
+        constructor spells out: by now the subclass exists.
+
+        Idempotent, and guarded for the same reason the stylesheet hook is —
+        this runs from ``showEvent``, where an exception has nowhere useful
+        to go, and a plugin's cosmetics must not cost it its window.
+        """
         if self._skin_finalized:
             return
         self._skin_finalized = True
-        self._dress_from_skin()
+        try:
+            self.apply_skin()
+        except Exception:
+            logger.exception(
+                "plugin window %r apply_skin() failed on first dress", self._window_key
+            )
+            self._dress_from_skin(with_hook=False)
 
     def apply_skin(self) -> None:
         """Re-dress from the skin the user just picked.
