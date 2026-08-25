@@ -13,6 +13,8 @@ vote.
 
 from __future__ import annotations
 
+import gc
+import weakref
 from pathlib import Path
 
 import pytest
@@ -521,3 +523,54 @@ def test_the_kill_ticker_example_draws_in_the_real_overlay(qtbot, tmp_path: Path
         assert not overlay.isVisible()
     finally:
         backend.stop()
+
+
+# -- lifetime ------------------------------------------------------------------
+
+
+def test_a_contributed_region_does_not_put_the_overlay_in_a_cycle(qapp, tmp_path: Path) -> None:
+    """The #154 guard, from the one direction that could reintroduce it.
+
+    The overlay owns the region's host widget, the widget holds its
+    ``OverlayRegionContext``, and the context holds the content hook — so a
+    hook closing over the overlay strongly is a Python reference cycle through
+    the WINDOW. That hands its destruction to the cyclic collector, and a
+    QWidget freed there rather than by Qt is a use-after-free the next repaint
+    walks into; it segfaulted this suite from inside ``paintEvent`` before
+    #154. ``_region_content_hook`` holds a ``WeakMethod`` for exactly this,
+    which is why the assertion runs with the collector switched off.
+
+    Built without the qtbot fixture on purpose: pytest-qt would hold the
+    widgets it is asked to track.
+    """
+    from nparseplus.pluginbootstrap import _region_content_hook
+    from nparseplus.ui.pluginregion import PluginOverlayRegion
+    from nparseplus_sdk.plugin import OverlayRegionContext
+
+    gc.disable()
+    try:
+        overlay = EventOverlayWindow(state=_state())
+        rctx = OverlayRegionContext(
+            settings=Settings(),
+            region_key=REGION_KEY,
+            title="Ticker",
+            on_save=lambda: None,
+            on_content_changed=_region_content_hook(overlay, REGION_KEY),
+        )
+        widget = PluginOverlayRegion(rctx)
+        overlay.add_region(
+            REGION_KEY, widget, title="Ticker", has_content=lambda: False, preview=widget.sample
+        )
+        # The hook still works while the overlay is alive — a weak reference
+        # that is never resolvable would pass the assertion below for the
+        # wrong reason.
+        overlay._state.overlay_regions[REGION_KEY] = OverlayRegion(anchor="top", dy=222)
+        widget.notify_content_changed()
+        assert widget.pos().y() == overlay._region_rect(REGION_KEY).y()
+
+        ref = weakref.ref(overlay)
+        del overlay, widget, rctx
+
+        assert ref() is None
+    finally:
+        gc.enable()

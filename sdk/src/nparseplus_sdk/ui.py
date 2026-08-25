@@ -43,15 +43,21 @@ _HOST_HINT = (
     "and Qt-free tests can still import your plugin."
 )
 
-#: Attribute name -> the host module it is forwarded from.
-EXPORTS = {
+# Attribute name -> the host module it is forwarded from. Deliberately
+# PRIVATE, unlike ``skin.EXPORTS`` / ``eqfiles.EXPORTS``: those are curated
+# allowlists over a wide host surface that an author may reasonably want to
+# introspect, while this module forwards two class names and always will.
+# Adding a public ``EXPORTS`` here would freeze a new name under the additive-
+# only 1.x promise — and one whose type (a mapping) disagrees with its two
+# siblings (frozensets), which is worse than not having it.
+_EXPORTS = {
     "PluginWindow": "nparseplus.ui.pluginwindow",
     "PluginOverlayRegion": "nparseplus.ui.pluginregion",
 }
 
 
 def __getattr__(name: str) -> Any:
-    module = EXPORTS.get(name)
+    module = _EXPORTS.get(name)
     if module is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     try:
@@ -61,4 +67,4 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    return sorted(EXPORTS)
+    return sorted(_EXPORTS)

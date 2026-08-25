@@ -163,7 +163,9 @@ re-decides whether it is worth showing, and anything you built since is
 re-sealed against input.
 
 If you hand back a plain `QWidget` instead of subclassing the base, call
-`rctx.on_content_changed()` directly — it is the same hook.
+`rctx.on_content_changed()` directly — it is the same hook. It holds the
+overlay weakly, so keeping the context on your widget cannot keep the window
+alive; after your region is retired the call simply does nothing.
 
 ### `sample()` — position mode
 
@@ -186,7 +188,13 @@ is available to them. Read `skin.current()` when you paint, never at
 
 Unlike `PluginWindow`, this class owns the widget's **whole** stylesheet and
 does not adopt one you set with `setStyleSheet` — nothing predates SDK 1.5, so
-there is no legacy sheet to preserve. Put your rules in `skin_stylesheet()`.
+there is no legacy sheet to preserve, and adopting one could not work anyway
+(the overlay appends its position-mode chrome to this widget's sheet and
+strips it off by suffix; re-writing an adopted sheet after that appendix would
+leave the dashed border on when position mode ends). Put your rules in
+`skin_stylesheet()`. If you do call `setStyleSheet` yourself, the app says so
+once in `nparseplus.log` rather than letting your styling vanish at the first
+skin change with no explanation.
 
 ## Placement, and what persists
 

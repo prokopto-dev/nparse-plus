@@ -1838,6 +1838,16 @@ overlay event — so the host wraps it in a guard that logs ONCE and answers
 False forever after: a region that cannot say whether it has anything is not a
 reason to keep an always-on-top window over the game.
 
+**The content hook holds the overlay WEAKLY, and that is #154's segfault one
+step removed.** The overlay owns the region's host widget, the widget holds its
+`OverlayRegionContext`, and the context holds the hook — so closing over the
+overlay strongly puts the WINDOW in a Python reference cycle, which takes its
+destruction away from refcounting and hands it to the cyclic collector; a
+QWidget freed there rather than by Qt is a use-after-free the next repaint
+walks into. `_region_content_hook` uses a `WeakMethod` for the same reason
+`weak_hook` exists, and a test pins the lifetime with the collector switched
+off (measured: strong = not freed by refcounting, weak = freed).
+
 **The region tells the overlay; the overlay cannot look inside.**
 `OverlayRegionContext.on_content_changed` → `EventOverlayWindow.region_content_changed(key)`
 is one call covering three consequences: re-anchor at the new height, re-decide
@@ -1852,7 +1862,13 @@ restores what the region actually wears rather than a pre-skin-change copy.
 Two smaller decisions. `PluginOverlayRegion` owns its widget's WHOLE
 stylesheet and deliberately does NOT adopt one set with `setStyleSheet` the
 way `PluginWindow` does — that adoption exists to keep pre-1.4 windows styled,
-and nothing predates 1.5. And the persisted placement is kept when a plugin is
+nothing predates 1.5, and adopting could not work here anyway: the overlay
+appends its chrome to this widget's sheet and strips it by suffix, so
+re-writing an adopted sheet after that appendix would leave the dashed border
+on when position mode ends. Replacing it silently is the #166 failure one step
+removed, so `_warn_if_overwritten` says it ONCE and names `skin_stylesheet()`;
+a sheet that merely STARTS with ours is the overlay's own chrome, not a
+plugin's rules, and must not trip it. And the persisted placement is kept when a plugin is
 disabled or uninstalled (nothing prunes `overlay_regions`): a stale key is a
 few bytes, losing someone's placed chrome to a reinstall costs more.
 
