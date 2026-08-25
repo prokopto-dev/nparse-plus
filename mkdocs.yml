@@ -132,6 +132,7 @@ nav:
       - plugins/index.md
       - Security & trust: plugins/security.md
       - Developing plugins: plugins/developing.md
+      - Appearance & skins: plugins/appearance.md
       - Versioning: plugins/versioning.md
       - Registry: plugins/registry.md
       - API reference: plugins/api.md

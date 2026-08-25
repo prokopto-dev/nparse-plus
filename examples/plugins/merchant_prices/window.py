@@ -1,10 +1,23 @@
-"""Qt pieces of the merchant-prices plugin (imported only inside the app)."""
+"""Qt pieces of the merchant-prices plugin (imported only inside the app).
+
+Doubles as the reference for ``nparseplus_sdk.skin``: the window reads the
+app's own colours and type instead of hardcoding any, so it matches whichever
+of the three skins the user is running and follows a change live.
+
+The rule the styling below obeys, and the one worth copying:
+**the palette owns VALUE, the skin owns HUE.** Text and grounds come from the
+value group (``app.text``, ``app.hint``, ``app.field_bg``) — identical under
+every skin, so they are always readable. The skin's ``accent`` appears only as
+an accent: the grid hairline, the selection band, the button edge. Painting a
+ground with it would give gold text on a gold field under Velious.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFormLayout,
     QHeaderView,
@@ -17,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from nparseplus_sdk import skin
 from nparseplus_sdk.ui import PluginWindow
 
 from .pricing import format_platinum
@@ -35,17 +49,26 @@ class MerchantPricesWindow(PluginWindow):
         self._plugin = plugin
         self._rendered_version = -1
 
+        # Stamp one of the skin's own object names and the label wears the
+        # window-title treatment — caps, tracking, the skin's title colour —
+        # with no rules of our own. The names come from the façade so a
+        # rename in the host cannot leave this silently undressed.
+        self._title = QLabel("Merchant Prices", self)
+        self._title.setObjectName(skin.TITLE)
+
         self._table = QTableWidget(0, 2, self)
         self._table.setHorizontalHeaderLabels(("Item", "6-mo avg"))
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._empty = QLabel("Auction something (WTS …) to start tracking.", self)
+        self._empty.setObjectName("MerchantPricesEmpty")
         self._empty.setWordWrap(True)
         clear = QPushButton("Clear tracked items", self)
         clear.clicked.connect(self._plugin.clear_items)
 
         layout = QVBoxLayout()
+        layout.addWidget(self._title)
         layout.addWidget(self._empty)
         layout.addWidget(self._table, 1)
         layout.addWidget(clear)
@@ -55,8 +78,40 @@ class MerchantPricesWindow(PluginWindow):
         self._refresh_timer.timeout.connect(self._on_refresh_tick)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
+        # After the widgets exist: PluginWindow's constructor applied the
+        # default dressing before this subclass had built anything, so the
+        # override runs once here and on every change thereafter.
+        self.apply_skin()
         self.refresh()
         self.restore_visibility()
+
+    def apply_skin(self) -> None:
+        """Re-dress from the active skin — called live on every skin, font
+        size and frame-opacity change, so read the snapshot here rather than
+        caching one at construction."""
+        super().apply_skin()  # the app's overlay dressing: family, labels, scrollbars
+        app = skin.current()
+        ours = (
+            # Ground and text: the value group, identical under every skin.
+            f"QTableWidget {{ background: transparent; border: 0; color: {app.text}; "
+            f"gridline-color: {skin.rgba(app.accent, 0.25)}; }}"
+            # The accent, used as an accent: a selection band and a hairline.
+            f"QTableWidget::item:selected {{ background: {skin.rgba(app.accent, 0.28)}; "
+            f"color: {app.accent_text}; }}"
+            f"QHeaderView::section {{ background: {app.surface_alt}; border: 0; "
+            f"border-bottom: 1px solid {app.hairline}; padding: {app.px(0.3)}px; "
+            # Sizes are multipliers of the user's font size, never px.
+            f"{app.typography(skin.SMALL_DISPLAY, color=app.accent)} }}"
+            f"QPushButton {{ background: {app.field_bg}; color: {app.text}; "
+            f"border: 1px solid {app.plate_border}; padding: {app.px(0.35)}px; }}"
+            f"QPushButton:hover {{ background: {skin.rgba(app.accent, 0.14)}; }}"
+            f"#MerchantPricesEmpty {{ color: {app.hint}; }}"
+        )
+        self.setStyleSheet(self.styleSheet() + ours)
+        # The price cells carry colours too, so they have to be rebuilt — a
+        # stylesheet swap alone would leave last skin's ink in the table.
+        self._rendered_version = -1
+        self.refresh()
 
     def _on_refresh_tick(self) -> None:
         if self.isVisible():  # no work while hidden (DPS-window pattern)
@@ -70,10 +125,16 @@ class MerchantPricesWindow(PluginWindow):
         self._empty.setVisible(not rows)
         self._table.setVisible(bool(rows))
         self._table.setRowCount(len(rows))
+        app = skin.current()
         for index, (name, average) in enumerate(rows):
             self._table.setItem(index, 0, QTableWidgetItem(name))
             price = format_platinum(average) if average is not None else "…"
-            self._table.setItem(index, 1, QTableWidgetItem(price))
+            cell = QTableWidgetItem(price)
+            # A resolved price is what the eye is here for; one still being
+            # fetched steps back. Both are palette-owned values, so the pair
+            # stays legible whichever skin is on.
+            cell.setForeground(QColor(app.heading if average is not None else app.hint))
+            self._table.setItem(index, 1, cell)
 
     def showEvent(self, event) -> None:  # immediate repaint on reopen
         super().showEvent(event)

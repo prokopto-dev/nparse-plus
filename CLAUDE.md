@@ -128,7 +128,13 @@ src/nparseplus/
                         #   DumpWatcher and refreshes off a QTimer),
                         #   pluginmanager.py (Settings > Plugins + registry browser),
                         #   pluginconsent.py (the one-time approval dialog),
-                        #   pluginwindow.py (the PluginWindow base plugins subclass)
+                        #   pluginwindow.py (the PluginWindow base plugins
+                        #   subclass — skinned by default since SDK 1.4),
+                        #   pluginskin.py (THE host half of
+                        #   nparseplus_sdk.skin: the curated AppSkin
+                        #   snapshot an add-on dresses itself from —
+                        #   the only place skins/theme/chrome are
+                        #   exposed outside the app)
   audio/tts.py          # Speaker protocol: macOS `say`, PowerShell, espeak, Null
   data/                 # generated/ported data — regenerate via tools/, never hand-edit JSON
   helpers/, parsers/    # LEGACY nparse code (maps + discord windows) — see below
@@ -1667,6 +1673,64 @@ another thread and is no longer waiting, and the bus is the only way back to
 the GUI. The rule the whole layer follows: a
 GUI-thread write to driver state is fine when nothing can happen in the
 middle of it, and needs the driver the moment something can.
+
+**An add-on can see what the app looks like** (post-2.25, SDK 1.4, #166):
+`git grep -i skin -- docs/plugins/ sdk/` used to return nothing, so a plugin
+author had two options and both were bad — hardcode hex (stale the moment the
+user switches skin, and the switch is LIVE) or `import nparseplus.ui.skins`
+(host internals, 636 lines that move with every design pass).
+
+**The dispatch already existed; there was nothing to read.**
+`app._apply_appearance` sweeps `chrome_surfaces` duck-typing
+`apply_chrome`/`apply_skin`, and `pluginbootstrap.attach_live` has always put
+plugin windows in that list. So a plugin window defining `apply_skin()` was
+already being called on every change. What #166 added is the value side.
+
+`nparseplus_sdk.skin` is a **curated façade, not a re-export**. The other
+lazy modules (`events`, `timers`, `ui`) forward wholesale because the class
+IS the contract; doing that to `ui/skins.py` would freeze ~30 internal
+builders under the additive-only 1.x promise. `ui/pluginskin.py` is the host
+half — the ONLY nParse+ code the SDK's `skin` module forwards to, which is
+what keeps skins.py/chrome.py/theme.py free to move — and the SDK side is an
+explicit `EXPORTS` allowlist like `eqfiles`. It composes all three of those
+modules, which is why it is its own module rather than an addition to
+skins.py: the semantic accents live in `chrome.py`, and chrome imports skins,
+so a snapshot carrying both cannot live in either.
+
+**The value/hue split is the whole contract, and it is measured rather than
+asserted.** `AppSkin`'s fields are grouped by owner: the value group (`text`,
+`surface`, `field_bg`, `panel_bg`, …) comes from the palette and is
+*identical* under all three skins; the hue group (`accent`, `plate`, `chip_*`,
+…) is the skin's. `tests/ui/test_pluginskin.py` asserts the value group is one
+set of values across the skins, that `text` on every ground clears WCAG AA on
+each — and that `accent_text` on `accent` FAILS the same measurement, which is
+the gold-on-gold a plugin gets from "just use the accent for everything".
+Without that second half the guard is a tautology about constants.
+
+**Sizes are pushed nowhere.** A skin has its own module global
+(`skins.set_skin`) but font size and frame opacity live in settings, so
+`pluginskin.use_settings(settings)` points the façade at the live tree once in
+`create_app` and `current()` reads through. Push-on-change would need every
+call site to remember; the Settings root is loaded once per process and its
+`general` section is mutated in place, so the reference cannot go stale.
+Unbound (a plugin's unit tests, the validate CLI) it answers the shipped
+defaults rather than raising.
+
+**`PluginWindow` now dresses itself.** The default `apply_skin()` sets the
+overlay stylesheet and the frame clearance, and a new `paintEvent` paints the
+skin's plate and glass — via `skinwidgets.paint_skin_frame`, factored out of
+`SkinPanel` so the two cannot drift. A plugin window cannot USE `SkinPanel`:
+the plugin owns its layout and sets it on `self`, so there is no container to
+wrap. Construction calls the private `_dress_from_skin`, **not** the virtual
+`apply_skin()` — the base runs inside the subclass's `super().__init__(...)`,
+before its own widgets exist, and an override touching them would raise. So
+the example calls `self.apply_skin()` itself once its widgets are built.
+`skins.OBJ_TITLE`/`OBJ_ROW_NAME`/`OBJ_ROW_VALUE` became constants (re-exported
+as `skin.TITLE`/`ROW_NAME`/`ROW_VALUE`) so "stamp an object name and the label
+is skinned" is a contract rather than a coincidence of two string literals.
+
+`examples/plugins/merchant_prices/window.py` is the reference consumer, and
+`docs/plugins/appearance.md` carries the rule with its counter-example.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

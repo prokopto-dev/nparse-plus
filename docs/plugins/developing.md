@@ -229,6 +229,36 @@ class MyWindow(PluginWindow):
 For a single-file plugin, do the same imports inside the factory function
 itself. Either way, the rule is the same: nothing Qt at import time.
 
+### Making it look like nParse+
+
+Since SDK 1.4 a `PluginWindow` arrives **skinned**: the active skin's plate and
+glass are painted behind it and its labels wear the overlay type treatment, so
+an add-on that writes no styling at all still matches the app under all three
+skins.
+
+To style more than that, read `nparseplus_sdk.skin` — never hardcoded hex, and
+never `nparseplus.ui.skins`:
+
+```python
+from nparseplus_sdk import skin
+
+class MyWindow(PluginWindow):
+    def apply_skin(self) -> None:
+        super().apply_skin()
+        app = skin.current()
+        self._total.setStyleSheet(
+            app.typography(skin.NUMERIC_TEXT, color=app.heading)
+        )
+```
+
+`apply_skin()` is called on every skin, font-size and frame-opacity change —
+the user can switch skins from the tray mid-fight — so re-dress in place there
+rather than assuming construction-time values. Sizes are multipliers of the
+user's font size, never px. And one rule carries the whole page: **the palette
+owns value, the skin owns hue** — paint grounds and text from `app.text` /
+`app.surface`, and use `app.accent` only as an accent, or your window is gold
+on gold under Velious. Full guide: [Appearance & skins](appearance.md).
+
 ## Consent, from your side
 
 - **Your plugin is inert until the user answers.** nParse+ shows a dialog
@@ -505,4 +535,6 @@ in the repository:
 
 - **`hello_timer.py`** — minimal: one event subscription, a timer row, TTS.
 - **`merchant_prices/`** — the full API: auction tracking, storage,
-  throttled PigParse price polling, an overlay window, a settings page.
+  throttled PigParse price polling, an overlay window, a settings page. Its
+  `window.py` is also the reference for
+  [skinning a window](appearance.md) from `nparseplus_sdk.skin`.

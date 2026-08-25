@@ -1978,18 +1978,7 @@ class EventOverlayWindow(QWidget):
         skin = self._skin
         color = bar.property("bar_color") or DEFAULT_BAR_COLOR
         bar.setFixedHeight(skin.overlay_bar_height)
-        fill = (
-            f"qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,"
-            f" stop: 0 {skins.rgba(color, 0.62)}, stop: 1 {skins.rgba(color, 0.16)})"
-        )
-        chunk = f"QProgressBar::chunk {{ background: {fill};"
-        if skin.overlay_bar_style == "full":
-            chunk += f" border-left: {skin.row_rule}px solid {color};"
-        chunk += " }"
-        border = f"1px solid {skin.overlay_bar_border}" if skin.overlay_bar_border else "none"
-        bar.setStyleSheet(
-            f"QProgressBar {{ background-color: {skin.overlay_bar_bg}; border: {border}; }}" + chunk
-        )
+        bar.setStyleSheet(skins.overlay_bar_rules(skin, color))
         name = bar.property("name_label")
         value = bar.property("value_label")
         text_size = max(8, round(skin.overlay_bar_height * 0.5))

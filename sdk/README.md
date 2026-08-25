@@ -87,10 +87,18 @@ and publishing — is the **Plugins** section of the
   own id, it never appears in the Browse list, and the sha256 in it is your
   own claim rather than anyone's review — see
   [Shipping updates without a registry](https://prokopto-dev.github.io/nparse-plus/plugins/developing/#shipping-updates-without-a-registry).
+- **Your window can match the app.** `nparseplus_sdk.skin` (SDK 1.4+) is a
+  small, Qt-free read surface over what nParse+ currently looks like — the
+  colours, the type scale, ready-made overlay and config stylesheets — and
+  `PluginWindow` is skinned by default even if you read none of it. The user
+  can change skin live, so re-dress in `apply_skin()`; and the rule that
+  governs the values is **the palette owns value, the skin owns hue** — see
+  [Appearance & skins](https://prokopto-dev.github.io/nparse-plus/latest/plugins/appearance/).
 - **No dependency on the app.** Plugins execute inside nParse+, which provides
   the runtime, so this package installs standalone with nothing but `pydantic`
-  and `packaging`. `nparseplus_sdk.events`, `.timers` and `.ui` re-export host
-  classes *lazily* — import them inside `activate()`, not at module scope. For
+  and `packaging`. `nparseplus_sdk.events`, `.timers`, `.ui`, `.eqfiles` and
+  `.skin` re-export host names *lazily* — import them inside `activate()` (or
+  your window module), not at plugin module scope. For
   standalone type-checking or tests you can install the app from source
   (`pip install git+https://github.com/prokopto-dev/nparse-plus`); it is not
   itself a PyPI package.

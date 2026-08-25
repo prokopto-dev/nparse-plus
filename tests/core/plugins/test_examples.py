@@ -20,6 +20,14 @@ from .conftest import approve
 EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "plugins"
 
 
+class _FakeStorage:
+    def load(self):
+        return {}
+
+    def save(self, data):
+        self.data = data
+
+
 class RecordingSpeaker:
     def __init__(self) -> None:
         self.said: list[str] = []
@@ -160,15 +168,8 @@ def test_merchant_window_builds_and_renders(qtbot) -> None:
     module = import_plugin_module(EXAMPLES / "merchant_prices")
     plugin = module.create_plugin()
 
-    class _Storage:
-        def load(self):
-            return {}
-
-        def save(self, data):
-            self.data = data
-
     class _Ctx:
-        storage = _Storage()
+        storage = _FakeStorage()
         player = None
         pigparse = None
 
@@ -215,3 +216,75 @@ def test_merchant_window_builds_and_renders(qtbot) -> None:
     spin.setValue(600)
     ctx.page_spec.apply(page)
     assert plugin._poll_seconds == 600
+
+
+@pytest.mark.qt
+def test_merchant_window_is_the_skin_facade_reference(qtbot) -> None:
+    """The example is what a plugin author copies, so it has to keep working
+    under every skin — including the live change, which is the whole reason
+    ``nparseplus_sdk.skin`` exists rather than a page of hex in the plugin.
+    """
+    from nparseplus.ui import pluginskin, skins
+    from nparseplus_sdk.plugin import PluginWindowContext
+
+    module = import_plugin_module(EXAMPLES / "merchant_prices")
+    plugin = module.create_plugin()
+
+    class _Ctx:
+        storage = _FakeStorage()
+        player = None
+        pigparse = None
+
+        def subscribe(self, event_type, fn):
+            return lambda: None
+
+        def add_parser(self, parser):
+            pass
+
+        def add_tick(self, fn):
+            pass
+
+        def add_window(self, spec):
+            self.window_spec = spec
+
+        def add_settings_page(self, spec):
+            pass
+
+        def submit(self, fetch, apply=None):
+            pass
+
+    ctx = _Ctx()
+    plugin.activate(ctx)
+    plugin.track_items(["Words of Odus"])
+    settings = Settings()
+    wctx = PluginWindowContext(
+        settings=settings,
+        window_key="plugin.merchant-prices.prices",
+        title="Merchant Prices",
+        default_geometry=(0, 0, 340, 260),
+        on_save=lambda: None,
+    )
+
+    try:
+        skins.set_skin("duxa")
+        window = ctx.window_spec.factory(wctx)
+        qtbot.addWidget(window)
+        duxa = window.styleSheet()
+        # The default dressing is in there, and the example's own rules on top.
+        assert duxa.startswith(pluginskin.current().overlay_stylesheet())
+        assert "QHeaderView::section" in duxa
+        # A title label stamped with the façade's object name, nothing else.
+        assert window._title.objectName() == pluginskin.TITLE
+
+        for name in ("velious", "ledger"):
+            skins.set_skin(name)
+            window.apply_skin()
+            sheet = window.styleSheet()
+            assert sheet != duxa
+            assert sheet.startswith(pluginskin.current().overlay_stylesheet())
+            # The new hue reached the example's OWN rules, not just the base
+            # sheet it composed onto.
+            assert skins.rgba(pluginskin.current().accent, 0.25) in sheet
+            assert window._table.item(0, 1) is not None  # cells rebuilt, not stale
+    finally:
+        skins.set_skin(skins.DEFAULT_SKIN)
