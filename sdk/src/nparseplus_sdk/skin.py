@@ -32,9 +32,10 @@ and this is the mistake the split exists to prevent::
 
     label.setStyleSheet(f"color: {app.text}; background: {app.accent};")
 
-because under Velious ``accent`` is ``#e2c882`` — gold — and the app's own
-title caps are gold too, so a plugin painting a ground with it produces
-gold-on-gold and an unreadable window on exactly one of the three skins.
+because an accent is a mark, not a ground: body text on it measures 1.2:1
+under Velious (gold on gold — the app's own title caps are gold too), 1.7:1
+under Duxa and 3.3:1 under Ledger. For a filled row, ``AppSkin.band`` is the
+ground the app itself uses, with ``heading`` as its text.
 
 Using it
 --------
@@ -44,18 +45,20 @@ Read the snapshot at the moment you paint, never at ``activate``::
     from nparseplus_sdk import skin
 
     class MyWindow(PluginWindow):
-        def apply_skin(self) -> None:
-            super().apply_skin()               # the app's overlay dressing
+        def skin_stylesheet(self) -> str:
             app = skin.current()
-            self._total.setStyleSheet(
-                app.typography(skin.NUMERIC_TEXT, color=app.heading)
-            )
-            self._bar.setStyleSheet(app.bar_stylesheet(skin.GOOD))
+            return f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
 
-``PluginWindow.apply_skin()`` is called on every skin, font-size and
-frame-opacity change, so re-dressing in place there is the whole contract.
-Sizes are multipliers of the user's ``general.font_size`` — use
-:meth:`AppSkin.px` and :meth:`AppSkin.typography`, never literal px.
+        def apply_skin(self) -> None:          # only what QSS cannot express
+            super().apply_skin()
+            self._bar.setStyleSheet(skin.current().bar_stylesheet(skin.GOOD))
+
+``PluginWindow`` re-assembles its sheet from its own dressing plus
+``skin_stylesheet()`` on every skin, font-size and frame-opacity change, and
+calls ``apply_skin()`` for anything else — so both run afresh each time and
+neither may cache an ``AppSkin``. Sizes are multipliers of the user's
+``general.font_size``: use :meth:`AppSkin.px` and :meth:`AppSkin.typography`,
+never literal px.
 
 See ``docs/plugins/appearance.md`` for the worked example.
 """

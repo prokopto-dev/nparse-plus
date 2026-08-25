@@ -243,17 +243,15 @@ never `nparseplus.ui.skins`:
 from nparseplus_sdk import skin
 
 class MyWindow(PluginWindow):
-    def apply_skin(self) -> None:
-        super().apply_skin()
+    def skin_stylesheet(self) -> str:
         app = skin.current()
-        self._total.setStyleSheet(
-            app.typography(skin.NUMERIC_TEXT, color=app.heading)
-        )
+        return f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
 ```
 
-`apply_skin()` is called on every skin, font-size and frame-opacity change —
-the user can switch skins from the tray mid-fight — so re-dress in place there
-rather than assuming construction-time values. Sizes are multipliers of the
+`skin_stylesheet()` is re-read on every skin, font-size and frame-opacity
+change — the user can switch skins from the tray mid-fight — so never cache the
+snapshot. For work a stylesheet cannot do, override `apply_skin()` and call
+`super().apply_skin()` first. Sizes are multipliers of the
 user's font size, never px. And one rule carries the whole page: **the palette
 owns value, the skin owns hue** — paint grounds and text from `app.text` /
 `app.surface`, and use `app.accent` only as an accent, or your window is gold

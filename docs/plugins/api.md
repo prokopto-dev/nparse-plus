@@ -129,12 +129,28 @@ and the window's own title bar.
 parent=None)` — the keyword arguments are passed through to
 `OverlayWindowBase`; `self.window_context` holds the `wctx` you were given.
 
+`PluginWindow.skin_stylesheet() -> str` *(SDK 1.4+)* — override to append your
+own QSS after the app's overlay dressing. The base class owns the whole sheet
+and re-assembles it from the two halves on every skin, font-size and
+frame-opacity change, so your rules are never discarded and never accumulate a
+stale copy.
+
 `PluginWindow.apply_skin()` *(SDK 1.4+)* — the app calls this on every skin,
 font-size and frame-opacity change, live. The default paints the active skin's
 plate and glass behind your window and applies the overlay stylesheet, so a
-window that overrides nothing is already skinned; override it and call
-`super().apply_skin()` first to add your own rules. See
-[Appearance & skins](appearance.md).
+window that overrides nothing is already skinned; override it (calling
+`super().apply_skin()` first) for the work a stylesheet cannot do. A pre-1.4
+window that set its own sheet with `setStyleSheet` keeps it — the base adopts
+it and re-applies it after its own rules.
+
+**Lifecycle.** Neither is called during `super().__init__()` — both are
+virtual, and your constructor has not run yet. The first dress is **deferred**
+to `restore_visibility()` (keep it the final call in your `__init__`), or to
+the window's first show if you never call it, and both hooks run then; after
+that they run on every appearance change. So anything you assign after
+`super().__init__(...)` is available to them, and non-QSS work in an
+`apply_skin()` override is initialized without waiting for the user to switch
+skins. See [Appearance & skins](appearance.md).
 
 **`PluginWindowContext`** (the `wctx` your factory receives) — a dataclass
 with six fields plus one extension point:

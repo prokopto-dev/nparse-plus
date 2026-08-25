@@ -17,6 +17,7 @@ constants.
 from __future__ import annotations
 
 import pathlib
+import re
 from dataclasses import fields
 
 import pytest
@@ -58,9 +59,39 @@ def contrast(foreground: str, background: str) -> float:
     return (light + 0.05) / (dark + 0.05)
 
 
+_RGBA = re.compile(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)")
+
+
+def composite(over: str, ground: str) -> str:
+    """``over`` laid on ``ground``, as ``#rrggbb``.
+
+    A translucent band is not the colour it declares — Ledger's is a 22%
+    wash — so measuring its declared value would flatter it. Alpha is written
+    both ways in this codebase (0-255 Qt-stylesheet, 0-1 CSS), like
+    ``skinwidgets.qcolor``.
+    """
+    match = _RGBA.match(over.strip())
+    if match is None:
+        return skins.base_color((over,))
+    red, green, blue, alpha = match.groups()
+    weight = 1.0 if alpha is None else (float(alpha) if "." in alpha else int(alpha) / 255)
+    under = skins._hex_rgb(skins.base_color((ground,)))
+    mixed = [
+        round(int(channel) * weight + below * (1 - weight))
+        for channel, below in zip((red, green, blue), under, strict=True)
+    ]
+    return "#{:02x}{:02x}{:02x}".format(*mixed)
+
+
 def test_contrast_helper_is_calibrated() -> None:
     assert contrast("#ffffff", "#000000") == pytest.approx(21.0, abs=0.01)
     assert contrast("#888888", "#888888") == pytest.approx(1.0)
+
+
+def test_composite_helper_is_calibrated() -> None:
+    assert composite("#123456", "#ffffff") == "#123456"  # opaque wins
+    assert composite("rgba(255, 255, 255, 0.5)", "#000000") == "#808080"
+    assert composite("rgba(255, 255, 255, 128)", "#000000") == "#808080"  # 0-255 alpha
 
 
 # -- the snapshot ----------------------------------------------------------------
@@ -104,7 +135,7 @@ VALUE_FIELDS = (
     "panel_bg",
     "track",
 )
-HUE_FIELDS = ("accent", "accent_text", "plate_border", "chip_text")
+HUE_FIELDS = ("accent", "plate_border", "chip_text")
 
 
 def test_the_value_group_is_identical_under_every_skin() -> None:
@@ -146,17 +177,58 @@ def test_palette_owned_values_stay_readable_under_every_skin(skin_name: str, gro
 def test_the_gold_on_gold_mistake_is_the_one_the_rule_prevents(skin_name: str) -> None:
     """The counter-example, measured.
 
-    ``accent`` is a hairline/selection colour, not a ground. Painting the
-    skin's own caps colour on it — which is what "just use the accent for
-    everything" produces — is unreadable, and under Velious both are gold.
+    ``accent`` is a mark — a hairline, a focus ring, a group title — not a
+    ground. Body text on it is unreadable under EVERY skin (1.2:1 on
+    Velious, where it is literally gold on gold; 1.7:1 Duxa; 3.3:1 Ledger),
+    which is what "just use the accent for everything" produces.
     """
     skins.set_skin(skin_name)
     app = pluginskin.current()
 
-    assert contrast(app.accent_text, app.accent) < 4.5
+    assert contrast(app.text, app.accent) < 4.5
     # ...while the accent used as intended, as a mark on the app's ground,
     # is perfectly visible.
     assert contrast(app.accent, app.surface) >= 3.0
+
+
+@pytest.mark.parametrize("skin_name", skins.SKIN_ORDER)
+def test_the_selection_band_takes_a_palette_foreground(skin_name: str) -> None:
+    """``band`` is the ground a selection actually wants, and its text comes
+    from the value group like every other ground.
+
+    The tempting pairing is the skin's own caps colour, which is what the
+    app's config chrome uses — but that is tuned for the sidebar and measures
+    3.4:1 on Ledger's band, below AA. A façade must not recommend it.
+    """
+    skins.set_skin(skin_name)
+    app = pluginskin.current()
+    ground = composite(app.band[0], app.surface)
+
+    assert contrast(app.heading, ground) >= 4.5
+    assert contrast(app.text, ground) >= 4.5
+    # And the band is actually visible against the surface it sits on, or a
+    # selection would be indistinguishable from an unselected row.
+    assert contrast(ground, app.surface) > 1.1
+
+
+@pytest.mark.parametrize("skin_name", skins.SKIN_ORDER)
+def test_accent_text_is_kept_for_the_plugins_that_shipped_against_it(skin_name: str) -> None:
+    """SDK 1.x is additive-only, and app v2.26.0 shipped ``accent_text``.
+
+    Whether the standalone wheel reached PyPI does not undo that: a plugin
+    written against the bundled façade reads the attribute, and dropping it
+    would raise on the user's next app update. So the NAME is kept for 1.x
+    (removal is an SDK 2.0 decision) and the VALUE is corrected — it shipped
+    carrying the skin's caps colour, which is 3.4:1 on Ledger's band.
+    """
+    skins.set_skin(skin_name)
+    app = pluginskin.current()
+
+    assert hasattr(app, "accent_text")
+    assert app.accent_text == app.heading
+    # Corrected, so a plugin still reading it is now readable rather than
+    # merely un-crashed — which is the whole point of correcting over keeping.
+    assert contrast(app.accent_text, composite(app.band[0], app.surface)) >= 4.5
 
 
 # -- sizes are multipliers, never px ---------------------------------------------
