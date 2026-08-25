@@ -13,8 +13,10 @@ show. Unlike the other overlays it has no tray toggle and persists nothing.
 
 from __future__ import annotations
 
+import logging
+import weakref
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, QSize, Qt, QTimer
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QProgressBar,
     QSizeGrip,
     QSizePolicy,
@@ -55,6 +58,8 @@ from nparseplus.ui.overlaybase import (
     start_second_aligned,
 )
 from nparseplus.ui.skinwidgets import paint_hairline, qcolor, set_caps
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CLEAR_AFTER_S = 4.0
 BAR_TICK_MS = 200
@@ -122,6 +127,9 @@ EDIT_HINT_HEIGHT = 56
 # The empty ``Qt.Edge`` flag — a module singleton because ruff (B008)
 # rightly refuses a constructor call in an argument default.
 NO_EDGES = Qt.Edge(0)
+# The empty alignment flag: what the Alerts host is added to the stacked
+# layout with, i.e. "take the whole cell" rather than being centered in it.
+NO_ALIGNMENT = Qt.AlignmentFlag(0)
 # Smallest a region may be dragged to in position mode: MIN_REGION_WIDTH /
 # MIN_REGION_HEIGHT, imported above from the model that persists them. They
 # live there because the settings layer is the one that has to repair a
@@ -345,6 +353,108 @@ def fit_text_size(
         if measure(size).height() <= max_height:
             return size
     return min_size
+
+
+def qss_id(key: str) -> str:
+    """``key`` as something a Qt ``#id`` selector can name.
+
+    A region's chrome is applied through ``#{objectName}``, and a stylesheet
+    whose selector is malformed is discarded WHOLE by Qt with only a runtime
+    warning — the window then renders undressed while every string-level test
+    passes (``ui/chrome.py`` says the same about a stray brace). Plugin region
+    keys are namespaced ``plugin.<id>.<key>``, so the dots have to go.
+    """
+    return "".join(c if c.isalnum() or c == "_" else "_" for c in key) or "region"
+
+
+def weak_hook[T](method: Callable[[], T], gone: T) -> Callable[[], T]:
+    """A zero-arg call of ``method`` that does not keep its object alive.
+
+    The overlay owns its own region records, so a record holding a BOUND
+    METHOD of the overlay puts the window itself in a Python reference cycle
+    — and that takes its destruction away from refcounting and hands it to
+    the cyclic collector, which runs whenever it likes. A QWidget freed there
+    rather than by Qt is a use-after-free the next repaint walks straight
+    into; it segfaulted the suite from inside ``paintEvent``, with the crash
+    landing in whichever overlay happened to be painting.
+
+    Only the BUILT-IN records need this, and only because their hooks are the
+    overlay's own methods. A contributed region's hooks close over the plugin
+    that supplied them, not over the overlay, so they are stored as they are.
+
+    ``gone`` is what the call answers once the overlay has been collected —
+    unobservable in practice, since every caller of these hooks is the
+    overlay itself.
+    """
+    ref = weakref.WeakMethod(method)
+
+    def call() -> T:
+        target = ref()
+        return gone if target is None else target()
+
+    return call
+
+
+@dataclass
+class RegionRecord:
+    """Everything the overlay knows about ONE region — the single record.
+
+    The four regions used to be four parallel literals (hosts, titles,
+    default placements, default widths) plus two more shaped like them
+    (``_show_preview``'s injection and ``_clear_preview``'s layout list), and
+    two of those raised ``KeyError`` on a key they had not been told about —
+    into the Qt event loop of a translucent, always-on-top window over a
+    running game (#154). One record is what makes adding a region a single
+    call instead of a five-site edit, and what makes ``add_region`` /
+    ``remove_region`` genuinely live rather than merely extensible.
+
+    ``host`` is the widget the region places and ``layout`` the layout inside
+    it that position-mode sample content is inserted into. ``default`` is the
+    placement the region takes until the user drags it, and its ``anchor``
+    doubles as the region's band in the legacy stacked layout. Sizes are
+    CALLABLES, never precomputed numbers: two of the built-ins derive their
+    width from a live size hint and one from the window's own width.
+
+    Deliberately nothing input-related, and there never will be: a region is
+    a PAINT SURFACE. ``_apply_locked_flags`` sets
+    ``Qt.WindowType.WindowTransparentForInput`` on the whole window and Qt has
+    no per-child exemption, so outside position mode a region gets no mouse,
+    no keyboard, no hover and no wheel — and inside it, every click belongs to
+    the repositioning. Something that needs clicks is a WINDOW, not a region
+    (owner decision on #155). ``has_content`` is the one behaviour hook, and
+    it exists because ``_update_visibility`` has to ask whether the overlay is
+    worth showing at all.
+    """
+
+    key: str
+    title: str
+    host: QWidget
+    layout: QLayout | None
+    default: OverlayRegion
+    default_width: Callable[[], int]
+    #: Whether this region has anything to show. ``_update_visibility`` ORs
+    #: these: without one per region a fifth region could never keep the
+    #: overlay on screen by itself.
+    has_content: Callable[[], bool]
+    #: Builds this region's sample content, already inserted into ``layout``,
+    #: and hands back the widgets so they can be taken out again.
+    preview: Callable[[], list[QWidget]] | None = None
+    #: Run once this region's sample content has been removed.
+    on_preview_cleared: Callable[[], None] | None = None
+    #: The floor an edge drag may shrink this region to; None = the structural
+    #: ``MIN_REGION_HEIGHT``.
+    min_height: Callable[[], int] | None = None
+    #: How the host is added to the legacy stacked layout.
+    stack_alignment: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignHCenter
+    #: A built-in cannot be removed, and its key cannot be taken over.
+    builtin: bool = False
+    # -- live bookkeeping, owned by the overlay -------------------------------
+    #: The dashed title chip drawn over the host in position mode.
+    chip: QLabel | None = None
+    #: The host's own stylesheet, put back when the dashed chrome comes off.
+    host_style: str = ""
+    #: This region's position-mode sample widgets.
+    preview_widgets: list[QWidget] = field(default_factory=list)
 
 
 class _AlertViewport(QWidget):
@@ -689,9 +799,10 @@ class EventOverlayWindow(QWidget):
         # Last declared CH cadence (#15); new lanes inherit it, existing lanes
         # are updated when a fresh callout arrives.
         self._ch_cadence_seconds: int | None = None
-        # Positioning-mode sample widgets: tracked ONLY here, never registered
-        # in ``_bars``/``_chain_lanes`` and never written to ``_center_text``.
-        self._preview_widgets: list[QWidget] = []
+        # Positioning-mode sample widgets live on their own region's record
+        # (``_preview_widgets`` flattens them) — never registered in
+        # ``_bars``/``_chain_lanes`` and never written to ``_center_text``.
+        self._preview_shown = False
 
         self._alert_kicker = QLabel("", self)
         self._alert_kicker.setObjectName("EventOverlayKicker")
@@ -788,26 +899,17 @@ class EventOverlayWindow(QWidget):
 
         self._main_layout = QVBoxLayout()
         self._main_layout.setContentsMargins(20, 40, 20, 60)
-        self._main_layout.addWidget(self._lanes_host, 0, Qt.AlignmentFlag.AlignHCenter)
-        self._main_layout.addWidget(self._utility_host, 0, Qt.AlignmentFlag.AlignHCenter)
-        self._main_layout.addStretch(2)
-        self._main_layout.addWidget(self._alert_host, 0)
-        self._main_layout.addStretch(3)
-        self._main_layout.addWidget(self._bars_host, 0, Qt.AlignmentFlag.AlignHCenter)
         self.setLayout(self._main_layout)
 
-        # Small dashed-border title chips shown over each region while editing.
-        self._region_titles: dict[str, QLabel] = {}
-        for key, text in (
-            ("lanes", "CH chains"),
-            ("utility", "Utility"),
-            ("alert", "Alerts"),
-            ("bars", "Timer bars"),
-        ):
-            chip = QLabel(text, self)
-            set_caps(chip)
-            chip.hide()
-            self._region_titles[key] = chip
+        # THE region registry, in stacked-layout order. Every region-aware
+        # path re-reads this dict — which is what makes add_region/
+        # remove_region live rather than merely extensible (#154) — and the
+        # small dashed title chips shown over each host while editing are
+        # minted with the record that owns them.
+        self._regions: dict[str, RegionRecord] = {}
+        for record in self._builtin_regions():
+            self._register_region(record)
+        self._rebuild_stacked_layout()
 
         self._clear_timer = QTimer(self)
         self._clear_timer.setSingleShot(True)
@@ -948,10 +1050,9 @@ class EventOverlayWindow(QWidget):
             display_style + f" background-color: {skin.overlay_chip_fill};"
             " padding: 1px 6px; border-radius: 3px;"
         )
-        for chip in self._region_titles.values():
-            chip.setStyleSheet(
-                display_style + f" background-color: {skin.overlay_chip_fill}; padding: 1px 4px;"
-            )
+        for record in self._regions.values():
+            if record.chip is not None:
+                self._style_region_chip(record.chip)
         self._edit_hint.setStyleSheet(
             skins.typography_style(
                 self._font_size, skins.TypographyRole(1.3, "bold"), color=skin.overlay_chip_text
@@ -1123,11 +1224,19 @@ class EventOverlayWindow(QWidget):
 
     def mouseMoveEvent(self, event) -> None:
         if self._edit_mode and self._drag_region is not None:
+            # The region may have been retired since the press: position mode
+            # is the one time the overlay is NOT transparent for input, so it
+            # is also the one time a drag can be in flight while a plugin
+            # takes its region away (#154). Read it, never index it.
+            region = self._dragged_region()
+            if region is None:
+                self._drag_region = None
+                super().mouseMoveEvent(event)
+                return
             delta = event.globalPosition().toPoint() - self._region_drag_start
             if self._region_resize_edges:
                 self._apply_region_resize(delta)
             else:
-                region = self._state.overlay_regions[self._drag_region]
                 region.dx = self._region_drag_base[0] + delta.x()
                 region.dy = self._region_drag_base[1] + delta.y()
             self._layout_regions()
@@ -1171,10 +1280,19 @@ class EventOverlayWindow(QWidget):
         evaluated in position mode, where no alert is live and the kicker is
         hidden, so charging live chrome floored the region at a number the
         very next ``"Gorenaire — ENRAGED"`` overran (#107).
+
+        Which region wants its own floor is the record's business, so a
+        region contributed at runtime can have one — and a key that is not
+        registered at all still answers the structural floor.
         """
-        if key != "alert":
+        record = self._regions.get(key)
+        if record is None or record.min_height is None:
             return MIN_REGION_HEIGHT
-        return max(MIN_REGION_HEIGHT, MIN_ALERT_BUDGET + self._alert_chrome_height(worst_case=True))
+        return max(MIN_REGION_HEIGHT, record.min_height())
+
+    def _min_alert_height(self) -> int:
+        """The Alerts region's own floor — see ``_min_region_height``."""
+        return MIN_ALERT_BUDGET + self._alert_chrome_height(worst_case=True)
 
     def _clamp_alert_region(self) -> None:
         """Bring a loaded Alerts region up to the floor the drag enforces.
@@ -1211,8 +1329,12 @@ class EventOverlayWindow(QWidget):
         rule), so every anchor comes out right without a case per edge per
         anchor — a bottom-anchored region grows upward from its own baseline,
         a top-anchored one downward.
+
+        A no-op if the dragged region has gone (see ``mouseMoveEvent``).
         """
-        region = self._state.overlay_regions[self._drag_region]
+        region = self._dragged_region()
+        if region is None:
+            return
         rect = resize_rect(
             self._region_resize_base,
             self._region_resize_edges,
@@ -1233,32 +1355,299 @@ class EventOverlayWindow(QWidget):
             self.height(),
         )
 
+    def _dragged_region(self) -> OverlayRegion | None:
+        """The stored placement of the region being dragged, or None.
+
+        A read, never an index: ``_drag_region`` can outlive the region it
+        names (#154), and both drag paths run inside a live Qt event handler
+        on a translucent always-on-top window, where a KeyError is a crash
+        over the game.
+        """
+        if self._drag_region is None or self._state is None:
+            return None
+        regions = self._state.overlay_regions
+        return regions.get(self._drag_region) if regions else None
+
     def mouseReleaseEvent(self, event) -> None:
         self._drag_offset = None
         self._drag_region = None
         self._region_resize_edges = NO_EDGES
         super().mouseReleaseEvent(event)
 
+    # -- the region registry -----------------------------------------------------
+
+    def _builtin_regions(self) -> list[RegionRecord]:
+        """The four regions the overlay ships with, in stacked-layout order.
+
+        A method rather than a module table because every field closes over
+        instance state — the hosts, the live content dicts, the size hints —
+        which is exactly what a fifth region contributed at runtime brings
+        with it too.
+        """
+        return [
+            RegionRecord(
+                key="lanes",
+                title="CH chains",
+                host=self._lanes_host,
+                layout=self._lanes_layout,
+                default=OverlayRegion(anchor="top"),
+                default_width=weak_hook(self._lanes_width, MIN_REGION_WIDTH),
+                has_content=weak_hook(self._has_lanes, False),
+                preview=weak_hook(self._preview_lanes, []),
+                builtin=True,
+            ),
+            RegionRecord(
+                key="utility",
+                title="Utility",
+                host=self._utility_host,
+                layout=self._utility_layout,
+                default=OverlayRegion(anchor="top", dy=96),
+                default_width=weak_hook(self._utility_width, MIN_REGION_WIDTH),
+                has_content=weak_hook(self._has_utility, False),
+                preview=weak_hook(self._preview_utility, []),
+                on_preview_cleared=weak_hook(self._hide_empty_utility_header, None),
+                builtin=True,
+            ),
+            RegionRecord(
+                key="alert",
+                title="Alerts",
+                host=self._alert_host,
+                layout=self._alert_layout,
+                default=OverlayRegion(anchor="center"),
+                # The alert spans the window by default — the panel inside it
+                # does its own centering, which is why it also takes the whole
+                # stacked cell (NO_ALIGNMENT) rather than being centered in it.
+                default_width=weak_hook(self._alert_width, MIN_REGION_WIDTH),
+                has_content=weak_hook(self._has_alert, False),
+                preview=weak_hook(self._preview_alert, []),
+                min_height=weak_hook(self._min_alert_height, MIN_REGION_HEIGHT),
+                stack_alignment=NO_ALIGNMENT,
+                builtin=True,
+            ),
+            RegionRecord(
+                key="bars",
+                title="Timer bars",
+                host=self._bars_host,
+                layout=self._bars_layout,
+                default=OverlayRegion(anchor="bottom"),
+                default_width=lambda: BAR_WIDTH,  # no ``self``, so no weak_hook
+                has_content=weak_hook(self._has_bars, False),
+                preview=weak_hook(self._preview_bars, []),
+                builtin=True,
+            ),
+        ]
+
+    # The built-ins' hooks, as named methods rather than lambdas, so
+    # ``weak_hook`` can hold them weakly (see its docstring).
+
+    def _lanes_width(self) -> int:
+        return max(LANES_WIDTH, self._lanes_host.sizeHint().width())
+
+    def _utility_width(self) -> int:
+        return max(320, self._utility_host.sizeHint().width())
+
+    def _alert_width(self) -> int:
+        """The Alerts region spans the window; the panel inside it centers."""
+        return self.width()
+
+    def _has_lanes(self) -> bool:
+        return bool(self._chain_lanes)
+
+    def _has_utility(self) -> bool:
+        return bool(self._utility_lines)
+
+    def _has_alert(self) -> bool:
+        return bool(self._alert_text)
+
+    def _has_bars(self) -> bool:
+        return bool(self._bars)
+
+    def _register_region(self, record: RegionRecord) -> None:
+        """Put a record in the registry and mint its position-mode chip."""
+        host = record.host
+        if host.parent() is not self:
+            host.setParent(self)
+        if not host.objectName():
+            host.setObjectName(f"OverlayRegion_{qss_id(record.key)}")
+        record.host_style = host.styleSheet()
+        chip = QLabel(record.title, self)
+        # A contributed region's title is somebody else's string, and Qt's
+        # AutoText renders anything tag-shaped as markup (same reasoning as
+        # every label on this window that shows text we did not write).
+        chip.setTextFormat(Qt.TextFormat.PlainText)
+        set_caps(chip)
+        chip.hide()
+        self._style_region_chip(chip)
+        record.chip = chip
+        self._regions[record.key] = record
+
+    def _style_region_chip(self, chip: QLabel) -> None:
+        """The dashed-chrome title chip's type — one copy, so a chip minted by
+        ``add_region`` after startup is dressed exactly like the built-ins."""
+        chip.setStyleSheet(
+            skins.typography_style(
+                self._font_size, skins.SMALL_DISPLAY, color=self._skin.overlay_chip_text
+            )
+            + f" background-color: {self._skin.overlay_chip_fill}; padding: 1px 4px;"
+        )
+
+    def add_region(
+        self,
+        key: str,
+        host: QWidget,
+        *,
+        title: str,
+        has_content: Callable[[], bool],
+        default: OverlayRegion | None = None,
+        default_width: Callable[[], int] | None = None,
+        layout: QLayout | None = None,
+        preview: Callable[[], list[QWidget]] | None = None,
+        min_height: Callable[[], int] | None = None,
+    ) -> bool:
+        """Register a region and place it — live, at any moment.
+
+        In position mode the new host is given its dashed chrome and its
+        sample content immediately; in the legacy stacked layout it is
+        inserted into the band its ``default.anchor`` names rather than
+        appended after the stretch items, which is where a plain
+        ``addWidget`` would have put it (under the timer bars).
+
+        Idempotent: re-adding a key replaces the record, which is what a
+        plugin re-enabling looks like. A built-in key is never taken over.
+        Returns False when the call was refused.
+
+        The caller owns ``host``: ``remove_region`` hands it back hidden and
+        unparented rather than deleting it.
+        """
+        existing = self._regions.get(key)
+        if existing is not None and existing.builtin:
+            logger.warning("refusing to replace built-in overlay region %r", key)
+            return False
+        self.remove_region(key)
+        record = RegionRecord(
+            key=key,
+            title=title,
+            host=host,
+            layout=layout if layout is not None else host.layout(),
+            default=default.model_copy() if default is not None else OverlayRegion(),
+            default_width=(
+                default_width
+                if default_width is not None
+                else (lambda: max(MIN_REGION_WIDTH, host.sizeHint().width()))
+            ),
+            has_content=has_content,
+            preview=preview,
+            min_height=min_height,
+        )
+        self._register_region(record)
+        if self._edit_mode:
+            self._apply_region_chrome(record, True)
+        if self._preview_shown:
+            self._populate_preview(record)
+        if self._region_mode():
+            self._layout_regions()  # shows the host as part of placing it
+        else:
+            self._rebuild_stacked_layout()
+            # ``remove_region`` hides a host on its way out, and Qt never
+            # un-hides an explicitly hidden widget that rejoins a layout.
+            host.show()
+        if self._edit_mode:
+            self._position_region_chrome()
+        self._update_visibility()
+        return True
+
+    def remove_region(self, key: str) -> bool:
+        """Retire a region — live. Idempotent; refuses the four built-ins.
+
+        Everything the overlay attached to the region goes with it: the title
+        chip, any position-mode sample content, its place in the stacked
+        layout, and the DRAG. That last one is a real bug this closes (#154):
+        position mode drops ``WindowTransparentForInput`` so the overlay is
+        clickable, which means a region genuinely can vanish mid-drag, and a
+        ``_drag_region`` left naming it then indexed a key
+        ``overlay_regions`` no longer had.
+
+        The host comes back hidden and unparented; whoever contributed it
+        owns it. Its persisted placement is deliberately left in
+        ``overlay_regions`` — a plugin disabled and re-enabled comes back
+        where the user put it.
+        """
+        record = self._regions.get(key)
+        if record is None or record.builtin:
+            return False
+        del self._regions[key]
+        if self._drag_region == key:
+            self._drag_region = None
+            self._region_drag_start = None
+            self._region_resize_edges = NO_EDGES
+        self._discard_preview(record)
+        if record.chip is not None:
+            record.chip.hide()
+            record.chip.setParent(None)
+            record.chip.deleteLater()
+            record.chip = None
+        record.host.hide()
+        record.host.setParent(None)  # also takes it out of _main_layout
+        if not self._region_mode():
+            self._rebuild_stacked_layout()
+        self._update_visibility()
+        return True
+
+    def _rebuild_stacked_layout(self) -> None:
+        """Re-lay the registered hosts in the legacy stacked QVBoxLayout.
+
+        Rebuilt whole rather than patched, because that layout is
+        insertion-order-sensitive: the hosts sit around two stretch items, so
+        a region registered later would be appended BELOW the bottom stretch
+        — under the timer bars — instead of landing in its own band (#154).
+        A region's band is its default anchor, which is what the three groups
+        between the stretches already mean.
+
+        Placement only — never ``show()``. This also runs during construction,
+        where the hosts must stay unshown until ``apply_skin`` has dressed
+        what is inside them (which is how master behaved); ``add_region``
+        shows a host it has just placed instead.
+        """
+        while self._main_layout.count():
+            self._main_layout.takeAt(0)
+        for anchor, stretch in (("top", 0), ("center", 2), ("bottom", 3)):
+            if stretch:
+                self._main_layout.addStretch(stretch)
+            for record in self._regions.values():
+                if record.default.anchor != anchor:
+                    continue
+                self._main_layout.addWidget(record.host, 0, record.stack_alignment)
+
+    @property
+    def _region_titles(self) -> dict[str, QLabel]:
+        """The position-mode title chips by region key (test/debug hook)."""
+        return {
+            key: record.chip for key, record in self._regions.items() if record.chip is not None
+        }
+
+    @property
+    def _preview_widgets(self) -> list[QWidget]:
+        """Every region's position-mode sample widgets, flattened (test hook)."""
+        return [widget for record in self._regions.values() for widget in record.preview_widgets]
+
     # -- per-region positioning --------------------------------------------------
 
     def _region_hosts(self) -> dict[str, QWidget]:
-        return {
-            "lanes": self._lanes_host,
-            "utility": self._utility_host,
-            "alert": self._alert_host,
-            "bars": self._bars_host,
-        }
+        """The registered regions' hosts, in registration order."""
+        return {key: record.host for key, record in self._regions.items()}
 
     def _default_region(self, key: str) -> OverlayRegion:
         """The stacked-layout default placement for a region host — the single
         source of truth used to seed and to backfill missing keys (e.g. the
-        'utility' region absent from a layout saved before 1.11)."""
-        return {
-            "lanes": OverlayRegion(anchor="top"),
-            "utility": OverlayRegion(anchor="top", dy=96),
-            "alert": OverlayRegion(anchor="center"),
-            "bars": OverlayRegion(anchor="bottom"),
-        }.get(key, OverlayRegion())
+        'utility' region absent from a layout saved before 1.11).
+
+        A COPY every time: callers store what they get in ``overlay_regions``
+        and then drag it, which would otherwise walk the record's own default
+        off its anchor. An unregistered key answers a bare default rather
+        than raising.
+        """
+        record = self._regions.get(key)
+        return record.default.model_copy() if record is not None else OverlayRegion()
 
     def _region_mode(self) -> bool:
         return self._state is not None and self._state.overlay_regions is not None
@@ -1283,10 +1672,10 @@ class EventOverlayWindow(QWidget):
         self._region_resize_base = self._region_rect(key)
 
     def _activate_region_layout(self) -> None:
-        """Take the three hosts out of the stacked QVBoxLayout so they can be
-        placed manually. The stretch items stay behind harmlessly."""
-        for host in self._region_hosts().values():
-            self._main_layout.removeWidget(host)
+        """Take every registered host out of the stacked QVBoxLayout so they
+        can be placed manually. The stretch items stay behind harmlessly."""
+        for record in self._regions.values():
+            self._main_layout.removeWidget(record.host)
         self._layout_regions()
 
     def _region_size(self, key: str, region: OverlayRegion) -> tuple[int, int]:
@@ -1299,19 +1688,22 @@ class EventOverlayWindow(QWidget):
         takes the same number as the headline's budget, so the text is
         shrunk (then crawled) into the box the user drew instead of the box
         growing to the text.
+
+        A key no longer registered — a region retired between a layout pass
+        and this call — answers a usable size rather than raising.
         """
-        defaults = {
-            "lanes": max(LANES_WIDTH, self._lanes_host.sizeHint().width()),
-            "utility": max(320, self._utility_host.sizeHint().width()),
-            "alert": self.width(),
-            "bars": BAR_WIDTH,
-        }
-        host = self._region_hosts()[key]
-        host_w = region.width if region.width is not None else defaults[key]
+        record = self._regions.get(key)
+        if region.width is not None:
+            host_w = region.width
+        elif record is not None:
+            host_w = record.default_width()
+        else:
+            host_w = MIN_REGION_WIDTH
         if key == "alert" and region.height:
             host_h = self._alert_region_height(region)
         else:
-            host_h = max(1, host.sizeHint().height(), region.height or 0)
+            hint = record.host.sizeHint().height() if record is not None else 1
+            host_h = max(1, hint, region.height or 0)
         return max(MIN_REGION_WIDTH, host_w), host_h
 
     def _region_rect(self, key: str) -> QRect:
@@ -1338,49 +1730,59 @@ class EventOverlayWindow(QWidget):
         regions = self._state.overlay_regions if self._state is not None else None
         if not regions:
             return
-        for key, host in self._region_hosts().items():
+        for key, record in self._regions.items():
             rect = self._region_rect(key)
-            host.resize(rect.width(), rect.height())
-            host.move(rect.x(), rect.y())
-            host.show()
+            record.host.resize(rect.width(), rect.height())
+            record.host.move(rect.x(), rect.y())
+            record.host.show()
 
     # -- positioning-mode preview & chrome ---------------------------------------
 
     def _set_region_chrome(self, on: bool) -> None:
-        """Dashed border + title chip on each region host while editing."""
-        for key, host in self._region_hosts().items():
-            title = self._region_titles[key]
-            if on:
-                host.setStyleSheet(
-                    f"#{host.objectName()} {{ border: 1px dashed"
-                    f" {skins.rgba(self._skin.chrome_accent, 0.66)}; }}"
-                )
-                title.show()
-                title.raise_()
-            else:
-                host.setStyleSheet("")
-                title.hide()
+        """Dashed border + title chip on every region host while editing."""
+        for record in self._regions.values():
+            self._apply_region_chrome(record, on)
         if on:
             self._position_region_chrome()
 
-    def _position_region_chrome(self) -> None:
-        for key, host in self._region_hosts().items():
-            title = self._region_titles[key]
-            if not title.isVisible():
-                continue
-            title.adjustSize()
-            p = host.pos()
-            title.move(p.x(), max(0, p.y()))
-            title.raise_()
+    def _apply_region_chrome(self, record: RegionRecord, on: bool) -> None:
+        """One region's dashed border and chip — also the path a region added
+        while position mode is already up takes.
 
-    def _show_preview(self) -> None:
-        """Populate each region with labeled sample content so the user sees
-        where CH lanes, alerts, and timer bars land. Idempotent; adds nothing
-        to live state and publishes no events."""
-        if self._preview_widgets:
+        The border is APPENDED to the host's own stylesheet and that sheet is
+        what is put back when the chrome comes off, so a contributed host
+        that paints itself is not stripped by a visit to position mode.
+        """
+        host = record.host
+        if on:
+            own = f"{record.host_style}\n" if record.host_style else ""
+            host.setStyleSheet(
+                own + f"#{host.objectName()} {{ border: 1px dashed"
+                f" {skins.rgba(self._skin.chrome_accent, 0.66)}; }}"
+            )
+        else:
+            host.setStyleSheet(record.host_style)
+        if record.chip is None:
             return
-        # Sample CH lane with two static chips (and a sample cadence marker so
-        # the muted "next cast" tick is visible while positioning, #15).
+        if on:
+            record.chip.show()
+            record.chip.raise_()
+        else:
+            record.chip.hide()
+
+    def _position_region_chrome(self) -> None:
+        for record in self._regions.values():
+            chip = record.chip
+            if chip is None or not chip.isVisible():
+                continue
+            chip.adjustSize()
+            p = record.host.pos()
+            chip.move(p.x(), max(0, p.y()))
+            chip.raise_()
+
+    def _preview_lanes(self) -> list[QWidget]:
+        """Sample CH lane with two static chips (and a sample cadence marker so
+        the muted "next cast" tick is visible while positioning, #15)."""
         lane = _ChainLane("Sample Target", self)
         lane.setFixedWidth(LANES_WIDTH)
         lane.cadence_seconds = 4
@@ -1389,11 +1791,13 @@ class EventOverlayWindow(QWidget):
         lane.show()
         lane.add_static_chip("CH", 2)
         lane.add_static_chip("CH", 6)
-        self._preview_widgets.append(row)
+        return [row]
 
-        # Sample alert label styled exactly like ``_center_text`` (yellow, like
-        # the bard counter). Divergence from the Phase-1 note: inserted into the
-        # alert host's layout (not the main layout) so it rides the alert region.
+    def _preview_alert(self) -> list[QWidget]:
+        """Sample alert label styled exactly like ``_center_text`` (yellow, like
+        the bard counter). Divergence from the Phase-1 note: inserted into the
+        alert host's layout (not the main layout) so it rides the alert region.
+        """
         label = QLabel("ENRAGED", self)
         label.setObjectName("EventOverlayPreviewAlert")
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
@@ -1407,9 +1811,10 @@ class EventOverlayWindow(QWidget):
             Qt.AlignmentFlag.AlignHCenter,
         )
         label.show()
-        self._preview_widgets.append(label)
+        return [label]
 
-        # Sample utility line under the "Utility" header (#14).
+    def _preview_utility(self) -> list[QWidget]:
+        """Sample line under the "Utility" header (#14)."""
         self._utility_header.show()
         util = QLabel("Rebuff: Sample — buff faded", self)
         util.setObjectName("OverlayUtilityLine")
@@ -1418,39 +1823,74 @@ class EventOverlayWindow(QWidget):
         util.setStyleSheet(self._utility_line_style(self._skin.alert_kicker_color))
         self._utility_layout.addWidget(util, 0, Qt.AlignmentFlag.AlignHCenter)
         util.show()
-        self._preview_widgets.append(util)
+        return [util]
 
-        # Sample timer bars (do NOT start ``_bar_timer`` — these never tick).
+    def _hide_empty_utility_header(self) -> None:
+        """The header the sample line was shown under, back down once the
+        sample goes — unless real utility lines are up."""
+        if not self._utility_lines:
+            self._utility_header.hide()
+
+    def _preview_bars(self) -> list[QWidget]:
+        """Sample timer bars (do NOT start ``_bar_timer`` — these never tick)."""
+        bars: list[QWidget] = []
         for bar in (
             self._make_bar_widget("Sample Timer", DEFAULT_BAR_COLOR, 60, 45),
             self._make_bar_widget("CH Warning", "red", 10, 6),
         ):
             self._bars_layout.addWidget(bar)
             bar.show()
-            self._preview_widgets.append(bar)
+            bars.append(bar)
+        return bars
 
+    def _show_preview(self) -> None:
+        """Populate each region with labeled sample content so the user sees
+        where CH lanes, alerts, and timer bars land. Idempotent; adds nothing
+        to live state and publishes no events.
+
+        Which regions, and what each shows, is the registry's business now —
+        a region contributed at runtime brings its own sample factory, and one
+        added WHILE position mode is up is populated by ``add_region``.
+        """
+        if self._preview_shown:
+            return
+        self._preview_shown = True
+        for record in list(self._regions.values()):
+            self._populate_preview(record)
         if self._region_mode():
             self._layout_regions()
+
+    def _populate_preview(self, record: RegionRecord) -> None:
+        """One region's sample content. Idempotent; a region with no preview
+        factory simply shows nothing while positioning."""
+        if record.preview is None or record.preview_widgets:
+            return
+        record.preview_widgets.extend(record.preview())
 
     def _clear_preview(self) -> None:
         """Remove all preview widgets from their layouts. Idempotent."""
-        if not self._preview_widgets:
+        if not self._preview_shown:
             return
-        for widget in self._preview_widgets:
-            for lay in (
-                self._lanes_layout,
-                self._alert_layout,
-                self._bars_layout,
-                self._utility_layout,
-            ):
-                lay.removeWidget(widget)
-            widget.setParent(None)
-            widget.deleteLater()
-        self._preview_widgets.clear()
-        if not self._utility_lines:
-            self._utility_header.hide()
+        self._preview_shown = False
+        for record in list(self._regions.values()):
+            self._discard_preview(record)
         if self._region_mode():
             self._layout_regions()
+
+    def _discard_preview(self, record: RegionRecord) -> None:
+        """Take one region's sample content back out — also what a region
+        retired mid-position-mode goes through, so nothing is left parented to
+        a host the overlay has handed back."""
+        if not record.preview_widgets:
+            return
+        for widget in record.preview_widgets:
+            if record.layout is not None:
+                record.layout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+        record.preview_widgets.clear()
+        if record.on_preview_cleared is not None:
+            record.on_preview_cleared()
 
     def mouseDoubleClickEvent(self, event) -> None:
         if self._edit_mode:
@@ -2022,12 +2462,9 @@ class EventOverlayWindow(QWidget):
             if not self.isVisible():
                 self.show()
             return
-        active = (
-            bool(self._alert_text)
-            or bool(self._bars)
-            or bool(self._chain_lanes)
-            or bool(self._utility_lines)
-        )
+        # Per region, off its own record: an OR over four literals could
+        # never let a fifth region keep the overlay on screen by itself (#154).
+        active = any(record.has_content() for record in self._regions.values())
         if active and not self.isVisible():
             self.show()
         elif not active and self.isVisible():
