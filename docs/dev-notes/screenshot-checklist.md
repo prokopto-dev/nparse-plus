@@ -59,7 +59,7 @@ live client, which is the one claim a composed image cannot make.
 
 | File | Used on | What to capture |
 |---|---|---|
-| `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, window toggles, UI Skin, Window Layouts. |
+| `tray--menu.png` | First run, Windows index | The open tray menu showing version, sharing status, the pinned Settings entry, window toggles, UI Skin, Window Layouts. |
 
 ## Windows
 

@@ -123,7 +123,10 @@ the recommended way (overlay recipe + persistence for free — call
 chat toggle is `toggle_<command_key>` (default `<id>_<key>`, with any
 non-word character mapped to `_`). `title` is user-facing in three places:
 the tray entry, the Settings → Windows row (prefixed with your `meta.name`),
-and the window's own title bar.
+and the window's own title bar. On the tray your entry sits below a divider
+with the other add-on windows, so it is never mistaken for one of the app's
+own; a title that collides with an existing entry is suffixed with your
+plugin id.
 
 `PluginWindow.__init__(wctx, *, translucent=True, default_state=None,
 parent=None)` — the keyword arguments are passed through to

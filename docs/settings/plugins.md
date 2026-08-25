@@ -186,7 +186,8 @@ old approval and the old stored data. A running add-on is stopped and
 unloaded as it goes — no restart.
 
 **Open Plugins Folder** reveals the folder nParse+ scans, in your file
-manager. The same entry is on the tray menu while add-ons are enabled. See
+manager. The same entry is on the tray menu while add-ons are enabled, at the
+foot of the add-on block that holds your plugins' own windows. See
 [First run](../getting-started/first-run.md#where-settings-live) for the
 path on each platform.
 

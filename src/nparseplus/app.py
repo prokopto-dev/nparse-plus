@@ -237,7 +237,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
     from nparseplus.core.dumps import DumpLibrary
     from nparseplus.helpers import config as legacy_config
     from nparseplus.helpers import resource_path
-    from nparseplus.helpers.application import NomnsParse
+    from nparseplus.helpers.application import SETTINGS_LABEL, NomnsParse
     from nparseplus.ui import appicon, chromewidgets, pluginskin
     from nparseplus.ui.consolewindow import ConsoleWindow
     from nparseplus.ui.dpswindow import DpsMeterWindow
@@ -518,7 +518,10 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
         spell_window,
         save,
         windows={
-            "Settings": settings_window,
+            # Pinned to the tray's top group by _build_tray_menu, but it stays
+            # an entry here: has_backend_window is what stops a plugin titling
+            # its own window "Settings" and replacing this one.
+            SETTINGS_LABEL: settings_window,
             "DPS Meter": dps_window,
             "Mob Info": mob_info_window,
             "Console": console_window,
