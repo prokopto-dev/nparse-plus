@@ -257,6 +257,28 @@ owns value, the skin owns hue** — paint grounds and text from `app.text` /
 `app.surface`, and use `app.accent` only as an accent, or your window is gold
 on gold under Velious. Full guide: [Appearance & skins](appearance.md).
 
+## Overlay regions
+
+Since SDK 1.5 a plugin can also claim a **region inside the Event Overlay** —
+the surface that draws the CH lanes, the alert headline and the timer bars on
+the game — instead of opening a window of its own:
+
+```python
+from nparseplus_sdk import OverlayRegionSpec
+
+ctx.add_overlay_region(OverlayRegionSpec(
+    key="kills", title="Kills", factory=make_region,
+    has_content=lambda: bool(my_rows),
+))
+```
+
+**A region never receives a click** — not a press, a hover, a wheel or a key.
+The overlay is transparent for input and Qt has no per-child exemption, so
+that is permanent by design. Text, images and status panels; if your add-on
+needs input, use `ctx.add_window` above. Same lazy-import rule as a window:
+`nparseplus_sdk.ui.PluginOverlayRegion` resolves from the host, so build it
+inside the factory. Full guide: [Event overlay regions](overlay-regions.md).
+
 ## Consent, from your side
 
 - **Your plugin is inert until the user answers.** nParse+ shows a dialog
@@ -536,3 +558,6 @@ in the repository:
   throttled PigParse price polling, an overlay window, a settings page. Its
   `window.py` is also the reference for
   [skinning a window](appearance.md) from `nparseplus_sdk.skin`.
+- **`kill_ticker.py`** — an [event overlay region](overlay-regions.md): a
+  display-only list drawn inside the overlay, fed from the Qt bridge, that
+  brings the overlay on screen when it has something to say.

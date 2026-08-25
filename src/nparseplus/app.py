@@ -407,7 +407,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
 
         try:
             plugin_ui = build_plugin_ui(
-                plugin_host, settings, __version__, save, bridge, window_handles
+                plugin_host, settings, __version__, save, bridge, window_handles, event_overlay
             )
         except Exception:
             # Same contract as discovery: an add-on may not stop the app.
@@ -558,6 +558,7 @@ def create_app(argv: list[str], settings_file: Path | None = None) -> AppContext
             legacy_app=app,
             chrome_surfaces=chrome_surfaces,
             apply_appearance=_apply_appearance,
+            event_overlay=event_overlay,
         )
     app.aboutToQuit.connect(backend.stop)
     if plugin_host is not None:

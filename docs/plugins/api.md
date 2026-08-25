@@ -93,6 +93,7 @@ worker shared by all plugins, so `ctx.pigparse` and `ctx.submit` are never
 | `submit(fetch, apply=None)` | `fetch()` on a worker thread; `apply(result)` back on the driver thread. A raise in `fetch` is logged and drops the `apply` |
 | `add_window(PluginWindowSpec)` | declare an overlay window |
 | `add_settings_page(PluginSettingsPageSpec)` | declare a Settings page |
+| `add_overlay_region(OverlayRegionSpec)` | claim a **display-only** region inside the Event Overlay. Never receives a click — for anything interactive use `add_window`. See [Event overlay regions](overlay-regions.md). SDK 1.5 |
 | `add_window_timer(name, *, group, started_at, base_seconds, window_seconds, allow_duplicates=False)` | arm a variable respawn ("pop") window and return the row (`WindowTimerLike`). See [Pop windows](../features/respawn-timers.md#pop-windows). SDK 1.3 |
 | `add_window_series(name, *, group, started_at, windows)` | arm **several** candidate windows for one spawn (`windows` = `(base_seconds, window_seconds)` pairs) and return a row each, sharing a series key. For mobs with more than one possible window. SDK 1.3 |
 
@@ -172,6 +173,57 @@ with six fields plus one extension point:
 -> QWidget` builds the page; `apply(widget)` runs on Settings
 "Apply && Save". Both are individually guarded by the app.
 
+## Event overlay region specs
+
+*(SDK 1.5+)* — see [Event overlay regions](overlay-regions.md) for the whole
+picture, starting with the one that decides whether you want this at all: **a
+region never receives a click.** For anything interactive, use
+`ctx.add_window` and a `PluginWindowSpec`.
+
+**`OverlayRegionSpec(key, title, factory, has_content, default_anchor="top",
+default_dx=0, default_dy=0, default_width=None, default_height=None)`** —
+`key` must match the plugin-id pattern and be unique within your plugin;
+declare it twice and only the first region is kept. `title` is the label on
+the dashed chip the user sees in position mode. `factory(rctx)` runs on the
+GUI thread and returns a QWidget — subclass `nparseplus_sdk.ui.PluginOverlayRegion`.
+The `default_*` fields are only where the region **starts**; the user's own
+placement wins from the first time they drag it, and is kept even if the
+plugin is later disabled. Deliberately nothing input-related, and there never
+will be.
+
+`has_content() -> bool` is **required**: the overlay hides itself when every
+region is empty, so a region with no opinion could never keep it on screen by
+itself. It is called on the GUI thread on every visibility pass — keep it a
+flag read. If it raises, the app logs once and treats the region as empty for
+the rest of the session.
+
+**`OverlayRegionContext`** (the `rctx` your factory receives):
+
+| Field | Meaning |
+| --- | --- |
+| `settings` | the host's pydantic `Settings` root |
+| `region_key` | this region's canonical key, `plugin.<id>.<spec key>` |
+| `title` | the spec's title |
+| `on_save` | call to request a settings save |
+| `on_content_changed` | call when what is inside the region changed, so the overlay re-anchors it and re-asks `has_content` (`PluginOverlayRegion.notify_content_changed()` wraps it) |
+| `bridge` | the Qt bridge whose `event_received` / `events_batch` signals deliver bus events on the GUI thread (`None` outside the app) |
+| `extras` | `dict[str, Any]`, empty today — a forward-compatibility slot |
+
+**`PluginOverlayRegion(rctx, parent=None)`** — the base to subclass:
+
+- `notify_content_changed()` — tell the overlay your content changed. Also
+  re-seals anything you built since against input.
+- `has_content() -> bool` — default: any visible child. Override for a cheaper
+  or more truthful answer, and pass the bound method (or your own predicate)
+  as the spec's `has_content`.
+- `sample() -> list[QWidget]` — position-mode sample content, added to
+  `self.layout()` and returned. Default: one chip carrying the title.
+- `skin_stylesheet() -> str` / `apply_skin()` — the same contract as
+  `PluginWindow`'s, except this class owns the widget's *whole* sheet and does
+  not adopt one set with `setStyleSheet` (nothing predates SDK 1.5).
+- `region_key` — the namespaced key, read-only.
+- `self.layout()` — a zero-margin `QVBoxLayout`, ready to fill.
+
 ## Host re-export modules (lazy)
 
 These import the running app on first attribute access, so importing your
@@ -185,8 +237,10 @@ plugin stays possible in Qt-free/host-free environments:
 - **`nparseplus_sdk.timers`** — `TimerRow`, `CounterRow`, `SpellRow`,
   `RollRow` and group constants, forwarded from `nparseplus.core.timers`.
 - **`nparseplus_sdk.ui`** — `PluginWindow`, forwarded from
-  `nparseplus.ui.pluginwindow` (needs PySide6; keep it out of your plugin's
-  top-level module — see [Windows](developing.md#windows)).
+  `nparseplus.ui.pluginwindow`, and *(SDK 1.5+)* `PluginOverlayRegion`,
+  forwarded from `nparseplus.ui.pluginregion` (both need PySide6; keep them
+  out of your plugin's top-level module — see
+  [Windows](developing.md#windows)).
 - **`nparseplus_sdk.skin`** *(SDK 1.4+)* — what the app currently looks like,
   forwarded from `nparseplus.ui.pluginskin`: `current()` returns a frozen
   `AppSkin` snapshot (colours, the frame, the user's base font size), plus the
@@ -219,7 +273,8 @@ install `nparseplus` from source.
 
 - **`nparseplus_sdk.testing.FakePluginContext(meta=None, *, app_version,
   sdk_version, storage, timers, player, eq_dir, eq_running)`** — records `subscriptions` /
-  `parsers` / `ticks` / `windows` / `settings_pages` / `submitted`;
+  `parsers` / `ticks` / `windows` / `settings_pages` / `overlay_regions` /
+  `submitted`;
   `publish(event)` drives subscriptions by exact type, `run_submitted()`
   executes and clears queued fetch/apply pairs; fake `storage`
   (`FakeStorage`, with `.data` and `.save_count`), `speaker`
@@ -230,7 +285,8 @@ install `nparseplus` from source.
   ValidationReport`** — the engine behind the `nparseplus-plugin validate`
   CLI. `app_version` is **keyword-only**. The report carries `ok`, `errors`,
   `warnings`, `meta`, and the registration counts (`window_count`,
-  `page_count`, `parser_count`, `subscription_count`, `tick_count`).
+  `page_count`, `region_count`, `parser_count`, `subscription_count`,
+  `tick_count`).
   Warnings are advisory only and never affect `ok`. Note that validating
   **imports the plugin and calls `activate()`**.
 

@@ -22,6 +22,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
             "meta": report.meta.model_dump() if report.meta else None,
             "windows": report.window_count,
             "settings_pages": report.page_count,
+            "overlay_regions": report.region_count,
             "parsers": report.parser_count,
             "subscriptions": report.subscription_count,
             "ticks": report.tick_count,
@@ -34,8 +35,9 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print(f"{m.name} ({m.id}) v{m.version} — requires SDK {m.requires_sdk}")
     print(
         f"registered: {report.window_count} window(s), {report.page_count} settings "
-        f"page(s), {report.parser_count} parser(s), {report.subscription_count} "
-        f"subscription(s), {report.tick_count} tick(s)"
+        f"page(s), {report.region_count} overlay region(s), {report.parser_count} "
+        f"parser(s), {report.subscription_count} subscription(s), "
+        f"{report.tick_count} tick(s)"
     )
     for error in report.errors:
         print(f"ERROR: {error}")

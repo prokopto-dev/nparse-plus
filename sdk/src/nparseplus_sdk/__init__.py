@@ -8,7 +8,8 @@ a new SDK major version, and the host app refuses plugins whose
 Submodules:
 
 - ``nparseplus_sdk.events`` — the typed bus event classes (host re-export).
-- ``nparseplus_sdk.ui`` — the ``PluginWindow`` Qt base (host re-export).
+- ``nparseplus_sdk.ui`` — the ``PluginWindow`` and ``PluginOverlayRegion``
+  Qt bases (host re-export).
 - ``nparseplus_sdk.skin`` — what the app currently looks like (host
   re-export): the colour/type snapshot an add-on dresses itself from.
 - ``nparseplus_sdk.eqfiles`` — EQ install-file helpers (host re-export):
@@ -37,6 +38,8 @@ from nparseplus_sdk.context import (
 from nparseplus_sdk.plugin import (
     PLUGIN_ID_RE,
     NParsePlugin,
+    OverlayRegionContext,
+    OverlayRegionSpec,
     PluginMeta,
     PluginSettingsPageSpec,
     PluginWindowContext,
@@ -54,7 +57,7 @@ from nparseplus_sdk.plugin import (
 # refusing plugins that declared a newer requires_sdk range — a bug invisible
 # in CI and only reproducible from a release artifact. A plain literal has no
 # such second code path. Bump this, tag `sdk-v<X.Y.Z>` (see sdk/README.md).
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 
 SDK_VERSION = __version__
 
@@ -64,6 +67,8 @@ __all__ = [
     "LineInfoLike",
     "LineParser",
     "NParsePlugin",
+    "OverlayRegionContext",
+    "OverlayRegionSpec",
     "PluginContext",
     "PluginMeta",
     "PluginSettingsPageSpec",

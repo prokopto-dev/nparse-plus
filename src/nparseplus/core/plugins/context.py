@@ -37,6 +37,7 @@ from nparseplus.net.pigparse_api import PigParseApiClient
 from nparseplus.net.worker import NetWorker
 from nparseplus_sdk import (
     SDK_VERSION,
+    OverlayRegionSpec,
     PluginMeta,
     PluginSettingsPageSpec,
     PluginWindowSpec,
@@ -254,6 +255,7 @@ class HostPluginContext:
         self._plugin_timers: _PluginTimers | None = None
         self.window_specs: list[PluginWindowSpec] = []
         self.page_specs: list[PluginSettingsPageSpec] = []
+        self.overlay_region_specs: list[OverlayRegionSpec] = []
         # Set (on the driver thread) if the driver evicted one of this
         # plugin's ticks for overrunning its budget; the manager page shows
         # it. A plain str|None so core stays Qt-free and the GUI just reads.
@@ -462,6 +464,16 @@ class HostPluginContext:
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None:
         self.page_specs.append(spec)
 
+    def add_overlay_region(self, spec: OverlayRegionSpec) -> None:
+        """Claim a region inside the Event Overlay (#155, SDK 1.5).
+
+        A one-line append exactly like ``add_window``: the spec is data until
+        the Qt layer materializes it, which is what lets the whole plugin
+        subsystem stay Qt-free. Cleared by ``unwind`` alongside the window
+        and page specs.
+        """
+        self.overlay_region_specs.append(spec)
+
     # --- timers -----------------------------------------------------------
     def add_window_timer(
         self,
@@ -574,6 +586,7 @@ class HostPluginContext:
         self._parsers.clear()
         self.window_specs.clear()
         self.page_specs.clear()
+        self.overlay_region_specs.clear()
         # The tick that earned this note is gone with the rest, so the note
         # has to go too: a plugin re-enabled in the same session would
         # otherwise inherit "tick disabled (too slow)" from the run before.

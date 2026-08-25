@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from nparseplus_sdk.plugin import (
+    OverlayRegionSpec,
     PluginMeta,
     PluginSettingsPageSpec,
     PluginWindowSpec,
@@ -223,6 +224,16 @@ class PluginContext(Protocol):
     def add_window(self, spec: PluginWindowSpec) -> None: ...
 
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None: ...
+
+    def add_overlay_region(self, spec: OverlayRegionSpec) -> None:
+        """Claim a region **inside** the Event Overlay (SDK 1.5).
+
+        Display-only, permanently: the overlay window is transparent for
+        input and Qt has no per-child exemption, so a region never receives a
+        click. Text, images and status panels; for anything interactive use
+        :meth:`add_window`. See :class:`~nparseplus_sdk.plugin.OverlayRegionSpec`.
+        """
+        ...
 
     # --- timers -----------------------------------------------------------
     def add_window_timer(

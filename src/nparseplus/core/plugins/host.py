@@ -43,7 +43,7 @@ from nparseplus.core.plugins.storage import JsonPluginStorage
 from nparseplus.core.plugins.telemetry import MetricsCollector, PluginStatsSnapshot
 from nparseplus_sdk import SDK_VERSION as _SDK_VERSION
 from nparseplus_sdk import NParsePlugin, PluginMeta, check_compat
-from nparseplus_sdk.plugin import PluginSettingsPageSpec, PluginWindowSpec
+from nparseplus_sdk.plugin import OverlayRegionSpec, PluginSettingsPageSpec, PluginWindowSpec
 
 if TYPE_CHECKING:
     from nparseplus.composition import Backend
@@ -73,6 +73,7 @@ class LoadedPlugin:
     context: HostPluginContext | None = None
     window_specs: list[PluginWindowSpec] = field(default_factory=list)
     page_specs: list[PluginSettingsPageSpec] = field(default_factory=list)
+    overlay_region_specs: list[OverlayRegionSpec] = field(default_factory=list)
 
     @property
     def display_name(self) -> str:
@@ -635,6 +636,7 @@ class PluginHost:
         loaded.context = ctx
         loaded.window_specs = list(ctx.window_specs)
         loaded.page_specs = list(ctx.page_specs)
+        loaded.overlay_region_specs = list(ctx.overlay_region_specs)
         loaded.status = "active"
         logger.info("plugin %s v%s activated", loaded.meta.id, loaded.meta.version)
         self._build_ui(loaded)
@@ -646,7 +648,7 @@ class PluginHost:
         there is nobody left to show a status to, no window to destroy and no
         Timers window to clean up, so ``shutdown`` skips all of it.
         """
-        had_ui = bool(loaded.window_specs or loaded.page_specs)
+        had_ui = bool(loaded.window_specs or loaded.page_specs or loaded.overlay_region_specs)
         if loaded.status == "active" and loaded.plugin is not None:
             try:
                 loaded.plugin.deactivate()
@@ -659,6 +661,7 @@ class PluginHost:
             loaded.context.unwind()
         loaded.window_specs.clear()
         loaded.page_specs.clear()
+        loaded.overlay_region_specs.clear()
         if not retire:
             return
         plugin_id = loaded.plugin_id
@@ -706,9 +709,9 @@ class PluginHost:
     def _teardown_ui(self, plugin_id: str, had_ui: bool) -> None:
         """Ask whoever built this plugin's surfaces to destroy them.
 
-        With nobody listening, a plugin that contributed a window or a
-        settings page is switched off underneath surfaces that stay on
-        screen. The disable itself still happens — refusing it would leave a
+        With nobody listening, a plugin that contributed a window, a settings
+        page or an overlay region is switched off underneath surfaces that
+        stay on screen. The disable itself still happens — refusing it would leave a
         misbehaving add-on running, which is the reason people reach for the
         checkbox — so the mismatch is logged rather than silently accepted.
         Wiring the listener is the Qt layer's half of #45.
@@ -716,7 +719,7 @@ class PluginHost:
         if had_ui and not self.on_ui_teardown:
             logger.warning(
                 "plugin %s was disabled but nothing is registered to destroy its "
-                "windows/settings pages; they stay until the app restarts",
+                "windows/settings pages/overlay regions; they stay until the app restarts",
                 plugin_id,
             )
         for callback in list(self.on_ui_teardown):
@@ -743,6 +746,14 @@ class PluginHost:
             for loaded in self._loaded
             if loaded.status == "active"
             for spec in loaded.page_specs
+        ]
+
+    def overlay_region_specs(self) -> list[tuple[LoadedPlugin, OverlayRegionSpec]]:
+        return [
+            (loaded, spec)
+            for loaded in self._loaded
+            if loaded.status == "active"
+            for spec in loaded.overlay_region_specs
         ]
 
     # --- shutdown -----------------------------------------------------------
