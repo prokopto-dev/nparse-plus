@@ -106,18 +106,49 @@ MIN_SIZE = (420, 320)
 # live in Settings.windows[key]. Both kinds get apply_window_state() called
 # directly on their handle when applied.
 LEGACY_WINDOW_ROWS = [("Maps", "maps"), ("Discord", "discord")]
+#: (label, settings key, offers click-through).
+#:
+#: **Click-through is offered where the window is a HUD drawn over the game,
+#: and withheld where it is a tool window you drive with the mouse** (#167).
+#: A config surface you cannot click is not a feature: the Console's one
+#: affordance is a right-click ("Create trigger from this line…"), and the two
+#: editors and the dump library are forms, trees and buttons.
+#:
+#: The answer is DECLARED here rather than derived from ``state.frameless`` or
+#: ``state.always_on_top``, which look like they say the same thing: both are
+#: user-mutable at runtime (the hover bar's ☷ button toggles the frame), so a
+#: derived answer would take the checkbox away under whoever framed a window
+#: to resize it.
+#:
+#: The Settings window is deliberately absent from this table, and from the
+#: grid entirely — it is the escape hatch (see ``_apply_flags`` below). So is
+#: the Event Overlay, which is always click-through by construction; the hint
+#: under the grid says so, since an unexplained absence reads as an oversight.
 NEW_WINDOW_ROWS = [
-    ("Timers", "spells"),
-    ("DPS Meter", "dps"),
-    ("Mob Info", "mobinfo"),
-    ("Console", "console"),
-    ("Trigger Editor", "triggereditor"),
-    ("Macro Editor", "macroeditor"),
+    ("Timers", "spells", True),
+    ("DPS Meter", "dps", True),
+    ("Mob Info", "mobinfo", True),
+    ("Console", "console", False),
+    ("Trigger Editor", "triggereditor", False),
+    ("Macro Editor", "macroeditor", False),
+    ("Character Dumps", "dumps", False),
 ]
 # Plugin rows are not listed here: they are passed in per session (see the
 # `plugin_windows` kwarg), because only windows a plugin actually opened this
 # launch get a row.
 PLUGIN_WINDOWS_SECTION = "Plugin windows"
+#: On every click-through checkbox. Deliberately NOT a confirmation dialog:
+#: the failure mode here is not a lockout (this page is always reachable from
+#: the tray, and it is the one place that can undo it) but puzzlement weeks
+#: later — "why does right-click do nothing on my Timers?" A modal on one
+#: checkbox in a grid of checkboxes trains people to click past it; a tooltip
+#: is there at the moment the question is actually asked.
+CLICKTHROUGH_TOOLTIP = (
+    "Clicks pass straight through to the game.\n\n"
+    "The window stops responding to the mouse entirely — including "
+    "right-click menus, dragging it, and resizing it.\n\n"
+    "Come back here to turn it off again."
+)
 # Row labels are plugin-supplied, so cap them — a long title would squeeze the
 # opacity slider out of the grid. The full text lives in the row's tooltip.
 LABEL_LIMIT = 60
@@ -254,6 +285,7 @@ class _WindowRow:
         if clickthrough is not None:
             self.clickthrough = QCheckBox()
             self.clickthrough.setChecked(clickthrough)
+            self.clickthrough.setToolTip(CLICKTHROUGH_TOOLTIP)
 
     def _live_preview(self, value: int) -> None:
         if self.handle is not None:
@@ -950,6 +982,27 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         elif isinstance(event, YouZonedEvent):
             self._refresh_character_fields(zone=True)
 
+    def _apply_flags(self) -> None:
+        """Like the base, but this window can never be click-through (#167).
+
+        Click-through means the OS delivers no input to the window *or any
+        child of it*, and this page is the only thing in the app that can turn
+        click-through back off: the tray toggles visibility, the chat commands
+        toggle visibility, and Reset Window Positions and the layout presets
+        write geometry. So every other window's escape hatch is "open Settings
+        and untick it", and that loop only closes while Settings itself still
+        takes clicks.
+
+        The grid never offers the box for this window, so the only way to set
+        the flag is a hand-edit of ``settings.json`` — which is exactly the
+        case worth defending against, since it turns a typo into an app with
+        no way back in. Strip it here rather than refusing to persist it: the
+        settings file is the user's, and a value we ignore is friendlier than
+        one we silently rewrite.
+        """
+        super()._apply_flags()
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowTransparentForInput)
+
     def hideEvent(self, event) -> None:
         # A rehearsal lasts exactly as long as the rehearsal (#85): the two
         # samples that leave a row take it back when this window goes away,
@@ -1553,12 +1606,17 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             self._legacy_rows[section] = row
             self._add_grid_row(grid, row_index, row)
             row_index += 1
-        for label, key in NEW_WINDOW_ROWS:
+        for label, key, offers_clickthrough in NEW_WINDOW_ROWS:
             state = self._settings.windows.setdefault(key, WindowState())
             row = _WindowRow(
                 label,
                 on_top=state.always_on_top,
                 opacity_pct=round(state.opacity * 100),
+                # Reading the live value matters beyond round-tripping an edit:
+                # migrating from nparse carries `spells.clickthrough` across
+                # (config/migrate.py), so this box can open already ticked on a
+                # window that had no way to untick it before (#167).
+                clickthrough=state.clickthrough if offers_clickthrough else None,
                 handle=self._handles.get(key),
             )
             self._new_rows[key] = row
@@ -1587,6 +1645,18 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
                     shown,
                     on_top=state.always_on_top,
                     opacity_pct=round(state.opacity * 100),
+                    # Add-ons get the box too (#167). It used to be withheld
+                    # because "unlike Maps and Discord an add-on window has no
+                    # menu bar to reach for once it stops responding" — which
+                    # is not true: WindowTransparentForInput is a *window*
+                    # flag, so no click reaches a child widget either and the
+                    # legacy hover bar is exactly as unreachable. The real
+                    # escape hatch is this page, which is host-owned, so a
+                    # plugin window is no less recoverable than the Timers
+                    # window. pluginbootstrap._add_window_row already screens
+                    # out anything without apply_window_state(), so the box
+                    # cannot land on a widget that would ignore it.
+                    clickthrough=state.clickthrough,
                     handle=widget,
                     # Only worth a tooltip when it says something the row does
                     # not already show.
@@ -1602,6 +1672,19 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             "Opacity previews immediately; On top / Click-through apply on Save.", self
         )
         outer.addWidget(note)
+        # The Event Overlay has no row on purpose: it is always click-through
+        # (its alerts must never eat a click meant for the game), and its
+        # WindowState carries only geometry and region placement — an on-top or
+        # opacity cell for it would be just as dead as the click-through one.
+        # Three disabled cells are worse than none, but an unexplained absence
+        # reads as an oversight, so it is named here instead (#167).
+        outer.addWidget(
+            chromewidgets.hint(
+                "The Event Overlay is always click-through so alerts never eat your "
+                "clicks — position it from the tray menu.",
+                self,
+            )
+        )
         outer.addStretch(1)
         body = QWidget(self)
         body.setLayout(outer)
@@ -1654,6 +1737,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             state = self._settings.windows.setdefault(key, WindowState())
             state.always_on_top = row.on_top.isChecked()
             state.opacity = row.opacity.value() / 100
+            if row.clickthrough is not None:
+                state.clickthrough = row.clickthrough.isChecked()
             handle = self._handles.get(key)
             if handle is not None and hasattr(handle, "apply_window_state"):
                 handle.apply_window_state()
@@ -1666,6 +1751,8 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             state = self._settings.windows.setdefault(key, WindowState())
             state.always_on_top = row.on_top.isChecked()
             state.opacity = row.opacity.value() / 100
+            if row.clickthrough is not None:
+                state.clickthrough = row.clickthrough.isChecked()
             handle = row.handle
             if handle is not None and hasattr(handle, "apply_window_state"):
                 handle.apply_window_state()

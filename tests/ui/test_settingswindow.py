@@ -208,6 +208,80 @@ def test_windows_grid_writes_both_families_and_applies(qtbot) -> None:
     assert maps_handle.applied == 1
 
 
+def test_overlay_rows_offer_clickthrough_and_tool_windows_do_not(qtbot) -> None:
+    # The rule (#167): a HUD drawn over the game may be made click-through; a
+    # window you drive with the mouse may not. A config surface you cannot
+    # click is not a feature — the Console's one affordance is a right-click,
+    # and the editors and the dump library are forms, trees and buttons.
+    window = _window(qtbot, Settings())
+
+    for key in ("spells", "dps", "mobinfo"):
+        assert window._new_rows[key].clickthrough is not None, key
+    for key in ("console", "triggereditor", "macroeditor", "dumps"):
+        assert window._new_rows[key].clickthrough is None, key
+
+
+def test_new_window_row_round_trips_clickthrough(qtbot) -> None:
+    settings = Settings()
+    handle = FakeHandle()
+    window = _window(qtbot, settings, window_handles={"spells": handle})
+
+    window._new_rows["spells"].clickthrough.setChecked(True)
+    window.apply()
+
+    assert settings.windows["spells"].clickthrough is True
+    assert handle.applied == 1
+
+    window._new_rows["spells"].clickthrough.setChecked(False)
+    window.apply()
+    assert settings.windows["spells"].clickthrough is False
+
+
+def test_migrated_clickthrough_shows_ticked(qtbot) -> None:
+    # The lockout this closes (#167): config/migrate.py carries nparse's
+    # `spells.clickthrough` into windows["spells"], SpellTimerWindow honours
+    # it, and before this row existed there was no way in the app to reach it
+    # — the tray only toggles visibility, and Reset Window Positions and the
+    # layout presets write geometry. The box must open already ticked, or the
+    # user has no way to tell that is what happened to their Timers window.
+    settings = Settings()
+    settings.windows["spells"] = WindowState(clickthrough=True)
+    window = _window(qtbot, settings)
+
+    assert window._new_rows["spells"].clickthrough.isChecked() is True
+
+
+def test_clickthrough_boxes_carry_the_warning_tooltip(qtbot) -> None:
+    # Deliberately a tooltip and not a confirmation dialog: the failure mode
+    # is puzzlement later, not a lockout, and a modal on one checkbox in a
+    # grid of checkboxes trains people to click past it.
+    window = _window(qtbot, Settings())
+    tip = window._new_rows["spells"].clickthrough.toolTip()
+    assert "pass straight through" in tip
+    assert "right-click" in tip  # names what stops working, not just the flag
+
+
+def test_settings_window_is_never_clickthrough(qtbot) -> None:
+    # The escape hatch has to stay clickable: this page is the only thing in
+    # the app that turns click-through back off. The grid never offers the box
+    # for it, so this only guards a hand-edited settings.json — which is
+    # exactly the case that would otherwise leave no way back in.
+    settings = Settings()
+    settings.windows["settings"] = WindowState(clickthrough=True)
+    window = _window(qtbot, settings)
+
+    assert not (window.windowFlags() & Qt.WindowType.WindowTransparentForInput)
+
+    # ...and it survives a re-apply, which is what a Save runs through.
+    window.apply_window_state()
+    assert not (window.windowFlags() & Qt.WindowType.WindowTransparentForInput)
+
+
+def test_settings_window_has_no_grid_row(qtbot) -> None:
+    window = _window(qtbot, Settings())
+    assert "settings" not in window._new_rows
+
+
 def _grid_label(window: UnifiedSettingsWindow, text: str) -> tuple[QLabel, int]:
     """The Windows-grid label whose text is `text`, and its grid row index."""
     grid = window._windows_grid
@@ -294,14 +368,34 @@ def test_plugin_section_renders_below_discord_extras(qtbot) -> None:
     assert _grid_row_of(window, "Demo — Timer") > header
 
 
-def test_plugin_rows_offer_no_clickthrough(qtbot) -> None:
-    # Click-through is a trap on a plugin window: you cannot click it to undo.
-    window = _window(
-        qtbot,
-        Settings(),
-        plugin_windows=[("Demo — Timer", "plugin.demo.timer", FakeHandle())],
-    )
-    assert window._plugin_rows["plugin.demo.timer"].clickthrough is None
+def test_plugin_rows_offer_clickthrough(qtbot) -> None:
+    # Reversed in #167. The box used to be withheld here because "unlike Maps
+    # and Discord an add-on window has no menu bar to reach for once it stops
+    # responding" — but WindowTransparentForInput is a *window* flag, so no
+    # click reaches a child widget either and the legacy hover bar is exactly
+    # as unreachable. The escape hatch is this page, which is host-owned, so a
+    # plugin window is no less recoverable than the Timers window.
+    settings = Settings()
+    key = "plugin.demo.timer"
+    handle = FakeHandle()
+    window = _window(qtbot, settings, plugin_windows=[("Demo — Timer", key, handle)])
+
+    row = window._plugin_rows[key]
+    assert row.clickthrough is not None
+    row.clickthrough.setChecked(True)
+    window.apply()
+
+    assert settings.windows[key].clickthrough is True
+    assert handle.applied == 1
+
+
+def test_plugin_row_reads_persisted_clickthrough(qtbot) -> None:
+    settings = Settings()
+    key = "plugin.demo.timer"
+    settings.windows[key] = WindowState(clickthrough=True)
+    window = _window(qtbot, settings, plugin_windows=[("Demo — Timer", key, FakeHandle())])
+
+    assert window._plugin_rows[key].clickthrough.isChecked() is True
 
 
 def test_plugin_label_is_not_interpreted_as_markup(qtbot) -> None:
