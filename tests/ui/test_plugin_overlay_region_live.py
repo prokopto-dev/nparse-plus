@@ -18,7 +18,8 @@ import weakref
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QLabel, QWidget
 
 from nparseplus.audio.tts import NullSpeaker
 from nparseplus.composition import build_backend
@@ -190,7 +191,7 @@ def _state() -> WindowState:
     )
 
 
-def wire(qtbot, tmp_path: Path, source: str, plugin_id: str):
+def wire(qtbot, tmp_path: Path, source: str, plugin_id: str, state: WindowState | None = None):
     """``create_app``'s assembly, reduced to what a region has to keep in step."""
     directory = tmp_path / "plugins"
     directory.mkdir()
@@ -213,7 +214,7 @@ def wire(qtbot, tmp_path: Path, source: str, plugin_id: str):
     )
     host.discover_and_load()
     bridge = QtEventBridge(backend.bus)
-    overlay = EventOverlayWindow(state=_state())
+    overlay = EventOverlayWindow(state=_state() if state is None else state)
     qtbot.addWidget(overlay)
     window_handles: dict[str, object] = {}
     ui = build_plugin_ui(host, settings, APP_VERSION, lambda: None, bridge, window_handles, overlay)
@@ -248,6 +249,15 @@ def wired(qtbot, tmp_path: Path):
     context = wire(qtbot, tmp_path, PLUGIN, "ticker")
     yield context
     context["backend"].stop()
+
+
+@pytest.fixture
+def overlay_edit(wired):
+    """The wired overlay in position mode, plus the plugin behind the region."""
+    overlay, host = wired["overlay"], wired["host"]
+    overlay.set_edit_mode(True)
+    plugin = next(row for row in host.statuses() if row.plugin_id == "ticker").plugin
+    return overlay, plugin
 
 
 # -- startup -------------------------------------------------------------------
@@ -463,6 +473,73 @@ def test_a_widget_that_is_not_a_region_base_still_works(qtbot, tmp_path: Path) -
         # a region with no preview factory already behaved.
         overlay.set_edit_mode(True)
         assert overlay._preview_widgets
+    finally:
+        context["backend"].stop()
+
+
+# -- the rest of the acceptance criteria ---------------------------------------
+
+
+def test_a_contributed_region_resizes_like_a_built_in(overlay_edit) -> None:
+    """ "lays out, drags, resizes and persists exactly like a built-in one" —
+    the drag is covered above; this is the resize half."""
+    overlay, _plugin = overlay_edit
+    before = overlay._region_rect(REGION_KEY)
+    start = QPoint(before.right() - 1, before.bottom() - 1)
+
+    overlay._begin_region_edit(
+        REGION_KEY,
+        overlay.mapToGlobal(start),
+        Qt.Edge.RightEdge | Qt.Edge.BottomEdge,
+    )
+    overlay._apply_region_resize(QPoint(60, 40))
+
+    stored = overlay._state.overlay_regions[REGION_KEY]
+    assert stored.width == before.width() + 60
+    assert stored.height == before.height() + 40
+    assert overlay._region_rect(REGION_KEY).width() == before.width() + 60
+
+
+def test_a_plugin_enabled_while_position_mode_is_up_is_dressed_and_sampled(wired) -> None:
+    """The add half of "including while position mode is up"; the retire half
+    is covered above."""
+    host, overlay, ui = wired["host"], wired["overlay"], wired["ui"]
+    host.set_enabled("ticker", False)
+    overlay.set_edit_mode(True)
+
+    host.set_enabled("ticker", True)
+
+    region = ui.regions_by_key[REGION_KEY]
+    assert overlay._region_titles[REGION_KEY].isVisible()
+    assert "dashed" in region.styleSheet()
+    assert region in overlay._preview_widgets or region.findChildren(QLabel)
+
+    overlay.set_edit_mode(False)
+
+    assert "dashed" not in region.styleSheet()
+    assert not region.findChildren(QLabel)
+
+
+def test_a_region_works_in_the_legacy_stacked_layout(qtbot, tmp_path: Path) -> None:
+    """A user who has never opened position mode has ``overlay_regions=None``,
+    so the hosts sit in a QVBoxLayout around two stretch items instead of
+    being placed by hand. A contributed region has to land in its anchor's
+    band there — appending would have put it under the timer bars (#154)."""
+    context = wire(qtbot, tmp_path, PLUGIN, "ticker", state=WindowState(geometry=(0, 0, 1000, 800)))
+    try:
+        overlay, ui, host = context["overlay"], context["ui"], context["host"]
+        region = ui.regions_by_key[REGION_KEY]
+        layout = overlay._main_layout
+        placed = [layout.itemAt(i).widget() for i in range(layout.count())]
+
+        assert region in placed
+        assert not region.isHidden()
+        # "bottom" anchor: after the timer-bars host, not before the stretches.
+        assert placed.index(region) > placed.index(overlay._bars_host)
+
+        host.set_enabled("ticker", False)
+
+        assert region not in [layout.itemAt(i).widget() for i in range(layout.count())]
     finally:
         context["backend"].stop()
 
