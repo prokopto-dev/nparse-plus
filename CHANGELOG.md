@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.26.0 (2026-08-25)
+
+### Features
+
+- **plugins**: Expose the app's skin to add-ons through nparseplus_sdk.skin
+  ([`d011e16`](https://github.com/prokopto-dev/nparse-plus/commit/d011e1687989ff70d0f454d18a021757aa284344))
+
+
 ## v2.25.1 (2026-08-22)
 
 ### Bug Fixes
