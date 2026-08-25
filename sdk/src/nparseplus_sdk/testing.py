@@ -19,6 +19,7 @@ from typing import Any
 
 from nparseplus_sdk.context import LineParser, Unsubscribe
 from nparseplus_sdk.plugin import (
+    OverlayRegionSpec,
     PluginMeta,
     PluginSettingsPageSpec,
     PluginWindowSpec,
@@ -218,6 +219,7 @@ class FakePluginContext:
         self.submitted: list[tuple[Callable[[], Any], Callable[[Any], None] | None]] = []
         self.windows: list[PluginWindowSpec] = []
         self.settings_pages: list[PluginSettingsPageSpec] = []
+        self.overlay_regions: list[OverlayRegionSpec] = []
         self.window_timers: list[FakeWindowTimer] = []
 
     # --- identity / environment -------------------------------------------
@@ -294,6 +296,9 @@ class FakePluginContext:
 
     def add_settings_page(self, spec: PluginSettingsPageSpec) -> None:
         self.settings_pages.append(spec)
+
+    def add_overlay_region(self, spec: OverlayRegionSpec) -> None:
+        self.overlay_regions.append(spec)
 
     def add_window_timer(
         self,

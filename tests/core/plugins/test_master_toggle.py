@@ -25,6 +25,7 @@ PLUGIN_NAMESPACES = (
     "nparseplus.ui.pluginmanager",
     "nparseplus.ui.pluginconsent",
     "nparseplus.ui.pluginwindow",
+    "nparseplus.ui.pluginregion",
     "nparseplus_sdk",
 )
 

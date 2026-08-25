@@ -18,6 +18,12 @@ The façade is a small, frozen read surface over the same values the app's own
 overlays use. It is Qt-free, so you can build a stylesheet in a unit test with
 no `QApplication`.
 
+Everything on this page applies unchanged to an
+[event overlay region](overlay-regions.md): `PluginOverlayRegion` carries the
+same `skin_stylesheet()` / `apply_skin()` pair, with one difference noted
+there — it owns its widget's whole stylesheet and does not adopt one set by
+hand, because nothing predates SDK 1.5.
+
 ## The one rule
 
 > **The palette owns VALUE. The skin owns HUE.**

@@ -127,6 +127,11 @@ resize from any edge, toggle from the tray menu, positions remembered, and
 they participate in Window Layouts. Plugins may also add their own pages to
 the Settings window.
 
+An add-on can also draw **inside** the Event Overlay rather than in a window
+of its own — a [region](overlay-regions.md), placed from tray → Position Event
+Overlay exactly like the CH lanes and the timer bars. A region is
+display-only: it never receives a click, so anything interactive is a window.
+
 ## Troubleshooting
 
 - **A plugin broke my startup?** It shouldn't be able to — plugin failures

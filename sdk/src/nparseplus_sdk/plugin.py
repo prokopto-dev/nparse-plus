@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -105,6 +105,90 @@ class PluginSettingsPageSpec:
     title: str
     builder: Callable[[Any], Any]
     apply: Callable[[Any], None] | None = None
+
+
+def _no_content_hook() -> None:
+    """Default :attr:`OverlayRegionContext.on_content_changed` — does nothing.
+
+    A module-level function rather than a lambda so the dataclass default is a
+    named, importable object (and reads as one in ``repr``).
+    """
+
+
+@dataclass(frozen=True)
+class OverlayRegionSpec:
+    """A region the plugin wants to occupy **inside the Event Overlay**.
+
+    A region is a **paint surface, not a widget you can click**. The Event
+    Overlay is a top-level window carrying
+    ``Qt.WindowType.WindowTransparentForInput``, and Qt has no per-child
+    exemption from it: outside position mode nothing inside the overlay gets
+    a mouse, a key, a hover, a wheel or a context menu, and inside position
+    mode every click belongs to the user repositioning their chrome. That is
+    a permanent design decision, not a gap waiting to be filled — which is
+    why nothing here is input-related and nothing ever will be. **If your
+    add-on needs clicks, ship a window**: :class:`PluginWindowSpec` via
+    ``ctx.add_window``.
+
+    ``factory`` runs on the GUI thread and receives an
+    :class:`OverlayRegionContext`; it must return a QWidget. Subclassing the
+    host's ``PluginOverlayRegion`` base (see ``nparseplus_sdk.ui``) gives you
+    the skinning, the sample content and the non-interactive posture for
+    free.
+
+    ``has_content`` is asked — often, on the GUI thread — whether this region
+    currently has anything to show. It is **required** because the overlay
+    hides itself when every region is empty, so a region with no opinion
+    could never keep the overlay on screen by itself. Keep it cheap: read a
+    flag, do not compute.
+
+    ``default_anchor``/``default_dx``/``default_dy``/``default_width``/
+    ``default_height`` are only where the region *starts*. Once the user drags
+    it in position mode, their placement wins and is persisted under the
+    namespaced region key — and is deliberately kept if the plugin is later
+    disabled, so re-enabling it brings the region back where they put it.
+    """
+
+    key: str
+    title: str
+    factory: Callable[[OverlayRegionContext], Any]
+    has_content: Callable[[], bool]
+    default_anchor: Literal["top", "center", "bottom"] = "top"
+    default_dx: int = 0
+    default_dy: int = 0
+    default_width: int | None = None
+    default_height: int | None = None
+
+
+@dataclass
+class OverlayRegionContext:
+    """Handed to :class:`OverlayRegionSpec` factories on the GUI thread.
+
+    Loosely typed for the same reason :class:`PluginWindowContext` is — this
+    module stays importable without the host. ``settings`` is the host's
+    pydantic ``Settings`` root and ``bridge`` the ``QtEventBridge`` whose
+    ``event_received``/``events_batch`` signals deliver bus events on the GUI
+    thread; a region is display-only, so that signal (or a QTimer) is how
+    anything ever changes inside it.
+
+    ``region_key`` is the namespaced ``plugin.<id>.<key>`` the host persists
+    the placement under, matching the ``window_key`` convention.
+
+    ``on_content_changed`` tells the overlay your content's height changed so
+    it can re-anchor the region and re-ask ``has_content``. Call it whenever
+    you add, remove or resize what is inside — the overlay cannot see that by
+    itself, and a region that grew downward will otherwise sit at its old
+    size until something else moves. ``PluginOverlayRegion`` exposes it as
+    ``notify_content_changed()``.
+    """
+
+    settings: Any
+    region_key: str
+    title: str
+    on_save: Callable[[], None]
+    on_content_changed: Callable[[], None] = _no_content_hook
+    bridge: Any = None
+    extras: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
