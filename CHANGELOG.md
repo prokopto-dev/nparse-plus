@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.27.0 (2026-08-25)
+
+### Features
+
+- **ui**: Pin Settings to the tray's top group and fence off add-on windows
+  ([`d6a9094`](https://github.com/prokopto-dev/nparse-plus/commit/d6a90944a9a09de85f5dc960c82cac55f87ea464))
+
+
 ## v2.26.2 (2026-08-25)
 
 ### Bug Fixes
