@@ -73,11 +73,15 @@ class FakeTray:
 
     def __init__(self) -> None:
         self.windows: dict[str, object] = {}
+        self.plugin_labels: set[str] = set()
 
-    def add_backend_window(self, label: str, window: object) -> None:
+    def add_backend_window(self, label: str, window: object, *, plugin: bool = False) -> None:
         self.windows[label] = window
+        if plugin:
+            self.plugin_labels.add(label)
 
     def remove_backend_window(self, label: str) -> bool:
+        self.plugin_labels.discard(label)
         return self.windows.pop(label, None) is not None
 
     def has_backend_window(self, label: str) -> bool:
@@ -179,6 +183,9 @@ def test_startup_puts_the_plugin_in_every_collection(wired) -> None:
     assert WINDOW_KEY in wired["ui"].windows_by_key
     assert COMMAND_KEY in wired["window_handles"]
     assert TRAY_LABEL in wired["tray"].windows
+    # Marked as add-on contributed, which is what fences it off below the
+    # tray's plugin separator (#173).
+    assert wired["tray"].plugin_labels == {TRAY_LABEL}
     assert "Showy" in page_titles(wired["settings_window"])
 
 
@@ -191,6 +198,7 @@ def test_disabling_a_plugin_takes_its_ui_off_the_screen(wired) -> None:
     assert WINDOW_KEY not in ui.windows_by_key
     assert COMMAND_KEY not in wired["window_handles"]
     assert TRAY_LABEL not in wired["tray"].windows
+    assert not wired["tray"].plugin_labels
     assert widget not in wired["chrome_surfaces"]
     assert wired["layouts"].remove_window(WINDOW_KEY) is False  # already gone
     assert "Showy" not in page_titles(wired["settings_window"])
@@ -208,6 +216,7 @@ def test_enabling_a_plugin_builds_its_ui_again(wired) -> None:
     assert WINDOW_KEY in ui.windows_by_key
     assert COMMAND_KEY in wired["window_handles"]
     assert TRAY_LABEL in wired["tray"].windows
+    assert wired["tray"].plugin_labels == {TRAY_LABEL}
     assert ui.windows_by_key[WINDOW_KEY] in wired["chrome_surfaces"]
     # A window built after launch has never been dressed, so the skin sweep
     # has to run for it — otherwise it wears Qt's defaults until the next
@@ -295,6 +304,9 @@ def test_a_plugin_cannot_take_over_a_core_tray_entry(qtbot, settings, tmp_path) 
     try:
         assert tray.windows["Settings"] is core  # untouched
         assert "Settings (greedy)" in tray.windows
+        # The suffixed label is the one marked, so the app's pinned Settings
+        # entry stays a core one.
+        assert tray.plugin_labels == {"Settings (greedy)"}
         # ...and disabling the plugin takes only its own entry.
         host.set_enabled("greedy", False)
         assert tray.windows == {"Settings": core}

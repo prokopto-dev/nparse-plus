@@ -328,7 +328,7 @@ class _LivePluginUi:
             label = self._free_tray_label(provisional, plugin_id)
             self.ui.tray[label] = widget
             with _isolated(f"plugin {plugin_id} tray entry"):
-                self.legacy_app.add_backend_window(label, widget)
+                self.legacy_app.add_backend_window(label, widget, plugin=True)
             claimed.append(label)
         surfaces.tray_labels = claimed
 

@@ -15,12 +15,13 @@ Click the tray icon to open the menu. Top to bottom:
 | **Version: X.Y.Z** | The running version. Click to open the [releases page](https://github.com/prokopto-dev/nparse-plus/releases). When an update is available this reads **Install update vX.Y.Z** and opens the [update dialog](../features/updater.md) instead. |
 | **Check for updates** | Checks GitHub for a newer release on demand and reports back either way — the update dialog if one is found, or a "you're on the latest version" notification. |
 | **Sharing: …** | A read-only line showing your current [location-sharing](../features/sharing.md) state (`off` until you enable it). |
+| **Settings** | Opens **nParse+ Settings**. Pinned to the top group rather than sitting among the window toggles, and deliberately not checkable — it is the app's primary configuration surface, not one more overlay. |
 | **Select EQ Logs Directory** | Point nParse+ at the folder EQ writes logs to (same as [Settings → General](../settings/general.md)). |
-| **Maps · Discord · Timers · Settings · DPS Meter · Mob Info · Console · Trigger Editor · Macro Editor · Character Dumps** | One checkable toggle per window — a check means the window is shown. These are the windows detailed below. |
+| **Maps · Discord · Timers · DPS Meter · Mob Info · Console · Trigger Editor · Macro Editor · Character Dumps** | One checkable toggle per window — a check means the window is shown. These are the windows detailed below. |
 | **Position Event Overlay** | Enters the [Event Overlay](event-overlay.md)'s drag-and-resize [positioning mode](event-overlay.md#positioning-it) so you can line it up over the game. |
+| *(add-on block)* | Only present once [add-ons are enabled](../settings/advanced.md#add-ons-plugins): a divider, then one toggle per window a [plugin](../plugins/index.md) contributed, then **Open Plugins Folder** (which reveals the folder nParse+ scans). Fenced off so an add-on's window is never mistaken for one of the app's own. |
 | **UI Skin ▸** | Pick the [skin](../settings/appearance.md#skins) every window and overlay wears — Duxa, Velious plate, or Ledger. Applies live, so you can change one mid-fight; **Appearance…** at the bottom of the submenu opens the full page. |
 | **Window Layouts ▸** | Save, apply, and manage named position/size [presets](#window-layout-presets) (Save Current Layout, Reset Window Positions, and per-layout Apply / Replace / Rename / Delete). |
-| **Open Plugins Folder** | Only present once [add-ons are enabled](../settings/advanced.md#add-ons-plugins). Reveals the folder nParse+ scans for [plugins](../plugins/index.md). |
 | **Configure Discord** | Opens the legacy [Discord overlay](discord-overlay.md) settings. |
 | **Quit** | Exits nParse+. Windows you left open reopen automatically next launch. |
 

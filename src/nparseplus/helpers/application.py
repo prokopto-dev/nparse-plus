@@ -35,6 +35,12 @@ import nparseplus
 
 CURRENT_VERSION = Version(nparseplus.__version__)
 UPDATE_CHECK_DELAY_MS = 10_000  # don't block or race startup
+# The app's own configuration window. It stays an ordinary entry in
+# ``_backend_windows`` (``has_backend_window`` is the collision guard a
+# plugin's window title is checked against) and only its *rendering* is
+# pinned to the top group of the tray menu. app.py keys the dict with this
+# constant so the string lives in one place.
+SETTINGS_LABEL = "Settings"
 
 
 def build_skin_menu(menu, *, current_skin, enabled=True, with_appearance=True):
@@ -100,6 +106,7 @@ class NomnsParse(QApplication):
         self._spell_window = None
         self._save_new_settings = None
         self._backend_windows = {}
+        self._plugin_window_labels = set()
         self._window_layouts = None
         self._on_skin_changed = None
         self._open_settings = None
@@ -351,22 +358,36 @@ class NomnsParse(QApplication):
         self._spell_window = spell_window
         self._save_new_settings = save_new_settings
         self._backend_windows = dict(windows or {})
+        # Which of those a plugin contributed — the tray fences them off
+        # below their own separator. Marked explicitly rather than inferred
+        # from dict order: plugins happen to register after this dict is
+        # built, but nothing guarantees it.
+        self._plugin_window_labels = set()
         self._window_layouts = window_layouts
         self._plugins_enabled = plugins_enabled
         self._on_skin_changed = on_skin_changed
         self._open_settings = open_settings
         bridge.events_batch.connect(self._on_backend_events)
 
-    def add_backend_window(self, label, window):
+    def add_backend_window(self, label, window, *, plugin=False):
         """Add a toggleable window to the tray menu, live (nparseplus #45).
 
         No menu rebuild is needed: ``_build_tray_menu`` re-reads this dict
         every time the menu is opened.
+
+        ``plugin=True`` marks the entry as add-on contributed, which is what
+        puts it below the tray's plugin separator. Keyword-only with a False
+        default: an embedder registering a window of its own is not a plugin.
         """
         self._backend_windows[label] = window
+        if plugin:
+            self._plugin_window_labels.add(label)
+        else:
+            self._plugin_window_labels.discard(label)
 
     def remove_backend_window(self, label):
         """Drop a tray entry (its plugin was disabled). True if it was there."""
+        self._plugin_window_labels.discard(label)
         return self._backend_windows.pop(label, None) is not None
 
     def has_backend_window(self, label):
@@ -425,6 +446,30 @@ class NomnsParse(QApplication):
         a docs screenshot — without entering the blocking modal ``exec`` loop
         (``QMenu.exec`` can't be intercepted from Python).
         """
+        # Sort the toggleable windows before anything is drawn: Settings is
+        # pinned to the top group and add-on windows are fenced off below their
+        # own separator, so where an entry goes is decided here rather than by
+        # the order it happens to sit in the dict.
+        plugin_labels = self._plugin_window_labels
+        core_windows = [
+            (label, window)
+            for label, window in self._backend_windows.items()
+            if label not in plugin_labels and label != SETTINGS_LABEL
+        ]
+        plugin_windows = [
+            (label, window)
+            for label, window in self._backend_windows.items()
+            if label in plugin_labels
+        ]
+        # A plugin can never hold the bare "Settings" label while the app's own
+        # entry exists (_free_tray_label suffixes it), so this only declines to
+        # pin when the app registered no Settings window at all.
+        pinned_settings = (
+            self._backend_windows[SETTINGS_LABEL]
+            if SETTINGS_LABEL in self._backend_windows and SETTINGS_LABEL not in plugin_labels
+            else None
+        )
+
         menu = QMenu()
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if self._available_release is not None:
@@ -437,6 +482,22 @@ class NomnsParse(QApplication):
         if getattr(self._backend, "sharing", None) is not None:
             sharing_status_action = menu.addAction(f"Sharing: {self._backend.sharing.status}")
             sharing_status_action.setEnabled(False)
+
+        backend_window_actions = {}
+
+        def add_window_entries(entries):
+            for label, window in entries:
+                window_action = menu.addAction(label)
+                window_action.setCheckable(True)
+                window_action.setChecked(window.isVisible())
+                backend_window_actions[window_action] = window
+
+        if pinned_settings is not None:
+            # Deliberately not setCheckable: Settings is the app's primary
+            # configuration surface, not one more window toggle. It still
+            # dispatches through the backend_windows arm of _menu.
+            backend_window_actions[menu.addAction(SETTINGS_LABEL)] = pinned_settings
+
         menu.addSeparator()
         get_eq_dir_action = menu.addAction("Select EQ Logs Directory")
         menu.addSeparator()
@@ -454,12 +515,18 @@ class NomnsParse(QApplication):
             spell_timers_action.setCheckable(True)
             spell_timers_action.setChecked(self._spell_window.isVisible())
 
-        backend_window_actions = {}
-        for label, window in self._backend_windows.items():
-            window_action = menu.addAction(label)
-            window_action.setCheckable(True)
-            window_action.setChecked(window.isVisible())
-            backend_window_actions[window_action] = window
+        add_window_entries(core_windows)
+
+        # The add-on block: its own windows, then the folder they live in.
+        # Conditional, because a dangling separator is a style-dependent
+        # artifact and not Qt's to collapse.
+        open_plugins_action = None
+        plugins_enabled = getattr(self, "_plugins_enabled", False)
+        if plugin_windows or plugins_enabled:
+            menu.addSeparator()
+        add_window_entries(plugin_windows)
+        if plugins_enabled:
+            open_plugins_action = menu.addAction("Open Plugins Folder")
 
         menu.addSeparator()
         skin_actions, appearance_action = build_skin_menu(
@@ -473,10 +540,6 @@ class NomnsParse(QApplication):
             self._window_layouts.populate_menu(menu)
 
         menu.addSeparator()
-        # (the unified "Settings" window arrives via _backend_windows)
-        open_plugins_action = None
-        if getattr(self, "_plugins_enabled", False):
-            open_plugins_action = menu.addAction("Open Plugins Folder")
         discord_conf_action = menu.addAction("Configure Discord")
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
