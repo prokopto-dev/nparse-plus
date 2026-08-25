@@ -6,6 +6,20 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.26.2 (2026-08-25)
+
+### Bug Fixes
+
+- **plugins**: Dress a plugin window through apply_skin on its first dress
+  ([`2b4c1a8`](https://github.com/prokopto-dev/nparse-plus/commit/2b4c1a8e1346d5de7ff8bca62e271b6fffa5227b))
+
+- **plugins**: Keep the skin hook out of the base constructor, keep accent_text
+  ([`7827441`](https://github.com/prokopto-dev/nparse-plus/commit/7827441813e85242858e6e74355d0c5d00e88230))
+
+- **plugins**: Stop the skin façade unstyling pre-1.4 plugin windows
+  ([`83b284e`](https://github.com/prokopto-dev/nparse-plus/commit/83b284edb3fa0bd78708e853d80a7f0bdaecb66f))
+
+
 ## v2.26.1 (2026-08-25)
 
 ### Bug Fixes
