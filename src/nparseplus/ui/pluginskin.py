@@ -21,9 +21,14 @@ The rule it encodes, from ``theme.py`` and ``chrome.py``:
 Ground, field backgrounds and body text come from the
 :class:`~nparseplus.ui.theme.Palette` — the readability floor no skin may
 move — and are the same under all three skins. The skin contributes one
-accent, for selection bands, focus rings, group titles and hairlines. A
-plugin that paints its own background from :attr:`AppSkin.accent` gets
-gold-on-gold under Velious; the value fields exist so it does not have to.
+accent, for selection bands, focus rings, group titles and hairlines.
+
+An accent is a mark, not a ground. Body text on :attr:`AppSkin.accent`
+measures 1.2:1 under Velious (gold on gold — the app's own title caps are
+gold too), 1.7:1 under Duxa and 3.3:1 under Ledger: unreadable on all three,
+not just the loud one. :attr:`AppSkin.band` is the ground a selection
+actually wants, and it takes :attr:`AppSkin.heading` as its text like every
+other ground here.
 
 Qt-free, like the three modules it composes, so a plugin can build a
 stylesheet in a unit test with no QApplication — and so importing
@@ -99,10 +104,11 @@ class AppSkin:
     snapshot is a window wearing last week's colours.
 
     The fields are grouped by who owns them, and that grouping is the
-    contract: :attr:`text` through :attr:`panel_bg` are identical under
+    contract: :attr:`text` through :attr:`track` are identical under
     every skin and safe to pair with each other, while :attr:`accent`
     through :attr:`bar_track_border` change with the user's choice and are
-    safe only as an accent *on* those values.
+    safe only as an accent *on* those values — including as a ground, which
+    is why even :attr:`band` takes its foreground from the value group.
     """
 
     #: ``"duxa"``, ``"velious"`` or ``"ledger"``.
@@ -136,9 +142,15 @@ class AppSkin:
     #: Selection bands, focus rings, group titles, hairlines. **Not** a
     #: background for text — see the module docstring.
     accent: str
-    #: Text that sits ON an accent band (the band is dark under every skin,
-    #: so this is the skin's own caps colour rather than the palette's).
-    accent_text: str
+    #: The fill behind a selected row, as the app's own sidebar draws it —
+    #: one stop is flat, two are a vertical gradient. Its own field rather
+    #: than an ``rgba(accent, ...)`` guessed per plugin: Ledger's band is a
+    #: 22% wash and Velious's is opaque stone, so no single alpha serves
+    #: both. Deliberately **not** paired with an accent-coloured foreground:
+    #: :attr:`heading` and :attr:`text` are what stay legible on it under
+    #: every skin, while the app's own caps colour measures 3.4:1 on
+    #: Ledger's band and 2.9:1 on a naive tint of the accent.
+    band: tuple[str, ...]
     #: The hairline between sections.
     hairline: str
     #: The outer plate fill (one stop = flat, two = a vertical gradient)
@@ -325,7 +337,7 @@ def current() -> AppSkin:
         panel_bg=colors.panel_bg,
         track=colors.bar_track,
         accent=host.chrome_accent,
-        accent_text=host.title_color,
+        band=host.chrome_band,
         hairline=host.glass_border,
         plate=host.plate,
         plate_border=host.plate_border,

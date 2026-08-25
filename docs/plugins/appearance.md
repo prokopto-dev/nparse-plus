@@ -46,11 +46,26 @@ and this is the mistake the split exists to prevent:
 label.setStyleSheet(f"color: {app.text}; background: {app.accent};")   # ✗
 ```
 
-Under Velious `accent` is `#e2c882` — gold — and the app's own title caps are
-gold too, so a ground painted with it produces **gold on gold**: a window that
-looks fine on the skin you developed against and is unreadable on one of the
-other two. `accent_text` exists for the one case where text really does sit on
-an accent band; nothing else should.
+An accent is a mark, not a ground. Body text on it measures **1.2:1** under
+Velious (gold on gold — the app's own title caps are gold too), **1.7:1** under
+Duxa and **3.3:1** under Ledger. All three are unreadable, so this is not a
+"looks fine on the skin you developed against" trap — it is simply wrong
+everywhere.
+
+When you do want a filled row — a selection, a highlighted entry — `band` is
+the ground the app itself uses, and its text comes from the value group like
+any other ground:
+
+```python
+f"QTableWidget::item:selected {{ background: {app.gradient(app.band)};"
+f" color: {app.heading}; }}"
+```
+
+Not the skin's caps colour on it, tempting as that is: the app's *config*
+chrome pairs those for its sidebar, but on Ledger's band that measures 3.4:1,
+and on an `rgba(accent, .28)` tint of your own, 2.9:1. `heading` and `text`
+clear AA on every skin's band, which is the whole reason the value group is
+skin-independent.
 
 ## The snapshot is live — read it when you paint
 
@@ -63,18 +78,33 @@ from nparseplus_sdk.ui import PluginWindow
 
 
 class MyWindow(PluginWindow):
-    def apply_skin(self) -> None:
-        super().apply_skin()          # the app's own overlay dressing
+    def skin_stylesheet(self) -> str:
         app = skin.current()
-        self.setStyleSheet(
-            self.styleSheet()
-            + f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
-        )
+        return f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
 ```
 
-`PluginWindow.apply_skin()` is called by the app on **every** skin, font-size
-and frame-opacity change. Re-dressing *in place* there is the whole contract:
-do not assume construction-time values, and do not cache an `AppSkin`.
+`skin_stylesheet()` is **the** place for a plugin window's own QSS. The base
+class owns the whole sheet and re-assembles it from its dressing plus your
+rules on **every** skin, font-size and frame-opacity change — so it is called
+afresh each time, must not cache an `AppSkin`, and neither discards your rules
+nor accumulates a stale copy of them per change. It is also called from
+`__init__`, before your own widgets exist: return rules, do not touch widgets.
+
+For the work a stylesheet cannot do — styling child widgets, painted colours,
+sizes — override `apply_skin()` and call `super().apply_skin()` first:
+
+```python
+    def apply_skin(self) -> None:
+        super().apply_skin()
+        self._row.apply_skin()
+```
+
+!!! note "Windows written before SDK 1.4"
+    A `PluginWindow` that sets its own sheet with `setStyleSheet` and knows
+    nothing of either hook keeps working: the base class adopts that sheet and
+    re-applies it *after* its own rules, so your styling still wins and a skin
+    change no longer discards it. Moving those rules into `skin_stylesheet()`
+    is worth doing, but nothing breaks if you don't.
 
 A window that overrides nothing is still skinned — since SDK 1.4 the base
 class paints the active skin's plate and glass behind your window and applies
@@ -241,8 +271,8 @@ only as an accent on it.
 
 | Hue (the skin's — changes with the user's pick) | |
 | --- | --- |
-| `accent` | hairlines, selection, focus, group titles |
-| `accent_text` | text that sits **on** an accent band |
+| `accent` | hairlines, focus rings, group titles — a mark, never a ground |
+| `band` | the fill behind a selected row; pair with `heading` / `text` |
 | `hairline` | the rule between sections |
 | `plate` / `plate_border` | the outer frame |
 | `glass` / `glass_border` | the inner surface |

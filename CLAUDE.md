@@ -1700,12 +1700,25 @@ so a snapshot carrying both cannot live in either.
 **The value/hue split is the whole contract, and it is measured rather than
 asserted.** `AppSkin`'s fields are grouped by owner: the value group (`text`,
 `surface`, `field_bg`, `panel_bg`, …) comes from the palette and is
-*identical* under all three skins; the hue group (`accent`, `plate`, `chip_*`,
-…) is the skin's. `tests/ui/test_pluginskin.py` asserts the value group is one
-set of values across the skins, that `text` on every ground clears WCAG AA on
-each — and that `accent_text` on `accent` FAILS the same measurement, which is
-the gold-on-gold a plugin gets from "just use the accent for everything".
+*identical* under all three skins; the hue group (`accent`, `band`, `plate`,
+`chip_*`, …) is the skin's. `tests/ui/test_pluginskin.py` asserts the value
+group is one set of values across the skins, that `text` on every ground
+clears WCAG AA on each — and that `text` on flat `accent` FAILS the same
+measurement under EVERY skin (1.2:1 Velious, 1.7:1 Duxa, 3.3:1 Ledger), which
+is the gold-on-gold a plugin gets from "just use the accent for everything".
 Without that second half the guard is a tautology about constants.
+
+**`band` exists because the obvious pairing is the one that fails.** A
+selection wants a filled ground, and the app's own config chrome puts the
+skin's caps colour on it (`chrome.accent_text = skin.title_color`) — but that
+is tuned for the Settings sidebar and measures **3.4:1 on Ledger's band**,
+2.9:1 on a naive `rgba(accent, .28)` tint. An earlier cut of the façade
+exported that pairing as `accent_text` while a test asserted it was
+unreadable; both could not be true. So the façade carries the band FILL
+(`Skin.chrome_band`, a wash on Ledger and opaque stone on Velious — no single
+alpha serves both) and takes its foreground from the value group like every
+other ground. The guard composites the translucent band over `surface` before
+measuring, or Ledger's 22% wash would be flattered by its declared value.
 
 **Sizes are pushed nowhere.** A skin has its own module global
 (`skins.set_skin`) but font size and frame opacity live in settings, so
@@ -1723,11 +1736,28 @@ skin's plate and glass — via `skinwidgets.paint_skin_frame`, factored out of
 the plugin owns its layout and sets it on `self`, so there is no container to
 wrap. Construction calls the private `_dress_from_skin`, **not** the virtual
 `apply_skin()` — the base runs inside the subclass's `super().__init__(...)`,
-before its own widgets exist, and an override touching them would raise. So
-the example calls `self.apply_skin()` itself once its widgets are built.
+before its own widgets exist, and an override touching them would raise.
 `skins.OBJ_TITLE`/`OBJ_ROW_NAME`/`OBJ_ROW_VALUE` became constants (re-exported
 as `skin.TITLE`/`ROW_NAME`/`ROW_VALUE`) so "stamp an object name and the label
 is skinned" is a contract rather than a coincidence of two string literals.
+
+**The window owns the WHOLE sheet, which is why `skin_stylesheet()` exists.**
+Inheriting an `apply_skin()` that calls `setStyleSheet` silently unstyled
+every plugin window written before SDK 1.4 — they set their own sheet in
+`__init__` and there was no hook to be called by, so the app's duck-typed
+sweep found nothing and their QSS survived forever. A replacement discards it
+on the first skin change (immediately for a live-enabled plugin, whose
+registration re-runs the sweep), which an additive release must not do. So
+`_dress_from_skin` keeps the exact sheet it last wrote and re-assembles
+`dressing + adopted + skin_stylesheet()` each time: a sheet that is not ours
+is ADOPTED and re-applied after our rules (so the plugin still wins), and the
+known prefix is stripped first so a subclass that appends to
+`self.styleSheet()` contributes its addition rather than a stale copy of ours
+— which is also what stops that pattern growing the sheet by one copy per
+change. `skin_stylesheet()` is the documented route precisely because it makes
+the split explicit instead of reconstructed; `apply_skin()` stays the hook for
+what QSS cannot express (the example rebuilds its price cells there, since
+their colours are on the items, not in a sheet).
 
 `examples/plugins/merchant_prices/window.py` is the reference consumer, and
 `docs/plugins/appearance.md` carries the rule with its counter-example.

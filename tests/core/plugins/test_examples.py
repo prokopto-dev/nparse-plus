@@ -270,6 +270,7 @@ def test_merchant_window_is_the_skin_facade_reference(qtbot) -> None:
         window = ctx.window_spec.factory(wctx)
         qtbot.addWidget(window)
         duxa = window.styleSheet()
+        _assert_selection_is_readable(window)
         # The default dressing is in there, and the example's own rules on top.
         assert duxa.startswith(pluginskin.current().overlay_stylesheet())
         assert "QHeaderView::section" in duxa
@@ -283,8 +284,28 @@ def test_merchant_window_is_the_skin_facade_reference(qtbot) -> None:
             assert sheet != duxa
             assert sheet.startswith(pluginskin.current().overlay_stylesheet())
             # The new hue reached the example's OWN rules, not just the base
-            # sheet it composed onto.
-            assert skins.rgba(pluginskin.current().accent, 0.25) in sheet
+            # sheet it composed onto — and exactly once, no stale copy.
+            assert sheet.count(skins.rgba(pluginskin.current().accent, 0.25)) == 1
             assert window._table.item(0, 1) is not None  # cells rebuilt, not stale
+            _assert_selection_is_readable(window)
     finally:
         skins.set_skin(skins.DEFAULT_SKIN)
+
+
+def _assert_selection_is_readable(window) -> None:
+    """The pair the example actually paints, composited and measured.
+
+    A selected cell is body-sized text on the skin's own band. The tempting
+    foreground is the skin's caps colour — the app's config chrome uses it for
+    its sidebar — but on Ledger's band that is 3.4:1, and on a naive
+    ``rgba(accent, .28)`` tint 2.9:1. The example takes ``heading`` from the
+    palette instead, which is the value/hue rule doing its job.
+    """
+    from nparseplus.ui import pluginskin
+
+    from ...ui.test_pluginskin import composite, contrast
+
+    app = pluginskin.current()
+    assert f"color: {app.heading}" in window.styleSheet()
+    assert app.gradient(app.band) in window.styleSheet()
+    assert contrast(app.heading, composite(app.band[0], app.surface)) >= 4.5, app.name

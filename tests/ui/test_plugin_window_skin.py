@@ -58,6 +58,29 @@ class CustomWindow(PluginWindow):
         self.setStyleSheet(self.styleSheet() + f"#Total {{ color: {app.heading}; }}")
 
 
+class HookWindow(PluginWindow):
+    """The SDK 1.4 add-on: its rules go through the hook, so the base class
+    owns the whole sheet and re-assembles it per change."""
+
+    def __init__(self, wctx: PluginWindowContext) -> None:
+        super().__init__(wctx)
+        self.setLayout(QVBoxLayout())
+
+    def skin_stylesheet(self) -> str:
+        app = pluginskin.current()
+        return f"#Total {{ color: {app.heading}; background: {app.gradient(app.band)}; }}"
+
+
+class LegacyWindow(PluginWindow):
+    """A PluginWindow as written against SDK 1.3: sets its own sheet in
+    __init__, knows nothing about apply_skin (there was nothing to know)."""
+
+    def __init__(self, wctx: PluginWindowContext) -> None:
+        super().__init__(wctx)
+        self.setLayout(QVBoxLayout())
+        self.setStyleSheet("QLabel { color: #ff00ff; }")
+
+
 def _window(qtbot, cls, settings: Settings | None = None):
     settings = settings if settings is not None else Settings()
     wctx = PluginWindowContext(
@@ -150,6 +173,93 @@ def test_the_window_paints_the_skins_own_frame(qtbot, skin_name: str) -> None:
 
     image = pixmap.toImage()
     assert image.pixelColor(100, 60).name() != "#ffffff", "the plate never painted"
+
+
+# -- the pre-1.4 windows that already exist ---------------------------------------
+
+
+def test_a_pre_1_4_window_keeps_the_stylesheet_it_set(qtbot) -> None:
+    """The regression an additive release must not ship.
+
+    Before SDK 1.4 ``PluginWindow`` had no ``apply_skin``, so the app's
+    duck-typed sweep found nothing and a plugin's own sheet survived forever.
+    Inheriting one that *replaces* the sheet would silently unstyle every
+    such plugin — immediately for one enabled live (the post-build appearance
+    sweep runs at once), on the next skin change for one loaded at startup.
+    """
+    skins.set_skin("duxa")
+    window = _window(qtbot, LegacyWindow)
+    assert "#ff00ff" in window.styleSheet()
+
+    skins.set_skin("velious")
+    window.apply_skin()
+
+    assert "#ff00ff" in window.styleSheet(), "the plugin's own rules were discarded"
+    # Ours are refreshed underneath, and theirs come last so they still win.
+    assert window.styleSheet().startswith(pluginskin.current().overlay_stylesheet())
+    assert window.styleSheet().endswith("QLabel { color: #ff00ff; }")
+
+
+def test_an_adopted_sheet_survives_repeated_changes_without_growing(qtbot) -> None:
+    """Adopted once, re-applied thereafter — not re-adopted on top of itself."""
+    window = _window(qtbot, LegacyWindow)
+    for name in ("velious", "ledger", "duxa", "velious"):
+        skins.set_skin(name)
+        window.apply_skin()
+
+    assert window.styleSheet().count("#ff00ff") == 1
+
+
+def test_a_pre_1_4_window_that_restyles_itself_is_re_adopted(qtbot) -> None:
+    """A legacy window is free to call setStyleSheet again later (its own
+    refresh); the newer sheet is what gets kept."""
+    window = _window(qtbot, LegacyWindow)
+    skins.set_skin("velious")
+    window.apply_skin()
+
+    window.setStyleSheet("QLabel { color: #00ff00; }")
+    skins.set_skin("ledger")
+    window.apply_skin()
+
+    assert "#00ff00" in window.styleSheet()
+    assert "#ff00ff" not in window.styleSheet()
+
+
+# -- the SDK 1.4 hook --------------------------------------------------------------
+
+
+def test_the_hook_is_re_evaluated_per_change_and_never_accumulates(qtbot) -> None:
+    skins.set_skin("duxa")
+    window = _window(qtbot, HookWindow)
+    assert window.styleSheet().count("#Total") == 1
+    assert window.styleSheet() == pluginskin.current().overlay_stylesheet() + (
+        window.skin_stylesheet()
+    )
+
+    for name in ("velious", "ledger", "duxa"):
+        skins.set_skin(name)
+        window.apply_skin()
+        assert window.styleSheet().count("#Total") == 1, "the sheet grew a stale copy"
+        assert pluginskin.current().gradient(pluginskin.current().band) in window.styleSheet()
+
+
+def test_the_default_hook_contributes_nothing(qtbot) -> None:
+    window = _window(qtbot, PlainWindow)
+    assert window.skin_stylesheet() == ""
+    assert window.styleSheet() == pluginskin.current().overlay_stylesheet()
+
+
+def test_appending_in_apply_skin_still_works_and_stays_bounded(qtbot) -> None:
+    """``skin_stylesheet`` is the documented route, but a window that appends
+    to ``self.styleSheet()`` in ``apply_skin`` must not grow a copy of its
+    rules per change — the base strips the dressing it last wrote."""
+    skins.set_skin("duxa")
+    window = _window(qtbot, CustomWindow)
+    for name in ("velious", "ledger", "duxa", "velious", "ledger"):
+        skins.set_skin(name)
+        window.apply_skin()
+
+    assert window.styleSheet().count("#Total") <= 2
 
 
 def test_the_duck_typed_sweep_finds_the_hook(qtbot) -> None:

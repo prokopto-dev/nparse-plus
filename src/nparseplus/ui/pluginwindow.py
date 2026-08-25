@@ -15,8 +15,9 @@ state polling, use a QTimer gated on ``isVisible()``.
 Since SDK 1.4 it also arrives **skinned**: the active skin's plate and glass
 are painted behind it and its labels wear the overlay type treatment, so a
 plugin that writes no styling at all still looks like the rest of the app
-under all three skins. :meth:`PluginWindow.apply_skin` is the hook for one
-that wants more — see ``nparseplus_sdk.skin`` and
+under all three skins. :meth:`PluginWindow.skin_stylesheet` is where a plugin
+adds rules of its own; :meth:`PluginWindow.apply_skin` is the hook for
+anything a stylesheet cannot express. See ``nparseplus_sdk.skin`` and
 ``docs/plugins/appearance.md``.
 """
 
@@ -50,6 +51,12 @@ class PluginWindow(OverlayWindowBase):
             parent=parent,
         )
         self.window_context = wctx
+        #: The exact sheet this class last wrote, so a re-dress can tell its
+        #: own half from the subclass's. See :meth:`_dress_from_skin`.
+        self._skin_sheet = ""
+        #: Rules a subclass set with ``setStyleSheet`` rather than through
+        #: :meth:`skin_stylesheet`, kept across re-dresses.
+        self._adopted_sheet = ""
         # The default dressing, not ``self.apply_skin()``: this runs inside
         # the subclass's ``super().__init__(...)`` call, before a single one
         # of its own widgets exists, and an override that touched them would
@@ -58,29 +65,68 @@ class PluginWindow(OverlayWindowBase):
 
     # -- appearance --------------------------------------------------------
 
+    def skin_stylesheet(self) -> str:
+        """Your own QSS, appended after the app's overlay dressing.
+
+        **The** place for a plugin window's rules. Overriding this rather
+        than calling ``setStyleSheet`` is what lets the window be re-dressed
+        on every skin change without either discarding your rules or
+        accumulating a stale copy of them per change — this class owns the
+        whole sheet and re-assembles it from the two halves each time::
+
+            def skin_stylesheet(self) -> str:
+                app = skin.current()
+                return f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
+
+        Read ``nparseplus_sdk.skin.current()`` inside it: it is called afresh
+        on every change, and never cached. It is also called from
+        ``__init__`` — before your own widgets exist — so return rules,
+        do not touch widgets.
+        """
+        return ""
+
     def apply_skin(self) -> None:
         """Re-dress from the skin the user just picked.
 
         ``app._apply_appearance`` calls this on every skin, font-size or
-        frame-opacity change — live, with no restart — so read
-        ``nparseplus_sdk.skin.current()`` here rather than caching a snapshot
-        at construction. The default sets the overlay stylesheet and the
-        frame clearance; override it to add your own rules, calling
-        ``super().apply_skin()`` first::
+        frame-opacity change — live, with no restart. Override it for the
+        work a stylesheet cannot do (styling child widgets, painted colours,
+        sizes), calling ``super().apply_skin()`` first::
 
             def apply_skin(self) -> None:
                 super().apply_skin()
-                app = skin.current()
-                self.setStyleSheet(
-                    self.styleSheet()
-                    + f"#Total {{ {app.typography(skin.NUMERIC_TEXT, color=app.heading)} }}"
-                )
+                self._row.apply_skin()
+
+        For plain QSS, override :meth:`skin_stylesheet` instead — appending
+        to ``self.styleSheet()`` here works, but this class then has to guess
+        which half is yours.
         """
         self._dress_from_skin()
 
     def _dress_from_skin(self) -> None:
+        current = self.styleSheet()
+        if current != self._skin_sheet:
+            # Not what we wrote: a subclass called ``setStyleSheet`` itself,
+            # which is what EVERY PluginWindow written before SDK 1.4 does —
+            # there was no hook, and no apply_skin to be called by. Adopt it
+            # and keep re-applying it AFTER our own rules (so it still wins)
+            # rather than discarding it on the first skin change: an additive
+            # release must not silently unstyle a plugin that already works.
+            #
+            # Stripping the dressing we last wrote is what keeps a subclass
+            # that appended to ``self.styleSheet()`` from contributing a
+            # stale copy of our rules — and growing the sheet by one copy of
+            # its own on every change.
+            self._adopted_sheet = (
+                current[len(self._skin_sheet) :]
+                if self._skin_sheet and current.startswith(self._skin_sheet)
+                else current
+            )
         appearance = pluginskin.current()
-        self.setStyleSheet(appearance.overlay_stylesheet())
+        self._skin_sheet = (
+            appearance.overlay_stylesheet() + self._adopted_sheet + self.skin_stylesheet()
+        )
+        self.setStyleSheet(self._skin_sheet)
         # On the widget rather than on the layout: the plugin owns its layout
         # and its margins are its own, while clearing the painted frame is
         # ours. Qt adds the two.

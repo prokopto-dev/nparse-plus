@@ -78,26 +78,27 @@ class MerchantPricesWindow(PluginWindow):
         self._refresh_timer.timeout.connect(self._on_refresh_tick)
         self._refresh_timer.start(REFRESH_INTERVAL_MS)
 
-        # After the widgets exist: PluginWindow's constructor applied the
-        # default dressing before this subclass had built anything, so the
-        # override runs once here and on every change thereafter.
-        self.apply_skin()
         self.refresh()
         self.restore_visibility()
 
-    def apply_skin(self) -> None:
-        """Re-dress from the active skin — called live on every skin, font
-        size and frame-opacity change, so read the snapshot here rather than
-        caching one at construction."""
-        super().apply_skin()  # the app's overlay dressing: family, labels, scrollbars
+    def skin_stylesheet(self) -> str:
+        """Our own rules, appended after the app's overlay dressing.
+
+        The hook rather than ``setStyleSheet``: PluginWindow owns the whole
+        sheet and re-assembles it from the two halves on every skin, font
+        size and frame-opacity change, so this is called afresh each time and
+        must never cache the snapshot. It also runs from ``__init__`` before
+        our widgets exist — return rules, do not touch widgets.
+        """
         app = skin.current()
-        ours = (
+        return (
             # Ground and text: the value group, identical under every skin.
             f"QTableWidget {{ background: transparent; border: 0; color: {app.text}; "
             f"gridline-color: {skin.rgba(app.accent, 0.25)}; }}"
-            # The accent, used as an accent: a selection band and a hairline.
-            f"QTableWidget::item:selected {{ background: {skin.rgba(app.accent, 0.28)}; "
-            f"color: {app.accent_text}; }}"
+            # A selection is the skin's own band, with a PALETTE foreground on
+            # it — an accent-coloured one measures 2.9:1 under Ledger.
+            f"QTableWidget::item:selected {{ background: {app.gradient(app.band)}; "
+            f"color: {app.heading}; }}"
             f"QHeaderView::section {{ background: {app.surface_alt}; border: 0; "
             f"border-bottom: 1px solid {app.hairline}; padding: {app.px(0.3)}px; "
             # Sizes are multipliers of the user's font size, never px.
@@ -107,9 +108,12 @@ class MerchantPricesWindow(PluginWindow):
             f"QPushButton:hover {{ background: {skin.rgba(app.accent, 0.14)}; }}"
             f"#MerchantPricesEmpty {{ color: {app.hint}; }}"
         )
-        self.setStyleSheet(self.styleSheet() + ours)
-        # The price cells carry colours too, so they have to be rebuilt — a
-        # stylesheet swap alone would leave last skin's ink in the table.
+
+    def apply_skin(self) -> None:
+        """What a stylesheet cannot do: the price cells carry colours of
+        their own, so they have to be rebuilt rather than restyled — a sheet
+        swap alone would leave the last skin's ink in the table."""
+        super().apply_skin()
         self._rendered_version = -1
         self.refresh()
 
