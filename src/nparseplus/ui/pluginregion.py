@@ -70,6 +70,8 @@ class PluginOverlayRegion(QWidget):
         #: :meth:`skin_stylesheet` to add rules.
         self._skin_sheet = ""
         self._skin_finalized = False
+        #: Whether the "you set your own sheet" line has been said. Once.
+        self._sheet_warned = False
         # A layout up front, unlike PluginWindow: the overlay hands the
         # region's layout to its preview machinery, and a region with none
         # would have nowhere to put sample content. Fill it, or nest your own
@@ -222,6 +224,7 @@ class PluginOverlayRegion(QWidget):
             self._dress_from_skin(with_hook=False)
 
     def _dress_from_skin(self, *, with_hook: bool = True) -> None:
+        self._warn_if_overwritten()
         appearance = pluginskin.current()
         extra = ""
         if with_hook:
@@ -245,6 +248,31 @@ class PluginOverlayRegion(QWidget):
         # writing the sheet is what would otherwise have dropped the dashed
         # border a user was dragging by.
         self.notify_content_changed()
+
+    def _warn_if_overwritten(self) -> None:
+        """Say once that a sheet set by hand is about to be replaced.
+
+        ``PluginWindow`` ADOPTS such a sheet, because windows written before
+        SDK 1.4 had no hook to be called by. A region cannot: the overlay
+        appends its position-mode chrome to this widget's sheet and strips it
+        off again by suffix, so re-writing an adopted sheet after that
+        appendix would leave the dashed border on when position mode ends.
+
+        So the sheet is replaced — which without this line is a plugin's
+        styling silently vanishing at the first skin change, with nothing
+        anywhere to explain it. A sheet that merely STARTS with ours is the
+        overlay's chrome, not a plugin's rules, and is not what this is about.
+        """
+        current = self.styleSheet()
+        if self._sheet_warned or not self._skin_sheet or current.startswith(self._skin_sheet):
+            return
+        self._sheet_warned = True
+        logger.warning(
+            "overlay region %r had its stylesheet set directly; this class owns the whole "
+            "sheet and is replacing it. Put your rules in skin_stylesheet() instead — see "
+            "docs/plugins/overlay-regions.md",
+            self.region_key,
+        )
 
     # -- the non-interactive posture ---------------------------------------
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import weakref
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -797,11 +798,40 @@ def _region_content_hook(event_overlay: Any, region_key: str) -> Callable[[], No
     A plugin calls this from its own timers and signal handlers, where an
     exception has nowhere to go but the Qt event loop of a translucent,
     always-on-top window over a running game.
+
+    **The overlay is held WEAKLY**, for the reason ``eventoverlay.weak_hook``
+    exists (#154). The overlay owns the region's host widget, the widget holds
+    its ``OverlayRegionContext``, and the context holds this closure — so
+    closing over the overlay strongly puts the WINDOW in a Python reference
+    cycle. That takes its destruction away from refcounting and hands it to
+    the cyclic collector, which runs whenever it likes, and a QWidget freed
+    there rather than by Qt is a use-after-free the next repaint walks into.
+    It segfaulted the suite from inside ``paintEvent`` before #154; a plugin
+    region is the one thing that could reintroduce it, and a test pins the
+    lifetime.
+
+    ``WeakMethod`` rather than a ``ref`` to the window because the bound
+    method is what is being called; the underlying function is a class
+    attribute and never dies on its own, so this tracks the instance. A dead
+    overlay answers by doing nothing — unobservable in practice, since a
+    region only reaches this while the overlay is showing it.
     """
+    resolve: Callable[[], Any]
+    try:
+        resolve = weakref.WeakMethod(event_overlay.region_content_changed)
+    except TypeError:  # pragma: no cover - a stand-in whose hook is not a method
+        # Held strongly, deliberately: the cycle above runs overlay -> host
+        # widget -> context -> here, and something that is not a real QWidget
+        # overlay is not in it.
+        strong = event_overlay.region_content_changed
+        resolve = lambda: strong  # noqa: E731
 
     def notify() -> None:
+        target = resolve()
+        if target is None:
+            return
         try:
-            event_overlay.region_content_changed(region_key)
+            target(region_key)
         except Exception:
             logger.exception("overlay region %r content change failed", region_key)
 
