@@ -60,9 +60,39 @@ always true inside the app and optional for `nparseplus-plugin validate`
 | --- | --- |
 | **1.1** | `PluginMeta.update_url` — an optional https index the app polls to offer in-place updates for a plugin distributed outside any registry ([Shipping updates](developing.md#shipping-updates-without-a-registry)). Declare `requires_sdk=">=1.1,<2"` only if your plugin is *useless* without it; a 1.0-declaring plugin loaded by an older app simply gets no update offers. |
 | **1.2** | `ctx.eq_dir` + `ctx.eq_is_running()`, and the `nparseplus_sdk.eqfiles` re-export — enough for a plugin to edit a file in the EverQuest install the way the app does it (preflight, backup-first, splice one section). Declare `requires_sdk=">=1.2,<2"` if you touch the install: there is no graceful degradation, since on an older host the attribute is simply absent. The *host* half of `eq_is_running()` moves on the app's schedule rather than the SDK's, though — it answered `False` on Windows until [#33](https://github.com/prokopto-dev/nparse-plus/issues/33), with no SDK change either side of that fix, so `min_app_version` is the lever if your plugin depends on the answer being truthful there. |
-| **1.3** | `ctx.add_window_timer()` / `ctx.add_window_series()` + the `WindowTimerLike` protocol — arm one variable respawn ("pop") window from a time of death, or every candidate window of a spawn that has more than one, with `TimerWindowOpenedEvent` / `TimerWindowClosedEvent` reachable through `nparseplus_sdk.events` ([Pop windows](../features/respawn-timers.md#pop-windows)). Declare `requires_sdk=">=1.3,<2"` if you arm one; on an older host the method is simply absent. **No `min_app_version` needed** — the app bundles exactly one SDK, so the range already implies the host-side classes shipping in the same release. |
+| **1.3** | `ctx.add_window_timer()` / `ctx.add_window_series()` + the `WindowTimerLike` protocol — arm one variable respawn ("pop") window from a time of death, or every candidate window of a spawn that has more than one, with `TimerWindowOpenedEvent` / `TimerWindowClosedEvent` reachable through `nparseplus_sdk.events` ([Pop windows](../features/respawn-timers.md#pop-windows)). Declare `requires_sdk=">=1.3,<2"` **and `min_app_version="2.15.0"`** if you arm one — see [the range alone is not a promise about the host](#the-sdk-range-alone-is-not-a-promise-about-the-host). |
 | **1.4** | `nparseplus_sdk.skin` — a curated, Qt-free read surface over what the app currently looks like (the `AppSkin` snapshot, the type roles, the semantic accents, ready-made overlay/config stylesheets), plus `PluginWindow.skin_stylesheet()` and a default `PluginWindow.apply_skin()`, so a window that overrides nothing is skinned under all three skins and one that styles itself is composed with rather than replaced ([Appearance & skins](appearance.md)). **1.4.1** added `AppSkin.band` — the skin's real selection fill — and *corrected* `AppSkin.accent_text`, which shipped naming a pairing that measured 3.4:1 on Ledger's band, below WCAG AA; it is now the same value as `heading` and is **deprecated**, kept for the whole 1.x line because 1.x is additive-only and app v2.26.0 shipped it. Removal is an SDK 2.0 decision. 1.4.1 also fixed `PluginWindow` discarding the stylesheet of a window written before 1.4, and moved the first `skin_stylesheet()` call out of the base constructor. Declare `requires_sdk=">=1.4,<2"` if you read it: on an older host the module does not exist at all, so the import itself fails and there is nothing to degrade to. A plugin that only wants to *stop looking out of place* needs no declaration at all — the default dressing is the host's, not the SDK's. |
-| **1.5** | `ctx.add_overlay_region()` + `OverlayRegionSpec` / `OverlayRegionContext`, and `nparseplus_sdk.ui.PluginOverlayRegion` — a plugin can claim a region **inside** the Event Overlay and draw text, images or a status panel there instead of opening a window ([Event overlay regions](overlay-regions.md)). Regions are **display-only, permanently**: the overlay window carries `WindowTransparentForInput` and Qt has no per-child exemption, so nothing in a region ever receives a click, and the spec deliberately carries no input-related field — an additive-only 1.x makes a speculative one permanent. Add-ons that need input ship a window. Declare `requires_sdk=">=1.5,<2"` if you contribute one; on an older host the method is simply absent. **No `min_app_version` needed** — the app bundles exactly one SDK, so the range already implies the host-side base class shipping in the same release. |
+| **1.5** | `ctx.add_overlay_region()` + `OverlayRegionSpec` / `OverlayRegionContext`, and `nparseplus_sdk.ui.PluginOverlayRegion` — a plugin can claim a region **inside** the Event Overlay and draw text, images or a status panel there instead of opening a window ([Event overlay regions](overlay-regions.md)). Regions are **display-only, permanently**: the overlay window carries `WindowTransparentForInput` and Qt has no per-child exemption, so nothing in a region ever receives a click, and the spec deliberately carries no input-related field — an additive-only 1.x makes a speculative one permanent. Add-ons that need input ship a window. Declare `requires_sdk=">=1.5,<2"` **and `min_app_version="2.28.0"`** if you contribute one — see [the range alone is not a promise about the host](#the-sdk-range-alone-is-not-a-promise-about-the-host). |
+
+### The SDK range alone is not a promise about the host
+
+`requires_sdk` is weighed against the SDK version the app **resolved**, not
+against the contract the app **implements**. Inside a shipped DMG, `.deb`,
+`.zip` or Flatpak those are the same thing — the bundle contains exactly one
+SDK, frozen at build time. A plain `pip`/source install is where they come
+apart, and it is the same seam
+[`tests/test_sdk_floor.py`](https://github.com/prokopto-dev/nparse-plus/blob/master/tests/test_sdk_floor.py)
+exists for, seen from the other side.
+
+Every released app declares a floor, not a pin — v2.27.0 asks for
+`nparseplus-sdk>=1.4,<2`. So once SDK 1.5 is on PyPI, installing app v2.27.0
+from source resolves **SDK 1.5** quite legitimately. `SDK_VERSION` then
+reports 1.5, a plugin declaring `requires_sdk=">=1.5,<2"` passes the
+handshake — and `ctx.add_overlay_region` does not exist on that host, because
+the *method* shipped in a later app release than the SDK package the resolver
+picked. The plugin fails during `activate()` and lands in Settings → Plugins
+as an error, instead of being refused cleanly as incompatible.
+
+**So when you adopt a capability whose implementation lives in the host —
+anything reached through `ctx`, and anything re-exported from
+`nparseplus_sdk.ui` / `.events` / `.timers` / `.skin` / `.eqfiles` — declare
+`min_app_version` naming the app release that first shipped it, alongside
+`requires_sdk`.** It is the one input to the handshake that comes from the
+host itself rather than from the resolver, which is exactly why it is the
+lever here. The table above names the release for each minor.
+
+Purely SDK-side additions need no such pin: a new spec field or dataclass is
+*in* the package the resolver installed.
 
 What the promise does *not* cover: host objects reached through the context
 (`ctx.timers`, `ctx.player`, `ctx.pigparse`, the classes behind

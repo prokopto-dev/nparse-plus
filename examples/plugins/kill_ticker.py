@@ -121,6 +121,17 @@ class KillTickerPlugin(NParsePlugin):
         description="A small list of recent kills, drawn inside the event overlay.",
         author="nParse+ examples",
         requires_sdk=">=1.5,<2",
+        # BOTH, and the second one is not belt-and-braces. requires_sdk is
+        # weighed against the SDK the app RESOLVED, not the contract it
+        # IMPLEMENTS, and every released app declares a floor rather than a
+        # pin: v2.27.0 asks for nparseplus-sdk>=1.4,<2, so a source install of
+        # it legitimately resolves SDK 1.5 once that is on PyPI. The range
+        # then passes while HostPluginContext.add_overlay_region does not
+        # exist, and this plugin fails inside activate() instead of being
+        # refused as incompatible. min_app_version is the one input to the
+        # handshake that comes from the host itself.
+        # See docs/plugins/versioning.md.
+        min_app_version="2.28.0",
     )
 
     def __init__(self) -> None:

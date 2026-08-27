@@ -50,7 +50,12 @@ from nparseplus_sdk import NParsePlugin, OverlayRegionSpec, PluginMeta
 
 
 class TickerPlugin(NParsePlugin):
-    meta = PluginMeta(id="kill-ticker", name="Kill Ticker", requires_sdk=">=1.5,<2")
+    meta = PluginMeta(
+        id="kill-ticker",
+        name="Kill Ticker",
+        requires_sdk=">=1.5,<2",
+        min_app_version="2.28.0",   # both — see Compatibility below
+    )
 
     def __init__(self):
         self.region = None
@@ -82,6 +87,29 @@ class TickerPlugin(NParsePlugin):
 the app materializes it on the GUI thread, and it is torn down again when the
 plugin is disabled. Enabling and disabling take effect **immediately**, with
 no restart — including while position mode is up.
+
+### Compatibility: declare both
+
+`requires_sdk=">=1.5,<2"` on its own is **not enough**, and this is the one
+place a region differs from a purely SDK-side feature. That range is weighed
+against the SDK version the app *resolved*, while `add_overlay_region` lives
+in the *host* — and every released app declares an SDK floor rather than a
+pin. App v2.27.0 asks for `nparseplus-sdk>=1.4,<2`, so a `pip`/source install
+of it resolves SDK 1.5 quite legitimately once that is published; the range
+passes, the method is absent, and your plugin fails inside `activate()`
+instead of being refused cleanly.
+
+So pin the app release that first shipped regions as well:
+
+```python
+requires_sdk=">=1.5,<2",
+min_app_version="2.28.0",
+```
+
+Full reasoning in
+[Versioning](versioning.md#the-sdk-range-alone-is-not-a-promise-about-the-host).
+
+### Keys
 
 The region's key is namespaced `plugin.<id>.<key>`, the same convention window
 keys follow. Declare the same `key` twice and only the first region is kept
