@@ -310,3 +310,44 @@ def _assert_selection_is_readable(window) -> None:
     assert f"color: {app.heading}" in window.styleSheet()
     assert app.gradient(app.band) in window.styleSheet()
     assert contrast(app.heading, composite(app.band[0], app.surface)) >= 4.5, app.name
+
+
+def test_the_region_example_pins_the_app_release_that_supports_it() -> None:
+    """``requires_sdk`` alone would let an older host accept this plugin.
+
+    The range is weighed against the SDK the app RESOLVED, not the contract it
+    IMPLEMENTS, and every released app declares an SDK floor rather than a pin
+    — v2.27.0 asks for ``nparseplus-sdk>=1.4,<2``, so a plain pip/source
+    install of it resolves SDK 1.5 quite legitimately once that is on PyPI.
+    ``ctx.add_overlay_region`` lives in the HOST, so the range would pass and
+    ``activate()`` would then raise ``AttributeError``. ``min_app_version`` is
+    the one input to the handshake that comes from the host itself.
+
+    The bound is ``>=`` this tree's own version rather than ``>``: before the
+    release commit it names a version ahead of ``__version__``, and after it
+    they are equal.
+
+    Be clear about what that buys, because it is easy to over-read: this is a
+    POST-HOC ALARM, not a gate. At merge time the tree still reads the
+    previous version, so a pin that is one release too low passes here and
+    only fails on semantic-release's own bump commit — by which point the tag
+    is cut and the release dispatched. A loud failure on master beats a
+    silently wrong pin shipped to users, but the thing that actually keeps the
+    pin honest is knowing which release ships it.
+    """
+    from packaging.version import Version
+
+    from nparseplus import __version__
+
+    plugin = import_plugin_module(EXAMPLES / "kill_ticker.py").create_plugin()
+
+    assert plugin.meta.requires_sdk == ">=1.5,<2"
+    assert plugin.meta.min_app_version is not None, (
+        "a plugin using a host-backed API must pin the app release that shipped it "
+        "— see docs/plugins/versioning.md"
+    )
+    assert Version(plugin.meta.min_app_version) >= Version(__version__), (
+        f"kill_ticker.py pins min_app_version={plugin.meta.min_app_version}, but this tree "
+        f"is already nParse+ {__version__}; the pin must name the release that first "
+        "shipped ctx.add_overlay_region"
+    )

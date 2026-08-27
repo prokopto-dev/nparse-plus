@@ -1834,9 +1834,37 @@ needs #156 (player location + Qt-free zone geometry), which is not built.
 **`has_content` is required on the spec**, because `_update_visibility` ORs
 the per-region predicates and a region with no opinion could never keep the
 overlay on screen by itself. It is asked on every visibility pass — i.e. every
-overlay event — so the host wraps it in a guard that logs ONCE and answers
-False forever after: a region that cannot say whether it has anything is not a
-reason to keep an always-on-top window over the game.
+overlay event, on the GUI thread — so the first exception RETIRES the
+predicate: logged once, never called again, region treated as empty. Silencing
+only the log line leaves a permanently broken (or simply expensive) predicate
+running on every overlay event for the rest of the session, which is the cost
+the guard exists to avoid; the test asserts the INVOCATION count, because a
+log count alone passes against exactly that bug.
+
+**A region factory's result is type-screened where it is first seen.**
+`OverlayRegionSpec` documents that the factory returns a QWidget and a region
+host is placed, resized, moved and stylesheeted by the overlay, so nothing
+else can stand in. Carrying anything non-None past the build was a real
+hazard, not pedantry: `add_region` raises on `layout()` INSIDE the isolation
+guard, and the refusal path then calls `deleteLater()` OUTSIDE one — on the
+startup sweep that second exception aborts `build_plugin_ui` for EVERY plugin
+and takes the plugin manager page with it. `_discard_region_widget` is
+guarded too, so the disposal does not depend on the screen still holding.
+
+**A host-backed capability needs `min_app_version`, not just `requires_sdk`.**
+The range is weighed against the SDK the app RESOLVED, not the contract it
+IMPLEMENTS, and every released app declares an SDK FLOOR rather than a pin:
+v2.27.0 asks for `nparseplus-sdk>=1.4,<2`, so a plain pip/source install of it
+resolves SDK 1.5 quite legitimately once that is published — the same seam
+`tests/test_sdk_floor.py` exists for, seen from the other side. `SDK_VERSION`
+then reports 1.5, `requires_sdk=">=1.5,<2"` passes, and
+`HostPluginContext.add_overlay_region` does not exist, so the plugin dies
+inside `activate()` and reads as a broken add-on rather than an old app.
+`min_app_version` is the one input to the handshake that comes from the host
+itself, which is what makes it the lever — and it works RETROACTIVELY, since
+v2.27.0's own `check_compat` call already passes its `app_version`. The
+example pins it, the docs say to, and the identical (false) "no
+`min_app_version` needed" claim on the SDK 1.3 row was corrected with it.
 
 **The content hook holds the overlay WEAKLY, and that is #154's segfault one
 step removed.** The overlay owns the region's host widget, the widget holds its

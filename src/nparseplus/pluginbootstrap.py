@@ -215,7 +215,7 @@ def build_plugin_ui(
             if _register_region(ui, loaded, spec, widget, event_overlay) is None:
                 # Refused (a duplicate key): nothing holds it, and nothing ever
                 # will — the same disposal the live path does.
-                widget.deleteLater()
+                _discard_region_widget(widget)
 
     for loaded, spec in plugin_host.page_specs():
         ui.extra_pages.append(spec)
@@ -369,29 +369,38 @@ def _region_default(spec: Any, plugin_id: str) -> Any:
 
 
 def _guarded_has_content(spec: Any, plugin_id: str) -> Callable[[], bool]:
-    """``spec.has_content``, unable to break the overlay's visibility pass.
+    """``spec.has_content``, unable to break or tax the visibility pass.
 
-    Asked on every visibility pass — which is every overlay event — so a
-    raising predicate would be a flood, not a line. It is logged ONCE per
-    region and answers False thereafter: a region that cannot say whether it
-    has anything is not a reason to keep an always-on-top window over the
-    game.
+    Asked on every visibility pass — which is every overlay event, on the GUI
+    thread — so the first exception RETIRES the predicate outright: it is
+    logged once and the region answers False from then on, without the
+    predicate being called again. Suppressing only the log line would leave a
+    permanently broken (or simply expensive) predicate running on every
+    overlay event for the rest of the session, which is the cost this guard
+    exists to avoid and not what "treated as empty for the rest of the
+    session" says.
+
+    A region that cannot say whether it has anything is not a reason to keep
+    an always-on-top window over the game, so False is the safe answer — and
+    it is one the plugin can recover from by being disabled and re-enabled,
+    which builds a fresh guard.
     """
-    complained = False
+    retired = False
 
     def call() -> bool:
-        nonlocal complained
+        nonlocal retired
+        if retired:
+            return False
         try:
             return bool(spec.has_content())
         except Exception:
-            if not complained:
-                complained = True
-                logger.exception(
-                    "plugin %s overlay region %r has_content() raised; treating it as empty "
-                    "for the rest of the session",
-                    plugin_id,
-                    spec.key,
-                )
+            retired = True
+            logger.exception(
+                "plugin %s overlay region %r has_content() raised; it will not be asked "
+                "again this session and the region is treated as empty",
+                plugin_id,
+                spec.key,
+            )
             return False
 
     return call
@@ -472,7 +481,7 @@ class _LivePluginUi:
             loaded, self.settings, self.save, self.bridge, self.event_overlay
         ):
             if _register_region(self.ui, loaded, spec, widget, self.event_overlay) is None:
-                widget.deleteLater()
+                _discard_region_widget(widget)
                 continue
             # Dressed from the current skin by its own constructor; this is
             # what carries it through every LATER change.
@@ -598,6 +607,21 @@ class _LivePluginUi:
         if surfaces.window_keys:
             with _isolated("settings window rows"):
                 self.settings_window.set_plugin_window_rows(self.ui.window_rows)
+
+
+def _discard_region_widget(widget: Any) -> None:
+    """Dispose a region widget the overlay refused, without raising.
+
+    The type screen in ``_build_plugin_regions`` means this only ever sees a
+    QWidget, so it cannot normally fail. It is guarded anyway because it is
+    called OUTSIDE ``_isolated`` on the startup sweep, where one exception
+    costs every other plugin its UI — the invariant and the disposal are far
+    enough apart that the second should not depend on the first holding.
+    """
+    try:
+        widget.deleteLater()
+    except Exception:
+        logger.exception("discarding a refused overlay region widget failed")
 
 
 @contextmanager
@@ -746,6 +770,8 @@ def _build_plugin_regions(
     log — an embedder without an event overlay is a legitimate configuration,
     a plugin silently missing half its UI is not.
     """
+    from PySide6.QtWidgets import QWidget
+
     from nparseplus_sdk.plugin import OverlayRegionContext
 
     assert loaded.meta is not None
@@ -763,22 +789,28 @@ def _build_plugin_regions(
     built: list[tuple[Any, Any]] = []
     for spec in specs:
         region_key = f"plugin.{loaded.meta.id}.{spec.key}"
-        rctx = OverlayRegionContext(
-            settings=settings,
-            region_key=region_key,
-            title=spec.title,
-            on_save=save,
-            # Bound to the key rather than to the record: the overlay ignores
-            # a key it no longer holds, so a region notifying after it was
-            # retired is a no-op rather than a reference into a dead record.
-            on_content_changed=_region_content_hook(event_overlay, region_key),
-            bridge=bridge,
-        )
+        # The context is built INSIDE the guard with the factory, not before
+        # it: assembling it reaches into ``event_overlay``, so a stand-in that
+        # cannot supply the content hook would otherwise abort the whole sweep
+        # rather than costing one region — the same isolation promise the
+        # factory itself gets.
         try:
+            rctx = OverlayRegionContext(
+                settings=settings,
+                region_key=region_key,
+                title=spec.title,
+                on_save=save,
+                # Bound to the key rather than to the record: the overlay
+                # ignores a key it no longer holds, so a region notifying
+                # after it was retired is a no-op rather than a reference into
+                # a dead record.
+                on_content_changed=_region_content_hook(event_overlay, region_key),
+                bridge=bridge,
+            )
             widget = spec.factory(rctx)
         except Exception:
             logger.exception(
-                "plugin %s overlay region %r factory failed; region skipped",
+                "plugin %s overlay region %r could not be built; region skipped",
                 loaded.meta.id,
                 spec.key,
             )
@@ -786,6 +818,26 @@ def _build_plugin_regions(
         if widget is None:
             logger.warning(
                 "plugin %s overlay region %r factory returned None", loaded.meta.id, spec.key
+            )
+            continue
+        if not isinstance(widget, QWidget):
+            # Screened HERE, where the factory result is first seen, because
+            # everything downstream assumes a real widget: ``add_region``
+            # reaches for ``layout()``/``setParent()`` inside an isolation
+            # guard, but the refusal path then calls ``deleteLater()``
+            # OUTSIDE one — and on the startup sweep that second exception
+            # aborts ``build_plugin_ui`` for EVERY plugin and takes the plugin
+            # manager page with it. One bad factory must stay one bad factory.
+            #
+            # Enforcing the type is not a narrowing: ``OverlayRegionSpec``
+            # already documents that the factory returns a QWidget, and a
+            # region host is placed, resized, moved and stylesheeted by the
+            # overlay, so nothing else can stand in.
+            logger.warning(
+                "plugin %s overlay region %r factory returned %s, not a QWidget; region skipped",
+                loaded.meta.id,
+                spec.key,
+                type(widget).__name__,
             )
             continue
         built.append((spec, widget))
