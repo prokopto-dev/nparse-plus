@@ -277,7 +277,12 @@ The overlay is transparent for input and Qt has no per-child exemption, so
 that is permanent by design. Text, images and status panels; if your add-on
 needs input, use `ctx.add_window` above. Same lazy-import rule as a window:
 `nparseplus_sdk.ui.PluginOverlayRegion` resolves from the host, so build it
-inside the factory. Full guide: [Event overlay regions](overlay-regions.md).
+inside the factory.
+
+Declare **both** `requires_sdk=">=1.5,<2"` and `min_app_version="2.28.0"`:
+the method lives in the host, and an SDK range alone
+[does not promise a host that implements it](versioning.md#the-sdk-range-alone-is-not-a-promise-about-the-host).
+Full guide: [Event overlay regions](overlay-regions.md).
 
 ## Consent, from your side
 

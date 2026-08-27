@@ -109,12 +109,15 @@ BROKEN_PLUGIN = """
 from nparseplus_sdk import NParsePlugin, OverlayRegionSpec, PluginMeta
 
 
-def _boom():
-    raise RuntimeError("nope")
-
-
 class _Plugin(NParsePlugin):
     meta = PluginMeta(id="broken", name="Broken", version="1.0.0", requires_sdk=">=1.5,<2")
+
+    def __init__(self):
+        self.calls = 0
+
+    def _boom(self):
+        self.calls += 1
+        raise RuntimeError("nope")
 
     def activate(self, ctx):
         from nparseplus_sdk.ui import PluginOverlayRegion
@@ -124,8 +127,34 @@ class _Plugin(NParsePlugin):
                 key="main",
                 title="Broken",
                 factory=lambda rctx: PluginOverlayRegion(rctx),
-                has_content=_boom,
+                has_content=self._boom,
                 default_anchor="sideways",
+            )
+        )
+
+    def deactivate(self):
+        pass
+
+
+def create_plugin():
+    return _Plugin()
+"""
+
+# A factory that hands back something that is not a QWidget at all.
+JUNK_PLUGIN = """
+from nparseplus_sdk import NParsePlugin, OverlayRegionSpec, PluginMeta
+
+
+class _Plugin(NParsePlugin):
+    meta = PluginMeta(id="junk", name="Junk", version="1.0.0", requires_sdk=">=1.5,<2")
+
+    def activate(self, ctx):
+        ctx.add_overlay_region(
+            OverlayRegionSpec(
+                key="main",
+                title="Junk",
+                factory=lambda rctx: object(),
+                has_content=lambda: False,
             )
         )
 
@@ -389,10 +418,17 @@ def test_a_duplicate_region_key_keeps_the_first(qtbot, tmp_path: Path, caplog) -
         context["backend"].stop()
 
 
-def test_a_raising_has_content_is_treated_as_empty(qtbot, tmp_path: Path, caplog) -> None:
-    """Asked on every visibility pass, so it is logged once and answers False
-    thereafter — a region that cannot say whether it has anything is not a
-    reason to keep an always-on-top window over the game."""
+def test_a_raising_has_content_is_retired_not_merely_silenced(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """The first exception stops the predicate being CALLED, not just logged.
+
+    Suppressing the log line alone would leave a permanently broken — or
+    simply expensive — predicate running on the GUI thread for every overlay
+    event for the rest of the session, which is the cost the guard exists to
+    avoid. So the invocation count is what this asserts; the log count alone
+    would pass against exactly the bug.
+    """
     with caplog.at_level("ERROR"):
         context = wire(qtbot, tmp_path, BROKEN_PLUGIN, "broken")
         # Registering the region already runs a visibility pass, so the one
@@ -407,6 +443,41 @@ def test_a_raising_has_content_is_treated_as_empty(qtbot, tmp_path: Path, caplog
         assert first == 1
         assert later == 0  # not one per pass, and a pass is every overlay event
         assert not overlay.isVisible()
+        # And the predicate itself is not being run either. BROKEN_PLUGIN
+        # counts its own calls, so this is the invocation count, not the log
+        # count: it must not have moved across the two passes above.
+        plugin = next(row for row in context["host"].statuses() if row.plugin_id == "broken").plugin
+        assert plugin.calls == 1
+    finally:
+        context["backend"].stop()
+
+
+def test_a_factory_returning_a_non_widget_is_refused_without_taking_the_rest(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """A malformed factory must stay one malformed factory.
+
+    Anything non-None used to be carried past the build: ``add_region``
+    then raised on ``layout()`` inside the isolation guard, the refusal path
+    called ``deleteLater()`` OUTSIDE one, and that second exception aborted
+    the whole of ``build_plugin_ui`` — dropping every other plugin's UI and
+    the plugin manager page with it. So the type is screened where the result
+    is first seen.
+    """
+    with caplog.at_level("WARNING"):
+        context = wire(qtbot, tmp_path, JUNK_PLUGIN, "junk")
+    try:
+        ui, overlay = context["ui"], context["overlay"]
+
+        assert ui.regions_by_key == {}
+        assert list(overlay._region_hosts()) == ["lanes", "utility", "alert", "bars"]
+        assert any("not a QWidget" in record.message for record in caplog.records)
+        # It got no further: the overlay never refused it, because it was
+        # never offered.
+        assert not [r for r in caplog.records if "refused by the overlay" in r.message]
+        # And the rest of build_plugin_ui ran — the plugin manager page is the
+        # thing an abort would have cost every user.
+        assert ui.extra_pages
     finally:
         context["backend"].stop()
 
@@ -549,6 +620,16 @@ def test_a_region_works_in_the_legacy_stacked_layout(qtbot, tmp_path: Path) -> N
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "plugins"
 
 
+def _example_min_app_version() -> str:
+    """The app release ``kill_ticker.py`` declares it needs."""
+    from nparseplus_sdk.loading import import_plugin_module
+
+    module = import_plugin_module(EXAMPLES / "kill_ticker.py")
+    version = module.create_plugin().meta.min_app_version
+    assert version is not None
+    return version
+
+
 def test_the_kill_ticker_example_draws_in_the_real_overlay(qtbot, tmp_path: Path) -> None:
     """The reference add-on, end to end: it goes on the overlay, brings the
     overlay on screen when something dies, and takes it away again on a zone."""
@@ -572,15 +653,20 @@ def test_the_kill_ticker_example_draws_in_the_real_overlay(qtbot, tmp_path: Path
     settings.plugins.entries["kill-ticker"] = PluginEntry(enabled=True, approved=True)
 
     backend = build_backend(settings, speaker=NullSpeaker())
+    # At the app version the example itself declares it needs, read off its own
+    # metadata rather than repeated here — regions live in the HOST, so the
+    # example pins min_app_version and a host older than that must refuse it
+    # (the test below is that half).
+    supported = _example_min_app_version()
     host = PluginHost(
-        settings, backend, APP_VERSION, request_save=lambda: None, plugins_dir_override=directory
+        settings, backend, supported, request_save=lambda: None, plugins_dir_override=directory
     )
     host.discover_and_load()
     bridge = QtEventBridge(backend.bus)
     overlay = EventOverlayWindow(state=_state())
     qtbot.addWidget(overlay)
     try:
-        ui = build_plugin_ui(host, settings, APP_VERSION, lambda: None, bridge, {}, overlay)
+        ui = build_plugin_ui(host, settings, supported, lambda: None, bridge, {}, overlay)
         key = "plugin.kill-ticker.kills"
         assert key in ui.regions_by_key
         assert not overlay.isVisible()
@@ -651,3 +737,45 @@ def test_a_contributed_region_does_not_put_the_overlay_in_a_cycle(qapp, tmp_path
         assert ref() is None
     finally:
         gc.enable()
+
+
+def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path) -> None:
+    """The gap ``min_app_version`` closes, exercised end to end.
+
+    ``requires_sdk`` is weighed against the SDK the app RESOLVED, and every
+    released app declares an SDK floor rather than a pin — v2.27.0 asks for
+    ``nparseplus-sdk>=1.4,<2``, so a source install of it resolves SDK 1.5
+    quite legitimately once that is published. The range then passes while
+    ``HostPluginContext.add_overlay_region`` does not exist on that host, and
+    without this pin the plugin would fail *inside* ``activate()`` and land in
+    Settings > Plugins as an error rather than as an honest "incompatible".
+    """
+    directory = tmp_path / "plugins"
+    directory.mkdir()
+    (directory / "kill_ticker.py").write_text(
+        (EXAMPLES / "kill_ticker.py").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    settings = Settings()
+    settings.sharing.mode = "off"
+    settings.mobinfo.wiki_details = False
+    settings.plugins.enabled = True
+    settings.plugins.update_check = False
+    settings.plugins.entries["kill-ticker"] = PluginEntry(enabled=True, approved=True)
+
+    backend = build_backend(settings, speaker=NullSpeaker())
+    # The last release that shipped no regions.
+    host = PluginHost(
+        settings, backend, "2.27.0", request_save=lambda: None, plugins_dir_override=directory
+    )
+    try:
+        host.discover_and_load()
+
+        (loaded,) = [row for row in host.statuses() if row.plugin_id == "kill-ticker"]
+        assert loaded.status == "incompatible"
+        assert loaded.error is not None
+        assert "2.28.0" in loaded.error
+        # Refused BEFORE activate(), which is the whole point: an AttributeError
+        # out of activate() reads as a broken add-on rather than an old app.
+        assert "activate" not in loaded.error
+    finally:
+        backend.stop()
