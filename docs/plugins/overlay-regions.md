@@ -203,11 +203,19 @@ alive; after your region is retired the call simply does nothing.
 
 ### `sample()` — position mode
 
-**Return a sequence of widgets, not a single one.** A bare widget, or anything
-else that will not iterate, is refused with a line in the log and your region
-simply shows no preview — the host materialises the result inside its guard
-precisely because this runs while position mode is opening, and an escape
-there would stop it opening at all, for every region and every built-in.
+**Return a sequence of `QWidget`s.** Every part of that is checked, because
+all of it runs while position mode is opening and an escape would stop it
+opening at all — for every region and every built-in, not just yours:
+
+- a bare widget, or anything else that will not iterate, is refused;
+- an exception *while* the sequence is being iterated is caught too, so a
+  generator may not yield a widget and then raise;
+- entries that are not `QWidget`s are dropped. A `QObject` is not good enough:
+  the overlay removes these from a layout when position mode ends, and a
+  non-widget fails there — on the way *out*, where the cost is an overlay that
+  never relocks.
+
+Each is logged and costs your region its preview, nothing more.
 
 While the user is placing their chrome, the overlay fills every region with
 sample content so an empty one is still something they can see and drag. Add

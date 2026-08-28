@@ -817,6 +817,87 @@ def test_the_seal_is_for_regions_only_and_leaves_windows_interactive(qtbot, tmp_
         context["backend"].stop()
 
 
+# sample() as a generator that yields a real widget and THEN raises.
+MID_ITERATION_PLUGIN = PLUGIN.replace(
+    """        self.region = PluginOverlayRegion(rctx)
+        return self.region""",
+    """        class MidIteration(PluginOverlayRegion):
+            def sample(self):
+                from PySide6.QtWidgets import QLabel
+
+                def items():
+                    yield QLabel("first")
+                    raise RuntimeError("mid-iteration boom")
+
+                return items()
+
+        self.region = MidIteration(rctx)
+        return self.region""",
+)
+
+# sample() returning a bare QObject alongside a real widget. QObject HAS
+# deleteLater, so screening on that method let it through.
+QOBJECT_SAMPLE_PLUGIN = PLUGIN.replace(
+    """        self.region = PluginOverlayRegion(rctx)
+        return self.region""",
+    """        class Obj(PluginOverlayRegion):
+            def sample(self):
+                from PySide6.QtCore import QObject
+                from PySide6.QtWidgets import QLabel
+
+                return [QLabel("real"), QObject()]
+
+        self.region = Obj(rctx)
+        return self.region""",
+)
+
+
+def test_a_sample_that_raises_mid_iteration_does_not_break_position_mode(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """Materialising the result is a SECOND call into the plugin, not one.
+
+    A generator can yield a widget and then raise, and a custom
+    ``__iter__``/``__next__`` can raise anything; narrowing the guard to
+    TypeError (the non-iterable case) left every other exception escaping
+    ``set_edit_mode(True)`` exactly as before.
+    """
+    context = wire(qtbot, tmp_path, MID_ITERATION_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        with caplog.at_level("ERROR"):
+            overlay.set_edit_mode(True)
+        assert any("while being iterated" in r.message for r in caplog.records)
+        assert overlay._preview_widgets  # the built-ins still previewed
+        overlay.set_edit_mode(False)
+    finally:
+        context["backend"].stop()
+
+
+def test_a_non_widget_in_a_sample_does_not_break_the_relock(qtbot, tmp_path: Path, caplog) -> None:
+    """Screened on QWidget, not on ``deleteLater`` — QObject has that too.
+
+    A bare QObject therefore reached the overlay, and ``_discard_preview``
+    calls ``layout.removeWidget(item)``, which rejects a non-widget with a
+    TypeError. That is raised on the way OUT of position mode, so the overlay
+    never finished relocking and was left interactive over the game — a worse
+    resting state than the one the entry-side guard prevents.
+    """
+    context = wire(qtbot, tmp_path, QOBJECT_SAMPLE_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        with caplog.at_level("WARNING"):
+            overlay.set_edit_mode(True)
+        assert any("not QWidgets" in r.message and "QObject" in r.message for r in caplog.records)
+        # The real widget in the same sample is kept.
+        assert overlay._preview_widgets
+        # And the overlay relocks, which is what the QObject used to prevent.
+        overlay.set_edit_mode(False)
+        assert overlay._edit_mode is False
+    finally:
+        context["backend"].stop()
+
+
 def test_a_sample_that_is_not_a_sequence_does_not_break_position_mode(
     qtbot, tmp_path: Path, caplog
 ) -> None:

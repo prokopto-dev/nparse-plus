@@ -442,24 +442,30 @@ def _region_preview(widget: Any, plugin_id: str, key: str) -> Callable[[], list[
     nothing while positioning", which is already how a region with no preview
     factory behaves.
     """
+    from PySide6.QtWidgets import QWidget
+
     sample = getattr(widget, "sample", None)
     if not callable(sample):
         return None
 
     def build() -> list[Any]:
+        # EVERY step below is a call into plugin code, and all of them run from
+        # ``_populate_preview`` during ``set_edit_mode(True)``. An escape here
+        # does not cost this one region its preview — it stops POSITION MODE
+        # OPENING AT ALL, for every region and every built-in.
         try:
             made = sample()
         except Exception:
             logger.exception("plugin %s overlay region %r sample() raised", plugin_id, key)
             return []
+        if made is None:
+            return []
+        if isinstance(made, str | bytes):
+            # Iterable, but never what was meant, and reporting it as a bad
+            # sequence of widgets is more useful than 40 discarded characters.
+            made = None
         try:
-            # Materialised INSIDE a guard, because iterating is itself a call
-            # into the plugin's value: a bare widget, an int or any other
-            # non-iterable raises TypeError here. This runs from
-            # ``_populate_preview`` during ``set_edit_mode(True)``, so an
-            # escape does not cost this region its preview — it stops POSITION
-            # MODE OPENING AT ALL, for every region and every built-in.
-            items = list(made or [])
+            iterator = iter(made)  # type: ignore[arg-type]
         except TypeError:
             logger.warning(
                 "plugin %s overlay region %r sample() returned %s, not a sequence of "
@@ -469,11 +475,36 @@ def _region_preview(widget: Any, plugin_id: str, key: str) -> Callable[[], list[
                 type(made).__name__,
             )
             return []
-        # The overlay takes these back out through the region's layout and
-        # then deletes them, so anything that is not a widget would raise
-        # from inside ``_clear_preview`` — on the way OUT of position mode,
-        # where there is nothing useful to do about it.
-        return [item for item in items if hasattr(item, "deleteLater")]
+        try:
+            items = list(iterator)
+        except Exception:
+            # Iterating is a call into the plugin too, and a separate one: a
+            # generator can yield a widget and THEN raise, and a custom
+            # ``__iter__``/``__next__`` can raise anything at all. Narrowing
+            # this to TypeError left every other exception escaping exactly as
+            # before.
+            logger.exception(
+                "plugin %s overlay region %r sample() raised while being iterated",
+                plugin_id,
+                key,
+            )
+            return []
+        # Screened on QWidget, NOT on ``deleteLater``: QObject has that method
+        # too, so a bare QObject passed and was handed to the overlay, where
+        # ``_discard_preview``'s ``layout.removeWidget(item)`` rejects it with
+        # a TypeError — on the way OUT of position mode, so the overlay never
+        # finishes relocking and is left interactive over the game.
+        kept = [item for item in items if isinstance(item, QWidget)]
+        if len(kept) != len(items):
+            logger.warning(
+                "plugin %s overlay region %r sample() returned %d item(s) that are not "
+                "QWidgets (%s); they are dropped from the position-mode preview",
+                plugin_id,
+                key,
+                len(items) - len(kept),
+                ", ".join(sorted({type(i).__name__ for i in items if not isinstance(i, QWidget)})),
+            )
+        return kept
 
     return build
 
