@@ -1,0 +1,3760 @@
+{
+  "clickies": {
+    "Abolish Disease": 50,
+    "Abolish Enchantment": 55,
+    "Abundant Drink": 3,
+    "Abundant Food": 3,
+    "Aegis of Bathezid": 49,
+    "Affliction": 20,
+    "Agilmente`s Aria of Eagles": 45,
+    "Alacrity": 45,
+    "Alliance": 30,
+    "Allure": 45,
+    "Allure of Death": 20,
+    "Alluring Whispers": 50,
+    "Aloe Sweat": 15,
+    "Alter Plane: Sky": 45,
+    "Anarchy": 46,
+    "Arch Shielding": 50,
+    "Armor of Faith": 45,
+    "Atone": 46,
+    "Augment Death": 50,
+    "Banish Summoned": 45,
+    "Banish Undead": 40,
+    "Barrier of Force": 50,
+    "Battery Vision": 20,
+    "Beguile Plants": 29,
+    "Berserker Madness I": 10,
+    "Berserker Madness II": 20,
+    "Berserker Madness IV": 50,
+    "Berserker Strength": 10,
+    "Bind Affinity": 10,
+    "Blast of Cold": 25,
+    "Blaze": 35,
+    "Blessing of Nature": 50,
+    "Blessing of the Theurgist": 50,
+    "Blinding Poison I": 10,
+    "Blinding Poison II": 20,
+    "Blinding Poison III": 1,
+    "Blood Claw": 18,
+    "Bobbing Corpse": 49,
+    "Boil Blood": 46,
+    "Bolt of Karana": 50,
+    "Bonds of Force": 45,
+    "Bone Melt": 50,
+    "Bramblecoat": 45,
+    "Brittle Haste I": 10,
+    "Brittle Haste II": 20,
+    "Brittle Haste III": 30,
+    "Brittle Haste IV": 50,
+    "Burn": 35,
+    "Burnout III": 45,
+    "Cajoling Whispers": 45,
+    "Call of Bones": 50,
+    "Call of Earth": 50,
+    "Calm": 20,
+    "Cancel Magic": 45,
+    "Cannibalize II": 40,
+    "Careless Lightning": 15,
+    "Cascading Darkness": 45,
+    "Celestial Tranquility": 50,
+    "Chant of Battle": 45,
+    "Chaos Flux": 46,
+    "Chaotic Feedback": 28,
+    "Chill Sight": 44,
+    "Chloroplast": 45,
+    "Choke": 10,
+    "Cinder Bolt": 46,
+    "Circle of Misty": 5,
+    "Clarity": 46,
+    "Clinging Darkness": 15,
+    "Clockwork Poison": 46,
+    "Cog Boost": 20,
+    "Color Shift": 20,
+    "Color Skew": 30,
+    "Combust": 45,
+    "Companion Spirit": 35,
+    "Conflagration": 40,
+    "Conjure Corpse": 50,
+    "Contact Poison I": 5,
+    "Contact Poison II": 20,
+    "Contact Poison III": 30,
+    "Contact Poison IV": 50,
+    "Counteract Disease": 49,
+    "Counteract Poison": 49,
+    "Cure Disease": 1,
+    "Curse of the Garou": 32,
+    "Curse of the Spirits": 50,
+    "Dance of the Blade": 46,
+    "Daring": 45,
+    "Dawncall": 50,
+    "Dead Man Floating": 50,
+    "Deadeye": 10,
+    "Deadly Poison": 30,
+    "Deftness": 45,
+    "Diamondskin": 46,
+    "Disease": 30,
+    "Disease Cloud": 5,
+    "Dismiss Summoned": 30,
+    "Dismiss Undead": 20,
+    "Divine Wrath": 50,
+    "Dizzy I": 10,
+    "Dizzy II": 20,
+    "Dizzy III": 30,
+    "Dizzy IV": 50,
+    "Dooming Darkness": 50,
+    "Drain Soul": 40,
+    "Drones of Doom": 35,
+    "Drowsy": 5,
+    "Earthcall": 50,
+    "Earthquake": 30,
+    "Echinacea Infusion": 5,
+    "Elemental Armor": 50,
+    "Elemental: Fire": 1,
+    "Endure Magic": 45,
+    "Energy Sap": 50,
+    "Engulfing Darkness": 27,
+    "Engulfing Roots": 49,
+    "Ensnare": 35,
+    "Ensnaring Roots": 25,
+    "Enticement of Flame": 50,
+    "Envenomed Breath": 50,
+    "Essence Tap": 55,
+    "Evacuate": 56,
+    "Everfount": 44,
+    "Everlasting Breath": 25,
+    "Expel Undead": 50,
+    "Extinguish Fatigue": 50,
+    "Eye of Zomm": 20,
+    "Fade": 45,
+    "Fangol's Breath": 50,
+    "Fear": 15,
+    "Feeble Mind I": 10,
+    "Feeble Mind II": 20,
+    "Feeble Mind III": 30,
+    "Feeble Mind IV": 50,
+    "Feedback": 49,
+    "Feet like Cat": 20,
+    "Feign Death": 45,
+    "Fingers of Fire": 20,
+    "Fire Bolt": 40,
+    "Fire Strike": 40,
+    "Firefist": 50,
+    "Flame Arc": 1,
+    "Flame Shock": 33,
+    "Flames of Ro": 50,
+    "Fleeting Fury": 10,
+    "Force": 50,
+    "Force Shock": 40,
+    "Form of the Great Wolf": 50,
+    "Froglok Poison": 50,
+    "Frost Shock": 50,
+    "Frost Strike": 1,
+    "Fungal Regrowth": 35,
+    "Furious Strength": 45,
+    "Fury": 45,
+    "Gale of Poison": 50,
+    "Garzicor's Vengeance": 50,
+    "Gasping Embrace": 50,
+    "Gather Shadows": 20,
+    "Gaze": 20,
+    "Glamour": 26,
+    "Grasping Roots": 15,
+    "Gravity Flux": 45,
+    "Grease Injection": 20,
+    "Greater Healing": 40,
+    "Greater Wolf Form": 45,
+    "Grim Aura": 5,
+    "Guard": 20,
+    "Guardian Spirit": 45,
+    "Haste": 25,
+    "Healing": 45,
+    "Health": 45,
+    "Holy Shock": 50,
+    "Hungry Earth": 30,
+    "Ice Rend": 30,
+    "Ice Shock": 35,
+    "Identify": 25,
+    "Ignite": 30,
+    "Ignite Bones": 40,
+    "Ikatiar's Revenge": 50,
+    "Illusion: Dark Elf": 15,
+    "Illusion: Erudite": 15,
+    "Illusion: Halfling": 49,
+    "Illusion: High Elf": 15,
+    "Illusion: Iksar": 38,
+    "Illusion: Water Elemental": 25,
+    "Illusion: Werewolf": 40,
+    "Incapacitate": 50,
+    "Infectious Cloud": 20,
+    "Inferno Shock": 40,
+    "Injected Poison I": 5,
+    "Injected Poison II": 20,
+    "Injected Poison III": 30,
+    "Injected Poison IV": 40,
+    "Injected Poison V": 50,
+    "Insidious Fever": 20,
+    "Insipid Weakness": 46,
+    "Invigor": 30,
+    "Invigorate": 45,
+    "Invisibility": 1,
+    "Invisibility Cloak": 20,
+    "Invisibility versus Animal": 1,
+    "Invisibility versus Animals": 5,
+    "Invisibility versus Undead": 50,
+    "Invoke Death": 1,
+    "Invoke Fear": 40,
+    "Invoke Shadow": 35,
+    "Jolt": 30,
+    "Jonthan's Whistling Warsong": 30,
+    "Judgment of Ice": 50,
+    "Knight's Blessing": 49,
+    "Knockback": 35,
+    "Kylie's Venom": 55,
+    "Lesser Shielding": 45,
+    "Levitate": 30,
+    "Levitation": 25,
+    "Lifedraw": 30,
+    "Lifespike": 20,
+    "Lifetap": 1,
+    "Lightning Storm": 30,
+    "Lightning Strike": 35,
+    "Major Shielding": 45,
+    "Mana Conversion": 50,
+    "Mana Flare": 50,
+    "Mana Sieve": 35,
+    "Manasink": 30,
+    "Manifest Elements": 46,
+    "Mark of Karn": 40,
+    "Melodious Befuddlement": 50,
+    "Mistwalker": 50,
+    "Mystic Precision": 20,
+    "Nature's Holy Wrath": 46,
+    "Neutralize Magic": 45,
+    "Nimble": 45,
+    "Nullify Magic": 45,
+    "O'Keils Radiation": 50,
+    "Obsidian Shatter": 15,
+    "One Hundred Blows": 50,
+    "Pacify": 45,
+    "Panic Animal": 5,
+    "Paralyzing Earth": 49,
+    "Phantom Plate": 50,
+    "Poison": 1,
+    "Poisonous Chill": 1,
+    "Pouch of Quellious": 50,
+    "Primal Essence": 50,
+    "Produce Wrench": 20,
+    "Project Lightning": 30,
+    "Rage of Vallon": 50,
+    "Rage of Zek": 50,
+    "Rain of Fire": 45,
+    "Rain of Swords": 40,
+    "Rampage": 30,
+    "Reckless Strength": 1,
+    "Reclaim Energy": 20,
+    "Regeneration": 45,
+    "Regrowth of the Grove": 45,
+    "Rend": 50,
+    "Resist Magic": 50,
+    "Riotous Health": 50,
+    "Root": 15,
+    "Rune III": 45,
+    "Rune IV": 50,
+    "Scale of Wolf": 45,
+    "Scent of Darkness": 50,
+    "Scourge": 30,
+    "Sebilite Pox": 50,
+    "See Invisible": 10,
+    "Shadow": 40,
+    "Shadow Step": 15,
+    "Shadow Vortex": 35,
+    "Shards of Sorrow": 45,
+    "Share Wolf Form": 45,
+    "Shield of Brambles": 45,
+    "Shield of Flame": 45,
+    "Shield of Lava": 45,
+    "Shield of Thistles": 22,
+    "Shield of Words": 50,
+    "Shiftless Deeds": 45,
+    "Shock of Flame": 36,
+    "Shock of Ice": 12,
+    "Shock of Spikes": 38,
+    "Shock of Swords": 40,
+    "Shrieking Howl": 50,
+    "Shrink": 45,
+    "Sicken": 10,
+    "Siphon": 50,
+    "Siphon Life": 40,
+    "Siphon Strength": 5,
+    "Skin like Diamond": 45,
+    "Skin like Nature": 50,
+    "Smite": 35,
+    "Snare": 15,
+    "Soothe": 45,
+    "Soul Bond": 46,
+    "Soul Consumption": 50,
+    "Soul Leech": 45,
+    "Soul Well": 50,
+    "Speed of the Shissar": 50,
+    "Spikecoat": 51,
+    "Spirit Armor": 50,
+    "Spirit Strength": 45,
+    "Spirit Strike": 20,
+    "Spirit Tap": 50,
+    "Spirit of Cheetah": 45,
+    "Spirit of Ox": 1,
+    "Spirit of Wolf": 10,
+    "Static Strike": 40,
+    "Steal Strength": 25,
+    "Steam Overload": 20,
+    "Steelskin": 40,
+    "Stinging Swarm": 45,
+    "Storm Strength": 35,
+    "Storm Strike": 50,
+    "Strength of Earth": 45,
+    "Strength of the Kunzar": 45,
+    "Strike of Thunder": 45,
+    "Strike of the Chosen": 55,
+    "Strip Enchantment": 20,
+    "Strong Disease": 50,
+    "Strong Poison": 20,
+    "Stun": 15,
+    "Stunning Blow": 49,
+    "Summon Arrows": 45,
+    "Summon Bandages": 1,
+    "Summon Holy Ale of Brell": 4,
+    "Summon Lava Diamond": 50,
+    "Summon Throwing Dagger": 40,
+    "Sunbeam": 45,
+    "Superior Camouflage": 30,
+    "Superior Healing": 30,
+    "Supernova": 50,
+    "Swarming Pain": 50,
+    "Swift like the Wind": 45,
+    "Sword of Runes": 40,
+    "Symbol of Naltron": 45,
+    "Symbol of Pinzarn": 45,
+    "Symphonic Harmony": 20,
+    "Tagar's Insects": 46,
+    "Tashani": 4,
+    "Tashania": 40,
+    "Telescope": 10,
+    "Tepid Deeds": 50,
+    "Thunder Strike": 45,
+    "Thurgadin Gate": 5,
+    "Tishan's Clash": 46,
+    "Torment": 46,
+    "Torment of Shadows": 50,
+    "Treeform": 20,
+    "Tremor": 45,
+    "Ultravision": 45,
+    "Valor": 45,
+    "Vampiric Embrace": 45,
+    "Velium Shards": 1,
+    "Verlekarnorm's Disaster": 50,
+    "Voice Graft": 20,
+    "Walking Sleep": 46,
+    "Ward Summoned": 20,
+    "Ward Undead": 10,
+    "Waves of the Deep Sea": 50,
+    "Weak Poison": 15,
+    "Weaken": 15,
+    "Whirlwind": 50,
+    "Winter's Roar": 30,
+    "Word of Health": 3,
+    "Word of Pain": 17,
+    "Word of Shadow": 35,
+    "Wrath of Nature": 50,
+    "Yaulp": 40,
+    "Yaulp II": 35,
+    "Yaulp III": 40,
+    "Yaulp IV": 50,
+    "Ykesha": 36
+  },
+  "meta": {
+    "effects_without_a_level": 960,
+    "generated_by": "tools/convert_item_clickies.py",
+    "item_pages_found": 1167,
+    "source": "https://wiki.project1999.com",
+    "spell_pages_found": 1374,
+    "spells_with_a_level": 371,
+    "spells_with_conflicting_levels": 97
+  },
+  "sources": {
+    "Abolish Disease": {
+      "items": [
+        "Spirit Caller's Greaves"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Abolish Enchantment": {
+      "items": [
+        "Abashi`s Rod of Disempowerment"
+      ],
+      "levels": [
+        55
+      ]
+    },
+    "Abundant Drink": {
+      "items": [
+        "Boots of Forbidden Rites",
+        "Templar's Boots"
+      ],
+      "levels": [
+        3,
+        50
+      ]
+    },
+    "Abundant Food": {
+      "items": [
+        "Bracers of Forbidden Rites",
+        "Templar's Bracer"
+      ],
+      "levels": [
+        3,
+        50
+      ]
+    },
+    "Aegis of Bathezid": {
+      "items": [
+        "Regal Band of Bathezid"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Affliction": {
+      "items": [
+        "Frozen Shard",
+        "Woe"
+      ],
+      "levels": [
+        20,
+        44
+      ]
+    },
+    "Agilmente`s Aria of Eagles": {
+      "items": [
+        "Singing Steel Boots"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Alacrity": {
+      "items": [
+        "Bracelet of the Spirits",
+        "Elder Shaman's Ceremonial Bracelet",
+        "Sandals of Alacrity"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Alliance": {
+      "items": [
+        "Ornate Velium Pendant",
+        "Rod of Insidious Glamour"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Allure": {
+      "items": [
+        "Wand of Allure"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Allure of Death": {
+      "items": [
+        "Words of Darkness"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Alluring Whispers": {
+      "items": [
+        "Shissar Focus Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Aloe Sweat": {
+      "items": [
+        "Disciple Symbol of Tunare"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Alter Plane: Sky": {
+      "items": [
+        "Amulet of Planar Transference",
+        "Amulet of the Void"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Anarchy": {
+      "items": [
+        "Sceptre of Destruction"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Arch Shielding": {
+      "items": [
+        "Tri-Plated Golden Hackle Hammer"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Armor of Faith": {
+      "items": [
+        "Donal's Gauntlets of Mourning"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Atone": {
+      "items": [
+        "Water Sprinkler of the Forgiven"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Augment Death": {
+      "items": [
+        "Plague Bearer's Trousers"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Banish Summoned": {
+      "items": [
+        "Truesight Hammer"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Banish Undead": {
+      "items": [
+        "DawnFire, Morning Star of Light",
+        "Staff of Undead Legions"
+      ],
+      "levels": [
+        40,
+        46
+      ]
+    },
+    "Barrier of Force": {
+      "items": [
+        "Staff of the Four"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Battery Vision": {
+      "items": [
+        "Clockwork Watchman Helm"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Beguile Plants": {
+      "items": [
+        "Dark Oak Shillelagh"
+      ],
+      "levels": [
+        29
+      ]
+    },
+    "Berserker Madness I": {
+      "items": [
+        "Maddening Sap"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Berserker Madness II": {
+      "items": [
+        "Zek Frost"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Berserker Madness IV": {
+      "items": [
+        "Warlords Rage"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Berserker Strength": {
+      "items": [
+        "Braided Beard of the Coldain",
+        "Polished Granite Tomahawk"
+      ],
+      "levels": [
+        10,
+        40
+      ]
+    },
+    "Bind Affinity": {
+      "items": [
+        "Locket of Escape"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Blast of Cold": {
+      "items": [
+        "Axe of the Frost"
+      ],
+      "levels": [
+        25
+      ]
+    },
+    "Blaze": {
+      "items": [
+        "Blazing Wand",
+        "Sarnak Summoner`s Dagger",
+        "Smoldering Cudgel"
+      ],
+      "levels": [
+        35,
+        49,
+        50
+      ]
+    },
+    "Blessing of Nature": {
+      "items": [
+        "Razor Fang of Xygoz"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Blessing of the Theurgist": {
+      "items": [
+        "Theurgist",
+        "Theurgist's Star"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Blinding Poison I": {
+      "items": [
+        "Retinal Deactivator"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Blinding Poison II": {
+      "items": [
+        "Eyeburn Solution"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Blinding Poison III": {
+      "items": [
+        "Shadowveil Hemlock",
+        "Wrapped Entropy Serpent Spine"
+      ],
+      "levels": [
+        1,
+        30
+      ]
+    },
+    "Blood Claw": {
+      "items": [
+        "Bloodclaw Battle Axe",
+        "Bloodclaw Dagger",
+        "Bloodclaw Long Sword",
+        "Bloodclaw Mace",
+        "Bloodclaw Rapier",
+        "Bloodclaw Scimitar",
+        "Stiletto of the Bloodclaw"
+      ],
+      "levels": [
+        18
+      ]
+    },
+    "Bobbing Corpse": {
+      "items": [
+        "Shai`din Revenant Bauble"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Boil Blood": {
+      "items": [
+        "Blood Fire"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Bolt of Karana": {
+      "items": [
+        "Dragon Spine Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Bonds of Force": {
+      "items": [
+        "Al`Kabor's Cap of Binding"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Bone Melt": {
+      "items": [
+        "Neb's Warbone",
+        "Paebala Warbone"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Bramblecoat": {
+      "items": [
+        "Jaundiced Bone Breastplate"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Brittle Haste I": {
+      "items": [
+        "Delusional Swiftness"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Brittle Haste II": {
+      "items": [
+        "Xegony's Curse"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Brittle Haste III": {
+      "items": [
+        "Paradoxical Peptide"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Brittle Haste IV": {
+      "items": [
+        "Rending Swiftness"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Burn": {
+      "items": [
+        "Dark Ember"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Burnout III": {
+      "items": [
+        "Mask of Empowerment",
+        "Robe of Burning Rage",
+        "Summoner's Pantaloons"
+      ],
+      "levels": [
+        45,
+        50
+      ]
+    },
+    "Cajoling Whispers": {
+      "items": [
+        "Necklace of Whispering Winds"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Call of Bones": {
+      "items": [
+        "Soul Defiler"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Call of Earth": {
+      "items": [
+        "Forest Stalker's Breastplate"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Calm": {
+      "items": [
+        "Regent Symbol of Quellious"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Cancel Magic": {
+      "items": [
+        "Deepwater Gauntlets",
+        "Mrylokar's Gauntlets",
+        "Staff of Null",
+        "Tolan's Darkwood Greaves"
+      ],
+      "levels": [
+        45,
+        50
+      ]
+    },
+    "Cannibalize II": {
+      "items": [
+        "Sacrifice (item)"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Careless Lightning": {
+      "items": [
+        "Thunderforged Earring",
+        "Windetched Staff",
+        "Windruned Dagger"
+      ],
+      "levels": [
+        15,
+        45
+      ]
+    },
+    "Cascading Darkness": {
+      "items": [
+        "Wand of Darkness"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Celestial Tranquility": {
+      "items": [
+        "Celestial Fists"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Chant of Battle": {
+      "items": [
+        "Harmonic Spear"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Chaos Flux": {
+      "items": [
+        "Fluxbladed Axe"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Chaotic Feedback": {
+      "items": [
+        "Man-o-War",
+        "Staff of Writhing"
+      ],
+      "levels": [
+        28,
+        30
+      ]
+    },
+    "Chill Sight": {
+      "items": [
+        "Bangle of the Invoker",
+        "Darksight Dagger"
+      ],
+      "levels": [
+        44,
+        50
+      ]
+    },
+    "Chloroplast": {
+      "items": [
+        "Elder Spiritist's Breastplate"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Choke": {
+      "items": [
+        "Packmaster's Lash",
+        "Whip of Strangulation"
+      ],
+      "levels": [
+        10,
+        20
+      ]
+    },
+    "Cinder Bolt": {
+      "items": [
+        "Burnt Wood Staff"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Circle of Misty": {
+      "items": [
+        "Greaves of Harmony",
+        "Nature Walker's Greaves",
+        "Rowyl's Greaves of Nature"
+      ],
+      "levels": [
+        5,
+        46,
+        50
+      ]
+    },
+    "Clarity": {
+      "items": [
+        "Dazzling Trousers",
+        "Illusionist's Pantaloons",
+        "Rod of Infinite Thought",
+        "Rod of Unbound Thought"
+      ],
+      "levels": [
+        46,
+        50
+      ]
+    },
+    "Clinging Darkness": {
+      "items": [
+        "Regent Symbol of Innoruuk"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Clockwork Poison": {
+      "items": [
+        "Trochilic's Skean"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Cog Boost": {
+      "items": [
+        "Clockwork Watchman Vambraces"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Color Shift": {
+      "items": [
+        "Crystal Rod of Confusion",
+        "Incandescent Wand"
+      ],
+      "levels": [
+        20,
+        40
+      ]
+    },
+    "Color Skew": {
+      "items": [
+        "Crystal Crown of Confusion"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Combust": {
+      "items": [
+        "Espri"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Companion Spirit": {
+      "items": [
+        "Fang Amulet of Calling"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Conflagration": {
+      "items": [
+        "Steel Hilted Flint Dagger",
+        "Vermilion Robe of Torrefaction",
+        "Wand of Conflagration"
+      ],
+      "levels": [
+        40,
+        45,
+        50
+      ]
+    },
+    "Conjure Corpse": {
+      "items": [
+        "Plague Bearer's Robe"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Contact Poison I": {
+      "items": [
+        "Asp Poison",
+        "Giant Wasp Venom"
+      ],
+      "levels": [
+        5,
+        10
+      ]
+    },
+    "Contact Poison II": {
+      "items": [
+        "Aching Blood"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Contact Poison III": {
+      "items": [
+        "Visionistic Pain"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Contact Poison IV": {
+      "items": [
+        "Soul Burn"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Counteract Disease": {
+      "items": [
+        "Earring of Purity"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Counteract Poison": {
+      "items": [
+        "Earring of Cleansing"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Cure Disease": {
+      "items": [
+        "Shield of the Immaculate"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Curse of the Garou": {
+      "items": [
+        "Garou Bone Club"
+      ],
+      "levels": [
+        32
+      ]
+    },
+    "Curse of the Spirits": {
+      "items": [
+        "Spear of Fate"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Dance of the Blade": {
+      "items": [
+        "Singing Short Sword"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Daring": {
+      "items": [
+        "Deepwater Helm"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Dawncall": {
+      "items": [
+        "Dawncaller, Blade of the Morning",
+        "Great Spear of Dawn"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Dead Man Floating": {
+      "items": [
+        "Robe of Adversity",
+        "Robe of Decay"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Deadeye": {
+      "items": [
+        "Blood Ember Helm",
+        "Fright Forged Helm"
+      ],
+      "levels": [
+        10,
+        45
+      ]
+    },
+    "Deadly Poison": {
+      "items": [
+        "Ancient Venom Sack"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Deftness": {
+      "items": [
+        "Jaundiced Bone Gauntlets"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Diamondskin": {
+      "items": [
+        "Diamond Rod"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Disease": {
+      "items": [
+        "A Vile Substance"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Disease Cloud": {
+      "items": [
+        "Bloody Dirk",
+        "Goblin Plaguebeads",
+        "Rotwood Club"
+      ],
+      "levels": [
+        5,
+        15,
+        18
+      ]
+    },
+    "Dismiss Summoned": {
+      "items": [
+        "Gold Plated Koshigatana",
+        "Thelvorn, Blade of Light"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Dismiss Undead": {
+      "items": [
+        "Corrupted Ghoulbane",
+        "Craslith",
+        "Ghoulbane",
+        "Truvinan"
+      ],
+      "levels": [
+        20,
+        45
+      ]
+    },
+    "Divine Wrath": {
+      "items": [
+        "Sprinkler of Suffering"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Dizzy I": {
+      "items": [
+        "Sweet Lathyris"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Dizzy II": {
+      "items": [
+        "Languid Lixt Wing"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Dizzy III": {
+      "items": [
+        "Crippling Peptide"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Dizzy IV": {
+      "items": [
+        "Twisting Disorientation"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Dooming Darkness": {
+      "items": [
+        "Nightfall",
+        "Obtenebrate Short Sword"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Drain Soul": {
+      "items": [
+        "Sathir's Wand",
+        "Wand of Souls"
+      ],
+      "levels": [
+        40,
+        45
+      ]
+    },
+    "Drones of Doom": {
+      "items": [
+        "Elder Spiritist's Vambraces",
+        "Nature Walker's Bracer",
+        "Rod of Drones",
+        "Rowyl's Bracer of Nature",
+        "Staff of the Earthcrafter",
+        "Wristguard of Harmony"
+      ],
+      "levels": [
+        35,
+        40,
+        45,
+        46,
+        50
+      ]
+    },
+    "Drowsy": {
+      "items": [
+        "Canyoneer Pike"
+      ],
+      "levels": [
+        5
+      ]
+    },
+    "Earthcall": {
+      "items": [
+        "Earthcaller"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Earthquake": {
+      "items": [
+        "Earthshaker",
+        "Earthshaker's Mantle",
+        "Hierophant`s Crook"
+      ],
+      "levels": [
+        30,
+        45,
+        49
+      ]
+    },
+    "Echinacea Infusion": {
+      "items": [
+        "Initiate Symbol of Tunare"
+      ],
+      "levels": [
+        5
+      ]
+    },
+    "Elemental Armor": {
+      "items": [
+        "Diamond Encrusted Staff",
+        "Pants of the Invoker"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Elemental: Fire": {
+      "items": [
+        "Brazier of Elemental Summoning"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Endure Magic": {
+      "items": [
+        "Deepwater Boots"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Energy Sap": {
+      "items": [
+        "Willsapper"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Engulfing Darkness": {
+      "items": [
+        "Blood Ember Gauntlets",
+        "Blood Riven Axe",
+        "Kunzar Ku'juch",
+        "Obtenebrate Claymore",
+        "Serrated Bone Dirk"
+      ],
+      "levels": [
+        27,
+        35,
+        40,
+        45
+      ]
+    },
+    "Engulfing Roots": {
+      "items": [
+        "Oakleaf Scimitar"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Ensnare": {
+      "items": [
+        "Sap Encrusted Branch",
+        "Spear of Constriction",
+        "Tanglewood Shield"
+      ],
+      "levels": [
+        35,
+        49,
+        50
+      ]
+    },
+    "Ensnaring Roots": {
+      "items": [
+        "Ebony Bladed Sword"
+      ],
+      "levels": [
+        25
+      ]
+    },
+    "Enticement of Flame": {
+      "items": [
+        "Robe of the Invoker"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Envenomed Breath": {
+      "items": [
+        "Blade of the Black Dragon Eye",
+        "Sword of the Shissar",
+        "Wand of the Black Dragon Eye"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Essence Tap": {
+      "items": [
+        "Essence Mace"
+      ],
+      "levels": [
+        55
+      ]
+    },
+    "Evacuate": {
+      "items": [
+        "Di`zok Escape Staff"
+      ],
+      "levels": [
+        56
+      ]
+    },
+    "Everfount": {
+      "items": [
+        "Earring of Everfount"
+      ],
+      "levels": [
+        44
+      ]
+    },
+    "Everlasting Breath": {
+      "items": [
+        "Runed Shell Necklace"
+      ],
+      "levels": [
+        25
+      ]
+    },
+    "Expel Undead": {
+      "items": [
+        "Engraved Di`Zok Deathbringer"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Extinguish Fatigue": {
+      "items": [
+        "Spirit Caller's Boots"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Eye of Zomm": {
+      "items": [
+        "Clay Bracelet",
+        "Singing Steel Helm"
+      ],
+      "levels": [
+        20,
+        45
+      ]
+    },
+    "Fade": {
+      "items": [
+        "Mrylokar's Boots"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Fangol's Breath": {
+      "items": [
+        "Fangol"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Fear": {
+      "items": [
+        "Blood Ember Boots",
+        "Jagged Shard of Bone",
+        "Terror Forged Mask"
+      ],
+      "levels": [
+        15,
+        25,
+        45
+      ]
+    },
+    "Feeble Mind I": {
+      "items": [
+        "Crookstinger Poison",
+        "Cyclan Butil"
+      ],
+      "levels": [
+        10,
+        20
+      ]
+    },
+    "Feeble Mind II": {
+      "items": [
+        "Powdered Banality"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Feeble Mind III": {
+      "items": [
+        "Cranial Cryofrost"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Feeble Mind IV": {
+      "items": [
+        "Mages Bane"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Feedback": {
+      "items": [
+        "Earring of Blazing Energy"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Feet like Cat": {
+      "items": [
+        "Cat o' Nine Tails"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Feign Death": {
+      "items": [
+        "Blood Ember Greaves",
+        "Crimson Ring of Desinence",
+        "Vermilion Sky Ring"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Fingers of Fire": {
+      "items": [
+        "Blade of Fiery Lamentations",
+        "Blazing Greaves of Fennin Ro"
+      ],
+      "levels": [
+        20,
+        40
+      ]
+    },
+    "Fire Bolt": {
+      "items": [
+        "Blazing Bracer of Fennin Ro"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Fire Strike": {
+      "items": [
+        "Blade of Shadowed Flame",
+        "Rain Caller"
+      ],
+      "levels": [
+        40,
+        51
+      ]
+    },
+    "Firefist": {
+      "items": [
+        "Golden Star Slippers",
+        "Silver Moon Slippers",
+        "White Lotus Slippers"
+      ],
+      "levels": [
+        50,
+        51
+      ]
+    },
+    "Flame Arc": {
+      "items": [
+        "Oil of Fennin Ro"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Flame Shock": {
+      "items": [
+        "Fiery Avenger",
+        "Flameweaver"
+      ],
+      "levels": [
+        33,
+        45
+      ]
+    },
+    "Flames of Ro": {
+      "items": [
+        "Shissar Elementalist's Staff",
+        "Shissar Elementalist`s Cane"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Fleeting Fury": {
+      "items": [
+        "Iksar Berserker Club"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Force": {
+      "items": [
+        "Rod of Lamentation",
+        "Rod of Mourning"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Force Shock": {
+      "items": [
+        "Veridix's Shortsword"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Form of the Great Wolf": {
+      "items": [
+        "Lycanthropic Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Froglok Poison": {
+      "items": [
+        "Malevolent Runeblade"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Frost Shock": {
+      "items": [
+        "Frozen Zweihander"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Frost Strike": {
+      "items": [
+        "Clawed Griffin Sword",
+        "Frostwrath",
+        "Trident of the Seven Seas",
+        "Velium Crystal Staff"
+      ],
+      "levels": [
+        1,
+        45,
+        50
+      ]
+    },
+    "Fungal Regrowth": {
+      "items": [
+        "Fungi Covered Great Staff"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Furious Strength": {
+      "items": [
+        "Jaundiced Bone Vambraces"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Fury": {
+      "items": [
+        "Mantle of the Songweaver",
+        "Songweaver's Mantle"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Gale of Poison": {
+      "items": [
+        "Poison Wind Censer"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Garzicor's Vengeance": {
+      "items": [
+        "Ethereal Bladed Naginata"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Gasping Embrace": {
+      "items": [
+        "Robe of Asphyxiation",
+        "Robe of Smothering"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Gather Shadows": {
+      "items": [
+        "Blood Ember Bracer",
+        "Circlet of Shadow",
+        "Circlet of Shadows",
+        "Crystal Mask",
+        "Incarnadine Breastplate",
+        "Ring of Stealthy Travel"
+      ],
+      "levels": [
+        20,
+        45,
+        49,
+        50
+      ]
+    },
+    "Gaze": {
+      "items": [
+        "Acumen Mask"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Glamour": {
+      "items": [
+        "Jaundiced Bone Helm",
+        "Luminary Two Handed Sword"
+      ],
+      "levels": [
+        26,
+        45
+      ]
+    },
+    "Grasping Roots": {
+      "items": [
+        "Warden Symbol of Tunare"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Gravity Flux": {
+      "items": [
+        "Earring of Displacement"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Grease Injection": {
+      "items": [
+        "Clockwork Watchman Greaves"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Greater Healing": {
+      "items": [
+        "Bloodshrine Necklace",
+        "Shissar Apothic Staff"
+      ],
+      "levels": [
+        40,
+        50
+      ]
+    },
+    "Greater Wolf Form": {
+      "items": [
+        "Lupine Dagger"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Grim Aura": {
+      "items": [
+        "Shrunken Goblin Skull Earring",
+        "Sword of Pain"
+      ],
+      "levels": [
+        5,
+        10,
+        15
+      ]
+    },
+    "Guard": {
+      "items": [
+        "Bone Amulet of Blade Turning",
+        "Guardians Mace",
+        "Star of the Guardian",
+        "Warding Star"
+      ],
+      "levels": [
+        20,
+        50
+      ]
+    },
+    "Guardian Spirit": {
+      "items": [
+        "Fairy-Hide Mantle",
+        "Sphinx-Hide Mantle"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Haste": {
+      "items": [
+        "An Executioners Axe",
+        "Dark Cloak of the Sky",
+        "Earthen Blade"
+      ],
+      "levels": [
+        25,
+        30,
+        40
+      ]
+    },
+    "Healing": {
+      "items": [
+        "Amulet of the Fae",
+        "Fae Amulet"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Health": {
+      "items": [
+        "Jaundiced Bone Greaves"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Holy Shock": {
+      "items": [
+        "Fiery Defender"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Hungry Earth": {
+      "items": [
+        "Gravebinder"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Ice Rend": {
+      "items": [
+        "Drakkel Icereaver"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Ice Shock": {
+      "items": [
+        "Wand of Ice"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Identify": {
+      "items": [
+        "Silvery Mask"
+      ],
+      "levels": [
+        25
+      ]
+    },
+    "Ignite": {
+      "items": [
+        "Burning Rapier",
+        "Firerune Brand"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Ignite Bones": {
+      "items": [
+        "Bone Bracelet of Condemnation"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Ikatiar's Revenge": {
+      "items": [
+        "Ikatiar's Stinger"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Illusion: Dark Elf": {
+      "items": [
+        "Mask of Deception"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Illusion: Erudite": {
+      "items": [
+        "Mask of Obtenebration"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Illusion: Halfling": {
+      "items": [
+        "Desiccated Halfling Mask"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Illusion: High Elf": {
+      "items": [
+        "Guise of the Coercer",
+        "Inlaid Jade Hoop"
+      ],
+      "levels": [
+        15,
+        45
+      ]
+    },
+    "Illusion: Iksar": {
+      "items": [
+        "Iksar Hide Mask"
+      ],
+      "levels": [
+        38
+      ]
+    },
+    "Illusion: Water Elemental": {
+      "items": [
+        "Neriad Shawl"
+      ],
+      "levels": [
+        25
+      ]
+    },
+    "Illusion: Werewolf": {
+      "items": [
+        "Lute of the Howler"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Incapacitate": {
+      "items": [
+        "Cracked Claw of Zlandicar"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Infectious Cloud": {
+      "items": [
+        "Rotted Staff"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Inferno Shock": {
+      "items": [
+        "Smolder",
+        "Vermilion Orb of Torrefaction"
+      ],
+      "levels": [
+        40,
+        46
+      ]
+    },
+    "Injected Poison I": {
+      "items": [
+        "Rabid Chokidai Fang",
+        "Snake Venom"
+      ],
+      "levels": [
+        5,
+        49
+      ]
+    },
+    "Injected Poison II": {
+      "items": [
+        "Choking Asmag"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Injected Poison III": {
+      "items": [
+        "Amnesic Lolium"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Injected Poison IV": {
+      "items": [
+        "Smoldering Cyanide"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Injected Poison V": {
+      "items": [
+        "Inferno Blood"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Insidious Fever": {
+      "items": [
+        "Sarnak Flesh Harvester"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Insipid Weakness": {
+      "items": [
+        "Withered Staff"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Invigor": {
+      "items": [
+        "Abram's Axe of the Stoic",
+        "Camii`s Bracer of Vigor",
+        "Mrylokar's Greaves",
+        "Singing Steel Vambraces",
+        "Spiroc Wingblade"
+      ],
+      "levels": [
+        30,
+        45,
+        50
+      ]
+    },
+    "Invigorate": {
+      "items": [
+        "Breastplate of the Myrmidon",
+        "Cobalt Breastplate",
+        "Deceiver's Chestguard",
+        "Golden Star Chest Wraps",
+        "Malevolent Breastplate",
+        "Mrylokar's Breastplate",
+        "Singing Steel Breastplate",
+        "Warlord's Breastplate",
+        "White Lotus Chest Wraps"
+      ],
+      "levels": [
+        45,
+        50
+      ]
+    },
+    "Invisibility": {
+      "items": [
+        "Cloudy Potion",
+        "Cobalt Greaves",
+        "Dazzling Slippers",
+        "Illusionist's Slippers"
+      ],
+      "levels": [
+        1,
+        45,
+        50
+      ]
+    },
+    "Invisibility Cloak": {
+      "items": [
+        "Clockwork Watchman Breastplate"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Invisibility versus Animal": {
+      "items": [
+        "Earthen Boots"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Invisibility versus Animals": {
+      "items": [
+        "Goblin Gazughi Ring"
+      ],
+      "levels": [
+        5
+      ]
+    },
+    "Invisibility versus Undead": {
+      "items": [
+        "Plague Bearer's Boots"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Invoke Death": {
+      "items": [
+        "Red Dragon Tooth",
+        "White Dragon Tooth"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Invoke Fear": {
+      "items": [
+        "Band of Screaming Winds",
+        "Band of Wailing Winds",
+        "Polished Obsidian Great Axe",
+        "Staff of the Dreaded Gaze"
+      ],
+      "levels": [
+        40,
+        45
+      ]
+    },
+    "Invoke Shadow": {
+      "items": [
+        "Wand of Shadow"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Jolt": {
+      "items": [
+        "Outrider's Taming Whip"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Jonthan's Whistling Warsong": {
+      "items": [
+        "Robe of the Whistling Fists"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Judgment of Ice": {
+      "items": [
+        "Frostreaver"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Knight's Blessing": {
+      "items": [
+        "Jeldorin"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Knockback": {
+      "items": [
+        "Breezeboot's Frigid Gnasher",
+        "Chetari Wardstaff"
+      ],
+      "levels": [
+        35,
+        45
+      ]
+    },
+    "Kylie's Venom": {
+      "items": [
+        "Dragonspine Rapier"
+      ],
+      "levels": [
+        55
+      ]
+    },
+    "Lesser Shielding": {
+      "items": [
+        "Cobalt Vambraces"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Levitate": {
+      "items": [
+        "Bloody Griffon-Hide Wrist Guard",
+        "Elder Spiritist's Boots",
+        "Griffon Wing Spauldors",
+        "Rotted Griffon-Hide Wrist Guard"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Levitation": {
+      "items": [
+        "Ravener Tail Whip"
+      ],
+      "levels": [
+        25
+      ]
+    },
+    "Lifedraw": {
+      "items": [
+        "Deadwood Stave"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Lifespike": {
+      "items": [
+        "Fang of the Garou",
+        "Spirit Reaver"
+      ],
+      "levels": [
+        20,
+        30
+      ]
+    },
+    "Lifetap": {
+      "items": [
+        "Tentacle Whip"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Lightning Storm": {
+      "items": [
+        "Adamantite Bo Stick"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Lightning Strike": {
+      "items": [
+        "Luminescent Staff",
+        "Skydarkener"
+      ],
+      "levels": [
+        35,
+        46
+      ]
+    },
+    "Major Shielding": {
+      "items": [
+        "Blood Ember Breastplate",
+        "Stave of Shielding"
+      ],
+      "levels": [
+        45,
+        50
+      ]
+    },
+    "Mana Conversion": {
+      "items": [
+        "Manna Robe"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Mana Flare": {
+      "items": [
+        "Pitted Iron Ring"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Mana Sieve": {
+      "items": [
+        "Wand of Mana Tapping"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Manasink": {
+      "items": [
+        "Mortificator Staff"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Manifest Elements": {
+      "items": [
+        "Orb of Mastery"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Mark of Karn": {
+      "items": [
+        "Akkirus' Chestplate of the Risen",
+        "Breastplate of Forbidden Rites",
+        "Templar's Chestplate"
+      ],
+      "levels": [
+        40,
+        46
+      ]
+    },
+    "Melodious Befuddlement": {
+      "items": [
+        "Melodious Truncheon"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Mistwalker": {
+      "items": [
+        "Scimitar of the Mistwalker"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Mystic Precision": {
+      "items": [
+        "Clockwork Watchman Boots"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Nature's Holy Wrath": {
+      "items": [
+        "Natures Defender"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Neutralize Magic": {
+      "items": [
+        "Glowing Black Sword"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Nimble": {
+      "items": [
+        "Jaundiced Bone Boots"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Nullify Magic": {
+      "items": [
+        "Crazy Cleric Gauntlets",
+        "Maleficent Gloves",
+        "Mischievous Dazzler Gloves",
+        "Shamanistic Shenanigan Gauntlets",
+        "Sly Summoners Gloves",
+        "Twisted Nature Gloves",
+        "Wily Warlock Gloves"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "O'Keils Radiation": {
+      "items": [
+        "Boots of the Invoker"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Obsidian Shatter": {
+      "items": [
+        "Drogan Obsidian Dagger",
+        "Obsidian Flamberge",
+        "Obsidian Shard"
+      ],
+      "levels": [
+        15,
+        16,
+        17
+      ]
+    },
+    "One Hundred Blows": {
+      "items": [
+        "Ton Po's Bo Stick of Understanding",
+        "Tranquil Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Pacify": {
+      "items": [
+        "Donal's Bracer of Mourning"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Panic Animal": {
+      "items": [
+        "Disciple Symbol of Cazic Thule"
+      ],
+      "levels": [
+        5
+      ]
+    },
+    "Paralyzing Earth": {
+      "items": [
+        "Herbalist's Spade"
+      ],
+      "levels": [
+        49
+      ]
+    },
+    "Phantom Plate": {
+      "items": [
+        "Shissar Guardian Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Poison": {
+      "items": [
+        "Infestation",
+        "Pondfish Spine",
+        "Scorpikis Claw Impaler"
+      ],
+      "levels": [
+        1,
+        20,
+        30
+      ]
+    },
+    "Poisonous Chill": {
+      "items": [
+        "Venomous Axe of the Velium Brood"
+      ],
+      "levels": [
+        1
+      ]
+    },
+    "Pouch of Quellious": {
+      "items": [
+        "Golden Star Wrist Wraps",
+        "Silver Moon Wrist Wraps",
+        "White Lotus Wrist Wraps"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Primal Essence": {
+      "items": [
+        "Hammer of the Dragonborn"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Produce Wrench": {
+      "items": [
+        "Clockwork Watchman Bracer"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Project Lightning": {
+      "items": [
+        "Blued Two-Handed Hammer",
+        "Ebonsting"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Rage of Vallon": {
+      "items": [
+        "Blade of Strategy"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Rage of Zek": {
+      "items": [
+        "Jagged Blade of War"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Rain of Fire": {
+      "items": [
+        "Sword of Skyfire"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Rain of Swords": {
+      "items": [
+        "BladeStorm, Katana of Steel Sleet"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Rampage": {
+      "items": [
+        "Axe of the Slayers",
+        "Thornstinger",
+        "Vehement Sword of Reivaj"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Reckless Strength": {
+      "items": [
+        "Cobalt Gauntlets",
+        "Glowing Club"
+      ],
+      "levels": [
+        1,
+        45
+      ]
+    },
+    "Reclaim Energy": {
+      "items": [
+        "Broom of Trilon",
+        "Dazzling Wristguard",
+        "Encyclopedia Necrotheurgia",
+        "Helm of Ridossan",
+        "Plague Bearer's Wristguard",
+        "Shovel of Ponz",
+        "Staff of Elemental Mastery: Air",
+        "Staff of Elemental Mastery: Earth",
+        "Staff of Elemental Mastery: Fire",
+        "Staff of Elemental Mastery: Water",
+        "Stein of Ulissa",
+        "Summoner's Warband",
+        "Torch of Alna"
+      ],
+      "levels": [
+        20,
+        40,
+        50
+      ]
+    },
+    "Regeneration": {
+      "items": [
+        "Spiroc Healer's Cloak"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Regrowth of the Grove": {
+      "items": [
+        "Hauberk of Harmony",
+        "Nature Walker's Chestguard",
+        "Rowyl's Chestguard of Nature"
+      ],
+      "levels": [
+        45,
+        46,
+        50
+      ]
+    },
+    "Rend": {
+      "items": [
+        "Solist's Robe of Invocation"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Resist Magic": {
+      "items": [
+        "Waters of Impenetrable Aura"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Riotous Health": {
+      "items": [
+        "Spirit Caller's Breastplate"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Root": {
+      "items": [
+        "Blade of the Earthcaller",
+        "Sap Sheen Staff",
+        "Treant Staff"
+      ],
+      "levels": [
+        15,
+        18
+      ]
+    },
+    "Rune III": {
+      "items": [
+        "Rod of Warding Winds",
+        "Rod of the Protecting Winds",
+        "Runed Blade"
+      ],
+      "levels": [
+        45,
+        46
+      ]
+    },
+    "Rune IV": {
+      "items": [
+        "Dazzling Robe"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Scale of Wolf": {
+      "items": [
+        "Crazy Cleric Boots",
+        "Earring of Twisted Leaves",
+        "Maleficent Boots",
+        "Mischievous Dazzler Shoes",
+        "Monkey Hide Boots",
+        "Shamanistic Shenannigan Boots",
+        "Sly Summoners Boots",
+        "Twisted Nature Boots"
+      ],
+      "levels": [
+        45,
+        49
+      ]
+    },
+    "Scent of Darkness": {
+      "items": [
+        "Nightshade Scented Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Scourge": {
+      "items": [
+        "Blight, Hammer of the Scourge"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Sebilite Pox": {
+      "items": [
+        "Feverblade - Bane of the Shissar"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "See Invisible": {
+      "items": [
+        "Bracer of the Hidden"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Shadow": {
+      "items": [
+        "Crescent Blades of Luclin"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Shadow Step": {
+      "items": [
+        "Cap of the Insubstantial"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Shadow Vortex": {
+      "items": [
+        "Cazic Quill"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Shards of Sorrow": {
+      "items": [
+        "Jagged Ice Shard"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Share Wolf Form": {
+      "items": [
+        "Elder Spiritist's Bracer"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Shield of Brambles": {
+      "items": [
+        "Arydryidriyorn",
+        "Yannikil"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Shield of Flame": {
+      "items": [
+        "Blazing Vambraces",
+        "Singing Steel Bracer"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Shield of Lava": {
+      "items": [
+        "Summoner's Robe",
+        "Wand of Lava"
+      ],
+      "levels": [
+        45,
+        50
+      ]
+    },
+    "Shield of Thistles": {
+      "items": [
+        "Two Handed Practice Sword"
+      ],
+      "levels": [
+        22
+      ]
+    },
+    "Shield of Words": {
+      "items": [
+        "Shining Breastplate",
+        "Shissar Protection Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Shiftless Deeds": {
+      "items": [
+        "Slowstone Amber",
+        "Writ of Di`zok"
+      ],
+      "levels": [
+        45,
+        49
+      ]
+    },
+    "Shock of Flame": {
+      "items": [
+        "Stormwood Battle Staff"
+      ],
+      "levels": [
+        36
+      ]
+    },
+    "Shock of Ice": {
+      "items": [
+        "Dagger of Frost",
+        "Icy Blade",
+        "Solist's Icy Wand",
+        "Spine Chill Spear",
+        "Wintry Club"
+      ],
+      "levels": [
+        12,
+        20,
+        35,
+        40
+      ]
+    },
+    "Shock of Spikes": {
+      "items": [
+        "Runebladed Sword of Night"
+      ],
+      "levels": [
+        38
+      ]
+    },
+    "Shock of Swords": {
+      "items": [
+        "Boots of Bladecalling",
+        "Wand of Swords"
+      ],
+      "levels": [
+        40,
+        45
+      ]
+    },
+    "Shrieking Howl": {
+      "items": [
+        "Howling Cutlass"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Shrink": {
+      "items": [
+        "Cobalt Bracer"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Sicken": {
+      "items": [
+        "Dark Spear of Venom",
+        "Noclin's Femur"
+      ],
+      "levels": [
+        10,
+        45
+      ]
+    },
+    "Siphon": {
+      "items": [
+        "Blood Point",
+        "Khyldorn the Blood Drinker"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Siphon Life": {
+      "items": [
+        "Bone Ring of Condemnation"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Siphon Strength": {
+      "items": [
+        "Disciple Symbol of Innoruuk"
+      ],
+      "levels": [
+        5
+      ]
+    },
+    "Skin like Diamond": {
+      "items": [
+        "Elder Spiritist's Greaves"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Skin like Nature": {
+      "items": [
+        "Robe of the Spring"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Smite": {
+      "items": [
+        "Felhammer",
+        "Master Wu's Trance Stick"
+      ],
+      "levels": [
+        35,
+        50
+      ]
+    },
+    "Snare": {
+      "items": [
+        "Anklesmasher",
+        "Earring of Woven Bark",
+        "Elder Spiritist's Gauntlets",
+        "Glaive of Marltek",
+        "Silken Whip of Ensnaring",
+        "Tolan's Darkwood Gauntlets"
+      ],
+      "levels": [
+        15,
+        45,
+        49,
+        50
+      ]
+    },
+    "Soothe": {
+      "items": [
+        "Deepwater Vambraces"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Soul Bond": {
+      "items": [
+        "Soul Binder",
+        "Zealot's Incarnadine Sword"
+      ],
+      "levels": [
+        46,
+        50
+      ]
+    },
+    "Soul Consumption": {
+      "items": [
+        "Innoruuk's Curse"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Soul Leech": {
+      "items": [
+        "Soul Leech, Dark Sword of Blood"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Soul Well": {
+      "items": [
+        "Shissar Deathspeaker Staff",
+        "Shissar Seance Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Speed of the Shissar": {
+      "items": [
+        "Staff of the Serpent"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Spikecoat": {
+      "items": [
+        "Girdle of Living Thorns"
+      ],
+      "levels": [
+        51
+      ]
+    },
+    "Spirit Armor": {
+      "items": [
+        "Shieldstorm"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Spirit Strength": {
+      "items": [
+        "Deepwater Greaves"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Spirit Strike": {
+      "items": [
+        "Bow of the Huntsman",
+        "Rune Etched Icewurm Fang",
+        "Sarnak Liberator",
+        "Spear of Winter",
+        "Wakizashi of the Frozen Skies"
+      ],
+      "levels": [
+        20,
+        30,
+        35,
+        49
+      ]
+    },
+    "Spirit Tap": {
+      "items": [
+        "The Scimitar of Lifestealing"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Spirit of Cheetah": {
+      "items": [
+        "Aerated Pauldrons",
+        "Pauldrons of the Blue Sky"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Spirit of Ox": {
+      "items": [
+        "Golden Star Pants",
+        "White Lotus Pants"
+      ],
+      "levels": [
+        1,
+        50
+      ]
+    },
+    "Spirit of Wolf": {
+      "items": [
+        "Black Fur Boots",
+        "Blood Orchid Katana",
+        "Nature Walker's Boots",
+        "Rowyl's Boots of Nature",
+        "Sandals of Harmony",
+        "Watchman Boots"
+      ],
+      "levels": [
+        10,
+        46,
+        50
+      ]
+    },
+    "Static Strike": {
+      "items": [
+        "Veldrak's Shortblade"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Steal Strength": {
+      "items": [
+        "A Dark Reaver",
+        "Beetle Stinger",
+        "Shaded Torch"
+      ],
+      "levels": [
+        25,
+        30
+      ]
+    },
+    "Steam Overload": {
+      "items": [
+        "Clockwork Watchman Gauntlets"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Steelskin": {
+      "items": [
+        "Solidate Mithril Ring",
+        "Sword of Rile"
+      ],
+      "levels": [
+        40,
+        45
+      ]
+    },
+    "Stinging Swarm": {
+      "items": [
+        "Tolan's Darkwood Vambraces"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Storm Strength": {
+      "items": [
+        "Woven Frost Giant Beard"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Storm Strike": {
+      "items": [
+        "Maelstrom"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Strength of Earth": {
+      "items": [
+        "Mrylokar's Vambraces"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Strength of the Kunzar": {
+      "items": [
+        "Cobalt Boots"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Strike of Thunder": {
+      "items": [
+        "Thunder Runed Great Sword"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Strike of the Chosen": {
+      "items": [
+        "Palladius` Axe of Slaughter"
+      ],
+      "levels": [
+        55
+      ]
+    },
+    "Strip Enchantment": {
+      "items": [
+        "Weeping Wand"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Strong Disease": {
+      "items": [
+        "Chelaki Tail"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Strong Poison": {
+      "items": [
+        "Kicsh Der Pavz"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Stun": {
+      "items": [
+        "Bronzewood Staff",
+        "Deepwater Bracer",
+        "Gnoll Hide Lariat",
+        "Goblin Skull Crusher",
+        "Howling Harpoon",
+        "Ropy Tendril",
+        "Sarnak Warhammer",
+        "Spear of Mortification"
+      ],
+      "levels": [
+        15,
+        20,
+        25,
+        30,
+        40,
+        45,
+        46
+      ]
+    },
+    "Stunning Blow": {
+      "items": [
+        "Adamantite Club",
+        "Baton of Royal Stature"
+      ],
+      "levels": [
+        49,
+        50
+      ]
+    },
+    "Summon Arrows": {
+      "items": [
+        "Tolan's Darkwood Bracer"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Summon Bandages": {
+      "items": [
+        "Embalmers Skinning Knife",
+        "Summoner's Boots"
+      ],
+      "levels": [
+        1,
+        50
+      ]
+    },
+    "Summon Holy Ale of Brell": {
+      "items": [
+        "Disciple Symbol of Brell Serilis"
+      ],
+      "levels": [
+        4
+      ]
+    },
+    "Summon Lava Diamond": {
+      "items": [
+        "Sarnak Channeler Staff",
+        "Sarnak Summoners Staff"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Summon Throwing Dagger": {
+      "items": [
+        "Mrylokar's Bracer",
+        "Stanos' Pouch"
+      ],
+      "levels": [
+        40,
+        45
+      ]
+    },
+    "Sunbeam": {
+      "items": [
+        "Blazing Breastplate of Fennin Ro"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Superior Camouflage": {
+      "items": [
+        "Elder Spiritist's Helm",
+        "Larrikan's Mask",
+        "Tolan's Darkwood Helm",
+        "Velium Studded Cloak"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Superior Healing": {
+      "items": [
+        "Aegis of Life"
+      ],
+      "levels": [
+        30
+      ]
+    },
+    "Supernova": {
+      "items": [
+        "Circlet of Fire"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Swarming Pain": {
+      "items": [
+        "Blade of the Swarm"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Swift like the Wind": {
+      "items": [
+        "Wand of Swiftness"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Sword of Runes": {
+      "items": [
+        "Gloves of Bladecalling"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Symbol of Naltron": {
+      "items": [
+        "Donal's Leggings of Mourning"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Symbol of Pinzarn": {
+      "items": [
+        "Deepwater Breastplate"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Symphonic Harmony": {
+      "items": [
+        "Sainy's Singing Dagger",
+        "Symphonic Saber"
+      ],
+      "levels": [
+        20,
+        50
+      ]
+    },
+    "Tagar's Insects": {
+      "items": [
+        "Swarmcaller"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Tashani": {
+      "items": [
+        "Howling Werewolf Claws",
+        "Journeyman's Walking Stick"
+      ],
+      "levels": [
+        4,
+        35
+      ]
+    },
+    "Tashania": {
+      "items": [
+        "Orb of Tishan",
+        "Shissar Nullifier Staff"
+      ],
+      "levels": [
+        40,
+        50
+      ]
+    },
+    "Telescope": {
+      "items": [
+        "Telescopic Eyepatch"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Tepid Deeds": {
+      "items": [
+        "Truncheon of Doom"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Thunder Strike": {
+      "items": [
+        "Raiment of Thunder",
+        "Salindrite Dagger"
+      ],
+      "levels": [
+        45,
+        49
+      ]
+    },
+    "Thurgadin Gate": {
+      "items": [
+        "Vial of Velium Vapors"
+      ],
+      "levels": [
+        5
+      ]
+    },
+    "Tishan's Clash": {
+      "items": [
+        "Gorgon Head Staff",
+        "Harmonic Dagger",
+        "Sword of the Morning"
+      ],
+      "levels": [
+        46,
+        50
+      ]
+    },
+    "Torment": {
+      "items": [
+        "Black Blade of Tormenting"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Torment of Shadows": {
+      "items": [
+        "Scythe of the Shadowed Soul"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Treeform": {
+      "items": [
+        "Maple Leaf Mask"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Tremor": {
+      "items": [
+        "Donal's Boots of Mourning"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Ultravision": {
+      "items": [
+        "Mrylokar's Helm",
+        "Spirit Caller's Bracer"
+      ],
+      "levels": [
+        45,
+        50
+      ]
+    },
+    "Valor": {
+      "items": [
+        "Donal's Vambraces of Mourning"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Vampiric Embrace": {
+      "items": [
+        "Blood Ember Vambraces"
+      ],
+      "levels": [
+        45
+      ]
+    },
+    "Velium Shards": {
+      "items": [
+        "Ball of Velium",
+        "Coldain Velium-Pick",
+        "Crystalline Spider Fang",
+        "Forged Velium 2-Handed Sword",
+        "Forged Velium Dagger",
+        "Forged Velium Long Sword",
+        "Forged Velium Morning Star",
+        "Forged Velium Scimitar",
+        "Forged Velium Short Sword",
+        "Ice Forged Shackles",
+        "Velium Dagger",
+        "Velium Great Staff",
+        "Velium Long Sword",
+        "Velium Morning Star",
+        "Velium Rapier",
+        "Velium Scimitar",
+        "Velium Short Blade",
+        "Velium Short Sword",
+        "Velium Two Handed Sword",
+        "Velium Warhammer"
+      ],
+      "levels": [
+        1,
+        25,
+        30,
+        35,
+        40
+      ]
+    },
+    "Verlekarnorm's Disaster": {
+      "items": [
+        "Verlekarnorm's Horn of Disaster"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Voice Graft": {
+      "items": [
+        "Preserved Chokidai Vocal Cords",
+        "Sentient Two-Handed Axe"
+      ],
+      "levels": [
+        20,
+        49
+      ]
+    },
+    "Walking Sleep": {
+      "items": [
+        "Locustlure"
+      ],
+      "levels": [
+        46
+      ]
+    },
+    "Ward Summoned": {
+      "items": [
+        "Summoned: Sword of Runes"
+      ],
+      "levels": [
+        20
+      ]
+    },
+    "Ward Undead": {
+      "items": [
+        "Bonethunder Staff"
+      ],
+      "levels": [
+        10
+      ]
+    },
+    "Waves of the Deep Sea": {
+      "items": [
+        "Trident of the Deep Sea"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Weak Poison": {
+      "items": [
+        "Ancient Snake Fang",
+        "Tesch Val Sinisch"
+      ],
+      "levels": [
+        15,
+        30
+      ]
+    },
+    "Weaken": {
+      "items": [
+        "Dagger of Dropping"
+      ],
+      "levels": [
+        15
+      ]
+    },
+    "Whirlwind": {
+      "items": [
+        "Windstriker"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Winter's Roar": {
+      "items": [
+        "Barbarian Spiritist`s Hammer",
+        "Jaundiced Bone Bracer"
+      ],
+      "levels": [
+        30,
+        45
+      ]
+    },
+    "Word of Health": {
+      "items": [
+        "Greaves of Forbidden Rites",
+        "Rod of Health",
+        "Templar's Leggings",
+        "Tunareberry"
+      ],
+      "levels": [
+        3,
+        35,
+        40,
+        50
+      ]
+    },
+    "Word of Pain": {
+      "items": [
+        "Fayguard Bladecatcher",
+        "Fayguard Parrying Dagger",
+        "Painbringer"
+      ],
+      "levels": [
+        17,
+        35
+      ]
+    },
+    "Word of Shadow": {
+      "items": [
+        "Fleshripper"
+      ],
+      "levels": [
+        35
+      ]
+    },
+    "Wrath of Nature": {
+      "items": [
+        "Nature Walkers Scimitar"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Yaulp": {
+      "items": [
+        "Hammer of Rage"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Yaulp II": {
+      "items": [
+        "Brell's Keg Popper",
+        "Donal's Helm of Mourning",
+        "Mask of War",
+        "Shrieking Ahlspiess"
+      ],
+      "levels": [
+        35,
+        45,
+        46
+      ]
+    },
+    "Yaulp III": {
+      "items": [
+        "Warhammer of Divine Grace"
+      ],
+      "levels": [
+        40
+      ]
+    },
+    "Yaulp IV": {
+      "items": [
+        "Claw of Phara Dar"
+      ],
+      "levels": [
+        50
+      ]
+    },
+    "Ykesha": {
+      "items": [
+        "Acid Etched War Sword",
+        "Dragon Horn Ykesha",
+        "Ringed Mace of the Ykesha",
+        "Scimitar of the Ykesha",
+        "Short Sword of the Ykesha",
+        "Throneblade of the Ykesha",
+        "Ykeshan Broad Axe",
+        "Ykeshan War Club"
+      ],
+      "levels": [
+        36,
+        37,
+        40,
+        46,
+        50
+      ]
+    }
+  }
+}

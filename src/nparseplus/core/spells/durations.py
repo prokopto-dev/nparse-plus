@@ -54,16 +54,16 @@ def match_closest_level(
     # cast time and no "begins to glow" line prints only its effect message,
     # which arrives as SpellCastOnYouEvent and is indistinguishable from
     # another player buffing you. That path deliberately stays own_cast=False.
-    if (
-        own_cast
-        and player_class is not None
-        and spell.class_levels
-        and player_class not in spell.class_levels
-    ):
+    if own_cast and player_class is not None and player_class not in spell.class_levels:
         curated = item_cast_level(spell.name)
         if curated is not None:
             return curated
-        return min(spell.class_levels.values())
+        # The inference needs a class table to take a minimum of. An item-only
+        # spell has none at all (JourneymanBoots and 100-odd others), so with
+        # no curated level there is nothing better to say than what EQTool
+        # said — fall through rather than invent a number.
+        if spell.class_levels:
+            return min(spell.class_levels.values())
 
     if player_level is not None:
         # C# returns on the first (highest-level) class entry.
