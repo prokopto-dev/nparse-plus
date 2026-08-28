@@ -33,6 +33,12 @@ with extra steps. So the honest routing is the one above.
     the *overlay's* own dragging working: the press has to fall through to
     the overlay, which hit-tests the region rectangles itself.
 
+    **The host seals whatever your factory returns, base class or not**, and
+    keeps following the tree as you build it, so a plain `QWidget` gets the
+    same guarantee. Display-only is a promise about every region rather than
+    about the ones that used the convenience — do not rely on a control in a
+    region receiving anything, in either direction.
+
 ## What this does not deliver
 
 A **minimap** is the example everyone reaches for, and this alone is not
@@ -196,6 +202,12 @@ overlay weakly, so keeping the context on your widget cannot keep the window
 alive; after your region is retired the call simply does nothing.
 
 ### `sample()` — position mode
+
+**Return a sequence of widgets, not a single one.** A bare widget, or anything
+else that will not iterate, is refused with a line in the log and your region
+simply shows no preview — the host materialises the result inside its guard
+precisely because this runs while position mode is opening, and an escape
+there would stop it opening at all, for every region and every built-in.
 
 While the user is placing their chrome, the overlay fills every region with
 sample content so an empty one is still something they can see and drag. Add

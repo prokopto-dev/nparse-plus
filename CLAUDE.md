@@ -1853,6 +1853,31 @@ callable, not a stored number), and so the one a plugin can put a string in.
 The validator is the likely trigger; the rollback is what covers the failures
 no validator can anticipate.
 
+**The HOST seals the region, not just the base class.** `OverlayRegionSpec`
+promises a QWidget and the docs and tests support a plain one, but only
+`PluginOverlayRegion` sealed itself — so a bare widget, or a control inside
+it, was fully interactive in position mode, where the overlay drops
+`WindowTransparentForInput`. Two consequences, and the second is the worse
+one: it could run handlers it was never written for, and its own rectangle
+became **impossible to drag**, because `QWidget.childAt` (Qt's real hit-test,
+which skips `WA_TransparentForMouseEvents`) returned the plugin's control
+instead of letting the press reach the overlay. `enforce_non_interactive` is
+now applied to whatever the factory returned, and `seal_widget`/`seal_tree`
+are module-level in `ui/pluginregion.py` so the base and the host cannot
+drift. A non-base widget also gets a `_RegionSealer` event filter that
+FOLLOWS the tree — a filter on the root alone never sees a grandchild added
+to an existing child, and filling a region lazily is the common shape. The
+seal is region-only: sealing a plugin *window* would make every control in
+every add-on window dead, which is the opposite of "need clicks → add_window",
+and a test pins that.
+
+**Iterating `sample()`'s result is a call into the plugin's value, so it is
+inside the guard.** Only `sample()` itself was, and a plugin returning a bare
+widget rather than a sequence raised `TypeError` on the list comprehension
+outside it. That runs from `_populate_preview` during `set_edit_mode(True)`,
+so the escape did not cost that region its preview — it stopped POSITION MODE
+OPENING AT ALL, for every region and every built-in.
+
 **A region factory's result is type-screened where it is first seen.**
 `OverlayRegionSpec` documents that the factory returns a QWidget and a region
 host is placed, resized, moved and stylesheeted by the overlay, so nothing

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from nparseplus.ui import pluginskin, skins
@@ -299,11 +299,86 @@ class PluginOverlayRegion(QWidget):
                 self._seal_tree(child)
 
     def _seal_tree(self, root: QWidget) -> None:
-        self._seal(root)
-        for child in root.findChildren(QWidget):
-            self._seal(child)
+        seal_tree(root)
 
-    @staticmethod
-    def _seal(widget: QWidget) -> None:
-        widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+# -- sealing a region that is NOT this base ------------------------------------
+#
+# ``OverlayRegionSpec.factory`` promises a QWidget, not a subclass of this
+# class, and the docs and tests support returning a plain one — the base is a
+# convenience. But the display-only guarantee is a promise about EVERY region,
+# not about the ones that happened to use the convenience: an unsealed plain
+# widget (or a child control inside it) receives the click in position mode,
+# where the overlay drops ``WindowTransparentForInput``, so it can run handlers
+# it was never written for AND makes its own rectangle impossible to drag,
+# because the press never falls through to the overlay's hit-test. So the host
+# seals whatever the factory returned, and these are the functions it uses —
+# the same ones the base uses, so the two cannot drift.
+
+
+def seal_widget(widget: QWidget) -> None:
+    """One widget, made transparent to the mouse and unable to take focus."""
+    widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+
+def seal_tree(root: QWidget) -> None:
+    """``root`` and every widget under it.
+
+    ``WA_TransparentForMouseEvents`` is per-widget and not inherited, so the
+    whole subtree has to be walked rather than just the root.
+    """
+    seal_widget(root)
+    for child in root.findChildren(QWidget):
+        seal_widget(child)
+
+
+class _RegionSealer(QObject):
+    """Keeps a non-base region sealed as it builds children later.
+
+    The base class does this by overriding ``childEvent``, which is not
+    available for a widget the host did not write, so this is the same job
+    done through an event filter. It follows new descendants as they appear:
+    a filter on the root alone would never see a grandchild added to an
+    existing child, and a region that builds its content lazily — the common
+    shape, since ``sample()`` and the first real update both run after
+    construction — would silently go unsealed exactly there.
+    """
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        # ChildPolished as well as ChildAdded: a widget class that sets its
+        # OWN focus policy does so after its parent is assigned (QPushButton
+        # is the obvious one), so the mouse attribute holds from the moment of
+        # parenting but the focus policy needs Qt's second pass.
+        if event.type() in (QEvent.Type.ChildAdded, QEvent.Type.ChildPolished):
+            child = event.child()
+            if isinstance(child, QWidget):
+                self.watch(child)
+        return False
+
+    def watch(self, root: QWidget) -> None:
+        seal_tree(root)
+        for widget in (root, *root.findChildren(QWidget)):
+            # Remove before install so a widget reached twice — a subtree
+            # reparented in one go raises ChildAdded for the root and is also
+            # walked by findChildren here — ends up with exactly one entry
+            # rather than a second callback doing the same work.
+            widget.removeEventFilter(self)
+            widget.installEventFilter(self)
+
+
+def enforce_non_interactive(widget: QWidget) -> None:
+    """Seal a region widget and KEEP it sealed, whatever class it is.
+
+    Called by the host on every widget a region factory returns. A
+    :class:`PluginOverlayRegion` already seals itself and keeps itself sealed
+    through ``childEvent``, so it needs the sweep but not the filter; anything
+    else gets both.
+    """
+    if isinstance(widget, PluginOverlayRegion):
+        seal_tree(widget)
+        return
+    # Parented to the widget, which is the whole reason it is not assigned
+    # anywhere: Qt owns it, so it lives exactly as long as the region does and
+    # goes when the region is retired and deleted.
+    _RegionSealer(widget).watch(widget)
