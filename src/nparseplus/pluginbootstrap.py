@@ -475,6 +475,19 @@ def _region_preview(widget: Any, plugin_id: str, key: str) -> Callable[[], list[
                 type(made).__name__,
             )
             return []
+        except Exception:
+            # ``iter()`` runs the plugin's ``__iter__``, so this is a call
+            # like any other and TypeError is only the "not iterable" answer.
+            # A hostile or merely broken ``__iter__`` raising anything else
+            # escaped here — BEFORE the broad guard around ``list()`` below —
+            # and a generator cannot exercise this path, since ``iter()`` on a
+            # generator object just hands it back without running any of it.
+            logger.exception(
+                "plugin %s overlay region %r sample() raised while its iterator was being obtained",
+                plugin_id,
+                key,
+            )
+            return []
         try:
             items = list(iterator)
         except Exception:
