@@ -109,6 +109,12 @@ def match_closest_level_to_spell(
     signal about the caster, so the residual ambiguity is answered by letting
     the user correct the row (see ``other_matches``) rather than by a stronger
     guess.
+
+    Every answer this function gives over the pinned corpus is recorded in
+    ``tests/fixtures/spell_match_baseline.json`` (regenerate with
+    ``tools/gen_spell_match_baseline.py``). Change anything here and the diff
+    on that file is the change — which is how the numbers above were arrived
+    at, and the check the absence of which is why #177 went unnoticed.
     """
     if not spells:
         return None
