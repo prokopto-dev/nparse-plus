@@ -1324,3 +1324,152 @@ def test_raid_mode_spell_headers_fold_by_their_own_key(qtbot):
 
     # The orientation prefix keeps it apart from a target of the same name.
     assert window.is_section_collapsed("target:Aegolism") is False
+
+
+# -- correcting an ambiguous guess (#177) --------------------------------------
+
+
+def _ambiguous_backend():
+    """A YOU row whose cast message named two spells, as the matcher saw it."""
+    backend = make_backend()
+    pack_spirit = Spell(
+        id=169, name="Pack Spirit", buff_duration_ticks=360, buff_duration_formula=3, spell_icon=69
+    )
+    spirit_of_wolf = Spell(
+        id=8651, name="Spirit of Wolf", buff_duration_ticks=360, buff_duration_formula=3
+    )
+    backend.timers.add_spell(
+        SpellRow(
+            name=pack_spirit.name,
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=pack_spirit,
+            ends_at=NOW + timedelta(minutes=30),
+            total_duration_s=36 * 60.0,  # already six minutes in
+            alternatives=[spirit_of_wolf],
+        )
+    )
+    return backend, spirit_of_wolf
+
+
+def test_other_matches_submenu_lists_the_rejected_candidates(qtbot):
+    backend, spirit_of_wolf = _ambiguous_backend()
+    window = _shown_window(qtbot, backend)
+
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "Pack Spirit")
+    row, _ = window._context_target(widget.mapTo(window, widget.rect().center()))
+    assert row is not None and [s.name for s in row.alternatives] == [spirit_of_wolf.name]
+
+
+def test_choosing_another_match_relabels_without_restarting_the_countdown(qtbot):
+    backend, spirit_of_wolf = _ambiguous_backend()
+    window = _shown_window(qtbot, backend)
+
+    row = backend.timers.find("Pack Spirit", YOU_GROUP)
+    started_at = row.ends_at - timedelta(seconds=row.total_duration_s)
+    window._respell_row(row, spirit_of_wolf)
+
+    new = backend.timers.find("Spirit of Wolf", YOU_GROUP)
+    assert new is not None
+    assert backend.timers.find("Pack Spirit", YOU_GROUP) is None
+    # Six minutes of the buff have already gone; the correction keeps them.
+    assert new.ends_at - timedelta(seconds=new.total_duration_s) == started_at
+    assert "Spirit of Wolf" in window.current_row_names()
+
+
+def test_an_unambiguous_row_offers_no_submenu(qtbot):
+    backend = make_backend()  # Clarity, added with no alternatives
+    window = _shown_window(qtbot, backend)
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "Clarity")
+    row, _ = window._context_target(widget.mapTo(window, widget.rect().center()))
+    assert row is not None and row.alternatives == []
+
+
+def _row_pos(window, name: str):
+    widget = next(w for w in window._row_widgets.values() if w.row_name == name)
+    return widget.mapTo(window, widget.rect().center())
+
+
+def test_context_menu_offers_other_matches_and_applies_the_choice(qtbot):
+    backend, _ = _ambiguous_backend()
+    window = _shown_window(qtbot, backend)
+    started_at = backend.timers.find("Pack Spirit", YOU_GROUP).ends_at - timedelta(
+        seconds=36 * 60.0
+    )
+
+    menu = window._build_context_menu(_row_pos(window, "Pack Spirit"))
+    submenu = next(a.menu() for a in menu.actions() if a.text() == "Other matches")
+    assert [a.text() for a in submenu.actions()] == ["Spirit of Wolf"]
+
+    submenu.actions()[0].trigger()
+    corrected = backend.timers.find("Spirit of Wolf", YOU_GROUP)
+    assert corrected is not None
+    assert corrected.ends_at - timedelta(seconds=corrected.total_duration_s) == started_at
+
+
+def test_context_menu_has_no_submenu_for_an_unambiguous_row(qtbot):
+    backend = make_backend()
+    window = _shown_window(qtbot, backend)
+    menu = window._build_context_menu(_row_pos(window, "Clarity"))
+    assert [a.text() for a in menu.actions()] != []
+    assert not any(a.text() == "Other matches" for a in menu.actions())
+
+
+def test_correcting_a_row_updates_the_countdown_and_icon_on_screen(qtbot):
+    """A correction that only changed the label would leave the bar lying, so
+    the whole timer is re-derived — this checks it reaches the widget."""
+    backend = make_backend()
+    ultravision = Spell(
+        id=46, name="Ultravision", buff_duration_ticks=360, buff_duration_formula=3, spell_icon=138
+    )
+    see_invisible = Spell(
+        id=8652,
+        name="See Invisible",
+        buff_duration_ticks=270,
+        buff_duration_formula=11,
+        spell_icon=99,
+    )
+    backend.timers.add_spell(
+        SpellRow(
+            name=ultravision.name,
+            group=YOU_GROUP,
+            updated_at=NOW,
+            spell=ultravision,
+            ends_at=NOW + timedelta(minutes=36),
+            total_duration_s=36 * 60.0,
+            alternatives=[see_invisible],
+        )
+    )
+    window = _shown_window(qtbot, backend)
+    window.refresh(now=NOW)
+    before = next(
+        w._value.text() for w in window._row_widgets.values() if w.row_name == "Ultravision"
+    )
+
+    window._respell_row(backend.timers.find("Ultravision", YOU_GROUP), see_invisible)
+    window.refresh(now=NOW)
+
+    widget = next(w for w in window._row_widgets.values() if w.row_name == "See Invisible")
+    assert widget._value.text() != before, "the countdown must follow the new spell's duration"
+    assert widget.row.spell.spell_icon == see_invisible.spell_icon
+    assert "Ultravision" not in window.current_row_names()
+
+
+def test_correcting_a_row_takes_the_new_spells_flash_setting(qtbot):
+    """Post-expiry flash is a per-spell opt-in (#16): the row was flashing
+    because the GUESS was on the allowlist, and the correction re-reads it."""
+    backend, spirit_of_wolf = _ambiguous_backend()
+    sw = backend.settings.spellwindow
+    sw.post_expiry_flash_enabled = True
+    sw.post_expiry_flash_spells = ["Pack Spirit"]
+    row = backend.timers.find("Pack Spirit", YOU_GROUP)
+    row.post_expiry_persist_s = float(sw.post_expiry_flash_seconds)
+    window = _shown_window(qtbot, backend)
+
+    window._respell_row(row, spirit_of_wolf)
+    corrected = backend.timers.find("Spirit of Wolf", YOU_GROUP)
+    assert corrected is not None and corrected.post_expiry_persist_s == 0.0
+
+    # ...and the other direction, once the new name is on the allowlist.
+    sw.post_expiry_flash_spells = ["Spirit of Wolf"]
+    assert window._flash_persist_for("Spirit of Wolf") == float(sw.post_expiry_flash_seconds)
