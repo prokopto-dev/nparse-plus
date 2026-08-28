@@ -11,6 +11,22 @@ profile follows.
 |---|---|
 | **Character** | Which profile you're editing. |
 | **Class** / **Your Level** | Drive spell-duration math for [Timers](../windows/timers.md) — a level 60 enchanter's Clarity lasts longer than a level 20's. Auto-filled from your own `/who` row (and from level-up / class-detect log lines); a quick `/who` in game refreshes them, even while this window is open. |
+
+!!! note "Clicky items are timed from the item, not from you"
+
+    An item's effect is cast at the **item's** level, so your own level does
+    not lengthen it — a level 60 character clicking a low-level item gets the
+    item's duration. nParse+ knows a cast came from an item when the spell is
+    one your class cannot cast, and takes the level from a table generated
+    from the [P99 wiki](https://wiki.project1999.com) (371 spells), falling
+    back to the spell's lowest class level when the wiki does not state one.
+
+    Two cases it cannot tell apart, and both deliberately keep the old
+    behaviour: an **instant** clicky with no cast time prints only its effect
+    message, which reads exactly like another player buffing you; and a spell
+    somebody else cast on you or on a mob is timed from *their* class's level,
+    which is the better guess there.
+
 | **Zone** | The character's current zone — auto-detected from zone-change lines and from a plain `/who` (a global `/who all` carries no zone, so it can't update this). |
 | **Track Skill** | Your tracking skill; draws the tracking-radius circle on the [map](../windows/maps.md) for Druids/Rangers/Bards. |
 | **Location sharing** | Per-character: everyone / guild-only / off. Guild-only shows your dot only to guildmates ([Sharing](../features/sharing.md)). |

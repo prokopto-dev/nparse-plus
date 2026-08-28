@@ -14,6 +14,21 @@ from nparseplus.core.enums import PlayerClass
 from nparseplus.core.spells.durations import get_duration_seconds, match_closest_level
 from nparseplus.core.spells.spells_us import SpellBook
 
+
+@pytest.fixture
+def no_generated_table(monkeypatch):
+    """Isolate the layer-1 inference from the scraped layer-3 table.
+
+    Tests that are about the INFERENCE must not depend on what the wiki
+    happened to say about a particular spell; the generated table gets its
+    own tests below.
+    """
+    from nparseplus.core.spells import itemcasts
+
+    monkeypatch.setattr(itemcasts, "_generated", lambda path=None: {})
+    return itemcasts
+
+
 # -- THE regression guard: self-casts must be untouched ---------------------------
 
 
@@ -51,7 +66,9 @@ def test_observer_paths_are_untouched(spell_book: SpellBook) -> None:
 # -- the fix ----------------------------------------------------------------------
 
 
-def test_clicky_uses_the_item_level_not_the_players(spell_book: SpellBook) -> None:
+def test_clicky_uses_the_item_level_not_the_players(
+    spell_book: SpellBook, no_generated_table
+) -> None:
     spell = spell_book.spell_by_name("Levitate")
     assert spell is not None
     # Warriors cannot cast Levitate, so a level-60 warrior casting it clicked
@@ -67,7 +84,9 @@ def test_clicky_uses_the_item_level_not_the_players(spell_book: SpellBook) -> No
     assert clicky < self_cast
 
 
-def test_clicky_duration_does_not_scale_with_the_clickers_level(spell_book: SpellBook) -> None:
+def test_clicky_duration_does_not_scale_with_the_clickers_level(
+    spell_book: SpellBook, no_generated_table
+) -> None:
     """The heart of the bug: the same item must read the same at any level."""
     spell = spell_book.spell_by_name("Levitate")
     assert spell is not None
@@ -130,16 +149,17 @@ def test_castable_by_everyone_fixup_keeps_its_level(spell_book: SpellBook) -> No
     assert match_closest_level(spell, PlayerClass.WARRIOR, 60, own_cast=True) == 46
 
 
-def test_curated_table_wins_over_the_inference(spell_book: SpellBook, monkeypatch) -> None:
+def test_curated_table_wins_over_the_inference(
+    spell_book: SpellBook, monkeypatch, no_generated_table
+) -> None:
     """Layer 2: a hand-curated level overrides the minimum-class-level guess."""
-    from nparseplus.core.spells import itemcasts
-
+    itemcasts = no_generated_table
     spell = spell_book.spell_by_name("Levitate")
     assert spell is not None
     assert match_closest_level(spell, PlayerClass.WARRIOR, 60, own_cast=True) == 14
 
-    monkeypatch.setitem(itemcasts._CURATED, "Levitate", 30)
-    assert match_closest_level(spell, PlayerClass.WARRIOR, 60, own_cast=True) == 30
+    monkeypatch.setitem(itemcasts._CURATED, "Levitate", 33)
+    assert match_closest_level(spell, PlayerClass.WARRIOR, 60, own_cast=True) == 33
 
 
 def test_curated_table_is_ignored_for_a_class_that_can_cast(
@@ -208,5 +228,68 @@ def test_clicky_end_to_end_through_the_parsers(spell_book: SpellBook) -> None:
     warrior = cast_levitate_as(PlayerClass.WARRIOR)
     druid = cast_levitate_as(PlayerClass.DRUID)
 
-    assert warrior == 312.0  # the item's level, not the clicker's
-    assert druid == 1140.0  # unchanged: a druid really did cast it at 60
+    # The druid figure is the regression guard and is pinned exactly: a druid
+    # really did cast it at 60, so nothing about #188 may move it.
+    assert druid == 1140.0
+    # The warrior clicked an item. The exact number comes from the item-cast
+    # tables (and moves if the wiki data is regenerated), so assert the
+    # property that matters plus agreement with the duration layer itself.
+    assert warrior < druid
+    assert warrior == float(
+        get_duration_seconds(
+            spell_book.spell_by_name("Levitate"), PlayerClass.WARRIOR, 60, own_cast=True
+        )
+    )
+
+
+# -- layer 3: the generated table ---------------------------------------------------
+
+
+def test_generated_table_ships_and_is_consulted(spell_book: SpellBook) -> None:
+    """The committed scrape must actually reach the duration layer."""
+    from nparseplus.core.spells.itemcasts import _generated
+
+    table = _generated()
+    assert table, "data/items/item_clickies.json is missing or empty"
+    assert all(0 < level <= 65 for level in table.values())
+
+    # Pick a spell the scrape covers that some class can still not cast, and
+    # check the table's level is the one that comes back.
+    for name, level in sorted(table.items()):
+        spell = spell_book.spell_by_name(name)
+        if spell is None or PlayerClass.WARRIOR in spell.class_levels:
+            continue
+        assert match_closest_level(spell, PlayerClass.WARRIOR, 60, own_cast=True) == level
+        break
+    else:  # pragma: no cover - only if the table stops covering anything
+        pytest.fail("no scraped spell was usable for this check")
+
+
+def test_generated_table_never_reaches_a_self_cast(spell_book: SpellBook) -> None:
+    """The scrape must not change a single duration for a class that can cast."""
+    from nparseplus.core.spells.itemcasts import _generated
+
+    for name in _generated():
+        spell = spell_book.spell_by_name(name)
+        if spell is None:
+            continue
+        for player_class, class_level in spell.class_levels.items():
+            for level in (class_level, 60):
+                assert get_duration_seconds(
+                    spell, player_class, level, own_cast=True
+                ) == get_duration_seconds(spell, player_class, level, own_cast=False)
+
+
+def test_item_clickies_json_passes_its_own_check() -> None:
+    """The converter's --check guard, run in-process (no network)."""
+    import json
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(root / "tools"))
+    import convert_item_clickies as converter
+
+    document = json.loads(converter.OUTPUT_PATH.read_text(encoding="utf-8"))
+    assert converter.validate(document) == []
+    assert document["meta"]["generated_by"] == "tools/convert_item_clickies.py"
