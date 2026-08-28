@@ -412,6 +412,15 @@ class SpellTimerHandler(BaseHandler):
         creates. Offering them would hand the user a row of the wrong kind
         with no tally and no cooldown, which is worse than the mis-guess.
 
+        The duration gate is the same one below, on the same
+        ``base_timer_duration_seconds`` and deliberately BEFORE the NPC grace
+        tick: a spell whose duration works out to zero creates no row at all
+        here, so a correction onto one would invent a countdown the cast never
+        produced — a 0-second row on a player, or a phantom 6-second one on an
+        NPC where the grace tick is all that is left. 1221 such candidates sit
+        inside 309 ambiguous lists in the bundled data ("has been mesmerized."
+        carries four), so this is the common case, not a corner.
+
         Only the menu is narrowed; the matcher's own guess is untouched, and
         such a spell still gets its proper handling when it is the guess.
         """
@@ -419,7 +428,10 @@ class SpellTimerHandler(BaseHandler):
             return False
         if spell.name.endswith("Discipline"):
             return False
-        return not any(spell.name.casefold() == n.casefold() for n in SPELLS_THAT_NEED_TIMERS)
+        if any(spell.name.casefold() == n.casefold() for n in SPELLS_THAT_NEED_TIMERS):
+            return False
+        base_s = base_timer_duration_seconds(spell, self.player.player_class, self.player.level)
+        return base_s > 0
 
     def _post_expiry_persist_s(self, spell: Spell) -> float:
         """Seconds a just-expired row lingers as a rebuff prompt (#16). 0 unless

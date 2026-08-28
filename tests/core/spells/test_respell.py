@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from tests.core.spells.conftest import T0, make_line
 
 from nparseplus.config.settings import Settings
@@ -353,17 +354,39 @@ def test_correcting_to_a_discipline_takes_its_duration_override(spell_book) -> N
     )
 
 
-def test_a_correction_matches_the_handler_for_every_alternative(spell_book) -> None:
-    """The general property, over a real ambiguous candidate list: whichever
-    candidate the user picks, the row is the one the matcher would have built.
+@pytest.mark.parametrize(
+    "message",
+    [
+        "is surrounded by a brief lupine aura.",  # Pack Spirit / Spirit of Wolf
+        "has been mesmerized.",  # mixes timed mez with four zero-duration rows
+        "looks less aggressive.",  # six lull-line candidates across three classes
+    ],
+)
+def test_every_offered_alternative_matches_the_handler(spell_book, message: str) -> None:
+    """The general property, over real ambiguous candidate lists: whichever
+    alternative the menu OFFERS, picking it gives the row the matcher would
+    have built for that spell.
+
+    Driven off the offered set rather than the raw candidates, because those
+    are different things — a zero-duration spell is a candidate the handler
+    answers with no row at all, and is deliberately not offered.
     """
     npc = _an_npc(spell_book)
-    candidates = spell_book.cast_on_other("is surrounded by a brief lupine aura.")
+    candidates = spell_book.cast_on_other(message)
     assert len(candidates) > 1
 
-    for chosen in candidates:
-        timers = TimersService()
-        row = timers.add_spell(
+    timers = TimersService()
+    handler = SpellTimerHandler(
+        EventBus(), _player(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    handler.handle_spell(candidates[0], npc, 0, T0, candidates)
+    (seed,) = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    offered = list(seed.alternatives)
+    assert offered, f"{message!r} should still offer something"
+
+    for chosen in offered:
+        scratch = TimersService()
+        row = scratch.add_spell(
             SpellRow(
                 name="placeholder",
                 group=npc,
@@ -372,12 +395,12 @@ def test_a_correction_matches_the_handler_for_every_alternative(spell_book) -> N
                 spell=candidates[0],
                 ends_at=T0 + timedelta(seconds=60),
                 total_duration_s=60.0,
-                alternatives=list(candidates[1:]),
+                alternatives=offered,
             )
         )
-        corrected = timers.respell_row(row, chosen, PlayerClass.SHAMAN, 40)
+        corrected = scratch.respell_row(row, chosen, PlayerClass.SHAMAN, 40)
         expected = _handler_row(spell_book, chosen.name, npc)
-        assert corrected is not None
+        assert corrected is not None, chosen.name
         assert corrected.total_duration_s == expected.total_duration_s, chosen.name
         assert corrected.detrimental == expected.detrimental, chosen.name
 
@@ -503,3 +526,87 @@ def test_a_correction_leaves_every_other_row_untouched(spell_book) -> None:
 
     for row in bystanders:
         assert row in timers.snapshot(), f"{row.name} in {row.group} was collateral damage"
+
+
+# -- a zero-duration spell is not a correction anyone can make ----------------
+
+#: From the pinned fixture: "has been mesmerized." mixes timed mez with four
+#: zero-duration entries. 1221 such candidates sit inside 309 ambiguous lists.
+MESMERIZED = "has been mesmerized."
+ZERO_DURATION = "Sathir's Gaze"
+
+
+def _enchanter() -> ActivePlayer:
+    player = ActivePlayer()
+    player.player_class = PlayerClass.ENCHANTER
+    player.level = 60
+    return player
+
+
+def test_the_handler_makes_no_row_for_a_zero_duration_spell(spell_book) -> None:
+    """The premise the next two tests rest on, asserted rather than assumed."""
+    timers = TimersService()
+    handler = SpellTimerHandler(
+        EventBus(), _enchanter(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    handler.handle_spell(spell_book.spell_by_name(ZERO_DURATION), YOU_GROUP, 0, T0)
+    assert _spell_rows(timers) == []
+
+
+@pytest.mark.parametrize("target", [YOU_GROUP, "gearheart"])
+def test_a_zero_duration_spell_is_never_offered(spell_book, target: str) -> None:
+    """Correcting onto one would invent a countdown the cast never produced —
+    a 0-second row on a player, or a phantom row on an NPC that is nothing but
+    the grace tick."""
+    timers = TimersService()
+    handler = SpellTimerHandler(
+        EventBus(), _enchanter(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    gaze = spell_book.spell_by_name(ZERO_DURATION)
+    dazzle = spell_book.spell_by_name("Dazzle")
+    assert gaze is not None and dazzle is not None
+    handler.handle_spell(dazzle, target, 0, T0, [gaze])
+
+    (row,) = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    assert [s.name for s in row.alternatives] == []
+
+
+@pytest.mark.parametrize("target_is_player", [True, False])
+def test_the_service_refuses_a_zero_duration_correction(spell_book, target_is_player: bool) -> None:
+    """The same rule at the service, so no caller can build the phantom — on an
+    NPC it would otherwise be a six-second row made entirely of the grace tick.
+    """
+    timers = TimersService()
+    row = timers.add_spell(
+        SpellRow(
+            name="Dazzle",
+            group=YOU_GROUP if target_is_player else "gearheart",
+            updated_at=T0,
+            is_target_player=target_is_player,
+            spell=spell_book.spell_by_name("Dazzle"),
+            ends_at=T0 + timedelta(seconds=96),
+            total_duration_s=96.0,
+            alternatives=[spell_book.spell_by_name(ZERO_DURATION)],
+        )
+    )
+    assert timers.respell_row(row, spell_book.spell_by_name(ZERO_DURATION), None, None) is None
+    # A refused correction leaves the row it was aimed at exactly as it was.
+    assert timers.snapshot() == [row]
+
+
+def test_a_timed_alternative_on_the_same_message_is_still_offered(spell_book) -> None:
+    """The narrowing is the zero-duration ones, not the message."""
+    timers = TimersService()
+    handler = SpellTimerHandler(
+        EventBus(), _enchanter(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    candidates = spell_book.cast_on_other(MESMERIZED)
+    assert len(candidates) > 4
+    handler.handle_spell(spell_book.spell_by_name("Dazzle"), " Joe ", 0, T0, candidates)
+
+    (row,) = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    offered = {s.name for s in row.alternatives}
+    assert "Mesmerize" in offered and "Mesmerization" in offered
+    assert not any(
+        base_timer_duration_seconds(s, PlayerClass.ENCHANTER, 60) <= 0 for s in row.alternatives
+    )

@@ -538,8 +538,14 @@ class TimersService:
         the deletion is not. Holding the index also keeps the row where it is
         rather than sending it to the bottom of the window mid-countdown.
 
-        Returns None when the row is no longer on screen: it can expire, or be
-        overwritten by a fresh cast, while the context menu is open.
+        Returns None when the correction cannot be made: the row is no longer
+        on screen (it can expire, or be overwritten by a fresh cast, while the
+        context menu is open), or the chosen spell has no duration at all.
+        ``handle_spell`` creates no row for those, so building one here would
+        invent a countdown the cast never produced — and on an NPC the grace
+        tick would be the whole of it. ``SpellTimerHandler._is_correctable``
+        keeps them out of the menu; this is the same rule at the service, so
+        no caller can produce one.
         """
         try:
             index = self._rows.index(row)
@@ -550,9 +556,10 @@ class TimersService:
         # correction lands on the countdown the matcher would have produced had
         # it named this spell: the discipline override where there is one, and
         # the grace tick a detrimental row on an NPC gets.
-        duration_s = base_timer_duration_seconds(
-            spell, player_class, player_level
-        ) + npc_grace_seconds(spell, on_npc=not row.is_target_player)
+        base_s = base_timer_duration_seconds(spell, player_class, player_level)
+        if base_s <= 0:
+            return None
+        duration_s = base_s + npc_grace_seconds(spell, on_npc=not row.is_target_player)
         # The full candidate set, minus whichever one is now chosen — so the
         # correction is reversible and a third candidate stays reachable.
         candidates = [row.spell, *row.alternatives]
