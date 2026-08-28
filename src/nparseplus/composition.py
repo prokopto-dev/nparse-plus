@@ -484,12 +484,26 @@ class Backend:
 
 
 def _spells_path(settings: Settings) -> Path:
+    """Resolve the spell database, and say out loud which one won (#177).
+
+    Which file this is decides every same-message guess the matcher makes, and
+    a user running P99's own spells_us.txt has a candidate list this repo
+    cannot reproduce — so a report of a wrong spell name is only actionable
+    once the log says whether it came from the install or the bundled copy.
+    Logged at every resolve rather than once per process: the setting is live
+    (#70), so the answer can change mid-session.
+    """
     install = settings.general.eq_install_dir
     if install:
         candidate = Path(install) / "spells_us.txt"
         if candidate.is_file():
+            logger.info("spell database: EQ install %s", candidate)
             return candidate
-    return Path("data/spells/spells_us.txt")  # bundled fallback (repo/app root)
+        if candidate.parent.exists():
+            logger.info("spell database: no spells_us.txt in %s; using the bundled copy", install)
+    bundled = Path("data/spells/spells_us.txt")  # bundled fallback (repo/app root)
+    logger.info("spell database: bundled %s", bundled)
+    return bundled
 
 
 def _same_file(path: Path, other: Path | None) -> bool:
