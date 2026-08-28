@@ -23,6 +23,11 @@ env:
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    outputs:
+      # "true" for a beta (#186), consumed by every job below that must not
+      # reach a stable user. Decided ONCE, here, so there is a single answer
+      # for the whole run rather than a repeated string test per step.
+      prerelease: ${{ steps.classify.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,10 +36,34 @@ jobs:
         # __init__.py is the single source of truth: pyproject's version is
         # dynamic (hatch reads this same file) and uv.lock does not record a
         # version for dynamic packages, so there is nothing else to check.
+        #
+        # This holds unchanged for a beta: semantic-release writes the SemVer
+        # spelling ("2.30.0-beta.1") into the literal and builds the tag from
+        # the same string, so the two still match character for character.
+        # What does NOT match is the built distribution's metadata — hatchling
+        # normalizes that literal to PEP 440 ("2.30.0b1"), so the wheel, the
+        # dist-info directory and importlib.metadata.version() all say
+        # 2.30.0b1 while the tag and the literal say 2.30.0-beta.1. That is
+        # correct and intended: packaging.Version treats the two as equal, and
+        # nothing in the app compares those strings literally. Do not "fix" it
+        # by making __version__ a metadata lookup — see the spec's comment on
+        # copy_metadata for why that lookup fails exactly in a frozen build.
         run: |
           TAG="${RELEASE_TAG#v}"
           grep -q "^__version__ = \"$TAG\"$" src/nparseplus/__init__.py \
             || { echo "::error::tag $TAG != __init__.py __version__"; exit 1; }
+      - name: Classify the tag
+        id: classify
+        # Any SemVer prerelease carries a hyphen after the release segment
+        # ("2.30.0-beta.1"); a stable version cannot contain one.
+        run: |
+          TAG="${RELEASE_TAG#v}"
+          case "$TAG" in
+            *-*) PRERELEASE=true ;;
+            *)   PRERELEASE=false ;;
+          esac
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "$TAG is a prerelease: $PRERELEASE" >> "$GITHUB_STEP_SUMMARY"
 
   build-macos:
     needs: check-version
@@ -276,8 +305,10 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           tar -C dist -czf "dist/nparseplus-$VERSION-linux-x86_64.tar.gz" nparseplus
       - name: Install flatpak-builder
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         run: sudo apt-get install -y flatpak flatpak-builder dbus
       - name: Import Flatpak signing key
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         env:
           FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
         run: |
@@ -288,11 +319,13 @@ jobs:
           # key correct if the key is ever rotated).
           gpg --export "$FLATPAK_GPG_KEY_ID" > packaging/flatpak/nparseplus-repo.gpg
       - name: Install Flatpak runtime
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive flathub \
             org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
       - name: Build Flatpak bundle
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         run: |
           VERSION="${RELEASE_TAG#v}"
           sed -i "s/@VERSION@/$VERSION/; s/@DATE@/$(date -u +%Y-%m-%d)/" \
@@ -317,6 +350,7 @@ jobs:
             io.github.prokopto_dev.nparse_plus
           echo "[$(date -u +%H:%M:%S)] bundle done"
       - name: Smoke-test Flatpak bundle
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         run: |
           VERSION="${RELEASE_TAG#v}"
           flatpak install --user -y --noninteractive \
@@ -334,6 +368,7 @@ jobs:
             exit 1
           fi
       - name: Verify flatpak update wiring
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         run: |
           # The bundle install (smoke test above) must have configured an
           # origin remote pointing at the published repo URL...
@@ -350,9 +385,24 @@ jobs:
           grep -F "io.github.prokopto_dev.nparse_plus" refs.txt \
             || { echo "::error::app ref missing from the flatpak repo"; exit 1; }
       - name: Publish flatpak repo to gh-pages
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # The `if:` above is the gate; this is the backstop, and it is here
+          # because this is the single most dangerous step in the file. The
+          # gh-pages branch IS the OSTree repo `flatpak update` follows, so a
+          # beta published here reaches STABLE Flatpak users — who never opted
+          # into anything — and does so through a force-push that cannot be
+          # rolled back by re-running an earlier release. A guard that lives
+          # only in a YAML expression is one careless edit from silence; this
+          # one fails the job.
+          case "${RELEASE_TAG#v}" in
+            *-*)
+              echo "::error::refusing to publish prerelease ${RELEASE_TAG} to gh-pages"
+              exit 1
+              ;;
+          esac
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # Seed from the current gh-pages tree so the mike-managed docs
           # (version dirs, versions.json, root index.html redirect) survive
@@ -414,9 +464,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-builds
-          path: |
-            dist/*.tar.gz
-            dist/*.flatpak
+          path: dist/*.tar.gz
+          if-no-files-found: error
+      # Separate from the tarball so it can carry the prerelease guard while
+      # `if-no-files-found: error` keeps its teeth for both: a beta publishes
+      # no .flatpak at all, so a combined upload would either fail the run or
+      # have to stop checking that the artifacts it names actually exist.
+      - uses: actions/upload-artifact@v4
+        if: ${{ needs.check-version.outputs.prerelease != 'true' }}
+        with:
+          name: linux-flatpak
+          path: dist/*.flatpak
           if-no-files-found: error
 
   # The Debian 12 build. SEPARATE from build-linux on purpose: that job's
@@ -647,7 +705,7 @@ jobs:
           dpkg -s nparseplus | grep -E '^(Version|Architecture|Depends):'
 
   release:
-    needs: [build-macos, build-windows, build-linux, build-linux-debian12, verify-deb-debian12]
+    needs: [check-version, build-macos, build-windows, build-linux, build-linux-debian12, verify-deb-debian12]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -680,13 +738,27 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: artifacts/*
           body_path: release-notes.md
+          # What actually keeps a beta away from stable clients: every
+          # nParse+ binary ever released skips a release carrying this flag
+          # (updater.check_for_update), so the tier needs no client change to
+          # take effect and no migration for anyone already installed. Only a
+          # client that has opted into the beta channel looks past it.
+          prerelease: ${{ needs.check-version.outputs.prerelease == 'true' }}
 
   # Versioned docs deploy. Runs after `release` (which needs build-linux), so
   # the flatpak step's orphan force-push of gh-pages has already landed and
   # mike commits on top of it — no race within a release run. The concurrency
   # group is shared with docs-dev.yml to serialize mike pushes.
   docs:
-    needs: [release]
+    needs: [check-version, release]
+    # Stable only, for two separate reasons. The versioned deploy derives its
+    # directory by stripping the last dot-segment, so "2.30.0-beta.1" would
+    # publish a permanent "2.30.0-beta" version alongside the real ones and
+    # write it into versions.json, where mike has no tidy way to remove it.
+    # And it aliases the deploy to `latest`, which is what the docs site
+    # serves by default — a beta's docs would become what every reader sees,
+    # documenting behaviour no stable release has.
+    if: ${{ needs.check-version.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
