@@ -113,17 +113,29 @@ _SELF_SPELLS_WITHOUT_COMPLETION_MESSAGE = frozenset(
     }
 )
 
-# Fixed duration overrides for disciplines (SpellHandlerService.Handle).
 # Discipline cooldown scaling: name -> (base seconds, min level, seconds range).
-# Values transcribed literally from SpellHandlerService.Handle, including the
-# Innerflame quirk (base 60min but a 30->26min scaling range).
+# These six are the whole of SpellHandlerService.Handle's scaled set, and the
+# rest of the ~50 disciplines in spells_us.txt deliberately are NOT here: their
+# reuse is flat, so recast_time_ms is the game's own figure and a table row
+# would only be a place for it to rot. A discipline whose reuse we get wrong is
+# corrected live anyway by DisciplineCooldownParser, which reads the client's
+# authoritative "You can use the ability X again in N minute(s) M seconds."
+#
+# Five of the six carry a base equal to their own recast_time_ms, which is what
+# makes the sixth a transcription bug rather than a quirk of the game.
+# DELIBERATE DIVERGENCE: EQTool gives Innerflame `baseseconds = 60 * 60` while
+# naming 30 in its own `secondsrange = (30 - 26) * 60`, and the block directly
+# above it (Voiddance) is `60 * 60` with `(60 - 54) * 60` — i.e. the 60 is
+# copied down from Voiddance. spells_us.txt settles it: Innerflame's recast is
+# 1800000 ms = 30 min, not 60. Ported literally it showed a monk double the
+# real cooldown, so the base is corrected to 30 min here (#187).
 _DISCIPLINE_COOLDOWNS = {
     "Evasive Discipline": (15 * 60.0, 52, (15 - 7) * 60.0),
     "Defensive Discipline": (15 * 60.0, 55, (15 - 10) * 60.0),
     "Precision Discipline": (30 * 60.0, 57, (30 - 27) * 60.0),
     "Stonestance Discipline": (12 * 60.0, 51, (12 - 4) * 60.0),
     "Voiddance Discipline": (60 * 60.0, 54, (60 - 54) * 60.0),
-    "Innerflame Discipline": (60 * 60.0, 56, (30 - 26) * 60.0),
+    "Innerflame Discipline": (30 * 60.0, 56, (30 - 26) * 60.0),
 }
 
 _CHARM_BREAK_LINE = "Your charm spell has worn off."
@@ -449,6 +461,19 @@ class SpellTimerHandler(BaseHandler):
         if scaling is None:
             return base
         base_seconds, min_level, seconds_range = scaling
-        level = self.player.level if self.player.level is not None else 0
+        # DELIBERATE DIVERGENCE from EQTool (SpellHandlerService.Handle runs this
+        # arithmetic on a raw activePlayer.Player.Level with no bound). The table
+        # has exactly two anchors — the cooldown at min_level and the cooldown at
+        # 60 — so the formula only interpolates inside that range. Outside it the
+        # (level - min_level) term keeps going: below min_level it is negative and
+        # the cooldown GROWS (an unset level of 0 turned Stonestance's 12 min into
+        # 57 min, and level 25 into the ~35 min of the #187 report), above 60 it
+        # runs past the endpoint into negative seconds. Clamp to the anchors.
+        #
+        # An unknown level therefore reads as min_level, which yields base_seconds
+        # — the same figure the unscaled path takes straight from recast_time_ms,
+        # and the conservative one: you cannot own the discipline below min_level.
+        level = self.player.level if self.player.level is not None else min_level
+        level = max(min_level, min(level, 60))
         per_level = seconds_range / (60 - min_level)
         return int(base_seconds - ((level - min_level) * per_level))
