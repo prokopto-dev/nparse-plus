@@ -149,6 +149,32 @@ def test_own_who_row_authoritatively_updates_profile() -> None:
     assert rig.saves == 1
 
 
+def test_guildless_own_who_row_still_updates_level() -> None:
+    """The level harvest must not be nested under the guild check (#187).
+
+    PlayerTrackerHandler's self-match branch IS gated on ``and who.guild_name``
+    — it only wants the guild — so anything added inside it would work for
+    guilded characters and silently skip everyone else. This handler gives the
+    level its own condition; a guildless row is the case that proves it.
+    """
+    profile = PlayerInfo(name="Xantik", server="green", level=1)
+    rig = Rig(profile)
+    rig.bus.publish(
+        WhoPlayerEvent(
+            timestamp=T0,
+            player=WhoPlayer(
+                name="Xantik",
+                player_class=PlayerClass.MONK,
+                level=60,
+                guild_name=None,
+            ),
+        )
+    )
+    assert rig.player.level == 60
+    assert profile.level == 60
+    assert rig.saves == 1
+
+
 def test_other_players_who_rows_do_not_change_active_profile() -> None:
     profile = PlayerInfo(name="Xantik", server="green", level=54)
     rig = Rig(profile)
