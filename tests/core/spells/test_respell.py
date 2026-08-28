@@ -26,7 +26,7 @@ from nparseplus.core.spells.durations import (
     base_timer_duration_seconds,
     get_duration_seconds,
 )
-from nparseplus.core.timers import SpellRow, TimersService
+from nparseplus.core.timers import YOU_GROUP, SpellRow, TimersService
 
 SPIRIT_OF_WOLF = "You feel the spirit of wolf enter you."
 
@@ -414,3 +414,92 @@ def test_narrowing_the_menu_does_not_narrow_the_guess(ctx, spell_book) -> None:
     handler.handle_spell(spell_book.spell_by_name("Flash of Light"), " Joe ", 0, T0)
     assert [r.name for r in timers.snapshot()] == ["Flash of Light"]
     assert _spell_rows(timers) == []  # a CounterRow, not a countdown
+
+
+# -- a correction edits one row and no others --------------------------------
+
+
+def _stacked(spell_book, timers: TimersService) -> SpellTimerHandler:
+    """Two detrimental rows on same-named NPCs, which TimerRecast=StartNewTimer
+    keeps as separate countdowns sharing one (name, group)."""
+    handler = SpellTimerHandler(
+        EventBus(),
+        _player(),
+        spell_book,
+        timers,
+        spell_settings=Settings().spellwindow,
+        timer_recast=lambda: "StartNewTimer",
+    )
+    tashan = spell_book.spell_by_name("Tashan")
+    tashani = spell_book.spell_by_name("Tashani")
+    assert tashan.is_detrimental and tashani.is_detrimental
+    npc = _an_npc(spell_book)
+    handler.handle_spell(tashan, npc, 0, T0, [tashani])
+    handler.handle_spell(tashan, npc, 0, T0 + timedelta(seconds=30), [tashani])
+    return handler
+
+
+def test_correcting_a_stacked_row_does_not_delete_its_neighbour(spell_book) -> None:
+    """Going through add_spell would: its overwrite scan drops any other row
+    sharing the new (name, group), so correcting the SECOND stacked DoT onto a
+    name the first already carries silently erased a live countdown the user
+    never touched."""
+    timers = TimersService()
+    _stacked(spell_book, timers)
+    tashani = spell_book.spell_by_name("Tashani")
+
+    live = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    assert len(live) == 2, "the two casts should have stacked"
+
+    first = timers.respell_row(live[0], tashani, PlayerClass.SHAMAN, 60)
+    assert first is not None
+    remaining = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    assert len(remaining) == 2
+
+    second = timers.respell_row(remaining[1], tashani, PlayerClass.SHAMAN, 60)
+    assert second is not None
+    survivors = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    assert len(survivors) == 2, "the first correction's row was destroyed"
+    assert {r.name for r in survivors} == {"Tashani"}
+    # ...and they are still two distinct countdowns, not one duplicated.
+    assert len({r.ends_at for r in survivors}) == 2
+
+
+def test_a_correction_keeps_the_rows_place(spell_book) -> None:
+    """Appending would send the row to the bottom of the window mid-countdown."""
+    timers = TimersService()
+    _stacked(spell_book, timers)
+    before = [r.name for r in timers.snapshot()]
+    live = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    index = timers.snapshot().index(live[0])
+
+    timers.respell_row(live[0], spell_book.spell_by_name("Tashani"), PlayerClass.SHAMAN, 60)
+
+    after = timers.snapshot()
+    assert len(after) == len(before)
+    assert after[index].name == "Tashani"
+
+
+def test_a_correction_leaves_every_other_row_untouched(spell_book) -> None:
+    """The general rule the two cases above are instances of."""
+    timers = TimersService()
+    timers.add_spell(_row_for(spell_book, "Pack Spirit", "Spirit of Wolf"))
+    bystanders = [
+        timers.add_spell(
+            SpellRow(
+                name=name,
+                group=group,
+                updated_at=T0,
+                spell=spell_book.spell_by_name(name),
+                ends_at=T0 + timedelta(minutes=10),
+                total_duration_s=600.0,
+            )
+        )
+        for name, group in (("Spirit of Wolf", " Joe "), ("Levitate", YOU_GROUP))
+    ]
+    target = next(r for r in _spell_rows(timers) if r.name == "Pack Spirit")
+
+    timers.respell_row(target, spell_book.spell_by_name("Spirit of Wolf"), PlayerClass.SHAMAN, 40)
+
+    for row in bystanders:
+        assert row in timers.snapshot(), f"{row.name} in {row.group} was collateral damage"

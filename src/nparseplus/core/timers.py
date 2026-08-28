@@ -524,10 +524,26 @@ class TimersService:
         correction that leaves the row already past its end is left to expire
         on the next tick, which is the truth.
 
+        The replacement goes in AT THE ROW'S OWN POSITION and removes nothing
+        else — deliberately NOT through ``add_spell``, whose overwrite scan
+        drops any other row sharing the new (name, group). Under
+        ``TimerRecast=StartNewTimer`` several detrimental rows legitimately
+        share a name and group (stacked DoTs on same-named mobs, which is why
+        ``handle_spell`` passes ``overwrite=False`` for exactly that case), so
+        correcting a second stacked row onto a name a first one already
+        carries would silently delete a live countdown the user never touched.
+        A relabel is an edit to ONE row; destroying another is never the right
+        answer to it, and the cost — two rows sharing a name in a group where
+        that would not otherwise happen — is visible and recoverable, which
+        the deletion is not. Holding the index also keeps the row where it is
+        rather than sending it to the bottom of the window mid-countdown.
+
         Returns None when the row is no longer on screen: it can expire, or be
         overwritten by a fresh cast, while the context menu is open.
         """
-        if row not in self._rows:
+        try:
+            index = self._rows.index(row)
+        except ValueError:
             return None
         started_at = row.ends_at - timedelta(seconds=row.total_duration_s)
         # The SAME two functions SpellTimerHandler.handle_spell uses, so a
@@ -554,8 +570,9 @@ class TimersService:
             post_expiry_persist_s=post_expiry_persist_s,
             alternatives=[c for c in candidates if not _eq(c.name, spell.name)],
         )
-        self._rows.remove(row)
-        return self.add_spell(replacement)
+        self._rows[index] = replacement
+        self._notify()
+        return replacement
 
     # -- removals --------------------------------------------------------------
 
