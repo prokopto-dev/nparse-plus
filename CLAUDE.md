@@ -1871,12 +1871,22 @@ seal is region-only: sealing a plugin *window* would make every control in
 every add-on window dead, which is the opposite of "need clicks → add_window",
 and a test pins that.
 
-**Iterating `sample()`'s result is a call into the plugin's value, so it is
-inside the guard.** Only `sample()` itself was, and a plugin returning a bare
-widget rather than a sequence raised `TypeError` on the list comprehension
-outside it. That runs from `_populate_preview` during `set_edit_mode(True)`,
-so the escape did not cost that region its preview — it stopped POSITION MODE
-OPENING AT ALL, for every region and every built-in.
+**`sample()` is guarded in THREE places, because it is three calls into the
+plugin.** Calling it, iterating what it returned, and what the entries turn
+out to be. Only the first was guarded: a plugin returning a bare widget raised
+`TypeError` on the list comprehension outside it, which runs from
+`_populate_preview` during `set_edit_mode(True)` — so the escape did not cost
+that region its preview, it stopped POSITION MODE OPENING AT ALL, for every
+region and every built-in. Narrowing that catch to `TypeError` then left a
+second hole: a generator can yield a widget and THEN raise, and a custom
+`__iter__`/`__next__` can raise anything, so materialising has its own
+`except Exception` and `iter()` is what distinguishes "not a sequence" from
+"raised while iterating". The third is the entry screen, and it is
+`isinstance(item, QWidget)` and NOT `hasattr(item, "deleteLater")` — QObject
+has that method too, so a bare QObject reached the overlay, where
+`_discard_preview`'s `layout.removeWidget(item)` rejects it. That one raises
+on the way OUT, so the overlay never finished relocking and was left
+interactive over the game: a worse resting state than the entry-side bug.
 
 **A region factory's result is type-screened where it is first seen.**
 `OverlayRegionSpec` documents that the factory returns a QWidget and a region
