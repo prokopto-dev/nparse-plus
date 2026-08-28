@@ -65,18 +65,61 @@ def test_spirit_of_wolf_resolves_by_the_players_class(
 @pytest.mark.parametrize(
     ("player_class", "level", "expected"),
     [
-        # Ten spells share "Your eyes tingle."; these two were swapping.
-        (PlayerClass.SHAMAN, 30, "Ultravision"),  # SHAMAN 29 beats Spirit Sight 9
-        (PlayerClass.MAGICIAN, 16, "See Invisible"),  # the only one a mage has
+        # Ten spells share "Your eyes tingle.". These levels are ones the
+        # unfixed matcher got WRONG — checked against EQTool's own function, so
+        # each is a real regression guard rather than a case that passed anyway.
+        # (The two levels #177 quoted, shaman 30 and magician 16, happen to be
+        # among the ones it already got right; they are kept below as coverage,
+        # not as the guard.)
+        (PlayerClass.SHAMAN, 45, "Ultravision"),  # was See Invisible (no shaman entry)
+        (PlayerClass.SHAMAN, 50, "Ultravision"),  # was Acumen (shaman 56, not yet)
+        (PlayerClass.SHAMAN, 25, "Spirit Sight"),  # was Ultravision (shaman 29, not yet)
+        (PlayerClass.MAGICIAN, 30, "See Invisible"),  # was Ultravision — no mage entry
+        (PlayerClass.MAGICIAN, 55, "See Invisible"),  # was Acumen — likewise
+        (PlayerClass.WIZARD, 25, "See Invisible"),  # was Ultravision
+        (PlayerClass.ENCHANTER, 40, "Ultravision"),  # was See Invisible (enc 8 vs 29)
+        # Already correct before the fix; kept so a future change cannot quietly
+        # break what did work.
+        (PlayerClass.SHAMAN, 30, "Ultravision"),
+        (PlayerClass.MAGICIAN, 16, "See Invisible"),
         (PlayerClass.ENCHANTER, 29, "Ultravision"),
         (PlayerClass.WIZARD, 10, "See Invisible"),
-        (PlayerClass.SHAMAN, 9, "Spirit Sight"),  # not Ultravision yet
+        (PlayerClass.SHAMAN, 9, "Spirit Sight"),
     ],
 )
 def test_see_invisible_and_ultravision_do_not_swap(
     spell_book: SpellBook, player_class: PlayerClass, level: int, expected: str
 ) -> None:
     assert _guess(spell_book.cast_on_you(EYES_TINGLE), player_class, level) == expected
+
+
+def test_the_eyes_tingle_guard_actually_discriminates(spell_book: SpellBook) -> None:
+    """The cases above are only guards if the OLD behaviour failed them.
+
+    EQTool's rule transcribed from SpellDurations.cs:71 at d8e8084f — the code
+    this repo shipped before #177 — so the test proves the fix changed
+    something rather than asserting what was already true.
+    """
+
+    def eqtool_match(spells, level: int):
+        smallest, closest = level, None
+        for spell in spells:
+            for class_level in spell.class_levels.values():
+                if abs(class_level - level) < smallest:
+                    closest, smallest = spell, abs(class_level - level)
+        return closest
+
+    candidates = spell_book.cast_on_you(EYES_TINGLE)
+    for player_class, level, expected in (
+        (PlayerClass.SHAMAN, 45, "Ultravision"),
+        (PlayerClass.MAGICIAN, 30, "See Invisible"),
+        (PlayerClass.ENCHANTER, 40, "Ultravision"),
+    ):
+        before = eqtool_match(candidates, level)
+        assert before is not None and before.name != expected, (
+            f"{player_class.name} {level} was already {expected} before the fix"
+        )
+        assert _guess(candidates, player_class, level) == expected
 
 
 def test_rule_one_prefers_the_best_version_you_know(spell_book: SpellBook) -> None:
