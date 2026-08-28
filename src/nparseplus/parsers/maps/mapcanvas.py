@@ -607,6 +607,17 @@ class MapCanvas(QGraphicsView):
         if stale:
             self._schedule_render()
 
+    def sync_direction_arrows(self):
+        """Apply the direction-arrow setting to markers already on screen.
+
+        The setting is read per render anyway; this is what makes the flip
+        land without waiting for the next location fix or map reload.
+        """
+        if not self._data:
+            return
+        for player in self._data.players.values():
+            player.apply_direction_arrow()
+
     def add_player(self, name, timestamp, location, tracking_distance=None):
         if name not in self._data.players:
             self._data.players[name] = Player(name=name, location=location, timestamp=timestamp)

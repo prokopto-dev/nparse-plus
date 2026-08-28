@@ -1464,6 +1464,13 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
             "own location — it only hides theirs."
         )
         form.addRow("Show other players' dots", self._maps_show_others)
+        self._maps_show_arrow = QCheckBox(self)
+        self._maps_show_arrow.setChecked(bool(self._lc("maps", "show_direction_arrow", True)))
+        self._maps_show_arrow.setToolTip(
+            "Draw the heading arrow beside player markers. Off leaves the plain "
+            "colored circle. Applies immediately — no restart."
+        )
+        form.addRow("Show direction arrow on player markers", self._maps_show_arrow)
 
         # Panning was Ctrl+drag and nothing said so, while a plain drag did
         # nothing at all — "I cannot drag the map" is a discoverability report,
@@ -1571,6 +1578,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._lc_set("maps", "grid_line_width", self._maps_grid_width.value())
         self._lc_set("maps", "map_font_scale", self._maps_font_scale.value())
         self._lc_set("maps", "show_other_players", self._maps_show_others.isChecked())
+        self._lc_set("maps", "show_direction_arrow", self._maps_show_arrow.isChecked())
         self._lc_set("maps", "pan_mode", self._maps_pan_mode.currentData())
         self._lc_set("maps", "backdrop_opacity", self._maps_backdrop.value())
         self._lc_set("maps", "backdrop_fade_idle", self._maps_fade_idle.isChecked())

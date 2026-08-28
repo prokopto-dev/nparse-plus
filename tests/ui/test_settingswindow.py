@@ -173,6 +173,22 @@ def test_pan_mode_picker_round_trips_the_legacy_key(qtbot) -> None:
     assert reopened._maps_pan_mode.currentData() == PAN_CTRL_DRAG
 
 
+def test_direction_arrow_box_round_trips_the_legacy_key(qtbot) -> None:
+    """Default on for a document written before the key existed (#180) — the
+    arrow is what the map has always drawn, so an upgrade must not drop it."""
+    legacy = _legacy()
+    assert "show_direction_arrow" not in legacy["maps"]
+    window = _window(qtbot, legacy=legacy)
+    assert window._maps_show_arrow.isChecked()
+
+    window._maps_show_arrow.setChecked(False)
+    window.apply()
+    assert legacy["maps"]["show_direction_arrow"] is False
+
+    reopened = _window(qtbot, legacy=legacy)
+    assert not reopened._maps_show_arrow.isChecked()
+
+
 def test_windows_grid_writes_both_families_and_applies(qtbot) -> None:
     settings = Settings()
     settings.windows["dps"] = WindowState(opacity=1.0, always_on_top=True)

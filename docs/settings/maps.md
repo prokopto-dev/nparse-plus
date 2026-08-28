@@ -10,6 +10,7 @@ Display tuning for the [Maps window](../windows/maps.md).
 | **Grid line width** | Thickness of the coordinate grid. |
 | **Map label size** | Scales POI labels, player names, and spawn countdowns. |
 | **Show other players' dots** | Master toggle for shared player dots ([Sharing](../features/sharing.md)). |
+| **Show direction arrow on player markers** | Draw the heading arrow beside a player marker. Off leaves the plain colored circle — your own dot and other players' shared dots alike. Applies immediately to markers already on screen. |
 | **Pan the map with** | Whether a plain **click and drag** pans the map, or whether it takes **Ctrl + click and drag**. Applies immediately. |
 | **Per-Z-layer opacity** | Opacity per elevation layer when explicit Z layers are on. |
 

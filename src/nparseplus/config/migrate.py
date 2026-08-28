@@ -127,6 +127,9 @@ def _migrate_maps(section: dict[str, Any]) -> MapSettings:
         grid_line_width=_ranged(section, "grid_line_width", defaults.grid_line_width, 1, 10),
         show_poi=_get(section, "show_poi", bool, defaults.show_poi),
         show_grid=_get(section, "show_grid", bool, defaults.show_grid),
+        show_direction_arrow=_get(
+            section, "show_direction_arrow", bool, defaults.show_direction_arrow
+        ),
         show_mouse_location=_get(
             section, "show_mouse_location", bool, defaults.show_mouse_location
         ),

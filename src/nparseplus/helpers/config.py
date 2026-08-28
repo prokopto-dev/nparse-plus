@@ -151,6 +151,12 @@ def verify_settings():
         data["maps"].get("pan_mode", PAN_DRAG), PAN_DRAG, lambda x: x in PAN_MODES
     )
     data["maps"]["scale"] = get_setting(data["maps"].get("scale", 0.07), 0.07)
+    # The heading arrow beside a player marker; off leaves the plain colored
+    # circle. Default on, so a config written before the key existed keeps the
+    # marker it has always drawn.
+    data["maps"]["show_direction_arrow"] = get_setting(
+        data["maps"].get("show_direction_arrow", True), True
+    )
     data["maps"]["show_grid"] = get_setting(data["maps"].get("show_grid", True), True)
     data["maps"]["show_zone_lines"] = get_setting(data["maps"].get("show_zone_lines", True), True)
     data["maps"]["show_mouse_location"] = get_setting(

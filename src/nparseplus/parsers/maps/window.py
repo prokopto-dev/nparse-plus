@@ -306,6 +306,7 @@ class Maps(ParserWindow):
     def sync_map_chrome(self):
         """Settings-window changes reach the chrome through config_updated."""
         self._sync_toolbar()
+        self._map.sync_direction_arrows()
         self._backdrop_faded = False
         self._map.apply_backdrop_opacity(config.data["maps"].get("backdrop_opacity", 100))
         self._arm_idle_fade()

@@ -29,6 +29,11 @@ def scaled_font_size(base: int) -> int:
     return max(1, min(7, round(base * map_font_pct() / 100)))
 
 
+def show_direction_arrow() -> bool:
+    """Whether player markers draw the heading arrow (off = a plain circle)."""
+    return bool(config.data.get("maps", {}).get("show_direction_arrow", True))
+
+
 @cache
 def _load_pixmap(path: str) -> QPixmap:
     """Shared, load-once marker pixmaps (QPixmap is implicitly shared) —
@@ -151,6 +156,9 @@ class Player(QGraphicsItemGroup):
         self.directional.setPen(QPen(marker_color, 1))
         self.directional.setBrush(QBrush(marker_color))
         self.directional.setVisible(False)
+        # A heading only exists once a second fix arrives; kept so the setting
+        # can be flipped back on without waiting for the player to move again.
+        self.heading_known = False
         self.nametag = QGraphicsTextItem()
         self.nametag.setPos(10, -15)
         self.addToGroup(self.icon)
@@ -174,7 +182,10 @@ class Player(QGraphicsItemGroup):
                     self.previous_location.y,
                 )
             )
-            self.directional.setVisible(True)
+            self.heading_known = True
+        # Re-derived rather than only set on a new heading, so a settings flip
+        # reaches this marker on the next render too.
+        self.apply_direction_arrow()
         self.setScale(scale)
         self.setPos(self.location.x, self.location.y)
         # The nametag text only depends on the name (fixed) and the label
@@ -190,6 +201,14 @@ class Player(QGraphicsItemGroup):
                     self.name if self.name != "__you__" else "You",
                 )
             )
+
+    def apply_direction_arrow(self):
+        """Show the arrow only where a heading is known and the setting allows.
+
+        The live toggle calls this on markers already drawn, which is why the
+        heading is remembered rather than implied by the item's visibility.
+        """
+        self.directional.setVisible(self.heading_known and show_direction_arrow())
 
 
 class SpawnPoint(QGraphicsItemGroup):
