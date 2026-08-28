@@ -54,7 +54,7 @@ class TickerPlugin(NParsePlugin):
         id="kill-ticker",
         name="Kill Ticker",
         requires_sdk=">=1.5,<2",
-        min_app_version="2.28.0",   # both — see Compatibility below
+        min_app_version="2.29.0",   # both — see Compatibility below
     )
 
     def __init__(self):
@@ -94,7 +94,7 @@ no restart — including while position mode is up.
 place a region differs from a purely SDK-side feature. That range is weighed
 against the SDK version the app *resolved*, while `add_overlay_region` lives
 in the *host* — and every released app declares an SDK floor rather than a
-pin. App v2.27.0 asks for `nparseplus-sdk>=1.4,<2`, so a `pip`/source install
+pin. App v2.28.0 asks for `nparseplus-sdk>=1.4,<2`, so a `pip`/source install
 of it resolves SDK 1.5 quite legitimately once that is published; the range
 passes, the method is absent, and your plugin fails inside `activate()`
 instead of being refused cleanly.
@@ -103,7 +103,7 @@ So pin the app release that first shipped regions as well:
 
 ```python
 requires_sdk=">=1.5,<2",
-min_app_version="2.28.0",
+min_app_version="2.29.0",
 ```
 
 Full reasoning in

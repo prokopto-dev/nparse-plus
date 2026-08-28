@@ -848,7 +848,7 @@ def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path)
     """The gap ``min_app_version`` closes, exercised end to end.
 
     ``requires_sdk`` is weighed against the SDK the app RESOLVED, and every
-    released app declares an SDK floor rather than a pin — v2.27.0 asks for
+    released app declares an SDK floor rather than a pin — v2.28.0 asks for
     ``nparseplus-sdk>=1.4,<2``, so a source install of it resolves SDK 1.5
     quite legitimately once that is published. The range then passes while
     ``HostPluginContext.add_overlay_region`` does not exist on that host, and
@@ -870,7 +870,7 @@ def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path)
     backend = build_backend(settings, speaker=NullSpeaker())
     # The last release that shipped no regions.
     host = PluginHost(
-        settings, backend, "2.27.0", request_save=lambda: None, plugins_dir_override=directory
+        settings, backend, "2.28.0", request_save=lambda: None, plugins_dir_override=directory
     )
     try:
         host.discover_and_load()
@@ -878,7 +878,7 @@ def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path)
         (loaded,) = [row for row in host.statuses() if row.plugin_id == "kill-ticker"]
         assert loaded.status == "incompatible"
         assert loaded.error is not None
-        assert "2.28.0" in loaded.error
+        assert "2.29.0" in loaded.error
         # Refused BEFORE activate(), which is the whole point: an AttributeError
         # out of activate() reads as a broken add-on rather than an old app.
         assert "activate" not in loaded.error
