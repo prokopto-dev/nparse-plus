@@ -17,7 +17,6 @@
 # data/assets/icon.svg ride along, and the two this file names by path are
 # regenerated in place by tools/gen_icons.py + packaging/make_icns.sh.
 
-import re
 import sys
 from pathlib import Path
 
@@ -30,11 +29,13 @@ ROOT = Path(SPECPATH).parent  # noqa: F821 - SPECPATH is a PyInstaller global
 # same version Finder/Spotlight show as the app shows in its settings window.
 # nparseplus isn't importable here (the spec runs under PyInstaller's own
 # interpreter, before the Analysis), so parse the assignment.
-_init = (ROOT / "src" / "nparseplus" / "__init__.py").read_text(encoding="utf-8")
-_match = re.search(r'^__version__ = "([^"]+)"$', _init, re.MULTILINE)
-if not _match:
-    raise SystemExit("cannot find __version__ in src/nparseplus/__init__.py")
-VERSION = _match.group(1)
+# appversion.py is a sibling of this spec; the parsing and the Windows
+# version-tuple arithmetic live there so they can be tested (see
+# tests/test_release_workflow.py), which they cannot be from inside a spec.
+sys.path.insert(0, str(ROOT / "packaging"))
+from appversion import read_version, windows_version_tuple  # noqa: E402
+
+VERSION = read_version((ROOT / "src" / "nparseplus" / "__init__.py").read_text(encoding="utf-8"))
 
 datas = [
     (str(ROOT / "data"), "data"),
@@ -140,8 +141,10 @@ if sys.platform == "win32":
         VSVersionInfo,
     )
 
-    # VERSIONINFO wants a 4-part numeric tuple; semver gives us three parts.
-    _parts = tuple(int(p) for p in VERSION.split(".")[:3]) + (0,)
+    # A beta version ("2.30.0-beta.1") has no integer in its third
+    # dot-separated field, so this is not the one-liner it looks like — see
+    # appversion.windows_version_tuple.
+    _parts = windows_version_tuple(VERSION)
     version_args["version"] = VSVersionInfo(
         ffi=FixedFileInfo(filevers=_parts, prodvers=_parts),
         kids=[
