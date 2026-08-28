@@ -25,7 +25,7 @@ EXAMPLES = REPO_ROOT / "examples" / "plugins"
 #: supporting release is a permanent fact about history, so a test that ties
 #: it to whatever the tree currently reads would fail on the next unrelated
 #: release and push someone into raising a floor that is already correct.
-REGION_MIN_APP_VERSION = "2.28.0"
+REGION_MIN_APP_VERSION = "2.29.0"
 
 
 class _FakeStorage:
@@ -325,14 +325,14 @@ def test_the_region_example_pins_the_app_release_that_supports_it() -> None:
 
     The range is weighed against the SDK the app RESOLVED, not the contract it
     IMPLEMENTS, and every released app declares an SDK floor rather than a pin
-    — v2.27.0 asks for ``nparseplus-sdk>=1.4,<2``, so a plain pip/source
+    — v2.28.0 asks for ``nparseplus-sdk>=1.4,<2``, so a plain pip/source
     install of it resolves SDK 1.5 quite legitimately once that is on PyPI.
     ``ctx.add_overlay_region`` lives in the HOST, so the range would pass and
     ``activate()`` would then raise ``AttributeError``. ``min_app_version`` is
     the one input to the handshake that comes from the host itself.
 
     Checked against a CONSTANT, never against ``nparseplus.__version__``. The
-    pin is a permanent historical fact — "regions first shipped in 2.28.0" —
+    pin is a permanent historical fact — "regions first shipped in 2.29.0" —
     and comparing it to the tree's own version made it a moving target: the
     correct pin would start failing the moment an unrelated 2.29 release
     landed, which either blocks that release or pressures whoever hits it into
