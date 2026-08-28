@@ -503,6 +503,50 @@ def test_a_factory_returning_a_non_widget_is_refused_without_taking_the_rest(
         context["backend"].stop()
 
 
+# A spec whose key is not a str, and whose __str__ raises when interpolated.
+EXPLODING_KEY_PLUGIN = PLUGIN.replace(
+    '                key="main",',
+    "                key=_Exploding(),",
+).replace(
+    "class _Plugin(NParsePlugin):",
+    """class _Exploding:
+    def __str__(self):
+        raise RuntimeError("key __str__ boom")
+
+    __repr__ = __str__
+
+
+class _Plugin(NParsePlugin):""",
+)
+
+
+def test_a_non_str_region_key_is_refused_without_being_interpolated(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """``spec.key`` is safe to READ, and unsafe to FORMAT.
+
+    The screen above proves the spec is an ``OverlayRegionSpec``, but the
+    dataclass validates nothing, so ``key`` can still be any object — and
+    building the namespaced region key interpolates it, which calls the
+    plugin's ``__str__`` outside every guard. Same shape as the non-spec
+    screen, one field in, so the report names the position and the type and
+    never the value.
+    """
+    context = wire(qtbot, tmp_path, EXPLODING_KEY_PLUGIN, "ticker")
+    try:
+        with caplog.at_level("WARNING"):
+            pass
+        overlay = context["overlay"]
+        # The region is dropped and the overlay keeps exactly its built-ins...
+        assert list(overlay._region_hosts()) == ["lanes", "utility", "alert", "bars"]
+        # ...and the sweep completed, so the plugin manager page still exists.
+        assert context["ui"].extra_pages
+        overlay.set_edit_mode(True)
+        overlay.set_edit_mode(False)
+    finally:
+        context["backend"].stop()
+
+
 def test_a_malformed_spec_is_refused_without_being_dereferenced(
     qtbot, tmp_path: Path, caplog
 ) -> None:

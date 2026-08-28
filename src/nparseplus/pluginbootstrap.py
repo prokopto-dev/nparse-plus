@@ -882,6 +882,20 @@ def _build_plugin_regions(
                 type(spec).__name__,
             )
             continue
+        if not isinstance(spec.key, str):
+            # ``spec.key`` is safe to READ (attribute access calls nothing),
+            # but interpolating it below calls ``__str__``, which is the
+            # plugin's code and can raise — outside every guard, taking the
+            # whole sweep and the plugin manager page with it. Same shape as
+            # the non-spec screen above, one field in: the report names the
+            # position and the type and never the value.
+            logger.warning(
+                "plugin %s declared overlay region #%d with a %s key, not a str; region skipped",
+                loaded.meta.id,
+                index,
+                type(spec.key).__name__,
+            )
+            continue
         region_key = f"plugin.{loaded.meta.id}.{spec.key}"
         # The context is built INSIDE the guard with the factory, not before
         # it: assembling it reaches into ``event_overlay``, so a stand-in that
