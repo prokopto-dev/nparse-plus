@@ -140,6 +140,27 @@ def create_plugin():
     return _Plugin()
 """
 
+# A plugin that registers something that is not a spec at all. add_overlay_region
+# appends whatever it is handed, so this is reachable at runtime.
+MALFORMED_SPEC_PLUGIN = """
+from nparseplus_sdk import NParsePlugin, OverlayRegionSpec, PluginMeta
+
+
+class _Plugin(NParsePlugin):
+    meta = PluginMeta(id="bogus", name="Bogus", version="1.0.0", requires_sdk=">=1.5,<2")
+
+    def activate(self, ctx):
+        ctx.add_overlay_region(None)
+        ctx.add_overlay_region("not a spec")
+
+    def deactivate(self):
+        pass
+
+
+def create_plugin():
+    return _Plugin()
+"""
+
 # A factory that hands back something that is not a QWidget at all.
 JUNK_PLUGIN = """
 from nparseplus_sdk import NParsePlugin, OverlayRegionSpec, PluginMeta
@@ -477,6 +498,33 @@ def test_a_factory_returning_a_non_widget_is_refused_without_taking_the_rest(
         assert not [r for r in caplog.records if "refused by the overlay" in r.message]
         # And the rest of build_plugin_ui ran — the plugin manager page is the
         # thing an abort would have cost every user.
+        assert ui.extra_pages
+    finally:
+        context["backend"].stop()
+
+
+def test_a_malformed_spec_is_refused_without_being_dereferenced(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """``add_overlay_region`` appends whatever it is handed, so a plugin can
+    register ``None``. Reading ``spec.key`` to build the region key happened
+    BEFORE any guard, so that aborted the whole startup sweep — every other
+    plugin's UI and the plugin manager page with it. The screen therefore runs
+    before the first attribute access, and reports the position and the type
+    rather than the key, because dereferencing is the unsafe part."""
+    with caplog.at_level("WARNING"):
+        context = wire(qtbot, tmp_path, MALFORMED_SPEC_PLUGIN, "bogus")
+    try:
+        ui, overlay = context["ui"], context["overlay"]
+
+        assert ui.regions_by_key == {}
+        assert list(overlay._region_hosts()) == ["lanes", "utility", "alert", "bars"]
+        # Both bad specs reported, each naming its position and type.
+        reported = [r.message for r in caplog.records if "not an OverlayRegionSpec" in r.message]
+        assert len(reported) == 2
+        assert "NoneType" in reported[0] and "str" in reported[1]
+        # The sweep finished: the plugin manager page an abort would have cost
+        # every user is still there.
         assert ui.extra_pages
     finally:
         context["backend"].stop()
