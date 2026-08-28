@@ -37,6 +37,7 @@ LEGACY_CONFIG = {
         "opacity": 80,
         "other_z_alpha": 15,
         "scale": 0.1136,
+        "show_direction_arrow": False,
         "show_grid": False,
         "show_mouse_location": True,
         "show_poi": False,
@@ -104,6 +105,7 @@ def test_migrate_maps_and_spellwindow(tmp_path: Path) -> None:
     assert (maps.line_width, maps.grid_line_width) == (3, 2)
     assert maps.show_poi is False
     assert maps.show_grid is False
+    assert maps.show_direction_arrow is False
     assert maps.use_z_layers is True
     assert (maps.closest_z_alpha, maps.current_z_alpha, maps.other_z_alpha) == (25, 90, 15)
     assert maps.last_zone == "Neriak Foreign Quarter"

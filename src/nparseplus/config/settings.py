@@ -226,6 +226,7 @@ class MapSettings(BaseModel):
     grid_line_width: int = Field(default=1, ge=1, le=10)
     show_poi: bool = True
     show_grid: bool = True
+    show_direction_arrow: bool = True
     show_mouse_location: bool = True
     use_z_layers: bool = False
     closest_z_alpha: int = Field(default=20, ge=1, le=100)
