@@ -896,6 +896,50 @@ QOBJECT_SAMPLE_PLUGIN = PLUGIN.replace(
 )
 
 
+# sample() returning an object whose __iter__ ITSELF raises. Deliberately not
+# a generator: iter() on a generator object just hands it back without running
+# any of it, so MID_ITERATION_PLUGIN exercises __next__ and never this.
+HOSTILE_ITER_PLUGIN = PLUGIN.replace(
+    """        self.region = PluginOverlayRegion(rctx)
+        return self.region""",
+    """        class Hostile:
+            def __iter__(self):
+                raise RuntimeError("__iter__ boom")
+
+        class R(PluginOverlayRegion):
+            def sample(self):
+                return Hostile()
+
+        self.region = R(rctx)
+        return self.region""",
+)
+
+
+def test_a_sample_whose_iter_raises_does_not_break_position_mode(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """``iter()`` runs the plugin's ``__iter__``, so it is a call like any
+    other and TypeError is only its "not iterable" answer.
+
+    This is a THIRD plugin call, distinct from ``sample()`` and from
+    ``list()``: it happens before the broad guard around materialisation is
+    reached, so catching only TypeError here let anything else escape
+    ``set_edit_mode(True)`` — i.e. position mode did not open, for every
+    region and every built-in.
+    """
+    context = wire(qtbot, tmp_path, HOSTILE_ITER_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        with caplog.at_level("ERROR"):
+            overlay.set_edit_mode(True)
+        assert any("iterator was being obtained" in r.message for r in caplog.records)
+        assert overlay._preview_widgets  # the built-ins still previewed
+        overlay.set_edit_mode(False)
+        assert overlay._edit_mode is False
+    finally:
+        context["backend"].stop()
+
+
 def test_a_sample_that_raises_mid_iteration_does_not_break_position_mode(
     qtbot, tmp_path: Path, caplog
 ) -> None:

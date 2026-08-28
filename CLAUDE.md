@@ -1881,7 +1881,10 @@ region and every built-in. Narrowing that catch to `TypeError` then left a
 second hole: a generator can yield a widget and THEN raise, and a custom
 `__iter__`/`__next__` can raise anything, so materialising has its own
 `except Exception` and `iter()` is what distinguishes "not a sequence" from
-"raised while iterating". The third is the entry screen, and it is
+"raised while iterating" — and `iter()` is itself a third call, so it carries
+both a `TypeError` branch (the not-iterable answer) and a broad one, since a
+generator can never exercise it: `iter()` on a generator object hands it back
+without running any of it. The third is the entry screen, and it is
 `isinstance(item, QWidget)` and NOT `hasattr(item, "deleteLater")` — QObject
 has that method too, so a bare QObject reached the overlay, where
 `_discard_preview`'s `layout.removeWidget(item)` rejects it. That one raises
