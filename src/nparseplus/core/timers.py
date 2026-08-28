@@ -27,7 +27,11 @@ from typing import NamedTuple
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from nparseplus.core.enums import PlayerClass
-from nparseplus.core.spells.durations import get_duration_seconds
+from nparseplus.core.spells.durations import (
+    base_timer_duration_seconds,
+    get_duration_seconds,
+    npc_grace_seconds,
+)
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.spells.spells_us import SPACE_YOU, SpellBook
 
@@ -526,7 +530,13 @@ class TimersService:
         if row not in self._rows:
             return None
         started_at = row.ends_at - timedelta(seconds=row.total_duration_s)
-        duration_s = float(get_duration_seconds(spell, player_class, player_level))
+        # The SAME two functions SpellTimerHandler.handle_spell uses, so a
+        # correction lands on the countdown the matcher would have produced had
+        # it named this spell: the discipline override where there is one, and
+        # the grace tick a detrimental row on an NPC gets.
+        duration_s = base_timer_duration_seconds(
+            spell, player_class, player_level
+        ) + npc_grace_seconds(spell, on_npc=not row.is_target_player)
         # The full candidate set, minus whichever one is now chosen — so the
         # correction is reversible and a third candidate stays reachable.
         candidates = [row.spell, *row.alternatives]

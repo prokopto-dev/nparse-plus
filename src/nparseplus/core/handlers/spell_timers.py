@@ -38,7 +38,10 @@ from nparseplus.core.events import (
 from nparseplus.core.handlers.base import BaseHandler
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.counters import CounterLists, load_counter_lists
-from nparseplus.core.spells.durations import get_duration_seconds
+from nparseplus.core.spells.durations import (
+    base_timer_duration_seconds,
+    npc_grace_seconds,
+)
 from nparseplus.core.spells.matching import (
     log_candidates,
     match_closest_level_to_spell,
@@ -111,17 +114,6 @@ _SELF_SPELLS_WITHOUT_COMPLETION_MESSAGE = frozenset(
 )
 
 # Fixed duration overrides for disciplines (SpellHandlerService.Handle).
-_DISCIPLINE_DURATION_OVERRIDES_S = {
-    "Voiddance Discipline": 8,
-    "Weapon Shield Discipline": 20,
-    "Deftdance Discipline": 15,
-    "Furious Discipline": 9,
-    "Defensive Discipline": 180,
-    "Evasive Discipline": 180,
-    "Nimble Discipline": 12,
-    "Puretone Discipline": 240,
-}
-
 # Discipline cooldown scaling: name -> (base seconds, min level, seconds range).
 # Values transcribed literally from SpellHandlerService.Handle, including the
 # Innerflame quirk (base 60min but a 30->26min scaling range).
@@ -365,13 +357,13 @@ class SpellTimerHandler(BaseHandler):
             )
             return
 
+        # Shared with TimersService.respell_row so a corrected guess counts down
+        # exactly as it would have had the matcher named this spell (#177).
         duration = timedelta(
-            seconds=get_duration_seconds(spell, self.player.player_class, self.player.level)
+            seconds=base_timer_duration_seconds(
+                spell, self.player.player_class, self.player.level, delay_offset_ms
+            )
         )
-        override = _DISCIPLINE_DURATION_OVERRIDES_S.get(spell.name)
-        if override is not None:
-            duration = timedelta(seconds=override)
-        duration += timedelta(milliseconds=delay_offset_ms)
 
         if "Discipline" in spell.name and target_name == YOU_GROUP:
             self.bus.publish(
@@ -384,11 +376,14 @@ class SpellTimerHandler(BaseHandler):
         # on an NPC under TimerRecast=StartNewTimer (stacked DoTs on several
         # same-named mobs each keep their own row).
         overwrite = True
-        if is_npc and spell.is_detrimental:
-            # Extra tick so the row outlives the "spell has worn off" line.
-            duration += timedelta(seconds=6)
-            if self.timer_recast() == "StartNewTimer" and spell.name not in ROOT_SPELLS:
-                overwrite = False
+        duration += timedelta(seconds=npc_grace_seconds(spell, on_npc=is_npc))
+        if (
+            is_npc
+            and spell.is_detrimental
+            and self.timer_recast() == "StartNewTimer"
+            and spell.name not in ROOT_SPELLS
+        ):
+            overwrite = False
 
         self.timers.add_spell(
             SpellRow(
@@ -401,10 +396,30 @@ class SpellTimerHandler(BaseHandler):
                 total_duration_s=duration.total_seconds(),
                 detrimental=spell.is_detrimental,
                 post_expiry_persist_s=self._post_expiry_persist_s(spell),
-                alternatives=list(alternatives),
+                alternatives=[s for s in alternatives if self._is_correctable(s)],
             ),
             overwrite=overwrite,
         )
+
+    def _is_correctable(self, spell: Spell) -> bool:
+        """Whether a countdown row may be relabelled as ``spell`` (#177).
+
+        A correction rebuilds one ``SpellRow`` in place, so it can only offer
+        candidates this method would ALSO have answered with a plain countdown.
+        A counter spell returns above as a ``CounterRow`` (a tally, no
+        countdown at all), and a reuse-timer spell or a discipline puts a
+        second cooldown row beside the buff — neither of which a relabel
+        creates. Offering them would hand the user a row of the wrong kind
+        with no tally and no cooldown, which is worse than the mis-guess.
+
+        Only the menu is narrowed; the matcher's own guess is untouched, and
+        such a spell still gets its proper handling when it is the guess.
+        """
+        if self.counters.needs_count(spell.name):
+            return False
+        if spell.name.endswith("Discipline"):
+            return False
+        return not any(spell.name.casefold() == n.casefold() for n in SPELLS_THAT_NEED_TIMERS)
 
     def _post_expiry_persist_s(self, spell: Spell) -> float:
         """Seconds a just-expired row lingers as a rebuff prompt (#16). 0 unless

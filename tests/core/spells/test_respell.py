@@ -14,12 +14,18 @@ from datetime import timedelta
 from tests.core.spells.conftest import T0, make_line
 
 from nparseplus.config.settings import Settings
+from nparseplus.core.bus import EventBus
 from nparseplus.core.enums import PlayerClass
 from nparseplus.core.events import SpellCastOnYouEvent
 from nparseplus.core.handlers.spell_timers import SpellTimerHandler
 from nparseplus.core.parsers.spell_cast_on_other import SpellCastOnOtherParser
 from nparseplus.core.parsers.you_finish_casting import YouFinishCastingParser
-from nparseplus.core.spells.durations import get_duration_seconds
+from nparseplus.core.player import ActivePlayer
+from nparseplus.core.spells.durations import (
+    DISCIPLINE_DURATION_OVERRIDES_S,
+    base_timer_duration_seconds,
+    get_duration_seconds,
+)
 from nparseplus.core.timers import SpellRow, TimersService
 
 SPIRIT_OF_WOLF = "You feel the spirit of wolf enter you."
@@ -276,3 +282,135 @@ def test_respell_clears_a_stamped_expiry(spell_book) -> None:
         row, spell_book.spell_by_name("Spirit of Wolf"), PlayerClass.SHAMAN, 40
     )
     assert new is not None and new.expired_at is None
+
+
+# -- a correction lands where the matcher would have -------------------------
+
+
+def _handler_row(spell_book, spell_name: str, target: str) -> SpellRow:
+    """The row the matcher WOULD have produced had it named this spell."""
+    timers = TimersService()
+    handler = SpellTimerHandler(
+        EventBus(),
+        _player(),
+        spell_book,
+        timers,
+        spell_settings=Settings().spellwindow,
+    )
+    handler.handle_spell(spell_book.spell_by_name(spell_name), target, 0, T0)
+    return next(r for r in _spell_rows(timers) if not r.is_cooldown)
+
+
+def _player() -> ActivePlayer:
+    player = ActivePlayer()
+    player.player_class = PlayerClass.SHAMAN
+    player.level = 40
+    return player
+
+
+def _an_npc(spell_book) -> str:
+    return next(iter(sorted(spell_book.npcs)))
+
+
+def test_correcting_a_detrimental_on_an_npc_keeps_the_grace_tick(spell_book) -> None:
+    """A detrimental row on an NPC gets one extra tick so it outlives the
+    "spell has worn off" line. The correction has to apply it too, or a
+    corrected row is six seconds shorter than the same spell guessed right.
+    """
+    npc = _an_npc(spell_book)
+    expected = _handler_row(spell_book, "Tashan", npc)
+
+    timers = TimersService()
+    handler = SpellTimerHandler(
+        EventBus(), _player(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    handler.handle_spell(
+        spell_book.spell_by_name("Snare"), npc, 0, T0, [spell_book.spell_by_name("Tashan")]
+    )
+    row = next(r for r in _spell_rows(timers) if not r.is_cooldown)
+    corrected = timers.respell_row(row, spell_book.spell_by_name("Tashan"), PlayerClass.SHAMAN, 40)
+
+    assert corrected is not None
+    assert corrected.total_duration_s == expected.total_duration_s
+
+
+def test_correcting_to_a_discipline_takes_its_duration_override(spell_book) -> None:
+    """Five of the eight discipline overrides disagree with the spells_us.txt
+    formula — Puretone runs 240s where the formula says 120 — so a correction
+    that went through the formula alone would halve it."""
+    puretone = spell_book.spell_by_name("Puretone Discipline")
+    assert puretone is not None
+    assert base_timer_duration_seconds(puretone, PlayerClass.BARD, 60) == float(
+        DISCIPLINE_DURATION_OVERRIDES_S["Puretone Discipline"]
+    )
+
+    timers = TimersService()
+    row = timers.add_spell(_row_for(spell_book, "Pack Spirit", "Spirit of Wolf"))
+    corrected = timers.respell_row(row, puretone, PlayerClass.BARD, 60)
+    assert corrected is not None
+    assert corrected.total_duration_s == float(
+        DISCIPLINE_DURATION_OVERRIDES_S["Puretone Discipline"]
+    )
+
+
+def test_a_correction_matches_the_handler_for_every_alternative(spell_book) -> None:
+    """The general property, over a real ambiguous candidate list: whichever
+    candidate the user picks, the row is the one the matcher would have built.
+    """
+    npc = _an_npc(spell_book)
+    candidates = spell_book.cast_on_other("is surrounded by a brief lupine aura.")
+    assert len(candidates) > 1
+
+    for chosen in candidates:
+        timers = TimersService()
+        row = timers.add_spell(
+            SpellRow(
+                name="placeholder",
+                group=npc,
+                updated_at=T0,
+                is_target_player=False,
+                spell=candidates[0],
+                ends_at=T0 + timedelta(seconds=60),
+                total_duration_s=60.0,
+                alternatives=list(candidates[1:]),
+            )
+        )
+        corrected = timers.respell_row(row, chosen, PlayerClass.SHAMAN, 40)
+        expected = _handler_row(spell_book, chosen.name, npc)
+        assert corrected is not None
+        assert corrected.total_duration_s == expected.total_duration_s, chosen.name
+        assert corrected.detrimental == expected.detrimental, chosen.name
+
+
+def test_a_spell_of_another_row_kind_is_never_offered(ctx, spell_book) -> None:
+    """A correction rebuilds one SpellRow, so it can only offer candidates that
+    would also have been a plain countdown. Counter spells become a tally and
+    reuse-timer spells put a cooldown row beside the buff; neither is something
+    a relabel creates, so they are dropped from the menu."""
+    timers = _rig(ctx)
+    handler = SpellTimerHandler(
+        EventBus(), _player(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    offered = [
+        spell_book.spell_by_name("Spirit of Wolf"),  # a plain buff — kept
+        spell_book.spell_by_name("Flash of Light"),  # counter spell — dropped
+        spell_book.spell_by_name("Dictate"),  # reuse timer — dropped
+        spell_book.spell_by_name("Puretone Discipline"),  # cooldown row — dropped
+    ]
+    assert all(s is not None for s in offered)
+    handler.handle_spell(spell_book.spell_by_name("Pack Spirit"), " Joe ", 0, T0, offered)
+
+    (row,) = [r for r in _spell_rows(timers) if not r.is_cooldown]
+    assert [s.name for s in row.alternatives] == ["Spirit of Wolf"]
+
+
+def test_narrowing_the_menu_does_not_narrow_the_guess(ctx, spell_book) -> None:
+    """A counter spell that IS the guess still gets its tally — only the
+    correction menu is narrowed."""
+    timers = _rig(ctx)
+    handler = SpellTimerHandler(
+        EventBus(), _player(), spell_book, timers, spell_settings=Settings().spellwindow
+    )
+    handler.handle_spell(spell_book.spell_by_name("Flash of Light"), " Joe ", 0, T0)
+    assert [r.name for r in timers.snapshot()] == ["Flash of Light"]
+    assert _spell_rows(timers) == []  # a CounterRow, not a countdown
