@@ -452,11 +452,28 @@ def _region_preview(widget: Any, plugin_id: str, key: str) -> Callable[[], list[
         except Exception:
             logger.exception("plugin %s overlay region %r sample() raised", plugin_id, key)
             return []
+        try:
+            # Materialised INSIDE a guard, because iterating is itself a call
+            # into the plugin's value: a bare widget, an int or any other
+            # non-iterable raises TypeError here. This runs from
+            # ``_populate_preview`` during ``set_edit_mode(True)``, so an
+            # escape does not cost this region its preview — it stops POSITION
+            # MODE OPENING AT ALL, for every region and every built-in.
+            items = list(made or [])
+        except TypeError:
+            logger.warning(
+                "plugin %s overlay region %r sample() returned %s, not a sequence of "
+                "widgets; no position-mode preview for it",
+                plugin_id,
+                key,
+                type(made).__name__,
+            )
+            return []
         # The overlay takes these back out through the region's layout and
         # then deletes them, so anything that is not a widget would raise
         # from inside ``_clear_preview`` — on the way OUT of position mode,
         # where there is nothing useful to do about it.
-        return [item for item in (made or []) if hasattr(item, "deleteLater")]
+        return [item for item in items if hasattr(item, "deleteLater")]
 
     return build
 
@@ -801,6 +818,7 @@ def _build_plugin_regions(
     """
     from PySide6.QtWidgets import QWidget
 
+    from nparseplus.ui.pluginregion import enforce_non_interactive
     from nparseplus_sdk.plugin import OverlayRegionContext, OverlayRegionSpec
 
     assert loaded.meta is not None
@@ -885,6 +903,15 @@ def _build_plugin_regions(
                 type(widget).__name__,
             )
             continue
+        # EVERY accepted widget is sealed here, not just a PluginOverlayRegion.
+        # The display-only guarantee is a promise about every region, and the
+        # factory may return a plain QWidget — which is supported, and which
+        # nothing else makes input-transparent. Unsealed, it receives the click
+        # in position mode (where the overlay drops WindowTransparentForInput)
+        # and its own rectangle becomes impossible to drag, because the press
+        # never falls through to the overlay's hit-test.
+        with _isolated(f"plugin {loaded.meta.id} overlay region {spec.key!r} seal"):
+            enforce_non_interactive(widget)
         built.append((spec, widget))
     return built
 

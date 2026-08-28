@@ -656,6 +656,191 @@ def test_a_widget_that_is_not_a_region_base_still_works(qtbot, tmp_path: Path) -
 # -- the rest of the acceptance criteria ---------------------------------------
 
 
+# A plain QWidget region with a real control in it. The factory promises a
+# QWidget, not a subclass, so this is a supported shape — and it is the one
+# nothing else makes input-transparent.
+PLAIN_WIDGET_PLUGIN = PLUGIN.replace(
+    """        from nparseplus_sdk.ui import PluginOverlayRegion
+
+        self.region = PluginOverlayRegion(rctx)
+        return self.region""",
+    """        from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+
+        self.clicks = 0
+        self.region = QWidget()
+        layout = QVBoxLayout(self.region)
+        layout.setContentsMargins(0, 0, 0, 0)
+        button = QPushButton("press me")
+        button.clicked.connect(self._hit)
+        layout.addWidget(button)
+        return self.region
+
+    def _hit(self):
+        self.clicks += 1
+
+    def build_late_content(self):
+        from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+
+        inner = QWidget()
+        QVBoxLayout(inner).addWidget(QPushButton("late"))
+        self.region.layout().addWidget(inner)""",
+)
+
+# sample() that returns a single widget rather than a sequence of them.
+BAD_SAMPLE_PLUGIN = PLUGIN.replace(
+    """        self.region = PluginOverlayRegion(rctx)
+        return self.region""",
+    """        class Bad(PluginOverlayRegion):
+            def sample(self):
+                from PySide6.QtWidgets import QLabel
+
+                return QLabel("not a sequence")
+
+        self.region = Bad(rctx)
+        return self.region""",
+)
+
+
+def _unsealed(root):
+    """Widgets in ``root``'s tree that could still take a click or the focus."""
+    kids = [root, *root.findChildren(QWidget)]
+    return (
+        [w for w in kids if not w.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)],
+        [w for w in kids if w.focusPolicy() != Qt.FocusPolicy.NoFocus],
+    )
+
+
+def test_a_plain_widget_region_is_sealed_like_the_base(qtbot, tmp_path: Path) -> None:
+    """Display-only is a promise about EVERY region, not just the ones that
+    used the convenience base.
+
+    ``PluginOverlayRegion`` seals itself; a plain QWidget has nothing that
+    would. Unsealed, position mode — which drops ``WindowTransparentForInput``
+    so the user can drag their chrome — hands the plugin's own control a real
+    click it was never written for, and makes that rectangle impossible to
+    drag, because the press never falls through to the overlay's hit-test.
+    """
+    context = wire(qtbot, tmp_path, PLAIN_WIDGET_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        host = overlay._region_hosts()[REGION_KEY]
+        mouse, focus = _unsealed(host)
+        assert not mouse, "a plain QWidget region is not input-transparent"
+        assert not focus, "a plain QWidget region can still take focus"
+    finally:
+        context["backend"].stop()
+
+
+def test_the_press_falls_through_a_plain_region_to_the_overlay(qtbot, tmp_path: Path) -> None:
+    """``QWidget.childAt`` is Qt's own hit-test and it SKIPS a widget carrying
+    ``WA_TransparentForMouseEvents`` — which is the mechanism, so it is what
+    this asserts rather than a synthesised press.
+
+    (``QTest.mousePress(overlay, ...)`` posts straight to the overlay and
+    bypasses hit-testing entirely, so it passes with or without the seal and
+    proves nothing here.)
+    """
+    from PySide6.QtWidgets import QPushButton
+
+    context = wire(qtbot, tmp_path, PLAIN_WIDGET_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        overlay.show()
+        qtbot.waitExposed(overlay)
+        overlay.set_edit_mode(True)
+        button = overlay._region_hosts()[REGION_KEY].findChild(QPushButton)
+        point = button.mapTo(overlay, button.rect().center())
+        assert not isinstance(overlay.childAt(point), QPushButton)
+    finally:
+        context["backend"].stop()
+
+
+def test_a_child_built_after_registration_is_sealed_too(qtbot, tmp_path: Path) -> None:
+    """The seal has to FOLLOW the tree, not just sweep it once.
+
+    A region that fills itself lazily is the common shape — ``sample()`` and
+    the first real update both run after construction — and a filter on the
+    root alone would never see a grandchild added to an existing child.
+    """
+    context = wire(qtbot, tmp_path, PLAIN_WIDGET_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        plugin = next(row for row in context["host"].statuses() if row.plugin_id == "ticker").plugin
+        plugin.build_late_content()
+        mouse, focus = _unsealed(overlay._region_hosts()[REGION_KEY])
+        assert not mouse and not focus
+    finally:
+        context["backend"].stop()
+
+
+def test_the_seal_is_for_regions_only_and_leaves_windows_interactive(qtbot, tmp_path: Path) -> None:
+    """A plugin WINDOW must stay clickable. It is a top-level window with no
+    ``WindowTransparentForInput`` on it, and sealing one would make every
+    control in every add-on window dead — the exact opposite of the routing
+    the region constraint exists to preserve ("need clicks -> add_window")."""
+    from PySide6.QtWidgets import QPushButton
+
+    source = (
+        PLAIN_WIDGET_PLUGIN.replace(
+            "from nparseplus_sdk import NParsePlugin, OverlayRegionSpec, PluginMeta",
+            "from nparseplus_sdk import (\n"
+            "    NParsePlugin,\n    OverlayRegionSpec,\n    PluginMeta,\n    PluginWindowSpec,\n)",
+        )
+        .replace(
+            "        ctx.add_overlay_region(",
+            """        ctx.add_window(
+            PluginWindowSpec(key="w", title="W", factory=self._build_window)
+        )
+        ctx.add_overlay_region(""",
+            1,
+        )
+        .replace(
+            "    def _build(self, rctx):",
+            """    def _build_window(self, wctx):
+        from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+
+        holder = QWidget()
+        QVBoxLayout(holder).addWidget(QPushButton("still clickable"))
+        return holder
+
+    def _build(self, rctx):""",
+            1,
+        )
+    )
+    context = wire(qtbot, tmp_path, source, "ticker")
+    try:
+        window = context["ui"].windows_by_key["plugin.ticker.w"]
+        button = window.findChild(QPushButton)
+        assert not button.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        assert button.focusPolicy() != Qt.FocusPolicy.NoFocus
+    finally:
+        context["backend"].stop()
+
+
+def test_a_sample_that_is_not_a_sequence_does_not_break_position_mode(
+    qtbot, tmp_path: Path, caplog
+) -> None:
+    """Iterating ``sample()``'s result is itself a call into the plugin's
+    value, so it belongs inside the guard.
+
+    A bare widget (or an int) raises ``TypeError`` on iteration, and this runs
+    from ``_populate_preview`` during ``set_edit_mode(True)`` — so an escape
+    does not cost this region its preview, it stops POSITION MODE OPENING AT
+    ALL, for every region and every built-in.
+    """
+    context = wire(qtbot, tmp_path, BAD_SAMPLE_PLUGIN, "ticker")
+    try:
+        overlay = context["overlay"]
+        with caplog.at_level("WARNING"):
+            overlay.set_edit_mode(True)
+        assert any("not a sequence of widgets" in r.message for r in caplog.records)
+        # Position mode opened, and the built-ins still previewed.
+        assert overlay._preview_widgets
+        overlay.set_edit_mode(False)
+    finally:
+        context["backend"].stop()
+
+
 def test_a_contributed_region_resizes_like_a_built_in(overlay_edit) -> None:
     """ "lays out, drags, resizes and persists exactly like a built-in one" —
     the drag is covered above; this is the resize half."""
