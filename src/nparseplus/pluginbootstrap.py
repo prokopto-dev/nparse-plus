@@ -772,7 +772,7 @@ def _build_plugin_regions(
     """
     from PySide6.QtWidgets import QWidget
 
-    from nparseplus_sdk.plugin import OverlayRegionContext
+    from nparseplus_sdk.plugin import OverlayRegionContext, OverlayRegionSpec
 
     assert loaded.meta is not None
     specs = list(loaded.overlay_region_specs)
@@ -787,7 +787,23 @@ def _build_plugin_regions(
         )
         return []
     built: list[tuple[Any, Any]] = []
-    for spec in specs:
+    for index, spec in enumerate(specs):
+        if not isinstance(spec, OverlayRegionSpec):
+            # BEFORE the first attribute access, and that ordering is the
+            # whole point: ``add_overlay_region`` appends whatever it is
+            # given, so ``ctx.add_overlay_region(None)`` used to reach
+            # ``spec.key`` here — outside every guard — and abort the startup
+            # sweep for EVERY plugin, taking the plugin manager page with it.
+            # The report therefore names the position and the type; it cannot
+            # name the key, because dereferencing is exactly what is unsafe.
+            logger.warning(
+                "plugin %s declared overlay region #%d as %s, not an OverlayRegionSpec; "
+                "region skipped",
+                loaded.meta.id,
+                index,
+                type(spec).__name__,
+            )
+            continue
         region_key = f"plugin.{loaded.meta.id}.{spec.key}"
         # The context is built INSIDE the guard with the factory, not before
         # it: assembling it reaches into ``event_overlay``, so a stand-in that

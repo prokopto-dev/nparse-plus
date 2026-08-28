@@ -17,7 +17,15 @@ from nparseplus_sdk.validate import validate_plugin
 
 from .conftest import approve
 
-EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "plugins"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLES = REPO_ROOT / "examples" / "plugins"
+
+#: The app release that first ships ``ctx.add_overlay_region`` (#155). A
+#: constant, not a comparison against ``nparseplus.__version__``: a first-
+#: supporting release is a permanent fact about history, so a test that ties
+#: it to whatever the tree currently reads would fail on the next unrelated
+#: release and push someone into raising a floor that is already correct.
+REGION_MIN_APP_VERSION = "2.28.0"
 
 
 class _FakeStorage:
@@ -323,31 +331,37 @@ def test_the_region_example_pins_the_app_release_that_supports_it() -> None:
     ``activate()`` would then raise ``AttributeError``. ``min_app_version`` is
     the one input to the handshake that comes from the host itself.
 
-    The bound is ``>=`` this tree's own version rather than ``>``: before the
-    release commit it names a version ahead of ``__version__``, and after it
-    they are equal.
-
-    Be clear about what that buys, because it is easy to over-read: this is a
-    POST-HOC ALARM, not a gate. At merge time the tree still reads the
-    previous version, so a pin that is one release too low passes here and
-    only fails on semantic-release's own bump commit — by which point the tag
-    is cut and the release dispatched. A loud failure on master beats a
-    silently wrong pin shipped to users, but the thing that actually keeps the
-    pin honest is knowing which release ships it.
+    Checked against a CONSTANT, never against ``nparseplus.__version__``. The
+    pin is a permanent historical fact — "regions first shipped in 2.28.0" —
+    and comparing it to the tree's own version made it a moving target: the
+    correct pin would start failing the moment an unrelated 2.29 release
+    landed, which either blocks that release or pressures whoever hits it into
+    raising the floor and cutting off the 2.28 users it is supposed to admit.
+    The value is pinned in three places by design (here, and the two documents
+    below), so changing it is a deliberate edit rather than a drift.
     """
     from packaging.version import Version
-
-    from nparseplus import __version__
 
     plugin = import_plugin_module(EXAMPLES / "kill_ticker.py").create_plugin()
 
     assert plugin.meta.requires_sdk == ">=1.5,<2"
-    assert plugin.meta.min_app_version is not None, (
+    assert plugin.meta.min_app_version == REGION_MIN_APP_VERSION, (
         "a plugin using a host-backed API must pin the app release that shipped it "
         "— see docs/plugins/versioning.md"
     )
-    assert Version(plugin.meta.min_app_version) >= Version(__version__), (
-        f"kill_ticker.py pins min_app_version={plugin.meta.min_app_version}, but this tree "
-        f"is already nParse+ {__version__}; the pin must name the release that first "
-        "shipped ctx.add_overlay_region"
-    )
+    Version(REGION_MIN_APP_VERSION)  # parseable, or check_compat refuses it outright
+
+
+def test_the_docs_name_the_same_first_supporting_release() -> None:
+    """The pin only helps third-party authors if the docs tell them the same
+    number the shipped example uses. Same guard shape as the registry URL: pin
+    the value once, then assert the prose that teaches it agrees."""
+    for relpath in (
+        "docs/plugins/versioning.md",
+        "docs/plugins/overlay-regions.md",
+        "docs/plugins/developing.md",
+    ):
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+        assert f'min_app_version="{REGION_MIN_APP_VERSION}"' in text, (
+            f"{relpath} must name the app release that first shipped overlay regions"
+        )
