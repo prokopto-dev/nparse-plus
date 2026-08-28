@@ -210,6 +210,14 @@ class YouFinishCastingEvent(LogEvent):
 
 class SpellCastOnYouEvent(LogEvent):
     spell: Spell
+    #: The same-message candidates the guess passed over (#177). Additive on
+    #: EventModels.cs, whose SpellCastOnYouEvent carries only the winner: the
+    #: C# had nowhere to offer a correction, and the Timers window now does.
+    #: Empty whenever the cast message named exactly one spell, which is what
+    #: keeps an unambiguous row from growing a menu of alternatives.
+    #: SpellCastOnOtherEvent needs no counterpart — it already carries the
+    #: whole candidate tuple as ``spells``.
+    alternatives: tuple[Spell, ...] = ()
 
 
 class SpellCastOnOtherEvent(LogEvent):

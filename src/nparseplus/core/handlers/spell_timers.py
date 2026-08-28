@@ -17,7 +17,7 @@ Known divergences from EQTool:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 
 from nparseplus.config.settings import SpellWindowSettings
@@ -39,7 +39,11 @@ from nparseplus.core.handlers.base import BaseHandler
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.counters import CounterLists, load_counter_lists
 from nparseplus.core.spells.durations import get_duration_seconds
-from nparseplus.core.spells.matching import match_closest_level_to_spell
+from nparseplus.core.spells.matching import (
+    log_candidates,
+    match_closest_level_to_spell,
+    other_matches,
+)
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.spells.spells_us import (
     MINIMUM_RECAST_FOR_YOU_COOLDOWN_TIMER_S,
@@ -207,7 +211,7 @@ class SpellTimerHandler(BaseHandler):
         self.spells.casting.clear()
 
     def _on_cast_on_you(self, event: SpellCastOnYouEvent) -> None:
-        self.handle_spell(event.spell, YOU_GROUP, 0, event.timestamp)
+        self.handle_spell(event.spell, YOU_GROUP, 0, event.timestamp, event.alternatives)
 
     def _on_cast_on_other(self, event: SpellCastOnOtherEvent) -> None:
         casting = self.spells.casting
@@ -230,11 +234,18 @@ class SpellTimerHandler(BaseHandler):
         # EQTool's best-guess is always on.)
         if not self.spell_settings.best_guess_spells and len(event.spells) > 1:
             return
+        # A third party's cast on a third party: the player is only watching,
+        # so their class says nothing about which candidate this was and the
+        # matcher stays in bystander mode (#177).
+        candidates = list(event.spells)
         spell = match_closest_level_to_spell(
-            list(event.spells), self.player.player_class, self.player.level
+            candidates, self.player.player_class, self.player.level
         )
+        log_candidates("cast on other", event.line, candidates, spell)
         if spell is not None:
-            self.handle_spell(spell, event.target_name, 0, event.timestamp)
+            self.handle_spell(
+                spell, event.target_name, 0, event.timestamp, other_matches(candidates, spell)
+            )
 
     # -- removals ---------------------------------------------------------------
 
@@ -294,8 +305,18 @@ class SpellTimerHandler(BaseHandler):
     # -- row creation (SpellHandlerService.Handle) --------------------------------
 
     def handle_spell(
-        self, spell: Spell, target_name: str, delay_offset_ms: int, timestamp: datetime
+        self,
+        spell: Spell,
+        target_name: str,
+        delay_offset_ms: int,
+        timestamp: datetime,
+        alternatives: Sequence[Spell] = (),
     ) -> None:
+        """``alternatives`` are the same-message spells the matcher passed over
+        (#177) — carried onto the row so the Timers window can offer them as a
+        correction. Empty for every unambiguous cast, and deliberately not put
+        on the cooldown rows below: a cooldown is keyed to the recast the
+        player actually started, and relabelling one would misreport the gem."""
         group_name = target_name
         is_npc = self.spells.is_npc(group_name.strip())
         if is_npc:
@@ -380,6 +401,7 @@ class SpellTimerHandler(BaseHandler):
                 total_duration_s=duration.total_seconds(),
                 detrimental=spell.is_detrimental,
                 post_expiry_persist_s=self._post_expiry_persist_s(spell),
+                alternatives=list(alternatives),
             ),
             overwrite=overwrite,
         )

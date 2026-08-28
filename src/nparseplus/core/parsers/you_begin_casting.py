@@ -10,7 +10,11 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.lineinfo import LineInfo
 from nparseplus.core.parsers.base import ParseContext
-from nparseplus.core.spells.matching import match_closest_level_to_spell
+from nparseplus.core.spells.matching import (
+    SpellMatchMode,
+    log_candidates,
+    match_closest_level_to_spell,
+)
 from nparseplus.core.spells.spells_us import DESCR_ILLUSION_OTHER, DESCR_ILLUSION_PLAYER
 
 YOU_BEGIN_CASTING = "You begin casting "
@@ -25,7 +29,15 @@ class YouBeginCastingParser:
         candidates = ctx.spells.you_cast(spell_name)
         if not candidates:
             return False
-        spell = match_closest_level_to_spell(candidates, ctx.player.player_class, ctx.player.level)
+        # The player is the caster, so their class is exactly the right signal
+        # for which same-named candidate this is (#177).
+        spell = match_closest_level_to_spell(
+            candidates,
+            ctx.player.player_class,
+            ctx.player.level,
+            mode=SpellMatchMode.PARTICIPANT,
+        )
+        log_candidates("you begin casting", spell_name, candidates, spell)
         if spell is None:
             return False
 

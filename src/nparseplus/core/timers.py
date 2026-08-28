@@ -234,6 +234,16 @@ class SpellRow(CountdownRow):
     # crossover. Opt-in and per-spell; 0 keeps the normal expire-and-drop.
     post_expiry_persist_s: float = 0.0
     expired_at: datetime | None = None
+    # Same-message spells the matcher passed over when it named this row
+    # (#177). Many EQ spells share one cast line, so a guess can be wrong;
+    # these are what the Timers window offers under "Other matches" so the
+    # user can correct it. Empty when the message named exactly one spell,
+    # which is how an unambiguous row ends up with no submenu at all.
+    #
+    # A field rather than an AmbiguousSpellRow subclass, for the reason
+    # ``TimerRow``'s window fields are: the spell window keys widget reuse on
+    # ``type(row).__name__``, so a subclass rebuilds the row mid-countdown.
+    alternatives: list[Spell] = []
 
 
 class TimerRow(CountdownRow):
@@ -480,6 +490,62 @@ class TimersService:
         self._rows.append(row)
         self._notify()
         return row
+
+    # -- corrections -----------------------------------------------------------
+
+    def respell_row(
+        self,
+        row: SpellRow,
+        spell: Spell,
+        player_class: PlayerClass | None,
+        player_level: int | None,
+        post_expiry_persist_s: float = 0.0,
+    ) -> SpellRow | None:
+        """Relabel an ambiguous spell row as one of its ``alternatives`` (#177).
+
+        The matcher only ever guesses when several spells share one cast
+        message, so a wrong guess is a normal outcome rather than a defect to
+        be eliminated; this is the user's way to say which one it really was.
+
+        Everything the row says about the timer is recomputed, because every
+        one of those facts belonged to the spell that was guessed: the
+        duration comes from the new spell's own formula, ``detrimental``
+        decides the bar colour, the gem icon rides on ``spell``, and
+        ``post_expiry_persist_s`` is a per-spell opt-in (#16) so the caller
+        passes the NEW spell's setting rather than inheriting the old one.
+
+        The duration is measured **against the moment the row started**, not
+        from now — the buff has been running since it landed, and restarting
+        it would hand back a row that is wrong in the other direction. A
+        correction that leaves the row already past its end is left to expire
+        on the next tick, which is the truth.
+
+        Returns None when the row is no longer on screen: it can expire, or be
+        overwritten by a fresh cast, while the context menu is open.
+        """
+        if row not in self._rows:
+            return None
+        started_at = row.ends_at - timedelta(seconds=row.total_duration_s)
+        duration_s = float(get_duration_seconds(spell, player_class, player_level))
+        # The full candidate set, minus whichever one is now chosen — so the
+        # correction is reversible and a third candidate stays reachable.
+        candidates = [row.spell, *row.alternatives]
+        replacement = SpellRow(
+            name=spell.name,
+            group=row.group,
+            updated_at=row.updated_at,
+            is_target_player=row.is_target_player,
+            owner=row.owner,
+            spell=spell,
+            ends_at=started_at + timedelta(seconds=duration_s),
+            total_duration_s=duration_s,
+            detrimental=spell.is_detrimental,
+            is_cooldown=row.is_cooldown,
+            post_expiry_persist_s=post_expiry_persist_s,
+            alternatives=[c for c in candidates if not _eq(c.name, spell.name)],
+        )
+        self._rows.remove(row)
+        return self.add_spell(replacement)
 
     # -- removals --------------------------------------------------------------
 
