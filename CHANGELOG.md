@@ -6,6 +6,48 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.28.1 (2026-08-28)
+
+### Bug Fixes
+
+- **spells**: Log which spells_us.txt the app actually loaded
+  ([`e41dbb7`](https://github.com/prokopto-dev/nparse-plus/commit/e41dbb7bca4f8b89bc59d2f6271f897d602c68ef))
+
+- **spells**: Make the Peggy Cloak clicky reach its own spell
+  ([`f035ce0`](https://github.com/prokopto-dev/nparse-plus/commit/f035ce021f9ce0d10ef3fad8ad7dd039d96f91c8))
+
+- **spells**: Match same-message casts against the player's own class
+  ([`7feda6e`](https://github.com/prokopto-dev/nparse-plus/commit/7feda6e1691699442100a71377a9d538ee1ca842))
+
+- **spells**: Stop the Peggy Levitate clicky outranking the real Levitate
+  ([`256cf23`](https://github.com/prokopto-dev/nparse-plus/commit/256cf238f92d52b5a36bf89e5e1ef2d3ca69d22d))
+
+- **timers**: Give a corrected row the timer the matcher would have built
+  ([`c0fd0ea`](https://github.com/prokopto-dev/nparse-plus/commit/c0fd0ea20893c1f82faeb5df3b281fc5bac51b0f))
+
+- **timers**: Never offer a zero-duration spell as a correction
+  ([`7ad1608`](https://github.com/prokopto-dev/nparse-plus/commit/7ad1608401a2ed5f0cc9e664f1191ff92c625501))
+
+- **timers**: Stop a correction deleting a stacked row it was not aimed at
+  ([`0445995`](https://github.com/prokopto-dev/nparse-plus/commit/044599529ca454089192548ea10ea5f3930e2511))
+
+- **ui**: Offer the other matches on an ambiguously-guessed timer row
+  ([`ac526f3`](https://github.com/prokopto-dev/nparse-plus/commit/ac526f3169aa89fff976689755303068418672a1))
+
+### Documentation
+
+- Answer whether the sharing network can enumerate all users
+  ([`0fbc009`](https://github.com/prokopto-dev/nparse-plus/commit/0fbc0093e5dec44c9dccd96674933defe430cfbb))
+
+### Testing
+
+- **spells**: Guard the eyes-tingle fix at levels that actually changed
+  ([`dd4caf2`](https://github.com/prokopto-dev/nparse-plus/commit/dd4caf26abf65c9c3ddb39b3af4d4a16552cc85c))
+
+- **spells**: Record every ambiguous cast message's resolution as a guard
+  ([`f515252`](https://github.com/prokopto-dev/nparse-plus/commit/f5152528ccc7fcbb9e68e9980c95c760477380db))
+
+
 ## v2.28.0 (2026-08-28)
 
 ### Features
