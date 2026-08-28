@@ -40,6 +40,7 @@ from nparseplus.core.handlers.dps_persistence import DpsPersistenceHandler
 from nparseplus.core.handlers.fte import FTEHandler
 from nparseplus.core.handlers.group_leader import GroupLeaderHandler
 from nparseplus.core.handlers.inventory_upload import InventoryUploadHandler
+from nparseplus.core.handlers.item_glow import ItemGlowHandler
 from nparseplus.core.handlers.mend_wounds import MendWoundsHandler
 from nparseplus.core.handlers.pet import PetHandler
 from nparseplus.core.handlers.player_profile import PlayerProfileHandler
@@ -733,6 +734,7 @@ def build_backend(settings: Settings, speaker=None, request_save=None) -> Backen
         DisciplineCooldownHandler(bus, player, timers),
         MendWoundsHandler(bus, player, timers),
         AbilityCooldownHandler(bus, player, spells, timers),
+        ItemGlowHandler(bus, player, spells),
         CompleteHealCommsHandler(
             bus,
             player,
