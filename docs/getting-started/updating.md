@@ -18,6 +18,54 @@ Your settings always survive updates — they live in a
 [separate config directory](first-run.md#where-settings-live), not in the
 app folder.
 
+## Release channels
+
+nParse+ publishes on two channels, and you are on **Stable** unless you
+change it in [Settings → General](../settings/general.md).
+
+| Channel | What you are offered | Who it is for |
+|---|---|---|
+| **Stable** (default) | Released versions only | Everyone |
+| **Beta** | Also the test releases cut from each merge | People who want fixes early and can live with breakage |
+
+Every merge to `master` now publishes a **beta** — something like
+`v2.30.0-beta.3` — instead of a release for everyone. A stable version ships
+when one of those beta lines is deliberately promoted, which turns
+`v2.30.0-beta.3` into `v2.30.0`. If you are on Stable, nothing about this is
+visible to you: nParse+ has always ignored prereleases, so betas simply do not
+appear, and you are offered a version only once it is promoted.
+
+### Switching to beta
+
+Set **Update channel** to *Beta* in Settings → General. nParse+ re-checks
+immediately, so the badge beside it tells you straight away whether a beta is
+waiting. Betas install exactly like stable releases.
+
+A beta client is still offered stable releases. Because `2.30.0` counts as
+newer than `2.30.0-beta.3`, you roll onto the stable version when the line you
+are testing is promoted — you do not get stuck on the beta.
+
+!!! warning "Betas are not published for Flatpak"
+
+    Betas ship as **DMG, zip and tarball only**. The Flatpak repository that
+    `flatpak update` follows carries stable releases exclusively, so a Flatpak
+    install has nothing to download on the beta channel. Leave it on Stable.
+
+### Getting back to stable
+
+Set **Update channel** back to *Stable*. What happens next depends on where
+your beta sits:
+
+- **The usual case** — your beta line gets promoted, and the stable release is
+  offered to you as a normal update. Nothing else to do.
+- **The line was abandoned** — development moved on without promoting it. Your
+  installed version is then *newer* than the newest stable, so the update
+  check honestly reports that there is nothing to install, and it will keep
+  doing so until a stable release passes it. If you would rather go back
+  immediately, download the version you want from the
+  [releases page](https://github.com/prokopto-dev/nparse-plus/releases) and
+  install it over the top. Your settings are untouched either way.
+
 ## Flatpak: one click, no download
 
 Inside a Flatpak the update dialog's button says **Install Update**, and it
