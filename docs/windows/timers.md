@@ -56,6 +56,12 @@ Spell rows show their **gem icon** from the spell data.
   in [Settings → Timers](../settings/timers.md). Ambiguous
   casts (several spells share one cast message) show a best guess when
   enabled.
+- **Correct a guess** — when several spells share one cast message the name
+  on the row is a guess. Right-click it for *Other matches* and pick the
+  spell it really was; the row is relabeled and its countdown recomputed
+  from that spell's duration **against the time it started**, so the elapsed
+  time is kept rather than restarted. Rows whose cast message named exactly
+  one spell have no such submenu.
 - **Fold a section away** — click any group header to collapse it; click it
   again to bring it back. See [Collapsing sections](#collapsing-sections)
   below.

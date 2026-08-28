@@ -33,6 +33,7 @@ from nparseplus.config.settings import Settings, WindowState, find_player
 from nparseplus.core.handlers.boat import BOATS_GROUP
 from nparseplus.core.player import ActivePlayer
 from nparseplus.core.spells.matching import hide_spell
+from nparseplus.core.spells.models import Spell
 from nparseplus.core.timers import (
     MOB_TIMER_GROUP,
     ROLL_TIMER_GROUP,
@@ -1093,6 +1094,33 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self._backend.timers.clear_all_other_spells()
         self.refresh()
 
+    def _respell_row(self, row: SpellRow, spell: Spell) -> None:
+        """Relabel an ambiguously-guessed row as the candidate the user picked
+        (#177).
+
+        The whole timer is re-derived from the new spell — duration against the
+        original start, bar colour, gem icon and the post-expiry flash opt-in,
+        which is per spell and so must be re-read rather than inherited from
+        the name that was guessed. ``TimersService.respell_row`` owns the
+        arithmetic so it is testable without a window.
+        """
+        player = self._backend.player
+        self._backend.timers.respell_row(
+            row, spell, player.player_class, player.level, self._flash_persist_for(spell.name)
+        )
+        self.refresh()
+
+    def _flash_persist_for(self, spell_name: str) -> float:
+        """Seconds a just-expired row of this spell lingers as a rebuff prompt
+        (#16), read from the per-spell allowlist ``_toggle_flash_spell`` edits."""
+        sw = self._backend.settings.spellwindow
+        if not sw.post_expiry_flash_enabled:
+            return 0.0
+        key = spell_name.casefold()
+        if any(n.casefold() == key for n in sw.post_expiry_flash_spells):
+            return float(sw.post_expiry_flash_seconds)
+        return 0.0
+
     def _toggle_flash_spell(self, spell_name: str) -> None:
         """Add/remove a spell from the post-expiry flash allowlist (#16) and
         apply it live to any loaded rows of that spell."""
@@ -1118,7 +1146,15 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
         self.refresh()
 
     def contextMenuEvent(self, event) -> None:
-        row, group = self._context_target(event.pos())
+        self._build_context_menu(event.pos()).exec(event.globalPos())
+
+    def _build_context_menu(self, pos: QPoint) -> QMenu:
+        """Assemble the row/group menu for ``pos``.
+
+        Split from ``contextMenuEvent`` so the menu can be inspected without
+        entering ``exec``'s modal loop, which never returns under a test.
+        """
+        row, group = self._context_target(pos)
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         if row is not None:
@@ -1143,6 +1179,20 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
                     for n in self._backend.settings.spellwindow.post_expiry_flash_spells
                 )
             )
+            if row.alternatives:
+                # Several spells share this cast message, so the name on the
+                # row is a guess (#177). Offer the ones it passed over rather
+                # than leaving the user to clear the row and wonder.
+                # Parented explicitly rather than via ``addMenu(title)``: the
+                # submenu that call returns is not kept alive by the parent
+                # menu, and Qt deletes it out from under the action.
+                others = QMenu("Other matches", menu)
+                menu.addMenu(others)
+                for alternative in row.alternatives:
+                    others.addAction(
+                        alternative.name,
+                        lambda r=row, s=alternative: self._respell_row(r, s),
+                    )
         if group is not None:
             label = self._group_label(group)
             menu.addAction(f"Clear group '{label}'", lambda g=group: self._clear_group(g))
@@ -1150,4 +1200,4 @@ class SpellTimerWindow(EdgeResizeMixin, QWidget):
             menu.addSeparator()
         menu.addAction("Clear other players' timers", self._clear_other_players)
         menu.addAction("Clear all timers", self._clear_all)
-        menu.exec(event.globalPos())
+        return menu

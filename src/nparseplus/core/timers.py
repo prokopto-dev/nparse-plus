@@ -27,7 +27,11 @@ from typing import NamedTuple
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from nparseplus.core.enums import PlayerClass
-from nparseplus.core.spells.durations import get_duration_seconds
+from nparseplus.core.spells.durations import (
+    base_timer_duration_seconds,
+    get_duration_seconds,
+    npc_grace_seconds,
+)
 from nparseplus.core.spells.models import Spell
 from nparseplus.core.spells.spells_us import SPACE_YOU, SpellBook
 
@@ -234,6 +238,16 @@ class SpellRow(CountdownRow):
     # crossover. Opt-in and per-spell; 0 keeps the normal expire-and-drop.
     post_expiry_persist_s: float = 0.0
     expired_at: datetime | None = None
+    # Same-message spells the matcher passed over when it named this row
+    # (#177). Many EQ spells share one cast line, so a guess can be wrong;
+    # these are what the Timers window offers under "Other matches" so the
+    # user can correct it. Empty when the message named exactly one spell,
+    # which is how an unambiguous row ends up with no submenu at all.
+    #
+    # A field rather than an AmbiguousSpellRow subclass, for the reason
+    # ``TimerRow``'s window fields are: the spell window keys widget reuse on
+    # ``type(row).__name__``, so a subclass rebuilds the row mid-countdown.
+    alternatives: list[Spell] = []
 
 
 class TimerRow(CountdownRow):
@@ -480,6 +494,92 @@ class TimersService:
         self._rows.append(row)
         self._notify()
         return row
+
+    # -- corrections -----------------------------------------------------------
+
+    def respell_row(
+        self,
+        row: SpellRow,
+        spell: Spell,
+        player_class: PlayerClass | None,
+        player_level: int | None,
+        post_expiry_persist_s: float = 0.0,
+    ) -> SpellRow | None:
+        """Relabel an ambiguous spell row as one of its ``alternatives`` (#177).
+
+        The matcher only ever guesses when several spells share one cast
+        message, so a wrong guess is a normal outcome rather than a defect to
+        be eliminated; this is the user's way to say which one it really was.
+
+        Everything the row says about the timer is recomputed, because every
+        one of those facts belonged to the spell that was guessed: the
+        duration comes from the new spell's own formula, ``detrimental``
+        decides the bar colour, the gem icon rides on ``spell``, and
+        ``post_expiry_persist_s`` is a per-spell opt-in (#16) so the caller
+        passes the NEW spell's setting rather than inheriting the old one.
+
+        The duration is measured **against the moment the row started**, not
+        from now — the buff has been running since it landed, and restarting
+        it would hand back a row that is wrong in the other direction. A
+        correction that leaves the row already past its end is left to expire
+        on the next tick, which is the truth.
+
+        The replacement goes in AT THE ROW'S OWN POSITION and removes nothing
+        else — deliberately NOT through ``add_spell``, whose overwrite scan
+        drops any other row sharing the new (name, group). Under
+        ``TimerRecast=StartNewTimer`` several detrimental rows legitimately
+        share a name and group (stacked DoTs on same-named mobs, which is why
+        ``handle_spell`` passes ``overwrite=False`` for exactly that case), so
+        correcting a second stacked row onto a name a first one already
+        carries would silently delete a live countdown the user never touched.
+        A relabel is an edit to ONE row; destroying another is never the right
+        answer to it, and the cost — two rows sharing a name in a group where
+        that would not otherwise happen — is visible and recoverable, which
+        the deletion is not. Holding the index also keeps the row where it is
+        rather than sending it to the bottom of the window mid-countdown.
+
+        Returns None when the correction cannot be made: the row is no longer
+        on screen (it can expire, or be overwritten by a fresh cast, while the
+        context menu is open), or the chosen spell has no duration at all.
+        ``handle_spell`` creates no row for those, so building one here would
+        invent a countdown the cast never produced — and on an NPC the grace
+        tick would be the whole of it. ``SpellTimerHandler._is_correctable``
+        keeps them out of the menu; this is the same rule at the service, so
+        no caller can produce one.
+        """
+        try:
+            index = self._rows.index(row)
+        except ValueError:
+            return None
+        started_at = row.ends_at - timedelta(seconds=row.total_duration_s)
+        # The SAME two functions SpellTimerHandler.handle_spell uses, so a
+        # correction lands on the countdown the matcher would have produced had
+        # it named this spell: the discipline override where there is one, and
+        # the grace tick a detrimental row on an NPC gets.
+        base_s = base_timer_duration_seconds(spell, player_class, player_level)
+        if base_s <= 0:
+            return None
+        duration_s = base_s + npc_grace_seconds(spell, on_npc=not row.is_target_player)
+        # The full candidate set, minus whichever one is now chosen — so the
+        # correction is reversible and a third candidate stays reachable.
+        candidates = [row.spell, *row.alternatives]
+        replacement = SpellRow(
+            name=spell.name,
+            group=row.group,
+            updated_at=row.updated_at,
+            is_target_player=row.is_target_player,
+            owner=row.owner,
+            spell=spell,
+            ends_at=started_at + timedelta(seconds=duration_s),
+            total_duration_s=duration_s,
+            detrimental=spell.is_detrimental,
+            is_cooldown=row.is_cooldown,
+            post_expiry_persist_s=post_expiry_persist_s,
+            alternatives=[c for c in candidates if not _eq(c.name, spell.name)],
+        )
+        self._rows[index] = replacement
+        self._notify()
+        return replacement
 
     # -- removals --------------------------------------------------------------
 

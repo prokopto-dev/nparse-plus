@@ -22,7 +22,12 @@ from nparseplus.core.events import (
 )
 from nparseplus.core.lineinfo import LineInfo
 from nparseplus.core.parsers.base import ParseContext
-from nparseplus.core.spells.matching import match_closest_level_to_spell
+from nparseplus.core.spells.matching import (
+    SpellMatchMode,
+    log_candidates,
+    match_closest_level_to_spell,
+    other_matches,
+)
 from nparseplus.core.spells.spells_us import SPACE_YOU
 
 _PROTECTED_RE = re.compile(
@@ -110,9 +115,17 @@ class YouFinishCastingParser:
                 and not ctx.settings.spellwindow.best_guess_spells
             ):
                 return True
+            # Someone else cast this (or it is a clicky), but the player is the
+            # TARGET — so the spell has to be one their class can receive at
+            # their level, which is signal enough to pick between candidates
+            # sharing this message (#177).
             guessed = match_closest_level_to_spell(
-                candidates, ctx.player.player_class, ctx.player.level
+                candidates,
+                ctx.player.player_class,
+                ctx.player.level,
+                mode=SpellMatchMode.PARTICIPANT,
             )
+            log_candidates("cast on you", message, candidates, guessed)
             if guessed is not None:
                 ctx.bus.publish(
                     SpellCastOnYouEvent(
@@ -120,6 +133,7 @@ class YouFinishCastingParser:
                         line=message,
                         line_number=line.line_number,
                         spell=guessed,
+                        alternatives=tuple(other_matches(candidates, guessed)),
                     )
                 )
                 return True
