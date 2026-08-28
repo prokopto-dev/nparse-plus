@@ -485,6 +485,30 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._update_check = QCheckBox(self)
         self._update_check.setChecked(general.update_check)
         form.addRow("Check for updates", self._update_check)
+        self._update_channel = QComboBox(self)
+        self._update_channel.addItem("Stable — released versions only", "stable")
+        self._update_channel.addItem("Beta — test releases as they are cut", "beta")
+        self._update_channel.setCurrentIndex(
+            max(0, self._update_channel.findData(general.update_channel))
+        )
+        self._update_channel.setToolTip(
+            "Stable is what everyone gets. Beta also offers the prereleases cut "
+            "from each merge to master: newer, and more likely to be broken. A "
+            "beta client is still offered stable releases, so you roll onto the "
+            "stable version when it ships.\n\n"
+            "Betas are published as DMG, zip and tarball only — there is no "
+            "Flatpak beta, so a Flatpak install has nothing to download on this "
+            "channel."
+        )
+        # Re-check the moment the channel changes rather than waiting for the
+        # next launch (#186). The badge is a read-only indicator, so it can
+        # answer for the *selected* channel before Apply persists it — which is
+        # the whole point: you switch to beta and immediately see whether there
+        # is a beta to be had, instead of switching blind.
+        self._update_channel.currentIndexChanged.connect(
+            lambda _index: self._check_for_update_async()
+        )
+        form.addRow("Update channel", self._update_channel)
         form.addRow("Version", self._build_version_indicator())
         # Theme and font size live on the Appearance page now (with the skin
         # picker) — they answer "how does nParse+ look", not "how is it set up".
@@ -769,6 +793,14 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._set_update_badge(None, checked=False)
         return row
 
+    def selected_update_channel(self) -> updater.UpdateChannel:
+        """The channel the picker is showing — not necessarily the saved one.
+
+        The update check previews the selection so that switching to beta says
+        something immediately; Apply is what persists it.
+        """
+        return updater.UpdateChannel(self._update_channel.currentData())
+
     def _set_update_badge(self, release: object, *, checked: bool) -> None:
         """Tone the badge: blank before a check, green up-to-date, amber when a
         newer release is available.
@@ -793,9 +825,13 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._update_check_button.setEnabled(False)
         chromewidgets.set_badge(self._update_badge, "Checking…", "busy")
 
+        # Read on the GUI thread, before the worker starts: the combo belongs
+        # to Qt and must not be touched from another thread.
+        channel = self.selected_update_channel()
+
         def work() -> None:
             try:
-                release = updater.check_for_update()
+                release = updater.check_for_update(channel=channel)
             except Exception:  # updater already fails soft, but never leak a thread crash
                 release = None
             self._update_status_ready.emit(release)
@@ -2269,6 +2305,7 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         install = self._install_dir.path()
         general.eq_install_dir = Path(install).expanduser() if install else None
         general.update_check = self._update_check.isChecked()
+        general.update_channel = self._update_channel.currentData()
         general.font_size = self._font_size.value()
         general.skin = self.selected_skin()  # type: ignore[assignment]
         general.overlay_text_size = int(self._overlay_text_size.currentData())

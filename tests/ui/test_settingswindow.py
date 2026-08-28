@@ -7,6 +7,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFormLayout, QLabel, QScrollArea
 
+from nparseplus import updater
 from nparseplus.config.settings import PlayerInfo, Settings, WindowState, get_player
 from nparseplus.core.enums import PlayerClass, Server
 from nparseplus.core.events import (
@@ -972,12 +973,57 @@ def test_update_badge_update_available(qtbot) -> None:
 def test_check_now_runs_updater_and_updates_badge(qtbot, monkeypatch) -> None:
     import nparseplus.updater as updater_mod
 
-    monkeypatch.setattr(updater_mod, "check_for_update", lambda: None)
+    # Takes **kwargs deliberately: the window passes the selected channel, and
+    # a stub that could not accept it would be swallowed by the window's own
+    # `except Exception` and pass for the wrong reason.
+    monkeypatch.setattr(updater_mod, "check_for_update", lambda **kwargs: None)
     window = _window(qtbot)
     with qtbot.waitSignal(window._update_status_ready, timeout=3000):
         window._check_for_update_async()
     assert "Up to date" in window._update_badge.text()
     assert window._update_check_button.isEnabled()
+
+
+# -- update channel (#186) -----------------------------------------------------
+
+
+def test_update_channel_defaults_to_stable(qtbot) -> None:
+    window = _window(qtbot)
+    assert window.selected_update_channel() is updater.UpdateChannel.STABLE
+
+
+def test_update_channel_applies(qtbot) -> None:
+    settings = Settings()
+    window = _window(qtbot, settings)
+    window._update_channel.setCurrentIndex(window._update_channel.findData("beta"))
+    window.apply()
+    assert settings.general.update_channel == "beta"
+
+
+def test_a_saved_beta_channel_is_shown_on_open(qtbot) -> None:
+    settings = Settings()
+    settings.general.update_channel = "beta"
+    window = _window(qtbot, settings)
+    assert window.selected_update_channel() is updater.UpdateChannel.BETA
+
+
+def test_switching_channel_rechecks_immediately_with_the_new_channel(qtbot, monkeypatch) -> None:
+    """#186: switching to beta must not wait for the next scheduled check.
+
+    And it checks against the *selected* channel, before Apply persists it —
+    otherwise switching to beta would report on the stable channel, which is
+    the one answer guaranteed to be wrong at that moment.
+    """
+    seen: list[object] = []
+    monkeypatch.setattr(
+        updater, "check_for_update", lambda **kwargs: seen.append(kwargs.get("channel"))
+    )
+    window = _window(qtbot)
+    with qtbot.waitSignal(window._update_status_ready, timeout=3000):
+        window._update_channel.setCurrentIndex(window._update_channel.findData("beta"))
+    assert seen == [updater.UpdateChannel.BETA]
+    # Nothing was persisted by merely looking.
+    assert window._settings.general.update_channel == "stable"
 
 
 def test_ch_cadence_patterns_apply(qtbot) -> None:

@@ -146,9 +146,27 @@ class NomnsParse(QApplication):
     def _update_check_enabled(self):
         return bool(self._backend.settings.general.update_check)
 
+    def _update_channel(self):
+        """The tier this client is offered, read fresh on every check (#186).
+
+        Never cached: the settings window changes this live and the tray's
+        check may run long after launch, so a captured value would go on
+        filtering prereleases for the rest of the session after the user asked
+        for them. An unrecognised value degrades to stable — the setting is a
+        Literal, so that only happens to a hand-edited file, and stable is the
+        answer that cannot surprise anyone.
+        """
+        return updater.UpdateChannel(
+            self._backend.settings.general.update_channel
+            if self._backend.settings.general.update_channel in tuple(updater.UpdateChannel)
+            else updater.DEFAULT_CHANNEL
+        )
+
     def _start_update_check(self):
+        channel = self._update_channel()
+
         def work():
-            release = updater.check_for_update()
+            release = updater.check_for_update(channel=channel)
             if release is not None:
                 self.update_available.emit(release)
 
@@ -157,9 +175,10 @@ class NomnsParse(QApplication):
     def _start_manual_update_check(self):
         """Tray 'Check for updates' — run the check now and report either way
         (the startup check above is silent when already up to date)."""
+        channel = self._update_channel()
 
         def work():
-            self.update_checked.emit(updater.check_for_update())
+            self.update_checked.emit(updater.check_for_update(channel=channel))
 
         threading.Thread(target=work, name="update-check-manual", daemon=True).start()
 

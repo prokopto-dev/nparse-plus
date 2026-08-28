@@ -61,6 +61,41 @@ _STAGING_SUFFIX = ".part"
 FLATPAK_INFO = Path("/.flatpak-info")
 
 
+class UpdateChannel(StrEnum):
+    """Which published releases this client is willing to be offered (#186).
+
+    Master cuts prereleases and stable is promoted deliberately, so the tier a
+    user sits in is the whole of how much unfinished work reaches them. STABLE
+    is the default and is exactly the behaviour every nParse+ binary has always
+    had — prereleases skipped, unconditionally, in every version already
+    installed anywhere. That is what made the beta tier free to introduce: the
+    server side could start publishing prereleases with no flag day, because
+    nothing in the wild could see them.
+
+    BETA is strictly *additive*: it stops filtering prereleases, it does not
+    stop offering stable releases. A promoted ``2.30.0`` is newer than the
+    ``2.30.0b3`` it came from under ``packaging.Version``, so a beta user rolls
+    onto the stable when it ships rather than being pinned to the beta line.
+
+    The one case that strands somebody is a beta line that is abandoned outright
+    — 2.31.0-beta.1 published, then never promoted, and development moves to
+    2.32.0. Switching back to STABLE then reports "up to date" until a stable
+    passes the installed prerelease, because it genuinely has nothing newer to
+    offer. Documented in docs/getting-started/updating.md rather than designed
+    around; the way out is a manual download from the releases page.
+    """
+
+    STABLE = "stable"
+    BETA = "beta"
+
+
+#: What a client is offered when it has expressed no preference. Not merely a
+#: default value — it is the behaviour that is compiled into every already
+#: released binary, so anything else here would change what an existing user
+#: is offered on upgrade without them asking for it.
+DEFAULT_CHANNEL = UpdateChannel.STABLE
+
+
 def running_in_flatpak(info_path: Path = FLATPAK_INFO) -> bool:
     """True when running inside a Flatpak sandbox."""
     return info_path.exists()
@@ -115,9 +150,19 @@ def _client(client: httpx.Client | None) -> httpx.Client:
 
 
 def check_for_update(
-    current: str | None = None, client: httpx.Client | None = None
+    current: str | None = None,
+    client: httpx.Client | None = None,
+    channel: UpdateChannel = DEFAULT_CHANNEL,
 ) -> ReleaseInfo | None:
-    """The latest release if it is newer than ``current``; else/on error None."""
+    """The latest release if it is newer than ``current``; else/on error None.
+
+    ``channel`` decides whether prereleases count. On STABLE this is character
+    for character the check every released version of nParse+ performs; on BETA
+    the prerelease filter is lifted and nothing else changes — the comparison,
+    the ordering and the collected notes are the same code on both channels, so
+    a beta user is offered a promoted stable the moment it outranks what they
+    are running.
+    """
     try:
         resp = _client(client).get(releases_api_url())
         resp.raise_for_status()
@@ -125,9 +170,17 @@ def check_for_update(
         installed = Version(current or nparseplus.__version__)
         if not isinstance(payload, list):
             return None
+        allow_prereleases = channel is UpdateChannel.BETA
         releases: list[tuple[Version, dict]] = []
         for item in payload:
-            if not isinstance(item, dict) or item.get("draft") or item.get("prerelease"):
+            if not isinstance(item, dict) or item.get("draft"):
+                continue
+            # A draft is never offered to anyone; a prerelease is offered only
+            # to a client that asked for one. GitHub sets this flag from
+            # release.yml, which derives it from the tag — so the tier is
+            # decided once, at publish time, and the client only has to agree
+            # to look.
+            if item.get("prerelease") and not allow_prereleases:
                 continue
             try:
                 version = Version(str(item.get("tag_name", "")).lstrip("v"))

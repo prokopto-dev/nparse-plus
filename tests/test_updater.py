@@ -736,3 +736,128 @@ def test_release_json_shape_matches_github() -> None:
     # digest is served per asset ("sha256:<hex>") — confirmed on all five
     # assets of v2.3.2 — and is what the download is pinned to.
     assert {"name", "browser_download_url", "size", "digest"} <= set(parsed["assets"][0])
+
+
+# --- the beta channel (#186) ------------------------------------------------
+
+#: A release list shaped like the one master now produces: a shipped stable,
+#: two betas of the version after it, and a draft nobody is ever offered.
+CHANNEL_RELEASES = [
+    {
+        "tag_name": "v2.30.0-beta.2",
+        "html_url": "https://example/b2",
+        "prerelease": True,
+        "draft": False,
+        "body": "beta two",
+        "assets": [],
+    },
+    {
+        "tag_name": "v2.30.0-beta.1",
+        "html_url": "https://example/b1",
+        "prerelease": True,
+        "draft": False,
+        "body": "beta one",
+        "assets": [],
+    },
+    {
+        "tag_name": "v2.29.0",
+        "html_url": "https://example/stable",
+        "prerelease": False,
+        "draft": False,
+        "body": "stable",
+        "assets": [],
+    },
+    {
+        "tag_name": "v2.31.0-beta.1",
+        "html_url": "https://example/draft",
+        "prerelease": True,
+        "draft": True,
+        "body": "unpublished",
+        "assets": [],
+    },
+]
+
+
+def _channel_client(payload=None) -> httpx.Client:
+    body = CHANNEL_RELEASES if payload is None else payload
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    return _client(handler)
+
+
+def test_a_stable_client_is_offered_exactly_what_it_is_offered_today() -> None:
+    """The acceptance criterion that protects everybody already installed.
+
+    Given a release list that now contains prereleases, a stable client must
+    resolve the same release it would have resolved before the beta tier
+    existed. This is not merely the default — it is what every nParse+ binary
+    ever published does unconditionally, so any other answer here would change
+    what an existing user is offered without them asking.
+    """
+    release = check_for_update("2.28.0", client=_channel_client())
+    assert release is not None
+    assert release.version == "2.29.0"
+    # And no beta leaked into the notes it will render.
+    assert [note.version for note in release.notes] == ["2.29.0"]
+
+
+def test_the_default_channel_is_stable() -> None:
+    """Callers that pass nothing get the conservative tier."""
+    assert updater.DEFAULT_CHANNEL is updater.UpdateChannel.STABLE
+    explicit = check_for_update(
+        "2.28.0", client=_channel_client(), channel=updater.UpdateChannel.STABLE
+    )
+    implicit = check_for_update("2.28.0", client=_channel_client())
+    assert explicit == implicit
+
+
+def test_a_beta_client_is_offered_the_newest_prerelease() -> None:
+    release = check_for_update(
+        "2.28.0", client=_channel_client(), channel=updater.UpdateChannel.BETA
+    )
+    assert release is not None
+    # Normalized PEP 440: the wire tag is v2.30.0-beta.2.
+    assert release.version == "2.30.0b2"
+    assert [note.version for note in release.notes] == ["2.30.0b2", "2.30.0b1", "2.29.0"]
+
+
+def test_a_draft_is_offered_on_no_channel() -> None:
+    """``draft`` is unpublished, not merely unfinished — nobody sees it."""
+    for channel in updater.UpdateChannel:
+        release = check_for_update("2.30.0b2", client=_channel_client(), channel=channel)
+        assert release is None or "2.31.0" not in release.version
+
+
+def test_a_promoted_stable_outranks_the_beta_it_came_from() -> None:
+    """The other half of acceptance: a beta user rolls onto the stable.
+
+    ``packaging.Version`` orders 2.30.0b3 < 2.30.0, so the promotion is newer
+    than the beta line it finalizes and needs no special handling to be
+    offered. A user is stranded only if a beta line is abandoned outright,
+    which is documented rather than designed around.
+    """
+    published = [
+        {
+            "tag_name": "v2.30.0",
+            "html_url": "https://example/final",
+            "prerelease": False,
+            "draft": False,
+            "body": "promoted",
+            "assets": [],
+        },
+        *CHANNEL_RELEASES[:3],
+    ]
+    for channel in updater.UpdateChannel:
+        release = check_for_update("2.30.0b2", client=_channel_client(published), channel=channel)
+        assert release is not None, f"{channel} was offered nothing"
+        assert release.version == "2.30.0"
+
+
+def test_a_beta_client_is_not_offered_an_older_beta() -> None:
+    """The comparison is unchanged on the beta channel — only the filter moved."""
+    assert (
+        check_for_update("2.30.0b2", client=_channel_client(), channel=updater.UpdateChannel.BETA)
+        is None
+    )
