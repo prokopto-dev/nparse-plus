@@ -384,22 +384,65 @@ def test_the_github_release_is_marked_prerelease_for_a_beta() -> None:
     )
 
 
-def test_the_beta_artifacts_are_dmg_zip_and_tarball_and_not_flatpak() -> None:
-    """What a beta publishes, stated as a test rather than as prose.
+def beta_artifact_paths() -> str:
+    """Every artifact an unguarded upload step publishes.
 
-    Every artifact-uploading step that is NOT gated on the release being stable
-    is, by definition, an artifact a beta ships. The .flatpak must not be among
-    them; the tarball, the DMGs and the zips must.
+    Not gated on the release being stable means, by definition, an artifact a
+    beta ships.
     """
-    beta_paths = " ".join(
+    return " ".join(
         str(step.get("with", {}).get("path", ""))
         for _job_name, job, step in all_steps()
         if str(step.get("uses", "")).startswith("actions/upload-artifact")
         and not is_guarded(job, step)
     )
-    assert ".flatpak" not in beta_paths, "a beta must not publish a Flatpak bundle"
+
+
+def test_a_beta_never_publishes_a_flatpak_bundle() -> None:
+    """The artifact whose distribution channel a beta must not enter.
+
+    Unlike every other artifact here, a .flatpak is not an inert file someone
+    downloads deliberately — installing one wires up the gh-pages OSTree remote
+    that `flatpak update` then follows, and that repo is stable-only.
+    """
+    assert ".flatpak" not in beta_artifact_paths()
+
+
+def test_a_beta_still_publishes_everything_a_tester_can_install() -> None:
+    """A beta nobody can install is not a beta.
+
+    The .deb is here on purpose, and only because ``build_deb.debian_version``
+    translates the prerelease into Debian's ordering — see
+    ``test_deb_packaging.py``. Debian splits a version at the last hyphen, so a
+    raw ``2.30.0-beta.1`` sorts AFTER the ``2.30.0`` it is promoted to, and a
+    tester who installed it could never roll forward. That is the property, not
+    the presence of the file, that makes shipping it safe; if the translation
+    were reverted, that test fails and this one should be revisited with it.
+    """
+    beta_paths = beta_artifact_paths()
     for expected in (".tar.gz", ".dmg", ".zip", ".deb"):
         assert expected in beta_paths, f"a beta should still publish {expected}"
+
+
+def test_the_debian_build_is_exercised_on_a_beta() -> None:
+    """Why the .deb is not simply gated off for prereleases.
+
+    ``build-linux-debian12`` and ``verify-deb-debian12`` are both in the
+    publish job's ``needs``, and a skipped job in ``needs`` skips its
+    dependents — so gating them would skip the whole release for a beta, and
+    the only way back is an ``always()``-flavoured ``if`` on ``release`` that
+    would weaken its failure semantics for *every* dependency.
+
+    The upside is the real reason though: the Debian leg is the most fragile
+    one in the file (glibc floor, shared-library closure, a pristine-container
+    install that is the only check on ``Depends:``), so having it run on every
+    beta is exactly what a beta is for.
+    """
+    for job in ("build-linux-debian12", "verify-deb-debian12"):
+        assert PRERELEASE_GUARD not in str(jobs()[job].get("if", "")), (
+            f"{job} must keep running for a beta"
+        )
+        assert job in jobs()[PUBLISHER]["needs"]
 
 
 def test_the_versioned_docs_deploy_is_stable_only() -> None:

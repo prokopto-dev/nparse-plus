@@ -66,13 +66,59 @@ Two implementation notes worth knowing before you change any of it:
 
 ### Betas are not Flatpak
 
-Betas publish **DMG, zip, tarball and `.deb` only**. The flatpak job and the
+Betas publish **DMG, zip, tarball and `.deb`**. The flatpak job and the
 `gh-pages` OSTree publish are skipped for a prerelease, because that
 repository is what `flatpak update` follows for *stable* users — publishing a
 beta there would push it to people who opted into nothing, through a
 force-push that cannot be undone by re-running an older release. The versioned
 docs deploy is skipped too (it would create a permanent `2.30.0-beta` version
 directory and alias it to `latest`).
+
+The `.flatpak` is the one artifact singled out because it is the only one that
+is not inert: installing it wires up the OSTree remote that `flatpak update`
+then follows. Every other artifact is a file somebody downloads deliberately.
+
+### The `.deb` needs a different version spelling
+
+**Debian and SemVer disagree about the hyphen, and the disagreement inverts
+the ordering.** Debian splits a version at the *last* hyphen and reads the
+tail as the `debian_revision` ([Policy
+5.6.12](https://www.debian.org/doc/debian-policy/ch-controlfields.html#version)),
+so `2.30.0-beta.1` is upstream `2.30.0` with revision `beta.1` — and the
+promoted `2.30.0` has an implicit revision of `0`:
+
+```console
+$ dpkg --compare-versions 2.30.0-beta.1 gt 2.30.0 && echo "beta is NEWER"
+beta is NEWER
+```
+
+A tester who installed that `.deb` could never roll forward to the release it
+was a beta of; `apt` would see a downgrade and refuse. So
+`build_deb.debian_version` translates the prerelease to the Debian idiom —
+`2.30.0~beta.1`, where `~` sorts before anything including the end of a
+string:
+
+| Version | Orders |
+|---|---|
+| `2.29.0` | < `2.30.0~beta.1` |
+| `2.30.0~beta.1` | < `2.30.0~beta.2` |
+| `2.30.0~beta.2` | < `2.30.0` |
+
+A stable version has no hyphen and is passed through untouched, so nothing
+about an existing package changes. `tests/test_deb_packaging.py` asserts the
+translation everywhere and the ordering itself by shelling out to real `dpkg`,
+which the ubuntu leg of the CI matrix has — Debian's comparison rules have
+enough special cases that asserting them from the policy text would only be
+asserting a reading of it.
+
+The Debian build deliberately **is not** gated off for prereleases. It and
+`verify-deb-debian12` are both in the publish job's `needs`, and a skipped job
+in `needs` skips its dependents — gating them would skip the whole release for
+a beta, recoverable only with an `always()`-flavoured `if` on `release` that
+would weaken its failure semantics for every dependency. And the Debian leg is
+the most fragile one in the file (glibc floor, shared-library closure, a
+pristine-container install that is the only real check on `Depends:`), so
+running it on every beta is exactly what a beta is for.
 
 The client half is enforced too, not just documented: `updater.effective_channel`
 clamps a beta preference to stable whenever the app is running in a Flatpak, at
