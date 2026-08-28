@@ -45,11 +45,18 @@ A beta client is still offered stable releases. Because `2.30.0` counts as
 newer than `2.30.0-beta.3`, you roll onto the stable version when the line you
 are testing is promoted — you do not get stuck on the beta.
 
-!!! warning "Betas are not published for Flatpak"
+!!! warning "Beta is unavailable in a Flatpak install"
 
     Betas ship as **DMG, zip and tarball only**. The Flatpak repository that
-    `flatpak update` follows carries stable releases exclusively, so a Flatpak
-    install has nothing to download on the beta channel. Leave it on Stable.
+    `flatpak update` follows carries stable releases exclusively, so there
+    would be nothing for a Flatpak install to download.
+
+    nParse+ does not merely discourage this — inside a Flatpak the **Beta
+    option is disabled**, and the channel is clamped to Stable every time an
+    update check runs. That second part matters if you move a settings
+    directory between installs: a beta preference saved by a tarball install
+    has no effect inside a Flatpak, and is left in place rather than erased,
+    so it comes back if you go back.
 
 ### Getting back to stable
 

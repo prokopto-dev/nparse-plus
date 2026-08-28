@@ -152,15 +152,15 @@ class NomnsParse(QApplication):
         Never cached: the settings window changes this live and the tray's
         check may run long after launch, so a captured value would go on
         filtering prereleases for the rest of the session after the user asked
-        for them. An unrecognised value degrades to stable — the setting is a
-        Literal, so that only happens to a hand-edited file, and stable is the
-        answer that cannot surprise anyone.
+        for them.
+
+        ``effective_channel`` — not the raw setting — because a stored beta
+        preference is not by itself a channel this build can serve. Inside
+        Flatpak it clamps to stable, since no beta ``.flatpak`` is ever
+        published and announcing one the portal cannot install is worse than
+        not offering the channel.
         """
-        return updater.UpdateChannel(
-            self._backend.settings.general.update_channel
-            if self._backend.settings.general.update_channel in tuple(updater.UpdateChannel)
-            else updater.DEFAULT_CHANNEL
-        )
+        return updater.effective_channel(self._backend.settings.general.update_channel)
 
     def _start_update_check(self):
         channel = self._update_channel()

@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from nparseplus import updater
+from nparseplus.config.settings import Settings
 from nparseplus.updater import (
     DownloadStatus,
     ReleaseAsset,
@@ -861,3 +862,102 @@ def test_a_beta_client_is_not_offered_an_older_beta() -> None:
         check_for_update("2.30.0b2", client=_channel_client(), channel=updater.UpdateChannel.BETA)
         is None
     )
+
+
+# --- Flatpak is stable-only, structurally (#186 review) ---------------------
+
+
+def test_effective_channel_clamps_beta_to_stable_inside_flatpak() -> None:
+    """release.yml publishes no beta .flatpak and no beta OSTree commit.
+
+    So a sandboxed build honouring a beta preference would announce an update
+    the portal can only answer with "nothing to install", and whose download
+    fallback finds no asset either — ``pick_asset`` looks for a ``.flatpak``.
+    An update the app insists exists and cannot deliver is worse than not
+    offering the channel.
+    """
+    assert updater.effective_channel("beta", in_flatpak=True) is updater.UpdateChannel.STABLE
+    assert updater.effective_channel("beta", in_flatpak=False) is updater.UpdateChannel.BETA
+
+
+def test_effective_channel_leaves_stable_alone_everywhere() -> None:
+    for sandboxed in (True, False):
+        assert (
+            updater.effective_channel("stable", in_flatpak=sandboxed)
+            is updater.UpdateChannel.STABLE
+        )
+
+
+def test_effective_channel_reads_an_unusable_value_as_stable() -> None:
+    """``update_channel`` is a Literal, so this is a hand-edited file only."""
+    for configured in (None, "", "nightly", "BETA"):
+        assert (
+            updater.effective_channel(configured, in_flatpak=False) is updater.UpdateChannel.STABLE
+        ), configured
+
+
+def test_effective_channel_probes_the_sandbox_when_not_told(monkeypatch) -> None:
+    """The default path is the real probe, not a silent assumption of 'no'."""
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: True)
+    assert updater.effective_channel("beta") is updater.UpdateChannel.STABLE
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: False)
+    assert updater.effective_channel("beta") is updater.UpdateChannel.BETA
+
+
+def test_a_flatpak_client_is_never_offered_a_prerelease() -> None:
+    """End to end: the clamp in front of the check that would have offered it."""
+    channel = updater.effective_channel("beta", in_flatpak=True)
+    release = check_for_update("2.28.0", client=_channel_client(), channel=channel)
+    assert release is not None
+    assert release.version == "2.29.0", "a Flatpak client was offered a prerelease"
+
+
+def test_a_stored_beta_preference_is_not_rewritten_by_the_clamp() -> None:
+    """The clamp is a read, not a migration.
+
+    Settings outlive the install that wrote them in both directions: a beta
+    preference carried into a Flatpak install must not take effect, and must
+    still be there if the same settings directory is used by a tarball install
+    again.
+    """
+    settings = Settings()
+    settings.general.update_channel = "beta"
+    assert (
+        updater.effective_channel(settings.general.update_channel, in_flatpak=True)
+        is updater.UpdateChannel.STABLE
+    )
+    assert settings.general.update_channel == "beta"
+
+
+# --- the tray's own path (#186 review: cover BOTH checks) -------------------
+
+
+def test_the_tray_update_check_uses_the_effective_channel() -> None:
+    """The tray reads the same clamp the settings window does.
+
+    Called unbound against a stub rather than through a real ``NomnsParse``:
+    the tray is a QApplication subclass, and what is under test is which
+    channel it resolves, not Qt. Two consumers of one rule is exactly the
+    shape that rots when only one of them is covered.
+    """
+    from types import SimpleNamespace
+
+    from nparseplus.helpers.application import NomnsParse
+
+    def resolve(configured: str, *, sandboxed: bool) -> updater.UpdateChannel:
+        stub = SimpleNamespace(
+            _backend=SimpleNamespace(
+                settings=SimpleNamespace(general=SimpleNamespace(update_channel=configured))
+            )
+        )
+        original = updater.running_in_flatpak
+        updater.running_in_flatpak = lambda: sandboxed
+        try:
+            return NomnsParse._update_channel(stub)
+        finally:
+            updater.running_in_flatpak = original
+
+    assert resolve("beta", sandboxed=False) is updater.UpdateChannel.BETA
+    assert resolve("beta", sandboxed=True) is updater.UpdateChannel.STABLE
+    assert resolve("stable", sandboxed=False) is updater.UpdateChannel.STABLE
+    assert resolve("nonsense", sandboxed=False) is updater.UpdateChannel.STABLE

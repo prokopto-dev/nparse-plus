@@ -74,6 +74,14 @@ force-push that cannot be undone by re-running an older release. The versioned
 docs deploy is skipped too (it would create a permanent `2.30.0-beta` version
 directory and alias it to `latest`).
 
+The client half is enforced too, not just documented: `updater.effective_channel`
+clamps a beta preference to stable whenever the app is running in a Flatpak, at
+every read rather than when the setting is written — settings outlive the
+install that wrote them, so a preference carried in from a tarball install must
+not take effect (and must not be erased either, so it still works if the user
+goes back). Both consumers, the settings window and the tray check, route
+through it.
+
 None of that is left to review:
 `tests/test_release_workflow.py::test_nothing_that_reaches_a_stable_user_runs_for_a_prerelease`
 derives the list of dangerous steps from the workflow file itself, so a new

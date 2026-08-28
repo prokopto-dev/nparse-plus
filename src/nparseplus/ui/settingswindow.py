@@ -488,18 +488,42 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         self._update_channel = QComboBox(self)
         self._update_channel.addItem("Stable — released versions only", "stable")
         self._update_channel.addItem("Beta — test releases as they are cut", "beta")
-        self._update_channel.setCurrentIndex(
-            max(0, self._update_channel.findData(general.update_channel))
-        )
-        self._update_channel.setToolTip(
+        tooltip = (
             "Stable is what everyone gets. Beta also offers the prereleases cut "
             "from each merge to master: newer, and more likely to be broken. A "
             "beta client is still offered stable releases, so you roll onto the "
-            "stable version when it ships.\n\n"
-            "Betas are published as DMG, zip and tarball only — there is no "
-            "Flatpak beta, so a Flatpak install has nothing to download on this "
-            "channel."
+            "stable version when it ships."
         )
+        # Flatpak is stable-only, structurally: no beta .flatpak and no beta
+        # OSTree commit is ever published, so a beta preference here could only
+        # announce an update the portal answers with "nothing to install" and
+        # the download fallback cannot find an asset for. Disabled rather than
+        # hidden — a Flatpak user who chose beta on another install needs to
+        # see why the option is not taking effect, and a silently absent row
+        # explains nothing.
+        self._beta_unavailable = updater.running_in_flatpak()
+        if self._beta_unavailable:
+            beta_item = self._update_channel.model().item(self._update_channel.findData("beta"))
+            if beta_item is not None:
+                beta_item.setEnabled(False)
+            tooltip += (
+                "\n\nBetas are published as DMG, zip and tarball only — there is "
+                "no Flatpak beta — so this channel is unavailable in a Flatpak "
+                "install."
+            )
+        # The EFFECTIVE channel, so a stored "beta" carried into a Flatpak
+        # install shows what the app will actually do rather than what the file
+        # says. The stored value is deliberately left alone: it comes back if
+        # the same settings directory is used by a tarball install again.
+        self._update_channel.setCurrentIndex(
+            max(
+                0,
+                self._update_channel.findData(
+                    str(updater.effective_channel(general.update_channel))
+                ),
+            )
+        )
+        self._update_channel.setToolTip(tooltip)
         # Re-check the moment the channel changes rather than waiting for the
         # next launch (#186). The badge is a read-only indicator, so it can
         # answer for the *selected* channel before Apply persists it — which is
@@ -797,9 +821,11 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         """The channel the picker is showing — not necessarily the saved one.
 
         The update check previews the selection so that switching to beta says
-        something immediately; Apply is what persists it.
+        something immediately; Apply is what persists it. Clamped through
+        ``effective_channel`` so the preview cannot promise a Flatpak user a
+        beta that is never published for them.
         """
-        return updater.UpdateChannel(self._update_channel.currentData())
+        return updater.effective_channel(self._update_channel.currentData())
 
     def _set_update_badge(self, release: object, *, checked: bool) -> None:
         """Tone the badge: blank before a check, green up-to-date, amber when a
@@ -2305,7 +2331,14 @@ class UnifiedSettingsWindow(chromewidgets.ChromeMixin, OverlayWindowBase):
         install = self._install_dir.path()
         general.eq_install_dir = Path(install).expanduser() if install else None
         general.update_check = self._update_check.isChecked()
-        general.update_channel = self._update_channel.currentData()
+        # Skipped where beta is unavailable: the control is clamped to stable
+        # there and cannot express a change, so writing it would silently
+        # replace a beta preference the user set on another install — the one
+        # thing the read-time clamp is careful NOT to do, since that setting
+        # has to come back if the same settings directory is used outside a
+        # sandbox again.
+        if not self._beta_unavailable:
+            general.update_channel = self._update_channel.currentData()
         general.font_size = self._font_size.value()
         general.skin = self.selected_skin()  # type: ignore[assignment]
         general.overlay_text_size = int(self._overlay_text_size.currentData())

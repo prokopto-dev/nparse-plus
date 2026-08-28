@@ -96,6 +96,51 @@ class UpdateChannel(StrEnum):
 DEFAULT_CHANNEL = UpdateChannel.STABLE
 
 
+def effective_channel(
+    configured: str | UpdateChannel | None,
+    in_flatpak: bool | None = None,
+) -> UpdateChannel:
+    """The channel to actually check on, given what the settings say.
+
+    Two clamps, and both exist because a configured value is not by itself a
+    channel this build can serve.
+
+    **Flatpak is stable-only, structurally.** ``release.yml`` publishes neither
+    a beta ``.flatpak`` nor a beta OSTree commit — the gh-pages repo that
+    ``flatpak update`` follows carries stable releases exclusively, because
+    force-pushing a beta there would ship it to every stable Flatpak user. So a
+    sandboxed build that honoured a beta preference would announce an update
+    the portal can only answer with "nothing to install", and whose download
+    fallback finds no asset either (``pick_asset`` looks for a ``.flatpak``):
+    an update the app insists exists and cannot deliver, which is worse than
+    not offering the channel at all.
+
+    The clamp is at every *read* rather than at the point the setting is
+    written, because settings outlive the install that wrote them — a beta
+    preference saved by a tarball install and later carried into a Flatpak one
+    must not survive the move. Nothing rewrites the stored value: leaving it
+    alone is what lets the same settings directory go back to offering betas if
+    the user returns to a tarball.
+
+    **An unrecognised value reads as stable.** ``update_channel`` is a
+    ``Literal``, so that only happens to a hand-edited or hand-merged file, and
+    stable is the answer that cannot surprise anyone.
+
+    ``in_flatpak`` is injectable for the reason ``pick_asset``'s is: the
+    sandbox probe is a file on disk, so a test must be able to ask both
+    questions on any machine.
+    """
+    try:
+        channel = UpdateChannel(configured)
+    except ValueError:
+        return DEFAULT_CHANNEL
+    if channel is UpdateChannel.BETA:
+        sandboxed = running_in_flatpak() if in_flatpak is None else in_flatpak
+        if sandboxed:
+            return UpdateChannel.STABLE
+    return channel
+
+
 def running_in_flatpak(info_path: Path = FLATPAK_INFO) -> bool:
     """True when running inside a Flatpak sandbox."""
     return info_path.exists()

@@ -1289,3 +1289,61 @@ def test_every_form_row_wraps_rather_than_widening_the_window(qtbot) -> None:
     forms = window.findChildren(QFormLayout)
     assert forms, "the settings pages are built out of form layouts"
     assert all(form.rowWrapPolicy() == QFormLayout.RowWrapPolicy.WrapLongRows for form in forms)
+
+
+def test_beta_is_offered_but_disabled_inside_flatpak(qtbot, monkeypatch) -> None:
+    """Disabled, not hidden.
+
+    A Flatpak user who chose beta on another install has to be able to see why
+    the setting is not taking effect; a silently absent row explains nothing.
+    """
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: True)
+    window = _window(qtbot)
+    model = window._update_channel.model()
+    beta_row = window._update_channel.findData("beta")
+    stable_row = window._update_channel.findData("stable")
+    assert beta_row >= 0, "the beta row must still be visible"
+    assert not model.item(beta_row).isEnabled()
+    assert model.item(stable_row).isEnabled()
+    assert "no Flatpak beta" in window._update_channel.toolTip()
+
+
+def test_a_stored_beta_shows_and_previews_as_stable_inside_flatpak(qtbot, monkeypatch) -> None:
+    """The carried-preference case the review named.
+
+    A beta preference saved by a tarball install and later carried into a
+    Flatpak one must not take effect — including in the preview check, which
+    would otherwise announce a prerelease the portal cannot install.
+    """
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: True)
+    settings = Settings()
+    settings.general.update_channel = "beta"
+    window = _window(qtbot, settings)
+    assert window._update_channel.currentData() == "stable"
+    assert window.selected_update_channel() is updater.UpdateChannel.STABLE
+
+
+def test_apply_does_not_erase_a_beta_preference_inside_flatpak(qtbot, monkeypatch) -> None:
+    """The clamp is a read, not a migration.
+
+    The control is pinned to stable in a sandbox and cannot express a change,
+    so writing it on Apply would silently discard a preference the user set on
+    another install — and it has to come back if that same settings directory
+    is used outside the sandbox again.
+    """
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: True)
+    settings = Settings()
+    settings.general.update_channel = "beta"
+    window = _window(qtbot, settings)
+    window.apply()
+    assert settings.general.update_channel == "beta"
+
+
+def test_the_channel_still_applies_outside_flatpak(qtbot, monkeypatch) -> None:
+    """The guard above must not have made the setting unwritable everywhere."""
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: False)
+    settings = Settings()
+    window = _window(qtbot, settings)
+    window._update_channel.setCurrentIndex(window._update_channel.findData("beta"))
+    window.apply()
+    assert settings.general.update_channel == "beta"
