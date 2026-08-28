@@ -6,6 +6,14 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.28.0 (2026-08-28)
+
+### Features
+
+- **maps**: Toggle the player marker's direction arrow
+  ([`a1b5a26`](https://github.com/prokopto-dev/nparse-plus/commit/a1b5a260f26bd12240ef6642be3b5c0151b8d613))
+
+
 ## v2.27.0 (2026-08-25)
 
 ### Features
