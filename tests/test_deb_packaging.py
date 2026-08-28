@@ -343,7 +343,9 @@ def test_dpkg_orders_the_beta_before_the_stable_it_promotes_to() -> None:
     Debian's comparison algorithm has enough special cases (letters before
     non-letters, tilde before end-of-part) that asserting it from the prose
     would be asserting my reading of the prose. ``dpkg`` is installed on the
-    ubuntu leg of the CI matrix, so this runs for real on every PR.
+    ubuntu leg of the CI matrix, so this runs for real on every PR — and
+    ``test_the_dpkg_check_cannot_silently_vanish_from_ci`` is what stops the
+    skip from quietly becoming permanent there.
 
     Without the translation this fails on the very first comparison:
     ``dpkg --compare-versions 2.30.0-beta.1 gt 2.30.0`` is TRUE, so a user who
@@ -373,4 +375,24 @@ def test_dpkg_orders_the_beta_before_the_stable_it_promotes_to() -> None:
     # The bug this exists to prevent, stated as the thing that is now false.
     assert compare(BETA, "gt", PROMOTED), (
         "raw SemVer no longer inverts the ordering — has dpkg changed?"
+    )
+
+
+def test_the_dpkg_check_cannot_silently_vanish_from_ci() -> None:
+    """A skipif that is always true is a test that does not exist.
+
+    The ordering check above skips without ``dpkg`` so a contributor on a
+    non-Debian machine is not blocked — which also means it would report a
+    tidy green while checking nothing at all if the Linux runner ever lost
+    ``dpkg``. Skipping is a local convenience, never a CI outcome.
+
+    Scoped to Linux because the macOS and Windows legs have no ``dpkg`` and
+    are not expected to; the Linux leg is the one that must exercise it.
+    """
+    if not os.environ.get("CI") or sys.platform != "linux":
+        pytest.skip("only meaningful on the Linux CI runner")
+    assert shutil.which("dpkg") is not None, (
+        "the Linux CI runner has no dpkg, so the Debian ordering check is "
+        "silently skipping — install dpkg or make the ordering assertion "
+        "run some other way"
     )
