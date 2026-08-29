@@ -325,7 +325,7 @@ def test_the_region_example_pins_the_app_release_that_supports_it() -> None:
 
     The range is weighed against the SDK the app RESOLVED, not the contract it
     IMPLEMENTS, and every released app declares an SDK floor rather than a pin
-    — v2.28.0 asks for ``nparseplus-sdk>=1.4,<2``, so a plain pip/source
+    — v2.28.1 asks for ``nparseplus-sdk>=1.4,<2``, so a plain pip/source
     install of it resolves SDK 1.5 quite legitimately once that is on PyPI.
     ``ctx.add_overlay_region`` lives in the HOST, so the range would pass and
     ``activate()`` would then raise ``AttributeError``. ``min_app_version`` is

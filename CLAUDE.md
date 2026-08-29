@@ -1904,7 +1904,7 @@ guarded too, so the disposal does not depend on the screen still holding.
 **A host-backed capability needs `min_app_version`, not just `requires_sdk`.**
 The range is weighed against the SDK the app RESOLVED, not the contract it
 IMPLEMENTS, and every released app declares an SDK FLOOR rather than a pin:
-v2.28.0 asks for `nparseplus-sdk>=1.4,<2`, so a plain pip/source install of it
+v2.28.1 asks for `nparseplus-sdk>=1.4,<2`, so a plain pip/source install of it
 resolves SDK 1.5 quite legitimately once that is published — the same seam
 `tests/test_sdk_floor.py` exists for, seen from the other side. `SDK_VERSION`
 then reports 1.5, `requires_sdk=">=1.5,<2"` passes, and
@@ -1912,7 +1912,7 @@ then reports 1.5, `requires_sdk=">=1.5,<2"` passes, and
 inside `activate()` and reads as a broken add-on rather than an old app.
 `min_app_version` is the one input to the handshake that comes from the host
 itself, which is what makes it the lever — and it works RETROACTIVELY, since
-v2.28.0's own `check_compat` call already passes its `app_version`. The
+v2.28.1's own `check_compat` call already passes its `app_version`. The
 example pins it, the docs say to, and the identical (false) "no
 `min_app_version` needed" claim on the SDK 1.3 row was corrected with it.
 
@@ -1926,7 +1926,10 @@ catches this: `REGION_MIN_APP_VERSION` is deliberately NOT compared against the
 tree's own `__version__` (that comparison fails on the next unrelated release
 and pressures whoever hits it into raising a floor that is already correct), so
 the constant is a post-hoc alarm, not a gate. Any feature PR pinning a future
-release must re-read the newest tag immediately before merge.
+release must re-read the newest tag immediately before merge. Re-read again
+when v2.28.1 landed ahead of it: a PATCH release does not consume a pinned
+minor, so 2.29.0 survived unchanged — only another `feat:` merging first
+invalidates it.
 
 **The content hook holds the overlay WEAKLY, and that is #154's segfault one
 step removed.** The overlay owns the region's host widget, the widget holds its

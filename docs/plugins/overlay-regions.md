@@ -100,7 +100,7 @@ no restart — including while position mode is up.
 place a region differs from a purely SDK-side feature. That range is weighed
 against the SDK version the app *resolved*, while `add_overlay_region` lives
 in the *host* — and every released app declares an SDK floor rather than a
-pin. App v2.28.0 asks for `nparseplus-sdk>=1.4,<2`, so a `pip`/source install
+pin. App v2.28.1 asks for `nparseplus-sdk>=1.4,<2`, so a `pip`/source install
 of it resolves SDK 1.5 quite legitimately once that is published; the range
 passes, the method is absent, and your plugin fails inside `activate()`
 instead of being refused cleanly.

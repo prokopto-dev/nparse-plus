@@ -74,8 +74,8 @@ apart, and it is the same seam
 [`tests/test_sdk_floor.py`](https://github.com/prokopto-dev/nparse-plus/blob/master/tests/test_sdk_floor.py)
 exists for, seen from the other side.
 
-Every released app declares a floor, not a pin — v2.28.0 asks for
-`nparseplus-sdk>=1.4,<2`. So once SDK 1.5 is on PyPI, installing app v2.28.0
+Every released app declares a floor, not a pin — v2.28.1 asks for
+`nparseplus-sdk>=1.4,<2`. So once SDK 1.5 is on PyPI, installing app v2.28.1
 from source resolves **SDK 1.5** quite legitimately. `SDK_VERSION` then
 reports 1.5, a plugin declaring `requires_sdk=">=1.5,<2"` passes the
 handshake — and `ctx.add_overlay_region` does not exist on that host, because

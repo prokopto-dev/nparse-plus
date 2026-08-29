@@ -124,7 +124,7 @@ class KillTickerPlugin(NParsePlugin):
         # BOTH, and the second one is not belt-and-braces. requires_sdk is
         # weighed against the SDK the app RESOLVED, not the contract it
         # IMPLEMENTS, and every released app declares a floor rather than a
-        # pin: v2.28.0 asks for nparseplus-sdk>=1.4,<2, so a source install of
+        # pin: v2.28.1 asks for nparseplus-sdk>=1.4,<2, so a source install of
         # it legitimately resolves SDK 1.5 once that is on PyPI. The range
         # then passes while HostPluginContext.add_overlay_region does not
         # exist, and this plugin fails inside activate() instead of being
