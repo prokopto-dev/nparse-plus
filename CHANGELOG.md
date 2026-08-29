@@ -6,6 +6,17 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.28.3 (2026-08-29)
+
+### Bug Fixes
+
+- **timers**: Click a spell at your own level, below your class's too
+  ([`e311aef`](https://github.com/prokopto-dev/nparse-plus/commit/e311aeffceb61591dd539353f6b75e0c2536ad33))
+
+- **timers**: Time clickies from your own level, not the item's
+  ([`6661aae`](https://github.com/prokopto-dev/nparse-plus/commit/6661aaefdecac4060c8b3bc44dbff3969b3ccd94))
+
+
 ## v2.28.2 (2026-08-29)
 
 ### Bug Fixes
