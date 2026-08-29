@@ -319,11 +319,7 @@ def _register_region(
                 title=spec.title or spec.key,
                 has_content=_guarded_has_content(spec, loaded.meta.id),
                 default=_region_default(spec, loaded.meta.id),
-                default_width=(
-                    (lambda width=spec.default_width: width)
-                    if spec.default_width is not None
-                    else None
-                ),
+                default_width=_region_default_width(spec, loaded.meta.id),
                 preview=_region_preview(widget, loaded.meta.id, spec.key),
             )
         )
@@ -333,12 +329,45 @@ def _register_region(
         logger.warning(
             "plugin %s overlay region %r was refused by the overlay", loaded.meta.id, spec.key
         )
+        # ROLL BACK, because "refused" and "left no trace" are not the same
+        # thing. ``add_region`` registers the record and mints its chip BEFORE
+        # it places the host, so a failure during layout leaves a record whose
+        # host the caller is about to delete — and every later visibility pass
+        # (i.e. every overlay event) then raises out of ``_region_size``. The
+        # overlay stops working, permanently, for one bad add-on.
+        with _isolated(f"plugin {loaded.meta.id} overlay region {spec.key!r} rollback"):
+            event_overlay.remove_region(region_key)
         return None
     surfaces = ui.surfaces.setdefault(loaded.meta.id, _PluginSurfaces())
     ui.regions_by_key[region_key] = widget
     surfaces.region_keys.append(region_key)
     surfaces.region_widgets.append(widget)
     return region_key
+
+
+def _region_default_width(spec: Any, plugin_id: str) -> Callable[[], int] | None:
+    """``spec.default_width`` as a callable, or None to use the overlay default.
+
+    The one declared size that does NOT go through ``OverlayRegion``'s pydantic
+    validation, because the overlay wants a callable rather than a stored
+    number — so it is the one a plugin can put anything in. Unvalidated, a
+    ``default_width="wide"`` reached ``max(MIN_REGION_WIDTH, host_w)`` inside
+    the overlay's layout pass and raised there, i.e. *after* the region had
+    already been registered.
+    """
+    width = spec.default_width
+    if width is None:
+        return None
+    if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+        logger.warning(
+            "plugin %s overlay region %r declared default_width=%r, which is not a positive "
+            "int; using the overlay default",
+            plugin_id,
+            spec.key,
+            width,
+        )
+        return None
+    return lambda: width
 
 
 def _region_default(spec: Any, plugin_id: str) -> Any:

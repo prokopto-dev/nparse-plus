@@ -1841,6 +1841,18 @@ running on every overlay event for the rest of the session, which is the cost
 the guard exists to avoid; the test asserts the INVOCATION count, because a
 log count alone passes against exactly that bug.
 
+**A refused region is ROLLED BACK, not merely refused.** `add_region`
+registers the record and mints its chip BEFORE it places the host, so a
+failure during layout left a record whose host `_register_region`'s caller
+then deleted — and every later visibility pass, i.e. every overlay event,
+raised out of `_region_size`. One bad add-on stopped the overlay working, for
+the session. `_register_region` now calls `remove_region` on the refusal path.
+`default_width` is validated up front as well, because it is the one declared
+size that bypasses `OverlayRegion`'s pydantic validation (the overlay wants a
+callable, not a stored number), and so the one a plugin can put a string in.
+The validator is the likely trigger; the rollback is what covers the failures
+no validator can anticipate.
+
 **A region factory's result is type-screened where it is first seen.**
 `OverlayRegionSpec` documents that the factory returns a QWidget and a region
 host is placed, resized, moved and stylesheeted by the overlay, so nothing

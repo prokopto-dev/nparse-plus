@@ -530,6 +530,63 @@ def test_a_malformed_spec_is_refused_without_being_dereferenced(
         context["backend"].stop()
 
 
+def test_a_refused_region_leaves_no_record_behind(qtbot, tmp_path: Path) -> None:
+    """ "Refused" and "left no trace" are not the same thing.
+
+    ``add_region`` registers the record and mints its chip BEFORE it places
+    the host, so a failure during layout leaves a record whose host the caller
+    then deletes — and every later visibility pass, i.e. every overlay event,
+    raises out of ``_region_size``. The overlay stops working permanently, for
+    one bad add-on. The failure is injected AFTER registration on purpose,
+    because that is the window the rollback exists for; a validator cannot
+    anticipate it.
+    """
+    context = wire(qtbot, tmp_path, PLUGIN, "ticker")
+    try:
+        overlay, host = context["overlay"], context["host"]
+        host.set_enabled("ticker", False)
+        original = overlay._layout_regions
+        calls = {"n": 0}
+
+        def explode() -> None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("layout blew up after registration")
+            original()
+
+        overlay._layout_regions = explode
+        try:
+            host.set_enabled("ticker", True)
+        finally:
+            overlay._layout_regions = original
+
+        assert REGION_KEY not in overlay._region_hosts()
+        assert REGION_KEY not in context["ui"].regions_by_key
+        # And the overlay still works, which is the point.
+        overlay._update_visibility()
+    finally:
+        context["backend"].stop()
+
+
+def test_an_unusable_default_width_costs_only_the_width(qtbot, tmp_path: Path) -> None:
+    """``default_width`` is the one declared size that bypasses
+    ``OverlayRegion``'s pydantic validation, because the overlay wants a
+    callable rather than a stored number — so it is the one a plugin can put
+    anything in. Unvalidated it reached ``max(MIN_REGION_WIDTH, host_w)``
+    inside the layout pass and raised there, after registration."""
+    source = PLUGIN.replace("default_width=240,", 'default_width="wide",')
+    context = wire(qtbot, tmp_path, source, "ticker")
+    try:
+        overlay = context["overlay"]
+
+        assert REGION_KEY in overlay._region_hosts()
+        # Falls back to the overlay's own default rather than the bad value.
+        assert overlay._region_size(REGION_KEY, overlay._default_region(REGION_KEY))[0] >= 120
+        overlay._update_visibility()
+    finally:
+        context["backend"].stop()
+
+
 def test_an_unusable_default_anchor_costs_only_the_placement(qtbot, tmp_path: Path) -> None:
     """``default_anchor`` is a Literal and a plugin can pass anything; the
     region still lands, at the overlay's own default."""
