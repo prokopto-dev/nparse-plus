@@ -1,0 +1,3606 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="EverQuest Project 1999 companion overlay for macOS, Windows, and Linux">
+      
+      
+      
+        <link rel="canonical" href="https://prokopto-dev.github.io/nparse-plus/2.20/plugins/registry/">
+      
+      
+        <link rel="prev" href="../versioning/">
+      
+      
+        <link rel="next" href="../api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Registry - nParse+</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plugin-registry" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="nParse+" class="md-header__button md-logo" aria-label="nParse+" data-md-component="logo">
+      
+  <img src="../../assets/images/nparseplus-mark.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            nParse+
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Registry
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/prokopto-dev/nparse-plus" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    prokopto-dev/nparse-plus
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../comparison/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Why nParse+
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../migrating/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Migrating
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../windows/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Windows & Overlays
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../settings/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Settings Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Plugins
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../faq/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  FAQ
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../troubleshooting/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Troubleshooting
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../development/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="nParse+" class="md-nav__button md-logo" aria-label="nParse+" data-md-component="logo">
+      
+  <img src="../../assets/images/nparseplus-mark.png" alt="logo">
+
+    </a>
+    nParse+
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/prokopto-dev/nparse-plus" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    prokopto-dev/nparse-plus
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Why nParse+
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/install-macos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on macOS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/install-windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/install-flatpak/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on Linux (Flatpak)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/install-linux-tarball/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on Linux (tarball)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/first-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/updating/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Updating
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../migrating/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Migrating
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrating/from-nparse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From nParse
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrating/from-gina/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From GINA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrating/from-eqtool/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From EQTool
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../windows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows & Overlays
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Windows & Overlays
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/timers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Timers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/dps-meter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPS Meter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/maps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/mob-info/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mob Info
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/event-overlay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Event Overlay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/console/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Console
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/trigger-editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trigger Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/macro-editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/character-dumps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Character Dumps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../windows/discord-overlay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discord Overlay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../features/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/triggers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Triggers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/builtin-triggers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Built-in triggers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/chat-timers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chat-command timers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/respawn-timers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Respawn & zone timers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/ch-chains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CH chains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/combat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Combat tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/boats/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Boats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/sharing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing & PigParse
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/friends-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Friends sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/macros/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macros & socials
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/night-vision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Night Vision fix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/tts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Text-to-speech
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/updater/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-updater
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../settings/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Settings Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/general/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    General
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/appearance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appearance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/character/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Character
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/friends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Friends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/timers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Timers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/dps-meter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPS Meter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/maps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/audio-overlays/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio & Overlays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/sharing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Plugins
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security & trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developing plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registry
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-app-consumes-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the app consumes it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-another-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using another registry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using another registry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-built-in-registry-can-be-unticked-never-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The built-in registry can be unticked, never removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-browse-does-with-several-registries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Browse does with several registries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#updates-prefer-the-registry-you-installed-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updates prefer the registry you installed from
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#taking-an-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Taking an update
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-it-is-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where it is stored
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index-format-schema-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index format (schema 1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#id-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Id ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#submitting-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Submitting a plugin
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Submitting a plugin">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-ci-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What CI checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roadmap
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../development/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_13" id="__nav_13_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release flow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-app-consumes-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the app consumes it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-another-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using another registry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using another registry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-built-in-registry-can-be-unticked-never-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The built-in registry can be unticked, never removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-browse-does-with-several-registries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Browse does with several registries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#updates-prefer-the-registry-you-installed-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updates prefer the registry you installed from
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#taking-an-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Taking an update
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-it-is-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where it is stored
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index-format-schema-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index format (schema 1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#id-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Id ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#submitting-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Submitting a plugin
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Submitting a plugin">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-ci-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What CI checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roadmap
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/prokopto-dev/nparse-plus/edit/master/docs/plugins/registry.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="plugin-registry">Plugin registry<a class="headerlink" href="#plugin-registry" title="Permanent link">&para;</a></h1>
+<p>The registry is the curated catalogue behind Settings &gt; Plugins &gt;
+<em>Browse registry…</em>: one reviewed <code>index.json</code>, served by the live registry
+server at <a href="https://nparseplugins.prokopto.dev/index.json">https://nparseplugins.prokopto.dev/index.json</a> — one Go binary and
+a SQLite database, <a href="https://github.com/prokopto-dev/nparse-plugin-regserve"><code>prokopto-dev/nparse-plugin-regserve</code></a>.
+It began as a static file published from GitHub Pages and edited by pull
+request, and moved so that publishing can be a step in a plugin's own release
+pipeline instead of a second repository and a wait. What did <strong>not</strong> move is
+the part that carries the trust: a listing pins a sha256, and the installer
+refuses bytes that do not match it.</p>
+<p>That built-in catalogue is the one nParse+ ships with, but it is not the
+only one it will read: you can add registries of your own, and Browse
+merges every enabled one into a single table. That is a real trust
+decision, and <a href="#using-another-registry">Using another registry</a> below is
+the canonical explanation of what you are agreeing to.</p>
+<div class="admonition note">
+<p class="admonition-title">Status</p>
+<p>The registry is <strong>live</strong>: the app fetches
+<a href="https://nparseplugins.prokopto.dev/index.json"><code>index.json</code></a> and
+<em>Browse registry…</em> works.</p>
+<p>Nothing in the client changed when the catalogue moved off GitHub Pages
+(<a href="https://github.com/prokopto-dev/nparse-plus/issues/130">#130</a>). It is
+the same schema-1 document fetched with the same single unconditional
+GET, and the server keeps that path outside its versioned API precisely
+so it never moves. Publishing <em>into</em> it straight from a plugin's release
+pipeline is designed and not yet built; until it is, a maintainer applies
+listings — see <a href="#submitting-a-plugin">Submitting a plugin</a>.</p>
+<p>This page is the specification the index and the app both implement. The
+JSON Schema the registry validates listings against is generated from the
+app's own parser and committed at
+<a href="https://github.com/prokopto-dev/nparse-plus/tree/master/templates/registry-repo"><code>templates/registry-repo/</code></a>
+(see below).</p>
+</div>
+<h2 id="how-the-app-consumes-it">How the app consumes it<a class="headerlink" href="#how-the-app-consumes-it" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Browse</strong> fetches the index of every <em>enabled</em> registry — the built-in
+  <code>https://nparseplugins.prokopto.dev/index.json</code> unless you
+  untick it, plus anything you added — runs the same SDK/app compatibility
+  handshake the loader uses over each listing, and offers one-click
+  installs. The fetches run concurrently on a worker thread and each
+  registry's outcome is reported separately (<code>fetch_indexes</code> in
+  <code>core/plugins/registry.py</code>).</li>
+<li><strong>Registry installs are sha256-pinned</strong>: the app downloads the release zip
+  and refuses it — before extraction, before any code runs — unless its bytes
+  hash to the value that registry's index recorded. The URL is transport; the
+  hash is the security boundary. (This is what separates a registry install
+  from <em>Install from URL…</em>, which has no expected hash — see
+  <a href="../security/#where-the-checksum-applies-and-where-it-doesnt">Security &amp; trust</a>.
+  What the hash does <em>not</em> establish is
+  <a href="#using-another-registry">who was allowed to publish it</a>.)</li>
+<li><strong>Provenance + updates</strong>: a registry install records the download URL, the
+  hash, <strong>and which registry listed it</strong> (<code>PluginEntry.registry_url</code>), and
+  the Source column names that registry. The plugins table marks installed
+  plugins with a newer <em>compatible</em> release available ("update available
+  (vX)") — naming the source when the offer comes from a different one than
+  the plugin was installed from — and offers an <strong>Update</strong> button that
+  replaces the copy in place, keeping your consent and the add-on's stored
+  data. See <a href="#taking-an-update">Taking an update</a>.</li>
+<li>Consent is unchanged: a registry install still gets the first-load
+  dialog. Curation reduces risk; it does not replace your trust decision.</li>
+</ul>
+<h2 id="using-another-registry">Using another registry<a class="headerlink" href="#using-another-registry" title="Permanent link">&para;</a></h2>
+<p><strong>Settings &gt; Plugins &gt; Plugin registries</strong> is a small table — Enabled,
+Name, URL — with <em>Add registry…</em> and <em>Remove</em>. Every ticked row is fetched
+by Browse; every unticked row is ignored entirely.</p>
+<div class="admonition danger">
+<p class="admonition-title">Adding a registry is a wider decision than installing a plugin</p>
+<p>A registry entry supplies <strong>both halves</strong> of an install: the URL the
+artifact is fetched from <em>and</em> the sha256 that download is verified
+against. So the checksum proves the bytes you got are the bytes <strong>that
+registry chose</strong> — it is a tamper check between the registry and you,
+nothing more. It is not a review, it does not say the code is safe, and
+it certainly does not say a human other than the registry's operator
+ever looked.</p>
+<p>Adding a registry therefore hands its operator a standing ability to
+offer you arbitrary code, under any plugin name, arriving pre-verified
+and one click from installed. Trust a registry the way you would trust
+the authors whose plugins you install — because it decides who those
+authors are.</p>
+</div>
+<p>The app states this at the moment it matters: adding shows a confirmation
+carrying both that warning and the plugin-consent warning, and it <strong>defaults
+to Cancel</strong> (<code>ui/pluginregistries.py</code>). Nothing is written to <code>settings.json</code>
+until you accept.</p>
+<h3 id="adding-one">Adding one<a class="headerlink" href="#adding-one" title="Permanent link">&para;</a></h3>
+<p><em>Add registry…</em> asks for the https URL of an <code>index.json</code> and an optional
+display name, then confirms. The URL is normalized before it is stored —
+scheme and host are lower-cased, the path is left alone (paths are
+case-sensitive) — so the same registry cannot be added twice under two
+spellings, and non-https URLs are refused outright. A row with no name shows
+its host.</p>
+<h3 id="the-built-in-registry-can-be-unticked-never-removed">The built-in registry can be unticked, never removed<a class="headerlink" href="#the-built-in-registry-can-be-unticked-never-removed" title="Permanent link">&para;</a></h3>
+<p>The built-in row is <strong>not stored in your settings at all</strong>. It is
+synthesized on every read from the <code>DEFAULT_REGISTRY_URL</code> constant in the
+app (<code>resolve_registries</code>), and only its checkbox persists, as
+<code>plugins.default_registry_enabled</code>. Two consequences, both deliberate:</p>
+<ul>
+<li><em>Remove</em> refuses on that row (the button is disabled, and the code refuses
+  again if you get there another way). If it could be deleted there would be
+  no way back to it from this UI.</li>
+<li>If a future release changes where the built-in catalogue lives, every user
+  moves with it. Had the default been written into <code>settings.json</code> once,
+  everyone would be pinned to whatever URL the release that first wrote it
+  happened to use.</li>
+</ul>
+<p>A user entry pointing at the built-in URL collapses into that one row rather
+than appearing twice, which is what makes promoting a community registry to
+the default a non-event.</p>
+<h3 id="what-browse-does-with-several-registries">What Browse does with several registries<a class="headerlink" href="#what-browse-does-with-several-registries" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>One merged table</strong>, ordered built-in first, then your registries in the
+  order you added them, with a <strong>Source</strong> column naming the registry that
+  served each row. Anything that is not the built-in is spelled out as
+  <code>(third-party)</code> in the text — not signalled with colour, so it survives a
+  screenshot, a colour-blind reader, and a theme with its own opinions.</li>
+<li><strong>Collisions are shown, not resolved.</strong> Plugin ids are unique <em>within</em> a
+  registry, not across registries: two registries can both list
+  <code>merchant-prices</code> and mean different code. Both rows appear, each tagged
+  <em>also listed elsewhere</em> with a tooltip naming the other registries. The
+  app will not pick for you.</li>
+<li><strong>If a plugin is already installed from a different registry</strong>, that row's
+  button reads <strong>Installed (other source)</strong> and is disabled, with a tooltip
+  naming both registries. Swapping publishers of the same id is not a
+  one-click action; uninstall the current copy first if you really want the
+  other one.</li>
+<li><strong>One registry being down does not hide the rest.</strong> Each fetch is reported
+  separately, so an unreachable registry becomes a line above the table
+  ("Could not reach 1 of 3 registries: …") while the ones that answered are
+  listed underneath as usual. Concurrency matters here for more than speed: a
+  dead registry ahead of a live one would otherwise cost its full timeout
+  before the working one was even tried.</li>
+<li><strong>Refresh</strong> re-fetches every enabled registry without closing the dialog
+  (single-flight — a second click while a fetch is in progress does nothing).</li>
+</ul>
+<h3 id="updates-prefer-the-registry-you-installed-from">Updates prefer the registry you installed from<a class="headerlink" href="#updates-prefer-the-registry-you-installed-from" title="Permanent link">&para;</a></h3>
+<p><code>best_update</code> picks the update to offer for an installed plugin. Only
+<em>compatible</em> releases are candidates — offering an update the app would then
+refuse to load is worse than offering none. Among those, <strong>the registry the
+plugin was installed from wins</strong> if it has anything to offer at all, even if
+another registry lists a higher version. Silently promoting a different
+publisher's build of the same id would be a trust hop you never agreed to;
+when the only offer <em>does</em> come from elsewhere, the status line says so by
+name ("update available (v2.0.0 from …)") instead of quietly presenting it
+as the same plugin, and taking it needs a confirmation naming both ends.</p>
+<p>A plugin with <strong>no</strong> recorded registry — sideloaded, or installed from a
+plain URL — has a wrinkle worth stating: any registry offer for it counts as
+a source change, because nothing ever vouched for the copy you have. The one
+exception is the plugin's own declared
+<a href="../developing/#shipping-updates-without-a-registry">update feed</a>, which is
+the only source such a copy has ever had, so its offers are not treated as a
+hop. That is what makes a self-hosted add-on updatable in one click without
+pretending a registry endorsed it.</p>
+<h3 id="taking-an-update">Taking an update<a class="headerlink" href="#taking-an-update" title="Permanent link">&para;</a></h3>
+<p><strong>Settings &gt; Plugins</strong> shows an <strong>Update</strong> button on any row with a newer
+compatible release, and <strong>Update all</strong> for the ones that need no decision.
+The download is verified against the listed sha256, the new code is
+validated before anything moves, and the old copy goes to <code>plugins/trash/</code>
+only once the new one is in place — a failure at any point leaves the
+version you had installed and loading.</p>
+<p>Consent and <code>plugin-data/&lt;id&gt;</code> survive an update, which is the entire point:
+the old workaround (uninstall, reinstall) went through <code>PluginHost.forget</code>
+and destroyed both. The new code loads at the next launch — the one thing on
+that page that still waits for one, because a module is imported once per
+session and cannot be swapped out under the objects already using it.
+Installing, enabling and disabling all apply immediately.</p>
+<p>Since an index carries only <code>latest</code>, there is no version history and no
+"downgrade" — the previous copy in <code>plugins/trash/</code> is the only way back.</p>
+<h3 id="where-it-is-stored">Where it is stored<a class="headerlink" href="#where-it-is-stored" title="Permanent link">&para;</a></h3>
+<p><code>plugins.registries</code> in <code>settings.json</code> holds your registries only — a list
+of <code>{url, name, enabled}</code> — and <code>plugins.default_registry_enabled</code> holds the
+built-in row's checkbox. The old single-registry override,
+<code>plugins.registry_url</code>, is gone: a settings file that still carries one has
+it folded into <code>plugins.registries</code> and cleared on load. Unusable entries
+(non-https, empty, duplicate) are dropped silently rather than rejected,
+because a settings document that fails to parse costs the user every other
+setting they have ever configured.</p>
+<p>A plugin installed <strong>before the built-in registry moved to its own server</strong>
+recorded the old GitHub Pages URL as its provenance, and that URL now names
+no registry you have: the Source cell falls back to a bare host name, Browse
+offers <em>Installed (other source)</em> instead of an Update button, and taking the
+update demands a confirmation naming two registries that are the same
+catalogue. So a record naming that URL is re-pointed at the new one. The
+catalogue moved; the publisher did not, and the move is not a trust hop.</p>
+<p><strong>Unless you list that URL yourself.</strong> The rule is your own registry list,
+re-checked on every load: while the old index is a row in <strong>Plugin
+registries</strong>, every record naming it is true as written and nothing is
+touched — not the row, not the records. That is what makes it safe to add the
+old index deliberately now that it is an ordinary third-party URL. Only when
+no row holds it is a record re-pointed, and then there is nothing else it
+could have meant: back when that URL was the built-in registry, nParse+
+refused to add it as a registry of your own and folded any stored copy into
+the built-in row, so an install could not have come through a copy.</p>
+<p>nParse+ does not edit your registry list to make this tidier. If a row
+holding the old URL appears after the upgrade, it was always in your settings,
+hidden behind the built-in row it duplicated; it is an ordinary third-party
+row now and <strong>Remove</strong> works on it. Take it out and the next load folds the
+records it was holding in place into the built-in catalogue. The single row
+nParse+ does drop is one it created in that same load out of the
+long-deprecated <code>plugins.registry_url</code> override — an artifact of folding a
+field in, never a list entry you built.</p>
+<h2 id="index-format-schema-1">Index format (schema 1)<a class="headerlink" href="#index-format-schema-1" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;schema_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;plugins&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;merchant-prices&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Merchant Prices&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tracks your WTS auctions with PigParse price history.&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;author&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;someone&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;homepage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://github.com/someone/nparse-merchant-prices&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;latest&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.2.0&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://github.com/someone/nparse-merchant-prices/releases/download/v1.2.0/merchant_prices.zip&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;sha256&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;9f2c…64 hex chars…&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;requires_sdk&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&gt;=1.0,&lt;2&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;min_app_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.18.0&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rules: <code>id</code> matches <code>^[a-z][a-z0-9_-]{1,39}$</code>; <code>url</code> is https and should be a
+GitHub release asset of the plugin's own repo; <code>sha256</code> is 64 <strong>lowercase</strong>
+hex characters and is the hash of exactly that artifact; <code>schema_version</code>
+newer than the app understands makes the app say "update nParse+" rather
+than misread the index. Only <code>latest</code> is carried per plugin — the registry
+lists the current reviewed release, not a version history.</p>
+<p><code>nparseplus.core.plugins.registry</code> is the source of truth for this format;
+<code>tools/gen_registry_schema.py</code> generates the registry repo's
+<code>schema/index-v1.schema.json</code> from those pydantic models, so the schema CI
+validates against and the parser the app runs cannot drift.</p>
+<h2 id="id-ownership">Id ownership<a class="headerlink" href="#id-ownership" title="Permanent link">&para;</a></h2>
+<p>Ids are first-come and permanent, and that is <strong>machine-checkable</strong>, not
+just a review convention. The registry repo carries an <code>owners.json</code>
+alongside the index mapping each plugin id to a list of GitHub handles:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;owners&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;merchant-prices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;someone&quot;</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;raid-tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;someone&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;their-comaintainer&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Any listed handle may submit changes to that plugin's entry. CI requires
+that every id in <code>index.json</code> has an owners entry, and that the PR author
+owns every entry they add or change. Adding the <code>owners.json</code> line for a
+brand-new plugin is a maintainer action in the same PR — that addition is
+the curation step. On the server the same rule is a database row rather than
+a file: ownership rows are never deleted, and the file above is what seeds
+them.</p>
+<p>Delisting removes the listing but leaves the ownership claim: ids are never
+recycled, so a delisted id cannot be reused by someone else to ship an
+"update" to your former users.</p>
+<p>That guarantee is <strong>per registry</strong>. This repo's <code>owners.json</code> binds ids in
+this index and nowhere else — another registry can list your id pointing at
+its own artifact, which is exactly why Browse shows both rows and why the
+app refuses to treat one as an update to the other
+(<a href="#what-browse-does-with-several-registries">above</a>).</p>
+<h2 id="submitting-a-plugin">Submitting a plugin<a class="headerlink" href="#submitting-a-plugin" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Build your release with the
+   <a href="../developing/#starting-from-the-repo-template">plugin repo template</a> —
+   its release workflow attaches the zip and prints the exact registry
+   entry JSON (with the sha256 already computed) in the release body and as
+   a <code>registry-entry.json</code> release asset.</li>
+<li>Open a PR against <code>prokopto-dev/nparseplus-plugins</code> adding or updating
+   your entry in <code>index.json</code>, plus your id in <code>owners.json</code> if it's new.
+   A submission should touch only those two files.</li>
+<li>Registry CI checks the mechanical facts (below).</li>
+<li>A maintainer reviews (this is the curation step — expect them to look
+   at your source) and applies the merged entry to the live catalogue.</li>
+</ol>
+<p>Version updates are the same flow: bump <code>latest</code> (new version, new URL, new
+sha256). Because the hash pins the reviewed bytes, an author cannot swap the
+artifact behind an already-listed URL — changing what users receive means
+changing the listing, which means another review.</p>
+<div class="admonition info">
+<p class="admonition-title">This is the interim flow</p>
+<p>The reason the registry became a server is that a patch release should be
+a step in <em>your</em> pipeline, not a pull request against someone else's
+repository: <code>POST</code> the new release with a scoped token, and the server
+downloads the artifact and hashes it <strong>itself</strong>, so an author-supplied
+hash is never stored. A brand-new plugin id still waits for a human — that
+is the review worth keeping — while version bumps from a trusted owner
+publish on their own. That half is specified and not yet built, which is
+why a person still applies your entry today.</p>
+</div>
+<h3 id="what-ci-checks">What CI checks<a class="headerlink" href="#what-ci-checks" title="Permanent link">&para;</a></h3>
+<p><code>.github/workflows/validate-index.yml</code> on every PR:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Failure means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JSON Schema (<code>schema/index-v1.schema.json</code>)</td>
+<td>The entry is malformed or has a field the app cannot read.</td>
+</tr>
+<tr>
+<td>Plugin id format and uniqueness</td>
+<td>Bad id, or the id is already taken.</td>
+</tr>
+<tr>
+<td><code>https://</code> release URLs, including after redirects</td>
+<td>A plain-http hop.</td>
+</tr>
+<tr>
+<td>sha256 is 64 lowercase hex characters</td>
+<td>Uppercase or truncated hash.</td>
+</tr>
+<tr>
+<td>Every listed id has an <code>owners.json</code> entry</td>
+<td>A new plugin needs its ownership line in the same PR.</td>
+</tr>
+<tr>
+<td>The PR author owns every entry they add or change</td>
+<td>Someone else owns that id.</td>
+</tr>
+<tr>
+<td>Best-effort: the artifact is downloaded and re-hashed</td>
+<td>The zip at that URL is not the one you hashed. If the artifact is unreachable from CI the job records a notice instead of failing, and the reviewer checks by hand.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition info">
+<p class="admonition-title">CI does not run <code>nparseplus-plugin validate</code> — on purpose</p>
+<p>Validating a plugin <strong>imports it and calls <code>activate()</code></strong>. Doing that in
+registry CI would mean executing unreviewed code from a pull request on
+the registry's own infrastructure, on every submission, before any human
+has read it. That trade isn't worth it for a check the reviewer can run
+locally in a sandbox.</p>
+<p>So registry CI never extracts or executes a submitted artifact: it
+downloads the bytes, hashes them, and throws them away. The job also
+runs on <code>pull_request</code> (not <code>pull_request_target</code>), so fork PRs get a
+read-only token and no secrets — and since a PR can edit the workflow
+itself, a green check is a convenience filter, never the trust boundary.
+The human merge is.</p>
+</div>
+<h2 id="roadmap">Roadmap<a class="headerlink" href="#roadmap" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Publishing from your own release pipeline</strong> — a scoped token, one
+  <code>POST</code> per release, and the server fetching and re-hashing the artifact
+  rather than believing a submitted digest. Tracked on the registry server's
+  own roadmap.</li>
+<li>Optional index signing (minisign/ed25519, public key shipped in the app)
+  if the trust model ever needs to survive a compromise of the host serving
+  the index.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "search.suggest", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,67 @@
+/* The site palette, keyed to `primary: custom` / `accent: custom` in
+   mkdocs.yml. Values come from src/nparseplus/ui/skins.py by way of
+   data/assets/icon.svg, so the docs are framed in the same gold-on-stone the
+   app runs in.
+
+   The header is the plate, never the gold: the app puts gold on accents and
+   engraving, not on large fields, and a full-width #c8a951 bar would be both
+   off-brand and hard to read against. The accent (links, active nav, the
+   search cursor) is where the gold goes — muted on white, brighter on the
+   slate scheme, because one value cannot clear 4.5:1 on both grounds. */
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: #241e14; /* velious plate, dark stop */
+  --md-primary-fg-color--light: #3a3122; /* velious plate, light stop */
+  --md-primary-fg-color--dark: #14100a;
+  --md-primary-bg-color: #e6dfd0;
+  --md-primary-bg-color--light: #968c7b;
+}
+
+[data-md-color-accent="custom"] {
+  /* The ledger gold #8a7549 darkened: verbatim it lands at 4.45:1 on white,
+     which is under AA for link-sized text. This is the nearest value that
+     clears it (5.2:1) — the ONE colour here that is not lifted from
+     ui/skins.py, and the reason is contrast, not taste. */
+  --md-accent-fg-color: #7d6a42;
+  --md-accent-fg-color--transparent: #7d6a4214;
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: #e6dfd0;
+}
+
+[data-md-color-scheme="slate"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: #e2c882; /* velious gold — the brightest in the app */
+  --md-accent-fg-color--transparent: #e2c88214;
+  --md-accent-bg-color: #08090c;
+  --md-accent-bg-color--light: #241e14;
+}
+
+/* Slate's own ground, nudged toward the app's near-black glass so the header
+   plate reads as part of the page rather than a band stuck on top of it. */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0f1116;
+  --md-typeset-a-color: #e2c882;
+}
+
+/* The mark is a dark plate; the header is a dark plate. Give it a hairline so
+   it does not dissolve into the bar. */
+.md-header__button.md-logo img {
+  border: 1px solid #6b5a3a;
+}
+
+/* Placeholder shown by tools/mkdocs_hooks.py for screenshots that have not
+   been captured yet (see docs/dev-notes/screenshot-checklist.md). */
+.screenshot-pending {
+  border: 2px dashed var(--md-default-fg-color--lighter);
+  border-radius: 0.2rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-code-bg-color);
+  margin: 1em 0;
+}
+
+/* Screenshots get a subtle border so light window chrome doesn't bleed into
+   the page background. */
+.md-typeset img[src*="assets/screenshots/"] {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+}
