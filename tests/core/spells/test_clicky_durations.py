@@ -91,10 +91,6 @@ def test_the_duration_path_does_not_consult_the_click_level_table() -> None:
     }
     assert not any("itemcasts" in name for name in imported), imported
 
-    # ...and no caller can pass the reverted flag back in.
-    for func in (match_closest_level, get_duration_seconds):
-        assert "own_cast" not in inspect.signature(func).parameters
-
 
 # -- EQTool parity, unchanged -------------------------------------------------------
 
@@ -138,3 +134,63 @@ def test_epic_clickies_take_the_ordinary_castable_branch(
     assert spell is not None
     assert spell.class_levels == {epic_class: 46}
     assert match_closest_level(spell, epic_class, 60) == 60
+
+
+# -- the class-level floor, bypassed for your own clicks -----------------------------
+
+
+def test_your_own_click_is_not_floored_at_the_spells_class_level(
+    spell_book: SpellBook,
+) -> None:
+    """EQTool returns ``max(your level, highest class level)``. For a clicky
+    that floor is wrong: a level-35 warrior clicking Levitate is cast at 35,
+    not at ranger-39."""
+    spell = spell_book.spell_by_name("Levitate")
+    assert spell is not None
+    assert max(spell.class_levels.values()) == 39
+
+    assert match_closest_level(spell, PlayerClass.WARRIOR, 35, own_cast=True) == 35
+    assert get_duration_seconds(spell, PlayerClass.WARRIOR, 35, own_cast=True) == 690
+
+    # The observed cast keeps EQTool's guess: their level is unknown.
+    assert match_closest_level(spell, PlayerClass.WARRIOR, 35) == 39
+
+
+def test_a_class_that_gets_the_spell_later_still_clicks_at_its_own_level(
+    spell_book: SpellBook,
+) -> None:
+    """A level-20 ranger cannot cast Levitate (ranger 39), so this is a click."""
+    spell = spell_book.spell_by_name("Levitate")
+    assert spell is not None
+    assert spell.class_levels[PlayerClass.RANGER] == 39
+    assert match_closest_level(spell, PlayerClass.RANGER, 20, own_cast=True) == 20
+
+
+def test_the_bypass_is_a_no_op_for_a_real_spellbook_cast(spell_book: SpellBook) -> None:
+    """You cannot cast below your class's level for a spell, so where a genuine
+    self-cast is possible the floor was already your own level."""
+    spell = spell_book.spell_by_name("Levitate")
+    assert spell is not None
+    for level in (14, 20, 39, 45, 60):  # druid gets Levitate at 14
+        assert get_duration_seconds(
+            spell, PlayerClass.DRUID, level, own_cast=True
+        ) == get_duration_seconds(spell, PlayerClass.DRUID, level)
+
+
+def test_an_unset_level_falls_through_instead_of_reading_zero(
+    spell_book: SpellBook,
+) -> None:
+    """level 0 means "not known yet", not "level zero" — it must not produce a
+    zero-length timer."""
+    spell = spell_book.spell_by_name("Levitate")
+    assert spell is not None
+    assert match_closest_level(spell, PlayerClass.WARRIOR, 0, own_cast=True) == 39
+    assert get_duration_seconds(spell, PlayerClass.WARRIOR, 0, own_cast=True) > 0
+
+
+def test_observed_slow_still_matches_eqtools_answer(spell_book: SpellBook) -> None:
+    """TestSlowForNecro again, explicitly against the bypass."""
+    spell = spell_book.spell_by_name("Turgur's Insects")
+    assert spell is not None
+    seconds = get_duration_seconds(spell, PlayerClass.NECROMANCER, 60)
+    assert abs(seconds / 60.0 - 6) < 0.2

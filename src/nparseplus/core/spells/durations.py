@@ -18,6 +18,8 @@ def match_closest_level(
     spell: Spell,
     player_class: PlayerClass | None,
     player_level: int | None,
+    *,
+    own_cast: bool = False,
 ) -> int:
     """Best-guess caster level for a spell (static MatchClosestLevelToSpell).
 
@@ -37,7 +39,23 @@ def match_closest_level(
 
     See :mod:`nparseplus.core.spells.itemcasts`, which still owns the scraped
     numbers — as the click *requirement* they actually are.
+
+    ``own_cast`` says the PLAYER is the caster. Then the caster level is simply
+    theirs, with no floor: "as if you cast it yourself" is the whole mechanic.
+    This is a no-op for a real spellbook cast — you cannot cast a spell below
+    your class's level for it, so ``max(yours, class level)`` was already
+    yours — and it exists for the case where the two disagree, which is a
+    CLICKY. A level-35 warrior (or a level-20 ranger, whose class gets Levitate
+    at 39) clicking a Levitate item is cast at their level, not at 39.
+
+    It defaults False so every OBSERVED cast keeps EQTool's answer, and that
+    default is load-bearing: watching another player, their level is unknown,
+    and assuming they are at least high enough to cast the spell is the better
+    guess — which is what EQtoolsTests' TestSlowForNecro pins.
     """
+    if own_cast and player_level:
+        return player_level
+
     if player_class is not None and player_level is not None:
         found = spell.class_levels.get(player_class)
         if found is not None:
@@ -60,10 +78,12 @@ def get_duration_seconds(
     spell: Spell,
     player_class: PlayerClass | None,
     player_level: int | None,
+    *,
+    own_cast: bool = False,
 ) -> int:
     """Port of SpellDurations.GetDuration_inSeconds (returns whole seconds)."""
     duration = spell.buff_duration_ticks
-    level = match_closest_level(spell, player_class, player_level)
+    level = match_closest_level(spell, player_class, player_level, own_cast=own_cast)
     formula = spell.buff_duration_formula
 
     if formula == 0:
@@ -123,6 +143,8 @@ def base_timer_duration_seconds(
     player_class: PlayerClass | None,
     player_level: int | None,
     delay_offset_ms: int = 0,
+    *,
+    own_cast: bool = False,
 ) -> float:
     """Seconds a Timers-window row counts down for ``spell``, before the NPC
     grace tick.
@@ -136,7 +158,7 @@ def base_timer_duration_seconds(
     seconds = (
         float(override)
         if override is not None
-        else float(get_duration_seconds(spell, player_class, player_level))
+        else float(get_duration_seconds(spell, player_class, player_level, own_cast=own_cast))
     )
     return seconds + delay_offset_ms / 1000.0
 
