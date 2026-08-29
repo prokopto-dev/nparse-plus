@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from packaging.version import Version
 
 from nparseplus import updater
 from nparseplus.config.settings import Settings
@@ -961,3 +962,43 @@ def test_the_tray_update_check_uses_the_effective_channel() -> None:
     assert resolve("beta", sandboxed=True) is updater.UpdateChannel.STABLE
     assert resolve("stable", sandboxed=False) is updater.UpdateChannel.STABLE
     assert resolve("nonsense", sandboxed=False) is updater.UpdateChannel.STABLE
+
+
+# --- what a beta reports as its own version (#186) --------------------------
+
+
+def test_the_displayed_version_keeps_the_spelling_the_release_used() -> None:
+    """The tray, About box and update dialog show ``__version__`` verbatim.
+
+    ``packaging.Version`` normalises a SemVer prerelease into its PEP 440
+    spelling — ``"2.30.0-beta.1"`` becomes ``"2.30.0b1"`` — so rendering a
+    parsed version would make a beta build disagree with its own git tag, its
+    DMG filename and its release page. It would also disagree with Settings >
+    General, which renders ``__version__`` raw: one build reporting two
+    versions of itself, in the string people paste into bug reports, to the
+    population most likely to be filing them.
+
+    The ``isinstance`` check is the load-bearing one. Comparing values alone
+    would pass on a stable version whatever the code did, because ``Version``
+    round-trips ``"2.28.2"`` unchanged — the regression would only appear once
+    a beta was cut, which is precisely when nobody is looking.
+    """
+    import nparseplus
+    from nparseplus.helpers.application import CURRENT_VERSION
+
+    assert isinstance(CURRENT_VERSION, str), "must be the literal, not a parsed Version"
+    assert nparseplus.__version__ == CURRENT_VERSION
+
+    # Why this matters, stated so the test explains itself: the two spellings
+    # genuinely differ for a prerelease, and agree for a stable release.
+    assert str(Version("2.30.0-beta.1")) == "2.30.0b1"
+    assert str(Version("2.28.2")) == "2.28.2"
+
+
+def test_the_settings_window_and_the_about_box_agree_on_the_version() -> None:
+    """Two surfaces, one string. They rotted apart once (#186 review)."""
+    import nparseplus
+    from nparseplus.helpers.application import CURRENT_VERSION
+
+    settings_window_text = f"nParse+ {nparseplus.__version__}"
+    assert CURRENT_VERSION in settings_window_text

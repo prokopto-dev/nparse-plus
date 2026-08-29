@@ -2,7 +2,6 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from packaging.version import Version
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
@@ -33,7 +32,17 @@ config.verify_settings()
 
 import nparseplus
 
-CURRENT_VERSION = Version(nparseplus.__version__)
+# The literal, NOT ``packaging.Version``: this is display only — the tray
+# balloons, the About box and the update dialog — and every *comparison*
+# parses ``__version__`` itself inside ``updater.check_for_update``.
+#
+# ``Version`` would round-trip a prerelease into its PEP 440 spelling for
+# display ("2.30.0-beta.1" -> "2.30.0b1"), which is the string a beta user
+# pastes into a bug report. It would disagree with the git tag, the DMG
+# filename and the release page — and with Settings > General, which
+# renders ``__version__`` raw, so one build would report two versions of
+# itself. Betas are exactly the population filing those reports (#186).
+CURRENT_VERSION = nparseplus.__version__
 UPDATE_CHECK_DELAY_MS = 10_000  # don't block or race startup
 # The app's own configuration window. It stays an ordinary entry in
 # ``_backend_windows`` (``has_backend_window`` is the collision guard a
@@ -210,7 +219,7 @@ class NomnsParse(QApplication):
         if window is None:
             window = UpdateAvailableDialog(
                 release,
-                str(CURRENT_VERSION),
+                CURRENT_VERSION,
                 # Inside a Flatpak the button installs in place through the
                 # portal instead of handing over a bundle (#74).
                 in_place=flatpakportal.portal_supported(),
