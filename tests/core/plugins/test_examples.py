@@ -28,11 +28,11 @@ EXAMPLES = REPO_ROOT / "examples" / "plugins"
 #: release and push someone into raising a floor that is already correct.
 #:
 #: It names a PRERELEASE because regions debut on the beta channel, and that
-#: is load-bearing rather than incidental: PEP 440 orders ``2.30.0b1`` below
-#: ``2.30.0``, so pinning the stable release would refuse every beta host —
+#: is load-bearing rather than incidental: PEP 440 orders ``2.29.0b2`` below
+#: ``2.29.0``, so pinning the stable release would refuse every beta host —
 #: the exact audience the feature ships to. See
 #: ``sdk/tests/test_sdk_meta_compat.py::TestPrereleaseAppVersions``.
-REGION_MIN_APP_VERSION = "2.30.0-beta.1"
+REGION_MIN_APP_VERSION = "2.29.0-beta.2"
 
 
 class _FakeStorage:
@@ -339,7 +339,7 @@ def test_the_region_example_pins_the_app_release_that_supports_it() -> None:
     the one input to the handshake that comes from the host itself.
 
     Checked against a CONSTANT, never against ``nparseplus.__version__``. The
-    pin is a permanent historical fact — "regions first shipped in 2.30.0-beta.1" —
+    pin is a permanent historical fact — "regions first shipped in 2.29.0-beta.2" —
     and comparing it to the tree's own version made it a moving target: the
     correct pin would start failing the moment an unrelated 2.29 release
     landed, which either blocks that release or pressures whoever hits it into
@@ -379,8 +379,8 @@ def test_the_region_example_loads_on_the_beta_that_first_ships_regions() -> None
 
     This is the trap the hyphen exists for, asserted on the real example's real
     meta rather than on a fixture. Regions debut on the beta channel, and PEP
-    440 orders a prerelease below its own release — so a pin of ``2.30.0``
-    would refuse ``2.30.0-beta.1``, i.e. every host that actually has the
+    440 orders a prerelease below its own release — so a pin of ``2.29.0``
+    would refuse ``2.29.0-beta.2``, i.e. every host that actually has the
     feature, and the add-on would read as incompatible for precisely the users
     it was published for. Rounding the pin up to the stable release is the
     single most likely edit to this constant, and it is silent: nothing else in
@@ -392,11 +392,15 @@ def test_the_region_example_loads_on_the_beta_that_first_ships_regions() -> None
     assert "-" in beta, "the pin names a SemVer prerelease; see the constant's note"
 
     # Admitted: the beta it names, later betas, the rc, and every stable after.
-    for host in (beta, "2.30.0-beta.2", "2.30.0rc1", "2.30.0", "2.31.0"):
+    for host in (beta, "2.29.0-beta.3", "2.29.0rc1", "2.29.0", "2.30.0"):
         assert check_compat(plugin.meta, sdk_version="1.5.0", app_version=host) is None, (
             f"the region example must load on {host}"
         )
 
-    # Still refused below it, or the pin would not be doing its job at all.
-    reason = check_compat(plugin.meta, sdk_version="1.5.0", app_version="2.29.0")
-    assert reason is not None and beta in reason
+    # Refused below it, or the pin would not be doing its job at all. The
+    # second of these is the one that matters on an open beta line: an EARLIER
+    # BETA is a real shipped release without the region API, so a pin one
+    # counter too low would load there and raise inside activate().
+    for host in ("2.28.2", "2.29.0-beta.1"):
+        reason = check_compat(plugin.meta, sdk_version="1.5.0", app_version=host)
+        assert reason is not None and beta in reason, f"the region example must NOT load on {host}"

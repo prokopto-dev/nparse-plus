@@ -131,7 +131,7 @@ class KillTickerPlugin(NParsePlugin):
         # refused as incompatible. min_app_version is the one input to the
         # handshake that comes from the host itself.
         # See docs/plugins/versioning.md.
-        min_app_version="2.30.0-beta.1",
+        min_app_version="2.29.0-beta.2",
     )
 
     def __init__(self) -> None:

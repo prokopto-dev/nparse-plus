@@ -1234,7 +1234,7 @@ def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path)
         (loaded,) = [row for row in host.statuses() if row.plugin_id == "kill-ticker"]
         assert loaded.status == "incompatible"
         assert loaded.error is not None
-        assert "2.30.0-beta.1" in loaded.error
+        assert "2.29.0-beta.2" in loaded.error
         # Refused BEFORE activate(), which is the whole point: an AttributeError
         # out of activate() reads as a broken add-on rather than an old app.
         assert "activate" not in loaded.error

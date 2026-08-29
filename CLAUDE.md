@@ -1922,7 +1922,7 @@ next minor; #181 merged first, semantic-release cut *that* as v2.28.0, and the
 pin then named a release with no region API — wrong in the one direction that
 matters, since an app WITHOUT the capability would have accepted a plugin
 requiring it. Re-pinned to 2.29.0 by reading the tag, then to
-**2.30.0-beta.1** when the release plan changed. Nothing automated catches
+**2.29.0-beta.2** when the release plan changed. Nothing automated catches
 this: `REGION_MIN_APP_VERSION` is deliberately NOT compared against the tree's
 own `__version__` (that comparison fails on the next unrelated release and
 pressures whoever hits it into raising a floor that is already correct), so the
@@ -1932,18 +1932,23 @@ does not consume a pinned minor — v2.28.1 landed ahead of it and 2.29.0
 survived unchanged; only another `feat:` merging first invalidates it.
 
 **A capability debuting in a PRERELEASE pins the prerelease, not the stable.**
-Regions ship to a beta channel first, so the pin is `2.30.0-beta.1` rather than
-`2.30.0`, and that is not a rounding choice. `check_compat` compares with
-`packaging.version.Version` (PEP 440), which normalises `2.30.0-beta.1` to
-`2.30.0b1` and orders it BELOW `2.30.0` — so a stable pin refuses **every beta
+Regions ship to a beta channel first, so the pin is `2.29.0-beta.2` rather than
+`2.29.0`, and that is not a rounding choice. `check_compat` compares with
+`packaging.version.Version` (PEP 440), which normalises `2.29.0-beta.2` to
+`2.29.0b2` and orders it BELOW `2.29.0` — so a stable pin refuses **every beta
 host**, which is precisely the audience a beta ships to. Pinning the
 prerelease admits the betas and every later release, and still refuses the one
 before. Write the SemVer spelling (hyphen) because that is what the About box
 and the release page show, though both spellings normalise to the same version.
-Useful property: pinning `beta.1` is robust to the beta counter moving —
-`beta.2`/`rc1`/stable all satisfy it — so only the MINOR drifting breaks the
-pin. `sdk/tests/test_sdk_meta_compat.py::TestPrereleaseAppVersions` holds all
-of this; before it, no prerelease app version was exercised anywhere.
+On an OPEN BETA LINE the counter matters, and the pin is fragile in the
+dangerous direction: 2.29.0-beta.1 is a real release that ships the beta
+channel and NOT the region API, so a pin naming it would load on a host
+without `add_overlay_region` and raise inside `activate()`. Too high merely
+refuses the beta audience; too low reads as a broken add-on. That asymmetry
+is why the pin must name the exact beta that first contains the capability,
+and why an automated check matters more here than on a stable line.
+`sdk/tests/test_sdk_meta_compat.py::TestPrereleaseAppVersions` holds the
+ordering; before it, no prerelease app version was exercised anywhere.
 
 **The content hook holds the overlay WEAKLY, and that is #154's segfault one
 step removed.** The overlay owns the region's host widget, the widget holds its

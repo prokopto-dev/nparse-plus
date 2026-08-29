@@ -279,11 +279,11 @@ needs input, use `ctx.add_window` above. Same lazy-import rule as a window:
 `nparseplus_sdk.ui.PluginOverlayRegion` resolves from the host, so build it
 inside the factory.
 
-Declare **both** `requires_sdk=">=1.5,<2"` and `min_app_version="2.30.0-beta.1"`:
+Declare **both** `requires_sdk=">=1.5,<2"` and `min_app_version="2.29.0-beta.2"`:
 the method lives in the host, and an SDK range alone
 [does not promise a host that implements it](versioning.md#the-sdk-range-alone-is-not-a-promise-about-the-host).
 Keep the `-beta.1` — regions debut in a beta build, and pinning the stable
-`2.30.0` instead would refuse every host that has the feature
+`2.29.0` instead would refuse every host that has the feature
 ([why](versioning.md#a-capability-that-debuts-in-a-prerelease)).
 Full guide: [Event overlay regions](overlay-regions.md).
 
