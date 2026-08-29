@@ -16,7 +16,7 @@ and timer engine. (Per-class spell filters live on the
 | **Show mob timers** | Show the **Mob Timers** section: mob respawn/Sirran countdowns and FTE raid rules (97%/96%/5-minute). |
 | **Show roll timers** | Show the **Roll Timers** section: Ring 8 and Scout Charisa server roll windows. |
 | **Show custom timers** | Show the **Custom Timers** section: countdowns started by [triggers](../features/triggers.md), [chat commands](../features/chat-timers.md), and shared remote timers. |
-| **Guess ambiguous spells** | When several spells share one cast message, show the best guess instead of nothing. |
+| **Guess ambiguous spells** | When several spells share one cast message, show the best guess instead of nothing. The guess prefers a spell your own class can cast when the spell is yours or lands on you; for a cast you only observe there is no such signal, so right-click the row and use *Other matches* to correct it. |
 | **Announce respawn-timer expiry** | Speak/alert when a [respawn timer](../features/respawn-timers.md) hits zero. |
 | **Buff-fade warning** | Seconds of remaining time at which a buff row switches to its warning state (0 disables). |
 | **Speak buff-fade warnings** | Also speak the warning via [TTS](../features/tts.md). |

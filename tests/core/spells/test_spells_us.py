@@ -150,3 +150,24 @@ def test_classless_duplicate_does_not_shadow_a_trainable_self_buff(
     assert candidates[0].name == "Whirlwind Discipline"
     # The duplicate is demoted, not discarded.
     assert [s.name for s in candidates[1:]] == ["Whirlwind"]
+
+
+def test_the_peggy_clicky_does_not_outrank_the_real_levitate(
+    spell_book: SpellBook,
+) -> None:
+    """#177: "Peggy Levitate" is a synthetic copy of the Levitate line with the
+    Peggy Cloak's duration, so it carries an identical class table and nothing
+    in the data can separate the two. EQTool reaches it by name from
+    YourItemBeginsToGlowHandler, never from a cast message — registering it
+    before the genuine spell made it win every "Your feet leave the ground."
+    on candidate order alone, which is what the reporter saw.
+    """
+    levitate = spell_book.spell_by_name("Levitate")
+    peggy = spell_book.spell_by_name("Peggy Levitate")
+    assert levitate is not None and peggy is not None
+    assert levitate.class_levels == peggy.class_levels  # the reason order decides
+    for candidates in (
+        spell_book.cast_on_you(levitate.cast_on_you),
+        spell_book.cast_on_other(levitate.cast_on_other),
+    ):
+        assert [s.name for s in candidates][:2] == ["Levitate", "Peggy Levitate"]

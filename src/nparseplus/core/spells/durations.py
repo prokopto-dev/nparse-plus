@@ -74,3 +74,56 @@ def get_duration_seconds(
         ticks = duration
 
     return ticks * TICK_SECONDS
+
+
+# Disciplines whose on-screen duration is a flat number rather than the
+# spells_us.txt formula's answer. Transcribed literally from
+# SpellHandlerService.Handle; five of the eight disagree with the formula, so
+# this is not a redundant table (Puretone runs 240s where the formula says 120).
+DISCIPLINE_DURATION_OVERRIDES_S: dict[str, int] = {
+    "Voiddance Discipline": 8,
+    "Weapon Shield Discipline": 20,
+    "Deftdance Discipline": 15,
+    "Furious Discipline": 9,
+    "Defensive Discipline": 180,
+    "Evasive Discipline": 180,
+    "Nimble Discipline": 12,
+    "Puretone Discipline": 240,
+}
+
+# One extra tick on a detrimental row whose target is an NPC, so the row
+# outlives the "spell has worn off" line that ends it.
+NPC_DETRIMENTAL_GRACE_S = 6
+
+
+def base_timer_duration_seconds(
+    spell: Spell,
+    player_class: PlayerClass | None,
+    player_level: int | None,
+    delay_offset_ms: int = 0,
+) -> float:
+    """Seconds a Timers-window row counts down for ``spell``, before the NPC
+    grace tick.
+
+    The discipline override wins over the formula where there is one. Split
+    from :func:`npc_grace_seconds` because the caller has to gate on this
+    number: a spell whose duration works out to zero creates no row at all,
+    and the grace tick would push it over that line (#177).
+    """
+    override = DISCIPLINE_DURATION_OVERRIDES_S.get(spell.name)
+    seconds = (
+        float(override)
+        if override is not None
+        else float(get_duration_seconds(spell, player_class, player_level))
+    )
+    return seconds + delay_offset_ms / 1000.0
+
+
+def npc_grace_seconds(spell: Spell, *, on_npc: bool) -> float:
+    """The extra tick :data:`NPC_DETRIMENTAL_GRACE_S` describes, or zero.
+
+    Shared with ``TimersService.respell_row`` so that correcting a guess
+    produces the same countdown the matcher would have produced had it named
+    that spell in the first place (#177).
+    """
+    return float(NPC_DETRIMENTAL_GRACE_S) if on_npc and spell.is_detrimental else 0.0

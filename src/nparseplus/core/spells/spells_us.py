@@ -512,6 +512,21 @@ def load_spell_book(path: Path, npcs: frozenset[str] | None = None) -> SpellBook
             continue
         _apply_fixups(raw)
 
+        existing = by_name.get(raw.name)
+        if existing is not None:
+            # Keep the classed variant when a classless duplicate appears.
+            if not (existing.classes and not raw.classes):
+                by_name[raw.name] = raw
+        else:
+            by_name[raw.name] = raw
+
+        # The Peggy Cloak clicky: same spell, item duration. Registered AFTER
+        # the real Levitate (#177) — it is a copy of that line, so it carries
+        # the identical class table and nothing in the data can separate the
+        # two. EQTool reaches it by name from YourItemBeginsToGlowHandler, never
+        # from a cast message, so the genuine spell has to be the one a shared
+        # cast line resolves to; inserting the synthetic row first made it win
+        # every "Your feet leave the ground." on candidate order alone.
         if raw.name == "Levitate":
             peggy = parse_spell_line(line)
             if peggy is not None:
@@ -520,14 +535,6 @@ def load_spell_book(path: Path, npcs: frozenset[str] | None = None) -> SpellBook
                 peggy.buffdurationformula = 12
                 peggy.casttime = 6000
                 by_name.setdefault(peggy.name, peggy)
-
-        existing = by_name.get(raw.name)
-        if existing is not None:
-            # Keep the classed variant when a classless duplicate appears.
-            if not (existing.classes and not raw.classes):
-                by_name[raw.name] = raw
-        else:
-            by_name[raw.name] = raw
 
     book = SpellBook(
         spells=[_to_spell(raw) for raw in by_name.values()],
