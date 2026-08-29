@@ -207,13 +207,11 @@ class SpellTimerHandler(BaseHandler):
         if elapsed_ms > casting.spell.cast_time_ms + 1000:
             delta_offset_ms = int(casting.spell.cast_time_ms - elapsed_ms)
             if casting.spell.name in _SELF_SPELLS_WITHOUT_COMPLETION_MESSAGE:
-                self.handle_spell(
-                    casting.spell, YOU_GROUP, delta_offset_ms, event.timestamp, own_cast=True
-                )
+                self.handle_spell(casting.spell, YOU_GROUP, delta_offset_ms, event.timestamp)
             casting.clear()
 
     def _on_finish_casting(self, event: YouFinishCastingEvent) -> None:
-        self.handle_spell(event.spell, event.target_name, 0, event.timestamp, own_cast=True)
+        self.handle_spell(event.spell, event.target_name, 0, event.timestamp)
         self.spells.casting.clear()
 
     def _on_cast_on_you(self, event: SpellCastOnYouEvent) -> None:
@@ -232,7 +230,7 @@ class SpellTimerHandler(BaseHandler):
                 target = event.target_name
                 if spell.name.casefold() in ("theft of thought", "dictate"):
                     target = YOU_GROUP
-                self.handle_spell(spell, target, 0, event.timestamp, own_cast=True)
+                self.handle_spell(spell, target, 0, event.timestamp)
                 return
 
         # Guess Spells off: an ambiguous line (several candidates) creates no
@@ -317,8 +315,6 @@ class SpellTimerHandler(BaseHandler):
         delay_offset_ms: int,
         timestamp: datetime,
         alternatives: Sequence[Spell] = (),
-        *,
-        own_cast: bool = False,
     ) -> None:
         """``alternatives`` are the same-message spells the matcher passed over
         (#177) — carried onto the row so the Timers window can offer them as a
@@ -381,7 +377,6 @@ class SpellTimerHandler(BaseHandler):
                 self.player.player_class,
                 self.player.level,
                 delay_offset_ms,
-                own_cast=own_cast,
             )
         )
 
