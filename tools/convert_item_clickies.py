@@ -20,10 +20,18 @@ something in the tree (a C# checkout, live pydantic models), so regenerating
 under --check is free and exact. This one derives from a third-party website
 over ~130 HTTP requests, so a --check that re-scraped would put CI traffic on
 a community wiki on every run and would fail for edits made on the wiki rather
-than in this repo. --check therefore guards what a local check honestly can:
-that the committed file parses, that its levels are sane, and that every spell
-it names still exists in the bundled spells_us.txt — which is what catches the
-file rotting against a spell-data regeneration.
+than in this repo. --check therefore guards what a local check honestly can: that the committed
+file parses, that its levels are sane, that every spell it names still exists
+in the bundled spells_us.txt (which catches the file rotting against a
+spell-data regeneration), and that the table has not lost a material fraction
+of its entries (MIN_EXPECTED_SPELLS).
+
+A batch that fails is retried (honouring Retry-After on a 429), and a batch
+that never lands aborts the whole run: --refresh exits nonzero and leaves the
+committed JSON untouched rather than writing a partial table. That matters
+because a short table is indistinguishable from a genuine shrink once it is
+written — the dropped spells simply stop having a level — and --check cannot
+catch it, since a table missing a few hundred entries is still a valid one.
 
 The scrape drives from the SPELL side, not the item side. Walking
 data/items/master_item_list.txt would be 26,691 items = 534 batched requests;
@@ -55,9 +63,20 @@ OUTPUT_PATH = REPO_ROOT / "src" / "nparseplus" / "data" / "items" / "item_clicki
 SPELLS_PATH = REPO_ROOT / "data" / "spells" / "spells_us.txt"
 
 BATCH_SIZE = 50  # the MediaWiki API's titles cap
+MAX_ATTEMPTS = 3  # per batch, before the whole run is abandoned
+RETRY_BACKOFF_S = 2.0  # multiplied by the attempt number
 REQUEST_DELAY_S = 0.4  # courtesy to a community wiki
 TIMEOUT_S = 30.0
 MAX_LEVEL = 65
+
+#: --check fails below this. The committed scrape found 371 spells, so a table
+#: that has lost a material fraction of them is a bad refresh rather than a
+#: real change in what the wiki says. It is the backstop BEHIND
+#: ScrapeIncomplete, not a substitute for it: --refresh already refuses to
+#: write a run with a failed batch, and this catches a table that got short by
+#: some route nobody predicted (a wiki reshuffle, a regex that stopped
+#: matching). Raise it when a refresh legitimately finds more.
+MIN_EXPECTED_SPELLS = 340
 
 #: "Effect: <link or plain name> (...) at Level 20"
 _EFFECT_RE = re.compile(
@@ -71,6 +90,15 @@ _ITEMS_FIELD_RE = re.compile(
 _TRANSCLUDE_RE = re.compile(r"\{\{:\s*(?P<name>[^}|]+?)\s*\}\}")
 _PIPED_RE = re.compile(r"\[\[\s*(?P<name>[^\]|]+?)\s*\|[^\]]*\]\]")
 _PLAIN_RE = re.compile(r"\[\[\s*(?P<name>[^\]|]+?)\s*\]\]")
+
+
+class ScrapeIncomplete(RuntimeError):
+    """A batch could not be fetched, so the scrape must not be written.
+
+    Partial output is the dangerous failure here: it looks exactly like a
+    successful run against a smaller wiki, and silently drops clicky levels
+    that were previously committed.
+    """
 
 
 def _norm(name: str) -> str:
@@ -127,17 +155,56 @@ def _fetch_pages(client, titles: list[str]) -> dict[str, str]:
     return out
 
 
+def _retry_after_s(exc: Exception) -> float | None:
+    """The server's own Retry-After, when it sent one (429/503)."""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return None
+    raw = response.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:  # the HTTP-date form; not worth parsing for a one-shot tool
+        return None
+
+
+def _fetch_with_retries(client, titles: list[str], label: str, number: int) -> dict[str, str]:
+    """One batch, retried with backoff. Raises ScrapeIncomplete if it never lands."""
+    last: Exception | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return _fetch_pages(client, titles)
+        except Exception as exc:
+            last = exc
+            if attempt == MAX_ATTEMPTS:
+                break
+            delay = _retry_after_s(exc) or RETRY_BACKOFF_S * attempt
+            print(
+                f"  ! {label} batch {number} attempt {attempt}/{MAX_ATTEMPTS} failed "
+                f"({exc}); retrying in {delay:.0f}s",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+    raise ScrapeIncomplete(f"{label} batch {number} failed after {MAX_ATTEMPTS} attempts: {last}")
+
+
 def _walk(client, titles: list[str], label: str) -> dict[str, str]:
+    """Every batch, or nothing.
+
+    A batch that never lands raises rather than being logged and skipped. A
+    partial read is indistinguishable from a genuine shrink once it is in the
+    JSON — the missing spells simply stop having a level — and --check cannot
+    catch it, since a table short of a few hundred entries is still a valid
+    one. So the only safe thing a failed batch can do is stop the run before
+    anything is written.
+    """
     found: dict[str, str] = {}
     total = (len(titles) + BATCH_SIZE - 1) // BATCH_SIZE
     for index in range(0, len(titles), BATCH_SIZE):
-        batch = titles[index : index + BATCH_SIZE]
-        try:
-            found.update(_fetch_pages(client, batch))
-        except Exception as exc:  # a dead batch must not lose the whole run
-            print(f"  ! {label} batch {index // BATCH_SIZE + 1} failed: {exc}", file=sys.stderr)
-        done = index // BATCH_SIZE + 1
-        print(f"  {label}: batch {done}/{total} ({len(found)} pages)", end="\r", file=sys.stderr)
+        number = index // BATCH_SIZE + 1
+        found.update(_fetch_with_retries(client, titles[index : index + BATCH_SIZE], label, number))
+        print(f"  {label}: batch {number}/{total} ({len(found)} pages)", end="\r", file=sys.stderr)
         time.sleep(REQUEST_DELAY_S)
     print(file=sys.stderr)
     return found
@@ -233,6 +300,12 @@ def validate(document: dict) -> list[str]:
     if not isinstance(clickies, dict) or not clickies:
         return ["'clickies' is missing or empty"]
 
+    if len(clickies) < MIN_EXPECTED_SPELLS:
+        problems.append(
+            f"only {len(clickies)} spells, expected at least {MIN_EXPECTED_SPELLS} — "
+            "this looks like a partial scrape, not a smaller wiki"
+        )
+
     book = load_spell_book(SPELLS_PATH)
     known = {s.name for s in book.spells if s.name}
     for spell, level in sorted(clickies.items()):
@@ -275,7 +348,14 @@ def main() -> None:
     if not args.refresh:
         parser.error("pass --refresh to scrape, or --check to validate the committed file")
 
-    document = scrape(limit=args.limit)
+    try:
+        document = scrape(limit=args.limit)
+    except ScrapeIncomplete as exc:
+        # Deliberately BEFORE any write: the committed table is left exactly as
+        # it was, because a table missing a few hundred levels is still a valid
+        # one and nothing downstream could tell it from a real shrink.
+        sys.exit(f"scrape incomplete, {OUTPUT_PATH.name} left unchanged: {exc}")
+
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     meta = document["meta"]
