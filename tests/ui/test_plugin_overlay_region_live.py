@@ -1222,7 +1222,9 @@ def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path)
     settings.plugins.entries["kill-ticker"] = PluginEntry(enabled=True, approved=True)
 
     backend = build_backend(settings, speaker=NullSpeaker())
-    # The last release that shipped no regions.
+    # A shipped release without the region API. Deliberately NOT described as
+    # "the last" one: that claim rots every time a release is cut ahead of this
+    # branch, and it already did once. Any pre-region release proves the point.
     host = PluginHost(
         settings, backend, "2.28.1", request_save=lambda: None, plugins_dir_override=directory
     )
@@ -1232,7 +1234,7 @@ def test_an_app_older_than_the_example_refuses_it_cleanly(qtbot, tmp_path: Path)
         (loaded,) = [row for row in host.statuses() if row.plugin_id == "kill-ticker"]
         assert loaded.status == "incompatible"
         assert loaded.error is not None
-        assert "2.29.0" in loaded.error
+        assert "2.30.0-beta.1" in loaded.error
         # Refused BEFORE activate(), which is the whole point: an AttributeError
         # out of activate() reads as a broken add-on rather than an old app.
         assert "activate" not in loaded.error

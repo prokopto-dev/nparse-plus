@@ -1921,15 +1921,29 @@ invalidate it.** It was pinned to 2.28.0 on the assumption this would be the
 next minor; #181 merged first, semantic-release cut *that* as v2.28.0, and the
 pin then named a release with no region API — wrong in the one direction that
 matters, since an app WITHOUT the capability would have accepted a plugin
-requiring it. Re-pinned to 2.29.0 by reading the tag. Nothing automated
-catches this: `REGION_MIN_APP_VERSION` is deliberately NOT compared against the
-tree's own `__version__` (that comparison fails on the next unrelated release
-and pressures whoever hits it into raising a floor that is already correct), so
-the constant is a post-hoc alarm, not a gate. Any feature PR pinning a future
-release must re-read the newest tag immediately before merge. Re-read again
-when v2.28.1 landed ahead of it: a PATCH release does not consume a pinned
-minor, so 2.29.0 survived unchanged — only another `feat:` merging first
-invalidates it.
+requiring it. Re-pinned to 2.29.0 by reading the tag, then to
+**2.30.0-beta.1** when the release plan changed. Nothing automated catches
+this: `REGION_MIN_APP_VERSION` is deliberately NOT compared against the tree's
+own `__version__` (that comparison fails on the next unrelated release and
+pressures whoever hits it into raising a floor that is already correct), so the
+constant is a post-hoc alarm, not a gate. Any feature PR pinning a future
+release must re-read the newest tag immediately before merge. A PATCH release
+does not consume a pinned minor — v2.28.1 landed ahead of it and 2.29.0
+survived unchanged; only another `feat:` merging first invalidates it.
+
+**A capability debuting in a PRERELEASE pins the prerelease, not the stable.**
+Regions ship to a beta channel first, so the pin is `2.30.0-beta.1` rather than
+`2.30.0`, and that is not a rounding choice. `check_compat` compares with
+`packaging.version.Version` (PEP 440), which normalises `2.30.0-beta.1` to
+`2.30.0b1` and orders it BELOW `2.30.0` — so a stable pin refuses **every beta
+host**, which is precisely the audience a beta ships to. Pinning the
+prerelease admits the betas and every later release, and still refuses the one
+before. Write the SemVer spelling (hyphen) because that is what the About box
+and the release page show, though both spellings normalise to the same version.
+Useful property: pinning `beta.1` is robust to the beta counter moving —
+`beta.2`/`rc1`/stable all satisfy it — so only the MINOR drifting breaks the
+pin. `sdk/tests/test_sdk_meta_compat.py::TestPrereleaseAppVersions` holds all
+of this; before it, no prerelease app version was exercised anywhere.
 
 **The content hook holds the overlay WEAKLY, and that is #154's segfault one
 step removed.** The overlay owns the region's host widget, the widget holds its

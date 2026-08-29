@@ -60,7 +60,7 @@ class TickerPlugin(NParsePlugin):
         id="kill-ticker",
         name="Kill Ticker",
         requires_sdk=">=1.5,<2",
-        min_app_version="2.29.0",   # both — see Compatibility below
+        min_app_version="2.30.0-beta.1",   # both — see Compatibility below
     )
 
     def __init__(self):
@@ -109,11 +109,20 @@ So pin the app release that first shipped regions as well:
 
 ```python
 requires_sdk=">=1.5,<2",
-min_app_version="2.29.0",
+min_app_version="2.30.0-beta.1",
 ```
 
+**That hyphenated prerelease is deliberate — do not "round it up" to
+`"2.30.0"`.** Regions debut in a beta build, and PEP 440 orders a prerelease
+*below* the release it leads to (`2.30.0b1 < 2.30.0`), so a pin naming the
+stable release refuses every beta host — the exact users the beta is for.
+Pinning the prerelease admits the betas, the release candidate and every
+stable release after them.
+
 Full reasoning in
-[Versioning](versioning.md#the-sdk-range-alone-is-not-a-promise-about-the-host).
+[Versioning](versioning.md#the-sdk-range-alone-is-not-a-promise-about-the-host),
+and the prerelease case in
+[A capability that debuts in a prerelease](versioning.md#a-capability-that-debuts-in-a-prerelease).
 
 ### Keys
 
