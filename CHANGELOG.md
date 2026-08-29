@@ -6,6 +6,37 @@ Commit messages.
 
 <!-- version list -->
 
+## v2.28.2 (2026-08-29)
+
+### Bug Fixes
+
+- **spells**: Compute item-cast durations from the item's level, not yours
+  ([`9eb93bc`](https://github.com/prokopto-dev/nparse-plus/commit/9eb93bcc1326f19f246189665d4b7d00ea2eb3bf))
+
+- **spells**: Scrape P99 for the level items cast their clicky effects at
+  ([`f5525a0`](https://github.com/prokopto-dev/nparse-plus/commit/f5525a09cda0e06db60722ee6a80b4f46d636603))
+
+- **timers**: Clamp discipline cooldown scaling to the table's own level range
+  ([`ccbccfd`](https://github.com/prokopto-dev/nparse-plus/commit/ccbccfd16bed7e7a651f7da732506dd861644bf1))
+
+- **tools**: Never write a partial clicky scrape
+  ([`4cfd250`](https://github.com/prokopto-dev/nparse-plus/commit/4cfd2504eba731c51cce93dd180157d72fee99e1))
+
+### Testing
+
+- **spells**: Cover the generated clicky table, and document clicky timing
+  ([`8b68c0c`](https://github.com/prokopto-dev/nparse-plus/commit/8b68c0cb80491907c9031589867d8c73545cbcf0))
+
+- **spells**: Guard that item-cast inference cannot reach a self-cast
+  ([`3eed383`](https://github.com/prokopto-dev/nparse-plus/commit/3eed3839263ffe7b01f424efd63075701a234376))
+
+- **timers**: Evidence the discipline table audit and the guildless /who row
+  ([`1f0155e`](https://github.com/prokopto-dev/nparse-plus/commit/1f0155e4b356e48b1bf5ac993d8f0afaa51621be))
+
+- **tools**: Cover the clicky scrape's failure paths offline
+  ([`aaff3b4`](https://github.com/prokopto-dev/nparse-plus/commit/aaff3b4fdcf5a8ef206024134bdce530769c5c79))
+
+
 ## v2.28.1 (2026-08-28)
 
 ### Bug Fixes
