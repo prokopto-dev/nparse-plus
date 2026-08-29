@@ -145,6 +145,20 @@ to differ:
 | Git tag | `v2.30.0-beta.1` |
 | `nparseplus.__version__` | `2.30.0-beta.1` |
 | Wheel, `dist-info`, `importlib.metadata.version()` | `2.30.0b1` |
+| Debian `Version:` field | `2.30.0~beta.1` |
+| macOS `CFBundleShortVersionString` | `2.30.0` |
+| macOS `CFBundleVersion` | `23000001` |
+| Windows VERSIONINFO tuple | `(2, 30, 0, 1)` |
+
+The last four are not spellings of the same string — they are what each
+packaging format *requires*, derived in `packaging/appversion.py` and
+`packaging/deb/build_deb.py`. Apple wants exactly three period-separated
+integers in the short version and a numeric build string beside it, so the
+prerelease cannot appear in either; Finder shows the pair as `2.30.0 (1)`, and
+the build number packs the components into one integer so a beta always orders
+below the release it is promoted to. Windows wants four integers, and
+`int("0-beta")` raises. None of this is visible in the app, which shows
+`__version__` verbatim.
 
 semantic-release writes SemVer; hatchling normalizes it to PEP 440 for the
 distribution metadata. They compare **equal** under `packaging.Version`, which
@@ -153,6 +167,14 @@ fix. In particular, do not "normalize" the `__version__` literal — the tag
 check in `release.yml` compares it to the tag character for character, and
 `__version__` is deliberately a literal rather than a metadata lookup (that
 lookup is exactly what fails in a frozen build).
+
+!!! warning "`codesign --verify` does not check the plist's version fields"
+
+    It proves the plist was *signed*, not that its fields are valid — a bundle
+    whose `CFBundleShortVersionString` is `2.30.0-beta.1` signs and verifies
+    clean. So `build-macos` asserts the **shape** of both fields against
+    Apple's rule directly, not only that they equal what `appversion.py`
+    produced: a wrong generator checked against itself would simply agree.
 
 !!! note "One consequence for plugin authors"
 

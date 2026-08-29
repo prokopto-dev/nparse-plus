@@ -19,6 +19,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from packaging.version import Version
 
@@ -531,7 +532,10 @@ def test_the_spec_uses_the_shared_version_arithmetic() -> None:
     this code.
     """
     spec = (REPO_ROOT / "packaging/nparseplus.spec").read_text(encoding="utf-8")
-    assert "from appversion import read_version, windows_version_tuple" in spec
+    # The names, not the import's formatting — ruff may re-wrap it.
+    assert "from appversion import" in spec
+    for name in ("read_version", "windows_version_tuple"):
+        assert name in spec, f"the spec no longer uses {name}"
     assert "windows_version_tuple(VERSION)" in spec
 
 
@@ -581,3 +585,111 @@ def test_there_is_a_deliberate_promotion_path() -> None:
     assert "git push origin HEAD:master" in str(land["run"])
     # Refusing to land something still carrying a prerelease segment.
     assert "*-*" in str(land["run"]) and "exit 1" in str(land["run"])
+
+
+# --- the macOS plist fields must be valid, not just present (#186 review) ---
+
+#: Apple: CFBundleShortVersionString is "three period-separated integers";
+#: CFBundleVersion is "one to three period-separated integers". Written as
+#: literals rather than imported from the workflow so this asserts the RULE,
+#: not whatever the workflow happens to say today.
+SHORT_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+BUNDLE_VERSION_RE = re.compile(r"^\d+(\.\d+){0,2}$")
+
+
+def test_the_raw_version_literal_is_not_a_valid_plist_value() -> None:
+    """The premise. If this ever stopped being true the rest is unnecessary."""
+    assert not SHORT_VERSION_RE.match(BETA_VERSION)
+    assert not BUNDLE_VERSION_RE.match(BETA_VERSION)
+
+
+def test_the_derived_plist_values_are_valid_for_every_shape() -> None:
+    for version in (BETA_VERSION, "2.30.0-beta.12", "2.28.1", "2.30.0", "3.0.0-rc.1"):
+        short = appversion.macos_short_version(version)
+        build = appversion.macos_bundle_version(version)
+        assert SHORT_VERSION_RE.match(short), f"{version} -> {short!r}"
+        assert BUNDLE_VERSION_RE.match(build), f"{version} -> {build!r}"
+
+
+def test_a_beta_carries_the_marketing_version_it_is_a_beta_of() -> None:
+    """A beta of 2.30.0 *is* marketing version 2.30.0.
+
+    Three integers is Apple's ceiling, so the prerelease cannot be encoded
+    here at all; which beta it is goes in the build number instead, giving
+    Finder the familiar "2.30.0 (1)" reading.
+    """
+    assert appversion.macos_short_version(BETA_VERSION) == "2.30.0"
+    # A stable version is untouched — nothing about an existing build changes.
+    assert appversion.macos_short_version("2.28.1") == "2.28.1"
+
+
+def test_the_build_number_orders_betas_below_the_release_they_promote_to() -> None:
+    """The property that makes one integer the only workable shape.
+
+    Betas and their stable share a marketing version, so there is no room left
+    in a dotted form to separate them. macOS compares this field to tell
+    builds apart, and a beta that outranks its own release is the same class
+    of bug the Debian ordering had.
+    """
+    ordered = [
+        "2.28.1",
+        "2.30.0-beta.1",
+        "2.30.0-beta.2",
+        "2.30.0",
+        "2.30.1-beta.1",
+        "2.30.1",
+        "2.31.0-beta.1",
+        "2.31.0",
+    ]
+    builds = [int(appversion.macos_bundle_version(v)) for v in ordered]
+    assert builds == sorted(builds), dict(zip(ordered, builds, strict=True))
+    assert len(set(builds)) == len(builds), "two releases share a build number"
+    # And it stays inside a signed 32-bit range, which is the practical
+    # ceiling for a build number macOS will compare.
+    assert max(builds) < 2**31
+
+
+def test_a_version_component_that_would_break_the_ordering_is_refused() -> None:
+    """Loudly, at build time — never a silently inverted comparison.
+
+    The build number packs the components into fields; one overflowing its
+    field would carry into the next and reorder releases. That must fail the
+    build, not ship.
+    """
+    for bad in ("2.100.0", "2.30.100", "2.30.0-beta.999"):
+        with pytest.raises(SystemExit):
+            appversion.macos_bundle_version(bad)
+
+
+def test_the_spec_uses_the_derived_values_and_not_the_literal() -> None:
+    spec = (REPO_ROOT / "packaging/nparseplus.spec").read_text(encoding="utf-8")
+    assert '"CFBundleShortVersionString": macos_short_version(VERSION)' in spec
+    assert '"CFBundleVersion": macos_bundle_version(VERSION)' in spec
+    assert '"CFBundleShortVersionString": VERSION' not in spec
+    assert '"CFBundleVersion": VERSION' not in spec
+
+
+def test_the_workflow_checks_the_plist_shape_and_not_only_our_own_output() -> None:
+    """``codesign --verify`` passes on a bundle carrying an invalid version.
+
+    Verified directly: a bundle whose CFBundleShortVersionString is
+    ``2.30.0-beta.1`` signs and verifies clean, because codesign checks that
+    the plist was signed rather than that its fields mean anything. So the
+    workflow has to assert the shape itself — and against Apple's rule rather
+    than against ``appversion``'s output, or a wrong generator would simply
+    agree with itself.
+    """
+    step = next(
+        step
+        for step in steps("build-macos")
+        if str(step.get("name", "")) == "Verify bundle version"
+    )
+    body = str(step["run"])
+    assert "CFBundleShortVersionString" in body and "CFBundleVersion" in body
+    # The shape assertions, independent of the generator.
+    assert r"^[0-9]+\.[0-9]+\.[0-9]+$" in body
+    assert r"^[0-9]+(\.[0-9]+){0,2}$" in body
+    # And a staleness check against what the tag should have produced.
+    assert "macos_short_version" in body and "macos_bundle_version" in body
+    # The old tag comparison must be gone: a beta tag is not a valid value.
+    assert '"$GOT" = "${RELEASE_TAG#v}"' not in body

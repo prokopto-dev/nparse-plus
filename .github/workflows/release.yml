@@ -116,12 +116,37 @@ jobs:
         # already proved that equals the tag. This catches the plist silently
         # going stale again (it shipped "0.0.0-dev" through v1.16.1, which
         # makes Finder/Spotlight useless for telling builds apart).
+        #
+        # These are NOT compared to the tag any more, and must not be: Apple
+        # requires exactly three period-separated integers in the short
+        # version and a numeric build string in the other, so a beta tag
+        # ("2.30.0-beta.1") is invalid in both fields. appversion.py derives
+        # plist-safe values; the tag keeps the SemVer spelling.
         run: |
+          set -euo pipefail
           PLIST="dist/nParse+.app/Contents/Info.plist"
-          GOT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
-          echo "CFBundleShortVersionString=$GOT"
-          [ "$GOT" = "${RELEASE_TAG#v}" ] \
-            || { echo "::error::Info.plist version $GOT != ${RELEASE_TAG#v}"; exit 1; }
+          SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+          echo "CFBundleShortVersionString=$SHORT  CFBundleVersion=$BUILD"
+
+          # 1. The SHAPE, checked against Apple's rule directly and NOT
+          #    against our own generator. This is the assertion that still
+          #    means something if appversion.py is wrong: `codesign --verify`
+          #    passes on a bundle carrying an invalid version, so without a
+          #    shape check nothing in this job would ever notice.
+          printf '%s' "$SHORT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::CFBundleShortVersionString '$SHORT' is not three period-separated integers"; exit 1; }
+          printf '%s' "$BUILD" | grep -Eq '^[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::CFBundleVersion '$BUILD' is not one to three period-separated integers"; exit 1; }
+
+          # 2. And that they are the values this tag should have produced, so
+          #    a stale plist is still caught.
+          EXPECTED_SHORT=$(uv run python -c "import sys; sys.path.insert(0, 'packaging'); from appversion import macos_short_version; print(macos_short_version('${RELEASE_TAG#v}'))")
+          EXPECTED_BUILD=$(uv run python -c "import sys; sys.path.insert(0, 'packaging'); from appversion import macos_bundle_version; print(macos_bundle_version('${RELEASE_TAG#v}'))")
+          [ "$SHORT" = "$EXPECTED_SHORT" ] \
+            || { echo "::error::CFBundleShortVersionString $SHORT != $EXPECTED_SHORT"; exit 1; }
+          [ "$BUILD" = "$EXPECTED_BUILD" ] \
+            || { echo "::error::CFBundleVersion $BUILD != $EXPECTED_BUILD"; exit 1; }
       - name: Ad-hoc codesign
         run: codesign --force --deep -s - "dist/nParse+.app"
       - name: Zip the .app (what the updater downloads)

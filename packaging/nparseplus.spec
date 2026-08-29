@@ -33,7 +33,12 @@ ROOT = Path(SPECPATH).parent  # noqa: F821 - SPECPATH is a PyInstaller global
 # version-tuple arithmetic live there so they can be tested (see
 # tests/test_release_workflow.py), which they cannot be from inside a spec.
 sys.path.insert(0, str(ROOT / "packaging"))
-from appversion import read_version, windows_version_tuple  # noqa: E402
+from appversion import (  # noqa: E402
+    macos_bundle_version,
+    macos_short_version,
+    read_version,
+    windows_version_tuple,
+)
 
 VERSION = read_version((ROOT / "src" / "nparseplus" / "__init__.py").read_text(encoding="utf-8"))
 
@@ -203,8 +208,15 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "nParse+",
             "CFBundleDisplayName": "nParse+",
-            "CFBundleShortVersionString": VERSION,
-            "CFBundleVersion": VERSION,
+            # NOT the raw literal. Apple requires exactly three
+            # period-separated integers here and a numeric build string
+            # below, so "2.30.0-beta.1" is invalid in both — and nothing
+            # would have said so: `codesign --verify` passes on a bundle
+            # carrying it, because it checks that the plist was signed, not
+            # that its fields mean anything. Finder reads this pair as the
+            # familiar "2.30.0 (2)". See packaging/appversion.py.
+            "CFBundleShortVersionString": macos_short_version(VERSION),
+            "CFBundleVersion": macos_bundle_version(VERSION),
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
             # Tray app: no Dock icon would be LSUIElement, but the overlay
