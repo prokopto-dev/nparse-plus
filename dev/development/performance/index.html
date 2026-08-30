@@ -3152,14 +3152,39 @@ because hosted runners are shared VMs and a nightly that cried wolf would
 be muted inside a week. Read it for trends, not for single runs.</p>
 <h2 id="latest-run">Latest run<a class="headerlink" href="#latest-run" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>When</strong>: 2026-08-20T18:00:23.371329+00:00</li>
-<li><strong>Commit</strong>: <code>188767e1fb98</code> (refs/heads/master)</li>
-<li><strong>Runner</strong>: seed (local, macOS arm64), Python 3.12.11</li>
-<li><strong>Recorded runs in history</strong>: 1</li>
+<li><strong>When</strong>: 2026-08-30T04:25:42.456038+00:00</li>
+<li><strong>Commit</strong>: <code>f8bc4e8e5f3e</code> (refs/heads/master)</li>
+<li><strong>Runner</strong>: ubuntu-latest, Python 3.12.3</li>
+<li><strong>Recorded runs in history</strong>: 10</li>
 </ul>
-<p>This is the seed run committed with #132 — the trend charts appear
-once the nightly has recorded a second one.</p>
-<p>Percentages compare against the baseline recorded on <strong>seed (local, macOS arm64)</strong> (2026-08-20, <code>188767e1fb98</code>).</p>
+<p>Percentages compare against the baseline recorded on <strong>ubuntu-latest</strong> (2026-08-21, <code>d690d3e8acfa</code>).</p>
+<div class="admonition warning">
+<p class="admonition-title">22 benchmark(s) more than 15% slower than baseline</p>
+<ul>
+<li><code>test_bench_bus_publish[0]</code> (+114.9%)</li>
+<li><code>test_bench_bus_publish[10]</code> (+105.9%)</li>
+<li><code>test_bench_bus_publish[1]</code> (+128.6%)</li>
+<li><code>test_bench_bus_publish[50]</code> (+117.7%)</li>
+<li><code>test_bench_bus_publish_to_firehose</code> (+114.9%)</li>
+<li><code>test_bench_latency_parse_to_ui</code> (+183.6%)</li>
+<li><code>test_bench_map_location_burst</code> (+117.1%)</li>
+<li><code>test_bench_pipeline_cold_backend</code> (+59.9%)</li>
+<li><code>test_bench_pipeline_corpus</code> (+115.0%)</li>
+<li><code>test_bench_pipeline_profile[group]</code> (+114.4%)</li>
+<li><code>test_bench_pipeline_profile[raid]</code> (+116.9%)</li>
+<li><code>test_bench_pipeline_profile[solo]</code> (+113.9%)</li>
+<li><code>test_bench_plugin_dispatch[1-off]</code> (+131.9%)</li>
+<li><code>test_bench_plugin_dispatch[1-on]</code> (+81.9%)</li>
+<li><code>test_bench_plugin_dispatch[10-off]</code> (+116.3%)</li>
+<li><code>test_bench_plugin_dispatch[10-on]</code> (+101.1%)</li>
+<li><code>test_bench_plugin_dispatch[50-off]</code> (+99.0%)</li>
+<li><code>test_bench_plugin_dispatch[50-on]</code> (+102.2%)</li>
+<li><code>test_bench_plugin_parser[off]</code> (+114.1%)</li>
+<li><code>test_bench_plugin_parser[on]</code> (+116.5%)</li>
+<li><code>test_bench_qt_bridge_batch_only</code> (+101.7%)</li>
+<li><code>test_bench_qt_bridge_burst</code> (+96.2%)</li>
+</ul>
+</div>
 <h2 id="eventbuspublish">EventBus.publish<a class="headerlink" href="#eventbuspublish" title="Permanent link">&para;</a></h2>
 <p>The floor under everything else. <code>publish</code> snapshots both subscriber lists defensively, which is the allocation #131 Phase 1 proposes to replace with copy-on-write — the 0-subscriber row is what that would be measured against.</p>
 <table>
@@ -3174,36 +3199,38 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_bus_publish[0]</code></td>
-<td>160 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>292 ns</td>
+<td>+114.9%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish[10]</code></td>
-<td>499 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>1.09 µs</td>
+<td>+105.9%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish[1]</code></td>
-<td>184 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>416 ns</td>
+<td>+128.6%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish[50]</code></td>
-<td>1.84 µs</td>
-<td>+0.0%</td>
-<td></td>
+<td>4.11 µs</td>
+<td>+117.7%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish_to_firehose</code></td>
-<td>182 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>415 ns</td>
+<td>+114.9%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
+<p><img alt="EventBus.publish trend" src="../../assets/perf/bus.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="logpipelineprocess-full-backend">LogPipeline.process (full backend)<a class="headerlink" href="#logpipelineprocess-full-backend" title="Permanent link">&para;</a></h2>
 <p>One replay of 60 in-game seconds of traffic through the parser chain and every handler subscribed to it. Divide by the line count in the table for per-line cost; the driver thread has 100 ms per poll to absorb whatever arrived in it.</p>
 <table>
@@ -3218,37 +3245,39 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_pipeline_cold_backend</code></td>
-<td>115.29 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>247.63 ms</td>
+<td>+59.9%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_corpus</code></td>
-<td>1.56 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>4.32 ms</td>
+<td>+115.0%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_profile[group]</code></td>
-<td>9.97 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>28.27 ms</td>
+<td>+114.4%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_profile[raid]</code></td>
-<td>27.03 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>76.48 ms</td>
+<td>+116.9%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_profile[solo]</code></td>
-<td>3.81 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>10.80 ms</td>
+<td>+113.9%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
-<p>Per line: <code>test_bench_pipeline_cold_backend</code>: 633 lines, 182.14 µs/line; <code>test_bench_pipeline_corpus</code>: 93 lines, 16.77 µs/line; <code>test_bench_pipeline_profile[group]</code>: 440 lines, 22.67 µs/line; <code>test_bench_pipeline_profile[raid]</code>: 1264 lines, 21.38 µs/line; <code>test_bench_pipeline_profile[solo]</code>: 167 lines, 22.84 µs/line.</p>
+<p>Per line: <code>test_bench_pipeline_corpus</code>: 93 lines, 46.42 µs/line; <code>test_bench_pipeline_profile[group]</code>: 440 lines, 64.24 µs/line; <code>test_bench_pipeline_profile[raid]</code>: 1264 lines, 60.50 µs/line; <code>test_bench_pipeline_profile[solo]</code>: 167 lines, 64.70 µs/line.</p>
+<p><img alt="LogPipeline.process (full backend) trend" src="../../assets/perf/pipeline.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="plugin-subscriber-dispatch">Plugin subscriber dispatch<a class="headerlink" href="#plugin-subscriber-dispatch" title="Permanent link">&para;</a></h2>
 <p>The same publish, but through <code>HostPluginContext</code> — so the per-plugin try/except guard and the telemetry gate are both inside the number. <code>off</code> and <code>on</code> are collection disabled and enabled: the gap is the entire cost of #132's measurement on the dispatch path.</p>
 <table>
@@ -3263,42 +3292,44 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_plugin_dispatch[1-off]</code></td>
-<td>203 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>465 ns</td>
+<td>+131.9%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[1-on]</code></td>
-<td>484 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>1.08 µs</td>
+<td>+81.9%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[10-off]</code></td>
-<td>745 ns</td>
-<td>+0.0%</td>
-<td></td>
+<td>1.54 µs</td>
+<td>+116.3%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[10-on]</code></td>
-<td>3.32 µs</td>
-<td>+0.0%</td>
-<td></td>
+<td>6.88 µs</td>
+<td>+101.1%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[50-off]</code></td>
-<td>3.06 µs</td>
-<td>+0.0%</td>
-<td></td>
+<td>6.45 µs</td>
+<td>+99.0%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[50-on]</code></td>
-<td>16.64 µs</td>
-<td>+0.0%</td>
-<td></td>
+<td>32.18 µs</td>
+<td>+102.2%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
+<p><img alt="Plugin subscriber dispatch trend" src="../../assets/perf/plugin-dispatch.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="plugin-parser-in-the-chain">Plugin parser in the chain<a class="headerlink" href="#plugin-parser-in-the-chain" title="Permanent link">&para;</a></h2>
 <p>A plugin parser appended after the built-in chain, over a raid burst. It never consumes a line, which is the worst case: every line reaches it.</p>
 <table>
@@ -3313,19 +3344,21 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_plugin_parser[off]</code></td>
-<td>18.94 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>38.79 ms</td>
+<td>+114.1%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_parser[on]</code></td>
-<td>14.36 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>38.77 ms</td>
+<td>+116.5%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
-<p>Per line: <code>test_bench_plugin_parser[off]</code>: 633 lines, 29.93 µs/line; <code>test_bench_plugin_parser[on]</code>: 633 lines, 22.69 µs/line.</p>
+<p>Per line: <code>test_bench_plugin_parser[off]</code>: 633 lines, 61.27 µs/line; <code>test_bench_plugin_parser[on]</code>: 633 lines, 61.24 µs/line.</p>
+<p><img alt="Plugin parser in the chain trend" src="../../assets/perf/plugin-parser.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="qt-bridge-buffer-coalesced-flush">Qt bridge (buffer + coalesced flush)<a class="headerlink" href="#qt-bridge-buffer-coalesced-flush" title="Permanent link">&para;</a></h2>
 <p>1000 events published from a worker thread and delivered in one coalesced GUI-thread flush. <code>burst</code> has a per-event slot connected, <code>batch_only</code> just the bulk signal.</p>
 <table>
@@ -3340,18 +3373,20 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_qt_bridge_batch_only</code></td>
-<td>1.05 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>2.40 ms</td>
+<td>+101.7%</td>
+<td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_qt_bridge_burst</code></td>
-<td>1.19 ms</td>
-<td>+0.0%</td>
-<td></td>
+<td>2.84 ms</td>
+<td>+96.2%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
+<p><img alt="Qt bridge (buffer + coalesced flush) trend" src="../../assets/perf/qt-bridge.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="map-canvas-render">Map canvas render<a class="headerlink" href="#map-canvas-render" title="Permanent link">&para;</a></h2>
 <p>The heaviest widget in the app, coalescing 120 location fixes into one render.</p>
 <table>
@@ -3366,12 +3401,14 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_map_location_burst</code></td>
-<td>348.55 µs</td>
-<td>+0.0%</td>
-<td></td>
+<td>958.92 µs</td>
+<td>+117.1%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
+<p><img alt="Map canvas render trend" src="../../assets/perf/maps.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="end-to-end-latency-log-append-ui-slot">End-to-end latency (log append -&gt; UI slot)<a class="headerlink" href="#end-to-end-latency-log-append-ui-slot" title="Permanent link">&para;</a></h2>
 <p>A real <code>LogDriver</code> tailing a real file, so this includes the 100 ms poll interval it is dominated by. That is the honest end-to-end figure — it is what the user waits.</p>
 <table>
@@ -3386,18 +3423,20 @@ once the nightly has recorded a second one.</p>
 <tbody>
 <tr>
 <td><code>test_bench_latency_append_to_ui</code></td>
-<td>102.05 ms</td>
-<td>+0.0%</td>
+<td>100.38 ms</td>
+<td>+0.1%</td>
 <td></td>
 </tr>
 <tr>
 <td><code>test_bench_latency_parse_to_ui</code></td>
-<td>72.24 µs</td>
-<td>+0.0%</td>
-<td></td>
+<td>251.23 µs</td>
+<td>+183.6%</td>
+<td>⚠️</td>
 </tr>
 </tbody>
 </table>
+<p><img alt="End-to-end latency (log append -&gt; UI slot) trend" src="../../assets/perf/latency.svg" /></p>
+<p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="running-it-yourself">Running it yourself<a class="headerlink" href="#running-it-yourself" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="nv">QT_QPA_PLATFORM</span><span class="o">=</span>offscreen<span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-m<span class="w"> </span>benchmark<span class="w"> </span>--benchmark-only
 </code></pre></div>
