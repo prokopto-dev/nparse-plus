@@ -133,6 +133,7 @@ nav:
       - Security & trust: plugins/security.md
       - Developing plugins: plugins/developing.md
       - Appearance & skins: plugins/appearance.md
+      - Event overlay regions: plugins/overlay-regions.md
       - Versioning: plugins/versioning.md
       - Registry: plugins/registry.md
       - API reference: plugins/api.md

@@ -63,6 +63,7 @@ class ValidationReport:
     meta: PluginMeta | None = None
     window_count: int = 0
     page_count: int = 0
+    region_count: int = 0
     parser_count: int = 0
     subscription_count: int = 0
     tick_count: int = 0
@@ -182,9 +183,26 @@ def validate_plugin(path: Path, *, app_version: str | None = None) -> Validation
             report.errors.append(f"settings page {page.title!r} builder is not callable")
         if page.apply is not None and not callable(page.apply):
             report.errors.append(f"settings page {page.title!r} apply is not callable")
+    # Region keys share the window keys' namespace check but not their SET:
+    # a region and a window are persisted under different dicts, so one
+    # plugin may legitimately use the same key for both.
+    seen_region_keys: set[str] = set()
+    for region in ctx.overlay_regions:
+        if not PLUGIN_ID_RE.match(region.key):
+            report.errors.append(
+                f"overlay region key {region.key!r} must match {PLUGIN_ID_RE.pattern}"
+            )
+        if region.key in seen_region_keys:
+            report.errors.append(f"duplicate overlay region key {region.key!r}")
+        seen_region_keys.add(region.key)
+        if not callable(region.factory):
+            report.errors.append(f"overlay region {region.key!r} factory is not callable")
+        if not callable(region.has_content):
+            report.errors.append(f"overlay region {region.key!r} has_content is not callable")
 
     report.window_count = len(ctx.windows)
     report.page_count = len(ctx.settings_pages)
+    report.region_count = len(ctx.overlay_regions)
     report.parser_count = len(ctx.parsers)
     report.subscription_count = len(ctx.subscriptions)
     report.tick_count = len(ctx.ticks)

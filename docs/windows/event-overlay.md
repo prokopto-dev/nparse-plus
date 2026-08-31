@@ -86,8 +86,9 @@ grip so you can drag and resize it to sit exactly over your game window.
 **Double-click to lock it in place** when you're done. The geometry
 persists.
 
-In position mode each region (CH chains, Alerts, Timer bars, and the Utility
-section) is outlined with a dashed border and can be laid out on its own:
+In position mode each region (CH chains, Alerts, Timer bars, the Utility
+section — and any an [add-on has contributed](../plugins/overlay-regions.md))
+is outlined with a dashed border and can be laid out on its own:
 
 - **drag inside a region** to move it;
 - **drag a region's edge or corner** to resize it (the cursor changes when

@@ -130,6 +130,10 @@ src/nparseplus/
                         #   pluginconsent.py (the one-time approval dialog),
                         #   pluginwindow.py (the PluginWindow base plugins
                         #   subclass — skinned by default since SDK 1.4),
+                        #   pluginregion.py (its region counterpart, SDK 1.5:
+                        #   the PluginOverlayRegion base an add-on's EVENT
+                        #   OVERLAY region subclasses — sealed non-interactive,
+                        #   skinned, with sample() for position mode),
                         #   pluginskin.py (THE host half of
                         #   nparseplus_sdk.skin: the curated AppSkin
                         #   snapshot an add-on dresses itself from —
@@ -146,7 +150,9 @@ sdk/                    # uv WORKSPACE MEMBER: nparseplus-sdk, the stable third-
                         # app (sdk-v* tags -> PyPI); __init__.py's exports are public
                         # API under an additive-only 1.x promise. sdk/tests runs in
                         # the root pytest. See CONTRIBUTING.md.
-examples/plugins/       # reference add-ons (hello_timer.py, merchant_prices/);
+examples/plugins/       # reference add-ons (hello_timer.py, tod_window.py,
+                        # merchant_prices/, kill_ticker.py = the overlay-region
+                        # reference);
                         # tests/core/plugins/test_examples.py keeps them loading
 templates/              # plugin-repo/ = ready-to-push content of the plugin
                         #   template repo (not created yet; see TEMPLATE_SETUP.md).
@@ -1794,6 +1800,189 @@ un-crashed. Removal is an SDK 2.0 decision.
 
 `examples/plugins/merchant_prices/window.py` is the reference consumer, and
 `docs/plugins/appearance.md` carries the rule with its counter-example.
+
+**An add-on can draw INSIDE the event overlay** (post-2.26, SDK 1.5, #155):
+`ctx.add_overlay_region(OverlayRegionSpec(...))` mirrors `add_window` — a
+one-line append cleared by `unwind()` alongside `window_specs`/`page_specs` —
+and the Qt half materializes it onto the region registry #154 made
+runtime-mutable. Region keys are namespaced `plugin.<id>.<key>` like window
+keys, and the surface is registered NOWHERE else: no tray entry, no chat
+toggle, no Settings > Windows row. A region is not a window; it lives inside
+one.
+
+**Display-only, permanently, and that is the whole design** (owner decision on
+#155). `WindowTransparentForInput` is a top-level flag with no per-child
+exemption, so carving input out for one region means a second always-on-top
+window stacked on the overlay — `PluginWindowSpec` with extra steps. So
+`OverlayRegionSpec` carries **no** input-related field and never will: an
+additive-only 1.x SDK makes a speculative `accepts_input` permanent, and
+`test_overlay_region_specs.py` asserts the field set directly rather than
+leaving that as intent. **Position mode is the trap** — it drops the flag so
+the overlay can be dragged, so a raw widget would receive real clicks there
+and nowhere else. `PluginOverlayRegion` seals itself and its whole subtree
+with `WA_TransparentForMouseEvents` + `NoFocus`, recursively on `ChildAdded`
+**and `ChildPolished`** (a widget class that sets its own focus policy —
+`QPushButton` — does so after its parent is assigned), re-swept on show and on
+`notify_content_changed`. Sealing rather than accept-and-ignore is load-bearing
+in the other direction too: the press must fall THROUGH to the overlay, which
+hit-tests the region rectangles itself, or the region could not be dragged at
+all. The docs say this in the first paragraph of `docs/plugins/overlay-regions.md`
+and name the alternative in the same breath, because "minimap" promises
+interactivity to most readers — and say out loud that a real minimap also
+needs #156 (player location + Qt-free zone geometry), which is not built.
+
+**`has_content` is required on the spec**, because `_update_visibility` ORs
+the per-region predicates and a region with no opinion could never keep the
+overlay on screen by itself. It is asked on every visibility pass — i.e. every
+overlay event, on the GUI thread — so the first exception RETIRES the
+predicate: logged once, never called again, region treated as empty. Silencing
+only the log line leaves a permanently broken (or simply expensive) predicate
+running on every overlay event for the rest of the session, which is the cost
+the guard exists to avoid; the test asserts the INVOCATION count, because a
+log count alone passes against exactly that bug.
+
+**A refused region is ROLLED BACK, not merely refused.** `add_region`
+registers the record and mints its chip BEFORE it places the host, so a
+failure during layout left a record whose host `_register_region`'s caller
+then deleted — and every later visibility pass, i.e. every overlay event,
+raised out of `_region_size`. One bad add-on stopped the overlay working, for
+the session. `_register_region` now calls `remove_region` on the refusal path.
+`default_width` is validated up front as well, because it is the one declared
+size that bypasses `OverlayRegion`'s pydantic validation (the overlay wants a
+callable, not a stored number), and so the one a plugin can put a string in.
+The validator is the likely trigger; the rollback is what covers the failures
+no validator can anticipate.
+
+**The HOST seals the region, not just the base class.** `OverlayRegionSpec`
+promises a QWidget and the docs and tests support a plain one, but only
+`PluginOverlayRegion` sealed itself — so a bare widget, or a control inside
+it, was fully interactive in position mode, where the overlay drops
+`WindowTransparentForInput`. Two consequences, and the second is the worse
+one: it could run handlers it was never written for, and its own rectangle
+became **impossible to drag**, because `QWidget.childAt` (Qt's real hit-test,
+which skips `WA_TransparentForMouseEvents`) returned the plugin's control
+instead of letting the press reach the overlay. `enforce_non_interactive` is
+now applied to whatever the factory returned, and `seal_widget`/`seal_tree`
+are module-level in `ui/pluginregion.py` so the base and the host cannot
+drift. A non-base widget also gets a `_RegionSealer` event filter that
+FOLLOWS the tree — a filter on the root alone never sees a grandchild added
+to an existing child, and filling a region lazily is the common shape. The
+seal is region-only: sealing a plugin *window* would make every control in
+every add-on window dead, which is the opposite of "need clicks → add_window",
+and a test pins that.
+
+**`sample()` is guarded in THREE places, because it is three calls into the
+plugin.** Calling it, iterating what it returned, and what the entries turn
+out to be. Only the first was guarded: a plugin returning a bare widget raised
+`TypeError` on the list comprehension outside it, which runs from
+`_populate_preview` during `set_edit_mode(True)` — so the escape did not cost
+that region its preview, it stopped POSITION MODE OPENING AT ALL, for every
+region and every built-in. Narrowing that catch to `TypeError` then left a
+second hole: a generator can yield a widget and THEN raise, and a custom
+`__iter__`/`__next__` can raise anything, so materialising has its own
+`except Exception` and `iter()` is what distinguishes "not a sequence" from
+"raised while iterating" — and `iter()` is itself a third call, so it carries
+both a `TypeError` branch (the not-iterable answer) and a broad one, since a
+generator can never exercise it: `iter()` on a generator object hands it back
+without running any of it. The third is the entry screen, and it is
+`isinstance(item, QWidget)` and NOT `hasattr(item, "deleteLater")` — QObject
+has that method too, so a bare QObject reached the overlay, where
+`_discard_preview`'s `layout.removeWidget(item)` rejects it. That one raises
+on the way OUT, so the overlay never finished relocking and was left
+interactive over the game: a worse resting state than the entry-side bug.
+
+**A region factory's result is type-screened where it is first seen.**
+`OverlayRegionSpec` documents that the factory returns a QWidget and a region
+host is placed, resized, moved and stylesheeted by the overlay, so nothing
+else can stand in. Carrying anything non-None past the build was a real
+hazard, not pedantry: `add_region` raises on `layout()` INSIDE the isolation
+guard, and the refusal path then calls `deleteLater()` OUTSIDE one — on the
+startup sweep that second exception aborts `build_plugin_ui` for EVERY plugin
+and takes the plugin manager page with it. `_discard_region_widget` is
+guarded too, so the disposal does not depend on the screen still holding.
+
+**A host-backed capability needs `min_app_version`, not just `requires_sdk`.**
+The range is weighed against the SDK the app RESOLVED, not the contract it
+IMPLEMENTS, and every released app declares an SDK FLOOR rather than a pin:
+v2.28.1 asks for `nparseplus-sdk>=1.4,<2`, so a plain pip/source install of it
+resolves SDK 1.5 quite legitimately once that is published — the same seam
+`tests/test_sdk_floor.py` exists for, seen from the other side. `SDK_VERSION`
+then reports 1.5, `requires_sdk=">=1.5,<2"` passes, and
+`HostPluginContext.add_overlay_region` does not exist, so the plugin dies
+inside `activate()` and reads as a broken add-on rather than an old app.
+`min_app_version` is the one input to the handshake that comes from the host
+itself, which is what makes it the lever — and it works RETROACTIVELY, since
+v2.28.1's own `check_compat` call already passes its `app_version`. The
+example pins it, the docs say to, and the identical (false) "no
+`min_app_version` needed" claim on the SDK 1.3 row was corrected with it.
+
+**The pin names a release that does not exist yet, so merge order can
+invalidate it.** It was pinned to 2.28.0 on the assumption this would be the
+next minor; #181 merged first, semantic-release cut *that* as v2.28.0, and the
+pin then named a release with no region API — wrong in the one direction that
+matters, since an app WITHOUT the capability would have accepted a plugin
+requiring it. Re-pinned to 2.29.0 by reading the tag, then to
+**2.29.0-beta.2** when the release plan changed. Nothing automated catches
+this: `REGION_MIN_APP_VERSION` is deliberately NOT compared against the tree's
+own `__version__` (that comparison fails on the next unrelated release and
+pressures whoever hits it into raising a floor that is already correct), so the
+constant is a post-hoc alarm, not a gate. Any feature PR pinning a future
+release must re-read the newest tag immediately before merge. A PATCH release
+does not consume a pinned minor — v2.28.1 landed ahead of it and 2.29.0
+survived unchanged; only another `feat:` merging first invalidates it.
+
+**A capability debuting in a PRERELEASE pins the prerelease, not the stable.**
+Regions ship to a beta channel first, so the pin is `2.29.0-beta.2` rather than
+`2.29.0`, and that is not a rounding choice. `check_compat` compares with
+`packaging.version.Version` (PEP 440), which normalises `2.29.0-beta.2` to
+`2.29.0b2` and orders it BELOW `2.29.0` — so a stable pin refuses **every beta
+host**, which is precisely the audience a beta ships to. Pinning the
+prerelease admits the betas and every later release, and still refuses the one
+before. Write the SemVer spelling (hyphen) because that is what the About box
+and the release page show, though both spellings normalise to the same version.
+On an OPEN BETA LINE the counter matters, and the pin is fragile in the
+dangerous direction: 2.29.0-beta.1 is a real release that ships the beta
+channel and NOT the region API, so a pin naming it would load on a host
+without `add_overlay_region` and raise inside `activate()`. Too high merely
+refuses the beta audience; too low reads as a broken add-on. That asymmetry
+is why the pin must name the exact beta that first contains the capability,
+and why an automated check matters more here than on a stable line.
+`sdk/tests/test_sdk_meta_compat.py::TestPrereleaseAppVersions` holds the
+ordering; before it, no prerelease app version was exercised anywhere.
+
+**The content hook holds the overlay WEAKLY, and that is #154's segfault one
+step removed.** The overlay owns the region's host widget, the widget holds its
+`OverlayRegionContext`, and the context holds the hook — so closing over the
+overlay strongly puts the WINDOW in a Python reference cycle, which takes its
+destruction away from refcounting and hands it to the cyclic collector; a
+QWidget freed there rather than by Qt is a use-after-free the next repaint
+walks into. `_region_content_hook` uses a `WeakMethod` for the same reason
+`weak_hook` exists, and a test pins the lifetime with the collector switched
+off (measured: strong = not freed by refcounting, weak = freed).
+
+**The region tells the overlay; the overlay cannot look inside.**
+`OverlayRegionContext.on_content_changed` → `EventOverlayWindow.region_content_changed(key)`
+is one call covering three consequences: re-anchor at the new height, re-decide
+visibility, and **re-assert the position-mode chrome**. That last one is not
+tidiness — a skin change reaches a region as a `setStyleSheet`, and it can land
+while position mode is up, which silently dropped the dashed border the user
+was dragging by. `_apply_region_chrome` now reads the host's CURRENT sheet
+through `_region_own_style` (a suffix strip of `RegionRecord.chrome_suffix`)
+rather than trusting the snapshot taken at registration, so turning chrome off
+restores what the region actually wears rather than a pre-skin-change copy.
+
+Two smaller decisions. `PluginOverlayRegion` owns its widget's WHOLE
+stylesheet and deliberately does NOT adopt one set with `setStyleSheet` the
+way `PluginWindow` does — that adoption exists to keep pre-1.4 windows styled,
+nothing predates 1.5, and adopting could not work here anyway: the overlay
+appends its chrome to this widget's sheet and strips it by suffix, so
+re-writing an adopted sheet after that appendix would leave the dashed border
+on when position mode ends. Replacing it silently is the #166 failure one step
+removed, so `_warn_if_overwritten` says it ONCE and names `skin_stylesheet()`;
+a sheet that merely STARTS with ours is the overlay's own chrome, not a
+plugin's rules, and must not trip it. And the persisted placement is kept when a plugin is
+disabled or uninstalled (nothing prunes `overlay_regions`): a stale key is a
+few bytes, losing someone's placed chrome to a reinstall costs more.
 
 Remote: `origin` = github.com/prokopto-dev/nparse-plus (the updater points
 there too); `upstream` = nomns/nparse. The release pipeline is exercised

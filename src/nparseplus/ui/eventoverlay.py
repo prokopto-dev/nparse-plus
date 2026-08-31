@@ -453,6 +453,10 @@ class RegionRecord:
     chip: QLabel | None = None
     #: The host's own stylesheet, put back when the dashed chrome comes off.
     host_style: str = ""
+    #: The dashed-chrome rule currently appended to ``host_style``, so a host
+    #: that re-dressed ITSELF since (a contributed region reacting to a skin
+    #: change) can be told from one that has not — see ``_region_own_style``.
+    chrome_suffix: str = ""
     #: This region's position-mode sample widgets.
     preview_widgets: list[QWidget] = field(default_factory=list)
 
@@ -1593,6 +1597,32 @@ class EventOverlayWindow(QWidget):
         self._update_visibility()
         return True
 
+    def region_content_changed(self, key: str) -> None:
+        """Re-anchor region ``key`` after what is inside it changed.
+
+        A contributed region is opaque to the overlay: it cannot see a row
+        appear, and its ``has_content`` predicate is only asked when something
+        else prompts a visibility pass. So a region says so itself — through
+        ``OverlayRegionContext.on_content_changed``, which lands here — and
+        that one call covers all three consequences: the region is re-anchored
+        at its new height, the overlay re-decides whether it is worth showing,
+        and its position-mode chrome is re-asserted over a host that may have
+        just rewritten its own stylesheet (a skin change reaches a region as a
+        ``setStyleSheet``, which would otherwise silently drop the dashed
+        border the user is dragging by).
+
+        Ignores a key it does not know, which is what a region retired between
+        a plugin's notification and this call looks like.
+        """
+        record = self._regions.get(key)
+        if record is None:
+            return
+        if self._edit_mode:
+            self._apply_region_chrome(record, True)
+        self._update_visibility()
+        if self._edit_mode:
+            self._position_region_chrome()
+
     def _rebuild_stacked_layout(self) -> None:
         """Re-lay the registered hosts in the legacy stacked QVBoxLayout.
 
@@ -1745,6 +1775,19 @@ class EventOverlayWindow(QWidget):
         if on:
             self._position_region_chrome()
 
+    def _region_own_style(self, record: RegionRecord) -> str:
+        """The host's stylesheet with the dashed chrome (if any) taken back off.
+
+        A suffix strip rather than a stored snapshot, because a contributed
+        host may rewrite its own sheet at any moment — and when it does, what
+        it wrote is by definition its own style and carries no chrome to
+        remove.
+        """
+        current = record.host.styleSheet()
+        if record.chrome_suffix and current.endswith(record.chrome_suffix):
+            return current[: -len(record.chrome_suffix)].rstrip("\n")
+        return current
+
     def _apply_region_chrome(self, record: RegionRecord, on: bool) -> None:
         """One region's dashed border and chip — also the path a region added
         while position mode is already up takes.
@@ -1752,15 +1795,25 @@ class EventOverlayWindow(QWidget):
         The border is APPENDED to the host's own stylesheet and that sheet is
         what is put back when the chrome comes off, so a contributed host
         that paints itself is not stripped by a visit to position mode.
+
+        Both directions read the host's CURRENT sheet rather than trusting
+        the copy taken at registration (#155): a contributed region re-dresses
+        itself on every skin change, which can happen while position mode is
+        up, and restoring a snapshot from before that would put the old skin
+        back. Idempotent — re-asserting the chrome is how a region that has
+        just rewritten its own sheet gets its dashed border back.
         """
         host = record.host
+        record.host_style = self._region_own_style(record)
         if on:
             own = f"{record.host_style}\n" if record.host_style else ""
-            host.setStyleSheet(
-                own + f"#{host.objectName()} {{ border: 1px dashed"
+            record.chrome_suffix = (
+                f"#{host.objectName()} {{ border: 1px dashed"
                 f" {skins.rgba(self._skin.chrome_accent, 0.66)}; }}"
             )
+            host.setStyleSheet(own + record.chrome_suffix)
         else:
+            record.chrome_suffix = ""
             host.setStyleSheet(record.host_style)
         if record.chip is None:
             return

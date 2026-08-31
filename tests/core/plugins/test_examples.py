@@ -12,12 +12,27 @@ from nparseplus.composition import build_backend
 from nparseplus.config.settings import Settings
 from nparseplus.core.plugins.host import PluginHost
 from nparseplus.core.timers import TimerRow
+from nparseplus_sdk.compat import check_compat
 from nparseplus_sdk.loading import import_plugin_module
 from nparseplus_sdk.validate import validate_plugin
 
 from .conftest import approve
 
-EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "plugins"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLES = REPO_ROOT / "examples" / "plugins"
+
+#: The app release that first ships ``ctx.add_overlay_region`` (#155). A
+#: constant, not a comparison against ``nparseplus.__version__``: a first-
+#: supporting release is a permanent fact about history, so a test that ties
+#: it to whatever the tree currently reads would fail on the next unrelated
+#: release and push someone into raising a floor that is already correct.
+#:
+#: It names a PRERELEASE because regions debut on the beta channel, and that
+#: is load-bearing rather than incidental: PEP 440 orders ``2.29.0b2`` below
+#: ``2.29.0``, so pinning the stable release would refuse every beta host —
+#: the exact audience the feature ships to. See
+#: ``sdk/tests/test_sdk_meta_compat.py::TestPrereleaseAppVersions``.
+REGION_MIN_APP_VERSION = "2.29.0-beta.2"
 
 
 class _FakeStorage:
@@ -41,6 +56,7 @@ def test_examples_pass_validation() -> None:
         EXAMPLES / "hello_timer.py",
         EXAMPLES / "merchant_prices",
         EXAMPLES / "tod_window.py",
+        EXAMPLES / "kill_ticker.py",
     ):
         report = validate_plugin(path)
         assert report.ok, (path, report.errors)
@@ -309,3 +325,82 @@ def _assert_selection_is_readable(window) -> None:
     assert f"color: {app.heading}" in window.styleSheet()
     assert app.gradient(app.band) in window.styleSheet()
     assert contrast(app.heading, composite(app.band[0], app.surface)) >= 4.5, app.name
+
+
+def test_the_region_example_pins_the_app_release_that_supports_it() -> None:
+    """``requires_sdk`` alone would let an older host accept this plugin.
+
+    The range is weighed against the SDK the app RESOLVED, not the contract it
+    IMPLEMENTS, and every released app declares an SDK floor rather than a pin
+    — v2.28.1 asks for ``nparseplus-sdk>=1.4,<2``, so a plain pip/source
+    install of it resolves SDK 1.5 quite legitimately once that is on PyPI.
+    ``ctx.add_overlay_region`` lives in the HOST, so the range would pass and
+    ``activate()`` would then raise ``AttributeError``. ``min_app_version`` is
+    the one input to the handshake that comes from the host itself.
+
+    Checked against a CONSTANT, never against ``nparseplus.__version__``. The
+    pin is a permanent historical fact — "regions first shipped in 2.29.0-beta.2" —
+    and comparing it to the tree's own version made it a moving target: the
+    correct pin would start failing the moment an unrelated 2.29 release
+    landed, which either blocks that release or pressures whoever hits it into
+    raising the floor and cutting off the 2.28 users it is supposed to admit.
+    The value is pinned in three places by design (here, and the two documents
+    below), so changing it is a deliberate edit rather than a drift.
+    """
+    from packaging.version import Version
+
+    plugin = import_plugin_module(EXAMPLES / "kill_ticker.py").create_plugin()
+
+    assert plugin.meta.requires_sdk == ">=1.5,<2"
+    assert plugin.meta.min_app_version == REGION_MIN_APP_VERSION, (
+        "a plugin using a host-backed API must pin the app release that shipped it "
+        "— see docs/plugins/versioning.md"
+    )
+    Version(REGION_MIN_APP_VERSION)  # parseable, or check_compat refuses it outright
+
+
+def test_the_docs_name_the_same_first_supporting_release() -> None:
+    """The pin only helps third-party authors if the docs tell them the same
+    number the shipped example uses. Same guard shape as the registry URL: pin
+    the value once, then assert the prose that teaches it agrees."""
+    for relpath in (
+        "docs/plugins/versioning.md",
+        "docs/plugins/overlay-regions.md",
+        "docs/plugins/developing.md",
+    ):
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+        assert f'min_app_version="{REGION_MIN_APP_VERSION}"' in text, (
+            f"{relpath} must name the app release that first shipped overlay regions"
+        )
+
+
+def test_the_region_example_loads_on_the_beta_that_first_ships_regions() -> None:
+    """The pin must ADMIT the prerelease it names, not just refuse what precedes it.
+
+    This is the trap the hyphen exists for, asserted on the real example's real
+    meta rather than on a fixture. Regions debut on the beta channel, and PEP
+    440 orders a prerelease below its own release — so a pin of ``2.29.0``
+    would refuse ``2.29.0-beta.2``, i.e. every host that actually has the
+    feature, and the add-on would read as incompatible for precisely the users
+    it was published for. Rounding the pin up to the stable release is the
+    single most likely edit to this constant, and it is silent: nothing else in
+    the suite fails, because refusing an older host still works.
+    """
+    plugin = import_plugin_module(EXAMPLES / "kill_ticker.py").create_plugin()
+
+    beta = REGION_MIN_APP_VERSION
+    assert "-" in beta, "the pin names a SemVer prerelease; see the constant's note"
+
+    # Admitted: the beta it names, later betas, the rc, and every stable after.
+    for host in (beta, "2.29.0-beta.3", "2.29.0rc1", "2.29.0", "2.30.0"):
+        assert check_compat(plugin.meta, sdk_version="1.5.0", app_version=host) is None, (
+            f"the region example must load on {host}"
+        )
+
+    # Refused below it, or the pin would not be doing its job at all. The
+    # second of these is the one that matters on an open beta line: an EARLIER
+    # BETA is a real shipped release without the region API, so a pin one
+    # counter too low would load there and raise inside activate().
+    for host in ("2.28.2", "2.29.0-beta.1"):
+        reason = check_compat(plugin.meta, sdk_version="1.5.0", app_version=host)
+        assert reason is not None and beta in reason, f"the region example must NOT load on {host}"

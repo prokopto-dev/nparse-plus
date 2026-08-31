@@ -6,7 +6,7 @@ exactly one job.
 | Coordinate | Owner | Job |
 | --- | --- | --- |
 | **App version** (`nparseplus`, e.g. `1.18.0`) | semantic-release on the app repo | The product. Each release bundles exactly **one** SDK version. |
-| **SDK version** (`nparseplus-sdk`, currently `1.4.1`) | the SDK package (own semver, own `sdk-v*` tags) | **The contract.** The only number plugins and the app negotiate over. |
+| **SDK version** (`nparseplus-sdk`, currently `1.5.0`) | the SDK package (own semver, own `sdk-v*` tags) | **The contract.** The only number plugins and the app negotiate over. |
 | **Plugin version** (`PluginMeta.version`) | the plugin author | The plugin's own releases; drives registry update detection. |
 
 The SDK version has exactly one source: the `__version__` literal in
@@ -59,9 +59,44 @@ always true inside the app and optional for `nparseplus-plugin validate`
 | SDK | Added |
 | --- | --- |
 | **1.1** | `PluginMeta.update_url` — an optional https index the app polls to offer in-place updates for a plugin distributed outside any registry ([Shipping updates](developing.md#shipping-updates-without-a-registry)). Declare `requires_sdk=">=1.1,<2"` only if your plugin is *useless* without it; a 1.0-declaring plugin loaded by an older app simply gets no update offers. |
-| **1.2** | `ctx.eq_dir` + `ctx.eq_is_running()`, and the `nparseplus_sdk.eqfiles` re-export — enough for a plugin to edit a file in the EverQuest install the way the app does it (preflight, backup-first, splice one section). Declare `requires_sdk=">=1.2,<2"` if you touch the install: there is no graceful degradation, since on an older host the attribute is simply absent. The *host* half of `eq_is_running()` moves on the app's schedule rather than the SDK's, though — it answered `False` on Windows until [#33](https://github.com/prokopto-dev/nparse-plus/issues/33), with no SDK change either side of that fix, so `min_app_version` is the lever if your plugin depends on the answer being truthful there. |
-| **1.3** | `ctx.add_window_timer()` / `ctx.add_window_series()` + the `WindowTimerLike` protocol — arm one variable respawn ("pop") window from a time of death, or every candidate window of a spawn that has more than one, with `TimerWindowOpenedEvent` / `TimerWindowClosedEvent` reachable through `nparseplus_sdk.events` ([Pop windows](../features/respawn-timers.md#pop-windows)). Declare `requires_sdk=">=1.3,<2"` if you arm one; on an older host the method is simply absent. **No `min_app_version` needed** — the app bundles exactly one SDK, so the range already implies the host-side classes shipping in the same release. |
-| **1.4** | `nparseplus_sdk.skin` — a curated, Qt-free read surface over what the app currently looks like (the `AppSkin` snapshot, the type roles, the semantic accents, ready-made overlay/config stylesheets), plus `PluginWindow.skin_stylesheet()` and a default `PluginWindow.apply_skin()`, so a window that overrides nothing is skinned under all three skins and one that styles itself is composed with rather than replaced ([Appearance & skins](appearance.md)). **1.4.1** added `AppSkin.band` — the skin's real selection fill — and *corrected* `AppSkin.accent_text`, which shipped naming a pairing that measured 3.4:1 on Ledger's band, below WCAG AA; it is now the same value as `heading` and is **deprecated**, kept for the whole 1.x line because 1.x is additive-only and app v2.26.0 shipped it. Removal is an SDK 2.0 decision. 1.4.1 also fixed `PluginWindow` discarding the stylesheet of a window written before 1.4, and moved the first `skin_stylesheet()` call out of the base constructor. Declare `requires_sdk=">=1.4,<2"` if you read it: on an older host the module does not exist at all, so the import itself fails and there is nothing to degrade to. A plugin that only wants to *stop looking out of place* needs no declaration at all — the default dressing is the host's, not the SDK's. |
+| **1.2** | `ctx.eq_dir` + `ctx.eq_is_running()`, and the `nparseplus_sdk.eqfiles` re-export — enough for a plugin to edit a file in the EverQuest install the way the app does it (preflight, backup-first, splice one section). Declare `requires_sdk=">=1.2,<2"` **and `min_app_version="2.14.0"`** if you touch the install: there is no graceful degradation, since on an older host the attribute is simply absent, and the range alone [does not promise a host that has it](#the-sdk-range-alone-is-not-a-promise-about-the-host) — v2.13.0 admits SDK 1.2 and has no `ctx.eq_dir`. The *host* half of `eq_is_running()` moves on the app's schedule rather than the SDK's, though — it answered `False` on Windows until [#33](https://github.com/prokopto-dev/nparse-plus/issues/33), with no SDK change either side of that fix, so `min_app_version` is the lever if your plugin depends on the answer being truthful there. |
+| **1.3** | `ctx.add_window_timer()` / `ctx.add_window_series()` + the `WindowTimerLike` protocol — arm one variable respawn ("pop") window from a time of death, or every candidate window of a spawn that has more than one, with `TimerWindowOpenedEvent` / `TimerWindowClosedEvent` reachable through `nparseplus_sdk.events` ([Pop windows](../features/respawn-timers.md#pop-windows)). Declare `requires_sdk=">=1.3,<2"` **and `min_app_version="2.15.0"`** if you arm one — see [the range alone is not a promise about the host](#the-sdk-range-alone-is-not-a-promise-about-the-host). |
+| **1.4** | `nparseplus_sdk.skin` — a curated, Qt-free read surface over what the app currently looks like (the `AppSkin` snapshot, the type roles, the semantic accents, ready-made overlay/config stylesheets), plus `PluginWindow.skin_stylesheet()` and a default `PluginWindow.apply_skin()`, so a window that overrides nothing is skinned under all three skins and one that styles itself is composed with rather than replaced ([Appearance & skins](appearance.md)). **1.4.1** added `AppSkin.band` — the skin's real selection fill — and *corrected* `AppSkin.accent_text`, which shipped naming a pairing that measured 3.4:1 on Ledger's band, below WCAG AA; it is now the same value as `heading` and is **deprecated**, kept for the whole 1.x line because 1.x is additive-only and app v2.26.0 shipped it. Removal is an SDK 2.0 decision. 1.4.1 also fixed `PluginWindow` discarding the stylesheet of a window written before 1.4, and moved the first `skin_stylesheet()` call out of the base constructor. **The floor depends on which part you use, because 1.4.1 added host code too.** `nparseplus_sdk.skin` and the `AppSkin` snapshot shipped in app **2.26.0** (SDK 1.4.0); `AppSkin.band`, `PluginWindow.skin_stylesheet()` and the corrected `accent_text` shipped in app **2.26.2** (SDK 1.4.1) — verified against the tags: 2.26.0 has neither `band` nor `skin_stylesheet`. So declare `requires_sdk=">=1.4,<2"` with `min_app_version="2.26.0"` for the snapshot alone, and **`min_app_version="2.26.2"`** if you touch anything 1.4.1 added. A `>=1.4` range admits SDK 1.4.1 onto a 2.26.0 host, so the range alone [does not promise a host that implements it](#the-sdk-range-alone-is-not-a-promise-about-the-host) — and the `skin_stylesheet()` case fails **silently**, since an older base class simply never calls your override. The two failures differ and both need the pin: `nparseplus_sdk.skin` does not resolve on that host at all, so the import raises and there is nothing to degrade to, while a `skin_stylesheet()` override is simply never called — silent, which is worse. A plugin that only wants to *stop looking out of place* needs no declaration at all — the default dressing is the host's, not the SDK's. |
+| **1.5** | `ctx.add_overlay_region()` + `OverlayRegionSpec` / `OverlayRegionContext`, and `nparseplus_sdk.ui.PluginOverlayRegion` — a plugin can claim a region **inside** the Event Overlay and draw text, images or a status panel there instead of opening a window ([Event overlay regions](overlay-regions.md)). Regions are **display-only, permanently**: the overlay window carries `WindowTransparentForInput` and Qt has no per-child exemption, so nothing in a region ever receives a click, and the spec deliberately carries no input-related field — an additive-only 1.x makes a speculative one permanent. Add-ons that need input ship a window. Declare `requires_sdk=">=1.5,<2"` **and `min_app_version="2.29.0-beta.2"`** if you contribute one — see [the range alone is not a promise about the host](#the-sdk-range-alone-is-not-a-promise-about-the-host). |
+
+### The SDK range alone is not a promise about the host
+
+`requires_sdk` is weighed against the SDK version the app **resolved**, not
+against the contract the app **implements**. Inside a shipped DMG, `.deb`,
+`.zip` or Flatpak those are the same thing — the bundle contains exactly one
+SDK, frozen at build time. A plain `pip`/source install is where they come
+apart, and it is the same seam
+[`tests/test_sdk_floor.py`](https://github.com/prokopto-dev/nparse-plus/blob/master/tests/test_sdk_floor.py)
+exists for, seen from the other side.
+
+Every released app declares a floor, not a pin — v2.28.1 asks for
+`nparseplus-sdk>=1.4,<2`. So once SDK 1.5 is on PyPI, installing app v2.28.1
+from source resolves **SDK 1.5** quite legitimately. `SDK_VERSION` then
+reports 1.5, a plugin declaring `requires_sdk=">=1.5,<2"` passes the
+handshake — and `ctx.add_overlay_region` does not exist on that host, because
+the *method* shipped in a later app release than the SDK package the resolver
+picked. The plugin fails during `activate()` and lands in Settings → Plugins
+as an error, instead of being refused cleanly as incompatible.
+
+**So when you adopt a capability whose implementation lives in the host —
+anything reached through `ctx`, and anything re-exported from
+`nparseplus_sdk.ui` / `.events` / `.timers` / `.skin` / `.eqfiles` — declare
+`min_app_version` naming the app release that first shipped it, alongside
+`requires_sdk`.** It is the one input to the handshake that comes from the
+host itself rather than from the resolver, which is exactly why it is the
+lever here. The table above names the release for each minor.
+
+Two things are exempt. A purely SDK-side addition needs no pin — a new spec
+field or dataclass is *in* the package the resolver installed. Nor does a
+capability that **degrades gracefully**: `PluginMeta.update_url` (SDK 1.1) is
+read by the app, but a host that ignores it just never offers an update, which
+is a worse experience rather than a broken plugin. Pin when the alternative is
+an exception or a silent no-op.
 
 What the promise does *not* cover: host objects reached through the context
 (`ctx.timers`, `ctx.player`, `ctx.pigparse`, the classes behind
@@ -69,6 +104,45 @@ What the promise does *not* cover: host objects reached through the context
 are stable in practice — the app's own code depends on them — but they move
 on the app's schedule, and `min_app_version` is the lever for that, not
 `requires_sdk`.
+
+### A capability that debuts in a prerelease
+
+Some capabilities ship to a **beta channel** before they reach a stable
+release. Event overlay regions (SDK 1.5) are the first, which is why the
+1.5 row above pins `min_app_version="2.29.0-beta.2"` — a beta, not `"2.29.0"`.
+
+`min_app_version` is compared with
+[PEP 440](https://peps.python.org/pep-0440/) ordering, which treats a
+prerelease as **earlier** than the release it leads to: `2.29.0-beta.2`
+normalises to `2.29.0b2`, and `2.29.0b2 < 2.29.0`. Both mistakes you can make
+here are silent, and they fail in opposite directions:
+
+| your pin | on 2.28.2 | on 2.29.0-beta.1 | on 2.29.0-beta.2 | on 2.29.0 | on 2.30.0 |
+| --- | --- | --- | --- | --- | --- |
+| `"2.29.0"` — too high | refused | refused | **refused** | loads | loads |
+| `"2.29.0-beta.2"` — correct | refused | refused | loads | loads | loads |
+| `"2.29.0-beta.1"` — too low | refused | **loads** | loads | loads | loads |
+
+**Too high** — naming the stable release — refuses every beta host, which is
+the exact audience the beta exists for. Your add-on reads as incompatible for
+everyone running the build that first has the feature, and starts working only
+once the stable release lands.
+
+**Too low** — naming an earlier beta — is the worse one. `2.29.0-beta.1` is
+a real release that shipped *without* regions, so a pin naming it lets your
+plugin load on a host where `ctx.add_overlay_region` does not exist. It then
+raises `AttributeError` inside `activate()` and reads as *your* add-on being
+broken, rather than as an old app.
+
+So on an open beta line the counter matters: **pin the exact beta that first
+contains the capability**, which the release notes for that build will name.
+This is different from pinning a stable release, where anything later
+automatically qualifies.
+
+One spelling note: **write the SemVer form with the hyphen**
+(`2.29.0-beta.2`). PEP 440's `2.29.0b2` means the same thing to the
+comparison, but the hyphenated form is what the release page and the app's own
+About box show, so it is what your users can check against.
 
 ### Deprecation policy
 
