@@ -117,9 +117,34 @@ commit_message = "chore(release): v{version}"
 version_variables = ["src/nparseplus/__init__.py:__version__"]
 allow_zero_version = false
 
+# Master cuts BETAS (#186). A merge no longer ships to every installed client:
+# `updater.py` skips prereleases unless the user has opted into the beta
+# channel, and every binary already in the wild does so unconditionally — so
+# this needed no flag day and no migration. Stable is promoted deliberately,
+# by the workflow_dispatch below.
 [tool.semantic_release.branches.main]
 match = "(main|master)"
-prerelease_token = "rc"
+prerelease_token = "beta"
+prerelease = true
+
+# The deliberate promotion, and the reason it is a branch name rather than a
+# flag: semantic-release decides prerelease-ness from whichever
+# [tool.semantic_release.branches.*] table matches the CURRENT branch, and
+# there is no CLI option that forces a stable release on a branch configured
+# for prereleases (there is --as-prerelease; there is no --no-prerelease). So
+# `semantic-release.yml`'s promote job checks master's commit out under this
+# name, runs semantic-release, and pushes the commit and tag it produces
+# straight back to master. The branch is never pushed under this name and
+# never exists on the remote — it exists only so this table matches.
+#
+# Landing the promotion ON MASTER is the whole point, and is why this is not
+# the more obvious long-lived `stable` branch: that shape leaves master's
+# __version__ behind at 2.30.0-beta.N, so the next merge cuts 2.30.0-beta.N+1
+# — a "new" beta that packaging.Version orders BELOW the 2.30.0 that already
+# shipped, stranding the beta line. Verified by hand against a scratch repo
+# before this was written; see the PR.
+[tool.semantic_release.branches.promote]
+match = "promote-to-stable"
 prerelease = false
 
 [tool.semantic_release.commit_parser_options]

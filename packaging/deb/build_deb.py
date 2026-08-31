@@ -87,20 +87,55 @@ exit 0
 """
 
 
+def debian_version(version: str) -> str:
+    """The upstream version, spelled so Debian orders a prerelease correctly.
+
+    **Debian and SemVer disagree about the hyphen, and the disagreement
+    inverts the ordering.** Debian splits a version at the LAST hyphen and
+    reads what follows as the *debian_revision* (Policy 5.6.12), so
+    ``2.30.0-beta.1`` is upstream ``2.30.0`` with revision ``beta.1`` — while
+    the promoted ``2.30.0`` has an implicit revision of ``0``. Revision
+    ``beta.1`` sorts AFTER revision ``0``, so the beta package compares
+    *newer* than the stable it precedes:
+
+        $ dpkg --compare-versions 2.30.0-beta.1 gt 2.30.0   # true!
+
+    A user who installed a beta ``.deb`` could then never roll forward to the
+    promoted stable — ``apt`` would see a downgrade and refuse — which breaks
+    the one guarantee the beta channel makes (#186).
+
+    ``~`` is the Debian idiom for exactly this: it sorts before anything,
+    including the end of a version string. So ``2.30.0~beta.1`` is correctly
+    *older* than ``2.30.0`` and correctly newer than ``2.29.0``, and betas
+    order among themselves. Verified against real ``dpkg`` on bookworm, not
+    derived from the policy text — see ``tests/test_deb_packaging.py``.
+
+    A stable version contains no hyphen and is returned untouched, so nothing
+    about an existing package changes.
+    """
+    release, separator, prerelease = version.partition("-")
+    if not separator:
+        return version
+    # Any further hyphen becomes a tilde too rather than a debian_revision
+    # separator: an upstream_version may only contain a hyphen when a revision
+    # is present, and this project never sets one.
+    return f"{release}~{prerelease.replace('-', '~')}"
+
+
 def deb_filename(version: str) -> str:
     """The published asset name.
 
     Must stay inert to ``updater.pick_asset`` -- see the module docstring.
     ``tests/test_deb_packaging.py`` asserts that directly.
     """
-    return f"{PACKAGE}_{version}_{ARCH}.deb"
+    return f"{PACKAGE}_{debian_version(version)}_{ARCH}.deb"
 
 
 def render_control(version: str, installed_size_kb: int, glibc_floor: str) -> str:
     """Fill control.in. Kept separate from staging so tests can read it."""
     template = (DEB_DIR / "control.in").read_text(encoding="utf-8")
     return (
-        template.replace("@VERSION@", version)
+        template.replace("@VERSION@", debian_version(version))
         .replace("@INSTALLED_SIZE@", str(installed_size_kb))
         .replace("@GLIBC_FLOOR@", glibc_floor)
     )

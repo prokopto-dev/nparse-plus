@@ -2,7 +2,6 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from packaging.version import Version
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
@@ -33,7 +32,17 @@ config.verify_settings()
 
 import nparseplus
 
-CURRENT_VERSION = Version(nparseplus.__version__)
+# The literal, NOT ``packaging.Version``: this is display only — the tray
+# balloons, the About box and the update dialog — and every *comparison*
+# parses ``__version__`` itself inside ``updater.check_for_update``.
+#
+# ``Version`` would round-trip a prerelease into its PEP 440 spelling for
+# display ("2.30.0-beta.1" -> "2.30.0b1"), which is the string a beta user
+# pastes into a bug report. It would disagree with the git tag, the DMG
+# filename and the release page — and with Settings > General, which
+# renders ``__version__`` raw, so one build would report two versions of
+# itself. Betas are exactly the population filing those reports (#186).
+CURRENT_VERSION = nparseplus.__version__
 UPDATE_CHECK_DELAY_MS = 10_000  # don't block or race startup
 # The app's own configuration window. It stays an ordinary entry in
 # ``_backend_windows`` (``has_backend_window`` is the collision guard a
@@ -146,9 +155,27 @@ class NomnsParse(QApplication):
     def _update_check_enabled(self):
         return bool(self._backend.settings.general.update_check)
 
+    def _update_channel(self):
+        """The tier this client is offered, read fresh on every check (#186).
+
+        Never cached: the settings window changes this live and the tray's
+        check may run long after launch, so a captured value would go on
+        filtering prereleases for the rest of the session after the user asked
+        for them.
+
+        ``effective_channel`` — not the raw setting — because a stored beta
+        preference is not by itself a channel this build can serve. Inside
+        Flatpak it clamps to stable, since no beta ``.flatpak`` is ever
+        published and announcing one the portal cannot install is worse than
+        not offering the channel.
+        """
+        return updater.effective_channel(self._backend.settings.general.update_channel)
+
     def _start_update_check(self):
+        channel = self._update_channel()
+
         def work():
-            release = updater.check_for_update()
+            release = updater.check_for_update(channel=channel)
             if release is not None:
                 self.update_available.emit(release)
 
@@ -157,9 +184,10 @@ class NomnsParse(QApplication):
     def _start_manual_update_check(self):
         """Tray 'Check for updates' — run the check now and report either way
         (the startup check above is silent when already up to date)."""
+        channel = self._update_channel()
 
         def work():
-            self.update_checked.emit(updater.check_for_update())
+            self.update_checked.emit(updater.check_for_update(channel=channel))
 
         threading.Thread(target=work, name="update-check-manual", daemon=True).start()
 
@@ -191,7 +219,7 @@ class NomnsParse(QApplication):
         if window is None:
             window = UpdateAvailableDialog(
                 release,
-                str(CURRENT_VERSION),
+                CURRENT_VERSION,
                 # Inside a Flatpak the button installs in place through the
                 # portal instead of handing over a bundle (#74).
                 in_place=flatpakportal.portal_supported(),

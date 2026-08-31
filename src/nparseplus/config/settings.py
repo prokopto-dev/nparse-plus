@@ -145,6 +145,11 @@ class GeneralSettings(BaseModel):
     eq_log_dir: Path = Field(default_factory=_default_eq_log_dir)
     eq_install_dir: Path | None = None
     update_check: bool = True
+    # Which published releases this client is offered (#186). "stable" is the
+    # behaviour every already-released nParse+ binary has, so a settings file
+    # written before this existed reads as stable and nothing changes for
+    # anyone who does not go looking. See updater.UpdateChannel.
+    update_channel: Literal["stable", "beta"] = "stable"
     font_size: int = Field(default=12, ge=6)
     # Overlay skin (ui/skins.py): the frame, type hierarchy and bar geometry
     # of every in-fight overlay AND the on-game event text. Applies live —

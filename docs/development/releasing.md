@@ -15,16 +15,196 @@ so a non-conventional commit can't reach `master`. Merge PRs with a **merge
 commit** (not squash) so the individual conventional commits are preserved for
 versioning.
 
+## Two channels: master cuts betas, stable is promoted
+
+**A merge to `master` does not ship to everyone.** It cuts a *prerelease* —
+`v2.30.0-beta.1`, `v2.30.0-beta.2`, … — and only clients that opted into the
+beta channel are offered it. A stable release happens when somebody
+deliberately promotes the line.
+
+```
+merge to master
+   ↓
+v2.30.0-beta.1   (prerelease — beta channel only)
+v2.30.0-beta.2
+   ↓  promoted, deliberately
+v2.30.0          (stable — everyone)
+```
+
+This needed no migration. `updater.check_for_update` has always skipped
+prereleases, in every binary ever published, so master could start cutting
+betas without any client noticing: nobody is offered anything new until a
+stable is promoted. See
+[`UpdateChannel`](https://github.com/prokopto-dev/nparse-plus/blob/master/src/nparseplus/updater.py).
+
+### Promoting a beta to stable
+
+```bash
+gh workflow run semantic-release.yml -f promote=true
+```
+
+or use **Run workflow → Promote** on the Semantic Release workflow in the
+Actions tab. That *finalizes* the current line — `2.30.0-beta.3` becomes
+`2.30.0`, not `2.31.0` — publishes the plain tag, and everyone is offered it,
+including users already on the beta.
+
+Two implementation notes worth knowing before you change any of it:
+
+- semantic-release decides prerelease-ness from whichever
+  `[tool.semantic_release.branches.*]` table matches the **current branch
+  name**, and has no CLI flag that forces a stable release on a branch
+  configured for prereleases (`--as-prerelease` exists; `--no-prerelease` does
+  not). So the promotion job checks master's commit out under the branch name
+  `promote-to-stable`, which `pyproject.toml` configures with
+  `prerelease = false`. That branch is never pushed and never exists on the
+  remote.
+- The commit and tag it produces are pushed **back to `master`**. That is not
+  incidental: a long-lived `stable` branch would leave master's `__version__`
+  behind at `2.30.0-beta.3`, so the next merge would cut `2.30.0-beta.4` — a
+  "new" beta that `packaging.Version` orders *below* the `2.30.0` that already
+  shipped, stranding the beta line.
+
+### Betas are not Flatpak
+
+Betas publish **DMG, zip, tarball and `.deb`**. The flatpak job and the
+`gh-pages` OSTree publish are skipped for a prerelease, because that
+repository is what `flatpak update` follows for *stable* users — publishing a
+beta there would push it to people who opted into nothing, through a
+force-push that cannot be undone by re-running an older release. The versioned
+docs deploy is skipped too (it would create a permanent `2.30.0-beta` version
+directory and alias it to `latest`).
+
+The `.flatpak` is the one artifact singled out because it is the only one that
+is not inert: installing it wires up the OSTree remote that `flatpak update`
+then follows. Every other artifact is a file somebody downloads deliberately.
+
+### The `.deb` needs a different version spelling
+
+**Debian and SemVer disagree about the hyphen, and the disagreement inverts
+the ordering.** Debian splits a version at the *last* hyphen and reads the
+tail as the `debian_revision` ([Policy
+5.6.12](https://www.debian.org/doc/debian-policy/ch-controlfields.html#version)),
+so `2.30.0-beta.1` is upstream `2.30.0` with revision `beta.1` — and the
+promoted `2.30.0` has an implicit revision of `0`:
+
+```console
+$ dpkg --compare-versions 2.30.0-beta.1 gt 2.30.0 && echo "beta is NEWER"
+beta is NEWER
+```
+
+A tester who installed that `.deb` could never roll forward to the release it
+was a beta of; `apt` would see a downgrade and refuse. So
+`build_deb.debian_version` translates the prerelease to the Debian idiom —
+`2.30.0~beta.1`, where `~` sorts before anything including the end of a
+string:
+
+| Version | Orders |
+|---|---|
+| `2.29.0` | < `2.30.0~beta.1` |
+| `2.30.0~beta.1` | < `2.30.0~beta.2` |
+| `2.30.0~beta.2` | < `2.30.0` |
+
+A stable version has no hyphen and is passed through untouched, so nothing
+about an existing package changes. `tests/test_deb_packaging.py` asserts the
+translation everywhere and the ordering itself by shelling out to real `dpkg`,
+which the ubuntu leg of the CI matrix has — Debian's comparison rules have
+enough special cases that asserting them from the policy text would only be
+asserting a reading of it.
+
+The Debian build deliberately **is not** gated off for prereleases. It and
+`verify-deb-debian12` are both in the publish job's `needs`, and a skipped job
+in `needs` skips its dependents — gating them would skip the whole release for
+a beta, recoverable only with an `always()`-flavoured `if` on `release` that
+would weaken its failure semantics for every dependency. And the Debian leg is
+the most fragile one in the file (glibc floor, shared-library closure, a
+pristine-container install that is the only real check on `Depends:`), so
+running it on every beta is exactly what a beta is for.
+
+The client half is enforced too, not just documented: `updater.effective_channel`
+clamps a beta preference to stable whenever the app is running in a Flatpak, at
+every read rather than when the setting is written — settings outlive the
+install that wrote them, so a preference carried in from a tarball install must
+not take effect (and must not be erased either, so it still works if the user
+goes back). Both consumers, the settings window and the tray check, route
+through it.
+
+None of that is left to review:
+`tests/test_release_workflow.py::test_nothing_that_reaches_a_stable_user_runs_for_a_prerelease`
+derives the list of dangerous steps from the workflow file itself, so a new
+flatpak or `gh-pages` step added without the guard fails the test suite. The
+publish step also refuses a prerelease tag at runtime, independently of the
+`if:` that was supposed to have stopped it.
+
+### Version spellings
+
+For a beta, three spellings of one version are in play, and they are supposed
+to differ:
+
+| Where | Value |
+|---|---|
+| Git tag | `v2.30.0-beta.1` |
+| `nparseplus.__version__` | `2.30.0-beta.1` |
+| Wheel, `dist-info`, `importlib.metadata.version()` | `2.30.0b1` |
+| Debian `Version:` field | `2.30.0~beta.1` |
+| macOS `CFBundleShortVersionString` | `2.30.0` |
+| macOS `CFBundleVersion` | `23000001` |
+| Windows VERSIONINFO tuple | `(2, 30, 0, 1)` |
+
+The last four are not spellings of the same string — they are what each
+packaging format *requires*, derived in `packaging/appversion.py` and
+`packaging/deb/build_deb.py`. Apple wants exactly three period-separated
+integers in the short version and a numeric build string beside it, so the
+prerelease cannot appear in either; Finder shows the pair as `2.30.0 (1)`, and
+the build number packs the components into one integer so a beta always orders
+below the release it is promoted to. Windows wants four integers, and
+`int("0-beta")` raises. None of this is visible in the app, which shows
+`__version__` verbatim.
+
+semantic-release writes SemVer; hatchling normalizes it to PEP 440 for the
+distribution metadata. They compare **equal** under `packaging.Version`, which
+is what every consumer in the app uses, so this is correct rather than a bug to
+fix. In particular, do not "normalize" the `__version__` literal — the tag
+check in `release.yml` compares it to the tag character for character, and
+`__version__` is deliberately a literal rather than a metadata lookup (that
+lookup is exactly what fails in a frozen build).
+
+!!! warning "`codesign --verify` does not check the plist's version fields"
+
+    It proves the plist was *signed*, not that its fields are valid — a bundle
+    whose `CFBundleShortVersionString` is `2.30.0-beta.1` signs and verifies
+    clean. So `build-macos` asserts the **shape** of both fields against
+    Apple's rule directly, not only that they equal what `appversion.py`
+    produced: a wrong generator checked against itself would simply agree.
+
+!!! note "One consequence for plugin authors"
+
+    A prerelease sorts *below* the version it is a prerelease of, so a plugin
+    whose `min_app_version` names the version currently in development is
+    refused on every beta of it:
+
+    | Running | `min_app_version = "2.29.0"` |
+    |---|---|
+    | `2.29.0-beta.1` | refused — `2.29.0b1 < 2.29.0` |
+    | `2.29.0` | loads |
+    | `2.30.0-beta.1` | loads |
+
+    That is `packaging.Version` behaving correctly, and `check_compat` is
+    unchanged. It does mean **`min_app_version` should name a version that has
+    already been promoted**, not the one the feature is landing in — otherwise
+    the plugin is broken for exactly the beta testers who would have caught
+    problems with it.
+
 ## The pipeline
 
 1. **Semantic Release workflow** — runs **automatically on every merge to
    `master`** (also available via manual dispatch, or `uv run semantic-release
    version` locally). It runs the ruff+pytest gate, computes the next version
-   from the commit log, bumps `pyproject.toml` and `nparseplus.__version__`,
-   updates `CHANGELOG.md`, commits, tags `v<X.Y.Z>`, and dispatches the package
-   workflow (tags created with `GITHUB_TOKEN` don't trigger workflows on their
-   own). A merge with only `chore`/`ci`/`docs` commits runs the gate and
-   no-ops — no version bump, no release — but CI still builds it.
+   from the commit log, bumps `nparseplus.__version__`, updates
+   `CHANGELOG.md`, commits, tags `v<X.Y.Z>-beta.<N>`, and dispatches the
+   package workflow (tags created with `GITHUB_TOKEN` don't trigger workflows
+   on their own). A merge with only `chore`/`ci`/`docs` commits runs the gate
+   and no-ops — no version bump, no release — but CI still builds it.
+   Dispatching it with `promote=true` cuts the stable release instead.
 2. **Release workflow** (`release.yml`) verifies the tag matches both
    version files, then builds in parallel:
    - macOS DMG (ad-hoc signed), plus a `.app` zip of the same bundle beside
@@ -39,12 +219,13 @@ versioning.
    - Linux Debian package, built in a `debian:12` container so it runs where
      the tarball cannot (see [below](#linux-two-builds-two-glibc-floors))
    - publishes the Flatpak OSTree repo to the `gh-pages` branch —
-     preserving the deployed docs — so `flatpak update` works
+     preserving the deployed docs — so `flatpak update` works.
+     **Stable releases only** — see [above](#betas-are-not-flatpak)
 3. The **release job** collects the artifacts, extracts that version's
    changelog section, and publishes the GitHub release.
 4. The **docs job** deploys this documentation as version `<X.Y>` with
    the `latest` alias (via [mike](https://github.com/jimporter/mike)),
-   from the tagged tree.
+   from the tagged tree. **Stable releases only.**
 
 Between releases, pushes to `master` that touch `docs/` redeploy the
 **dev** docs version automatically (`docs-dev.yml`).

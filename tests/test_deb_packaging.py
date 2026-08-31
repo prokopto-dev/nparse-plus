@@ -7,12 +7,17 @@ artifact — the tarball and the Flatpak are untouched by it — and these asser
 the two properties that make that true: the filename cannot be picked up by
 the updater, and the packaging cannot drift away from the Flatpak's.
 
-``dpkg-deb`` is never invoked here, so these run on any platform.
+``dpkg-deb`` is never invoked here, so these run on any platform. One test
+does shell out to ``dpkg --compare-versions`` and skips without it — Debian's
+ordering rules are the authority on themselves, and the ubuntu leg of the CI
+matrix has it.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -279,3 +284,115 @@ def test_the_package_depends_on_what_webengine_needs() -> None:
     """libxkbfile1 is what the first build was missing; apt must guarantee it."""
     control = (REPO_ROOT / "packaging/deb/control.in").read_text(encoding="utf-8")
     assert "libxkbfile1" in control
+
+
+# --- a prerelease must still order correctly for apt (#186) -----------------
+
+#: What semantic-release produces for a beta, and what it promotes to.
+BETA = "2.30.0-beta.1"
+PROMOTED = "2.30.0"
+PREVIOUS_STABLE = "2.29.0"
+
+
+def test_a_prerelease_is_translated_to_the_debian_idiom() -> None:
+    """Runs everywhere, including where there is no dpkg to ask.
+
+    Debian splits a version at the LAST hyphen and reads the tail as the
+    debian_revision, so a raw SemVer prerelease is not merely ugly here — it
+    inverts the ordering (see the dpkg test below). The hyphen must be gone.
+    """
+    translated = build_deb.debian_version(BETA)
+    assert translated == "2.30.0~beta.1"
+    assert "-" not in translated, "a hyphen would be read as a debian_revision"
+    assert "~" in translated
+
+
+def test_a_stable_version_is_left_exactly_as_it_was() -> None:
+    """Nothing about an existing package changes."""
+    for version in (PROMOTED, PREVIOUS_STABLE, "2.24.0", "10.0.1"):
+        assert build_deb.debian_version(version) == version
+    assert build_deb.deb_filename(PROMOTED) == "nparseplus_2.30.0_amd64.deb"
+
+
+def test_the_control_file_carries_the_translated_version() -> None:
+    """The control field is what dpkg and apt actually compare.
+
+    The filename is cosmetic — `apt` reads `Version:` out of the package — so
+    this is the assertion that matters for roll-forward.
+    """
+    control = build_deb.render_control(BETA, installed_size_kb=1000, glibc_floor="2.36")
+    assert "Version: 2.30.0~beta.1" in control
+    assert f"Version: {BETA}" not in control
+
+
+def test_the_filename_of_a_beta_is_still_inert_to_the_deployed_updater() -> None:
+    """The #160 rule does not get a pass for carrying a tilde.
+
+    ``updater.pick_asset`` sweeps for ``"-linux" in name`` plus a suffix, and
+    that predicate ships compiled into every already-released binary.
+    """
+    name = build_deb.deb_filename(BETA)
+    assert "-linux" not in name
+    assert not name.endswith((".tar.gz", ".flatpak", ".zip", ".dmg"))
+
+
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="needs a real dpkg")
+def test_dpkg_orders_the_beta_before_the_stable_it_promotes_to() -> None:
+    """The authority, not a reimplementation of Policy 5.6.12.
+
+    Debian's comparison algorithm has enough special cases (letters before
+    non-letters, tilde before end-of-part) that asserting it from the prose
+    would be asserting my reading of the prose. ``dpkg`` is installed on the
+    ubuntu leg of the CI matrix, so this runs for real on every PR — and
+    ``test_the_dpkg_check_cannot_silently_vanish_from_ci`` is what stops the
+    skip from quietly becoming permanent there.
+
+    Without the translation this fails on the very first comparison:
+    ``dpkg --compare-versions 2.30.0-beta.1 gt 2.30.0`` is TRUE, so a user who
+    installed the beta could never roll forward — apt would see a downgrade
+    and refuse.
+    """
+
+    def compare(left: str, operator: str, right: str) -> bool:
+        return (
+            subprocess.run(
+                ["dpkg", "--compare-versions", left, operator, right],
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    beta = build_deb.debian_version(BETA)
+    later_beta = build_deb.debian_version("2.30.0-beta.2")
+    # The whole point: the beta is OLDER than what it is promoted to, so
+    # `apt upgrade` rolls a beta tester forward onto the stable release.
+    assert compare(beta, "lt", PROMOTED), f"{beta} must sort before {PROMOTED}"
+    # And newer than the stable it followed, or it would never install.
+    assert compare(PREVIOUS_STABLE, "lt", beta)
+    # Betas order among themselves.
+    assert compare(beta, "lt", later_beta)
+    assert compare(later_beta, "lt", PROMOTED)
+    # The bug this exists to prevent, stated as the thing that is now false.
+    assert compare(BETA, "gt", PROMOTED), (
+        "raw SemVer no longer inverts the ordering — has dpkg changed?"
+    )
+
+
+def test_the_dpkg_check_cannot_silently_vanish_from_ci() -> None:
+    """A skipif that is always true is a test that does not exist.
+
+    The ordering check above skips without ``dpkg`` so a contributor on a
+    non-Debian machine is not blocked — which also means it would report a
+    tidy green while checking nothing at all if the Linux runner ever lost
+    ``dpkg``. Skipping is a local convenience, never a CI outcome.
+
+    Scoped to Linux because the macOS and Windows legs have no ``dpkg`` and
+    are not expected to; the Linux leg is the one that must exercise it.
+    """
+    if not os.environ.get("CI") or sys.platform != "linux":
+        pytest.skip("only meaningful on the Linux CI runner")
+    assert shutil.which("dpkg") is not None, (
+        "the Linux CI runner has no dpkg, so the Debian ordering check is "
+        "silently skipping — install dpkg or make the ordering assertion "
+        "run some other way"
+    )

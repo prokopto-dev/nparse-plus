@@ -61,6 +61,86 @@ _STAGING_SUFFIX = ".part"
 FLATPAK_INFO = Path("/.flatpak-info")
 
 
+class UpdateChannel(StrEnum):
+    """Which published releases this client is willing to be offered (#186).
+
+    Master cuts prereleases and stable is promoted deliberately, so the tier a
+    user sits in is the whole of how much unfinished work reaches them. STABLE
+    is the default and is exactly the behaviour every nParse+ binary has always
+    had — prereleases skipped, unconditionally, in every version already
+    installed anywhere. That is what made the beta tier free to introduce: the
+    server side could start publishing prereleases with no flag day, because
+    nothing in the wild could see them.
+
+    BETA is strictly *additive*: it stops filtering prereleases, it does not
+    stop offering stable releases. A promoted ``2.30.0`` is newer than the
+    ``2.30.0b3`` it came from under ``packaging.Version``, so a beta user rolls
+    onto the stable when it ships rather than being pinned to the beta line.
+
+    The one case that strands somebody is a beta line that is abandoned outright
+    — 2.31.0-beta.1 published, then never promoted, and development moves to
+    2.32.0. Switching back to STABLE then reports "up to date" until a stable
+    passes the installed prerelease, because it genuinely has nothing newer to
+    offer. Documented in docs/getting-started/updating.md rather than designed
+    around; the way out is a manual download from the releases page.
+    """
+
+    STABLE = "stable"
+    BETA = "beta"
+
+
+#: What a client is offered when it has expressed no preference. Not merely a
+#: default value — it is the behaviour that is compiled into every already
+#: released binary, so anything else here would change what an existing user
+#: is offered on upgrade without them asking for it.
+DEFAULT_CHANNEL = UpdateChannel.STABLE
+
+
+def effective_channel(
+    configured: str | UpdateChannel | None,
+    in_flatpak: bool | None = None,
+) -> UpdateChannel:
+    """The channel to actually check on, given what the settings say.
+
+    Two clamps, and both exist because a configured value is not by itself a
+    channel this build can serve.
+
+    **Flatpak is stable-only, structurally.** ``release.yml`` publishes neither
+    a beta ``.flatpak`` nor a beta OSTree commit — the gh-pages repo that
+    ``flatpak update`` follows carries stable releases exclusively, because
+    force-pushing a beta there would ship it to every stable Flatpak user. So a
+    sandboxed build that honoured a beta preference would announce an update
+    the portal can only answer with "nothing to install", and whose download
+    fallback finds no asset either (``pick_asset`` looks for a ``.flatpak``):
+    an update the app insists exists and cannot deliver, which is worse than
+    not offering the channel at all.
+
+    The clamp is at every *read* rather than at the point the setting is
+    written, because settings outlive the install that wrote them — a beta
+    preference saved by a tarball install and later carried into a Flatpak one
+    must not survive the move. Nothing rewrites the stored value: leaving it
+    alone is what lets the same settings directory go back to offering betas if
+    the user returns to a tarball.
+
+    **An unrecognised value reads as stable.** ``update_channel`` is a
+    ``Literal``, so that only happens to a hand-edited or hand-merged file, and
+    stable is the answer that cannot surprise anyone.
+
+    ``in_flatpak`` is injectable for the reason ``pick_asset``'s is: the
+    sandbox probe is a file on disk, so a test must be able to ask both
+    questions on any machine.
+    """
+    try:
+        channel = UpdateChannel(configured)
+    except ValueError:
+        return DEFAULT_CHANNEL
+    if channel is UpdateChannel.BETA:
+        sandboxed = running_in_flatpak() if in_flatpak is None else in_flatpak
+        if sandboxed:
+            return UpdateChannel.STABLE
+    return channel
+
+
 def running_in_flatpak(info_path: Path = FLATPAK_INFO) -> bool:
     """True when running inside a Flatpak sandbox."""
     return info_path.exists()
@@ -115,9 +195,19 @@ def _client(client: httpx.Client | None) -> httpx.Client:
 
 
 def check_for_update(
-    current: str | None = None, client: httpx.Client | None = None
+    current: str | None = None,
+    client: httpx.Client | None = None,
+    channel: UpdateChannel = DEFAULT_CHANNEL,
 ) -> ReleaseInfo | None:
-    """The latest release if it is newer than ``current``; else/on error None."""
+    """The latest release if it is newer than ``current``; else/on error None.
+
+    ``channel`` decides whether prereleases count. On STABLE this is character
+    for character the check every released version of nParse+ performs; on BETA
+    the prerelease filter is lifted and nothing else changes — the comparison,
+    the ordering and the collected notes are the same code on both channels, so
+    a beta user is offered a promoted stable the moment it outranks what they
+    are running.
+    """
     try:
         resp = _client(client).get(releases_api_url())
         resp.raise_for_status()
@@ -125,9 +215,17 @@ def check_for_update(
         installed = Version(current or nparseplus.__version__)
         if not isinstance(payload, list):
             return None
+        allow_prereleases = channel is UpdateChannel.BETA
         releases: list[tuple[Version, dict]] = []
         for item in payload:
-            if not isinstance(item, dict) or item.get("draft") or item.get("prerelease"):
+            if not isinstance(item, dict) or item.get("draft"):
+                continue
+            # A draft is never offered to anyone; a prerelease is offered only
+            # to a client that asked for one. GitHub sets this flag from
+            # release.yml, which derives it from the tag — so the tier is
+            # decided once, at publish time, and the client only has to agree
+            # to look.
+            if item.get("prerelease") and not allow_prereleases:
                 continue
             try:
                 version = Version(str(item.get("tag_name", "")).lstrip("v"))

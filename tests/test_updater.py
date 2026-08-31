@@ -6,8 +6,10 @@ from pathlib import Path
 
 import httpx
 import pytest
+from packaging.version import Version
 
 from nparseplus import updater
+from nparseplus.config.settings import Settings
 from nparseplus.updater import (
     DownloadStatus,
     ReleaseAsset,
@@ -736,3 +738,267 @@ def test_release_json_shape_matches_github() -> None:
     # digest is served per asset ("sha256:<hex>") — confirmed on all five
     # assets of v2.3.2 — and is what the download is pinned to.
     assert {"name", "browser_download_url", "size", "digest"} <= set(parsed["assets"][0])
+
+
+# --- the beta channel (#186) ------------------------------------------------
+
+#: A release list shaped like the one master now produces: a shipped stable,
+#: two betas of the version after it, and a draft nobody is ever offered.
+CHANNEL_RELEASES = [
+    {
+        "tag_name": "v2.30.0-beta.2",
+        "html_url": "https://example/b2",
+        "prerelease": True,
+        "draft": False,
+        "body": "beta two",
+        "assets": [],
+    },
+    {
+        "tag_name": "v2.30.0-beta.1",
+        "html_url": "https://example/b1",
+        "prerelease": True,
+        "draft": False,
+        "body": "beta one",
+        "assets": [],
+    },
+    {
+        "tag_name": "v2.29.0",
+        "html_url": "https://example/stable",
+        "prerelease": False,
+        "draft": False,
+        "body": "stable",
+        "assets": [],
+    },
+    {
+        "tag_name": "v2.31.0-beta.1",
+        "html_url": "https://example/draft",
+        "prerelease": True,
+        "draft": True,
+        "body": "unpublished",
+        "assets": [],
+    },
+]
+
+
+def _channel_client(payload=None) -> httpx.Client:
+    body = CHANNEL_RELEASES if payload is None else payload
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    return _client(handler)
+
+
+def test_a_stable_client_is_offered_exactly_what_it_is_offered_today() -> None:
+    """The acceptance criterion that protects everybody already installed.
+
+    Given a release list that now contains prereleases, a stable client must
+    resolve the same release it would have resolved before the beta tier
+    existed. This is not merely the default — it is what every nParse+ binary
+    ever published does unconditionally, so any other answer here would change
+    what an existing user is offered without them asking.
+    """
+    release = check_for_update("2.28.0", client=_channel_client())
+    assert release is not None
+    assert release.version == "2.29.0"
+    # And no beta leaked into the notes it will render.
+    assert [note.version for note in release.notes] == ["2.29.0"]
+
+
+def test_the_default_channel_is_stable() -> None:
+    """Callers that pass nothing get the conservative tier."""
+    assert updater.DEFAULT_CHANNEL is updater.UpdateChannel.STABLE
+    explicit = check_for_update(
+        "2.28.0", client=_channel_client(), channel=updater.UpdateChannel.STABLE
+    )
+    implicit = check_for_update("2.28.0", client=_channel_client())
+    assert explicit == implicit
+
+
+def test_a_beta_client_is_offered_the_newest_prerelease() -> None:
+    release = check_for_update(
+        "2.28.0", client=_channel_client(), channel=updater.UpdateChannel.BETA
+    )
+    assert release is not None
+    # Normalized PEP 440: the wire tag is v2.30.0-beta.2.
+    assert release.version == "2.30.0b2"
+    assert [note.version for note in release.notes] == ["2.30.0b2", "2.30.0b1", "2.29.0"]
+
+
+def test_a_draft_is_offered_on_no_channel() -> None:
+    """``draft`` is unpublished, not merely unfinished — nobody sees it."""
+    for channel in updater.UpdateChannel:
+        release = check_for_update("2.30.0b2", client=_channel_client(), channel=channel)
+        assert release is None or "2.31.0" not in release.version
+
+
+def test_a_promoted_stable_outranks_the_beta_it_came_from() -> None:
+    """The other half of acceptance: a beta user rolls onto the stable.
+
+    ``packaging.Version`` orders 2.30.0b3 < 2.30.0, so the promotion is newer
+    than the beta line it finalizes and needs no special handling to be
+    offered. A user is stranded only if a beta line is abandoned outright,
+    which is documented rather than designed around.
+    """
+    published = [
+        {
+            "tag_name": "v2.30.0",
+            "html_url": "https://example/final",
+            "prerelease": False,
+            "draft": False,
+            "body": "promoted",
+            "assets": [],
+        },
+        *CHANNEL_RELEASES[:3],
+    ]
+    for channel in updater.UpdateChannel:
+        release = check_for_update("2.30.0b2", client=_channel_client(published), channel=channel)
+        assert release is not None, f"{channel} was offered nothing"
+        assert release.version == "2.30.0"
+
+
+def test_a_beta_client_is_not_offered_an_older_beta() -> None:
+    """The comparison is unchanged on the beta channel — only the filter moved."""
+    assert (
+        check_for_update("2.30.0b2", client=_channel_client(), channel=updater.UpdateChannel.BETA)
+        is None
+    )
+
+
+# --- Flatpak is stable-only, structurally (#186 review) ---------------------
+
+
+def test_effective_channel_clamps_beta_to_stable_inside_flatpak() -> None:
+    """release.yml publishes no beta .flatpak and no beta OSTree commit.
+
+    So a sandboxed build honouring a beta preference would announce an update
+    the portal can only answer with "nothing to install", and whose download
+    fallback finds no asset either — ``pick_asset`` looks for a ``.flatpak``.
+    An update the app insists exists and cannot deliver is worse than not
+    offering the channel.
+    """
+    assert updater.effective_channel("beta", in_flatpak=True) is updater.UpdateChannel.STABLE
+    assert updater.effective_channel("beta", in_flatpak=False) is updater.UpdateChannel.BETA
+
+
+def test_effective_channel_leaves_stable_alone_everywhere() -> None:
+    for sandboxed in (True, False):
+        assert (
+            updater.effective_channel("stable", in_flatpak=sandboxed)
+            is updater.UpdateChannel.STABLE
+        )
+
+
+def test_effective_channel_reads_an_unusable_value_as_stable() -> None:
+    """``update_channel`` is a Literal, so this is a hand-edited file only."""
+    for configured in (None, "", "nightly", "BETA"):
+        assert (
+            updater.effective_channel(configured, in_flatpak=False) is updater.UpdateChannel.STABLE
+        ), configured
+
+
+def test_effective_channel_probes_the_sandbox_when_not_told(monkeypatch) -> None:
+    """The default path is the real probe, not a silent assumption of 'no'."""
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: True)
+    assert updater.effective_channel("beta") is updater.UpdateChannel.STABLE
+    monkeypatch.setattr(updater, "running_in_flatpak", lambda: False)
+    assert updater.effective_channel("beta") is updater.UpdateChannel.BETA
+
+
+def test_a_flatpak_client_is_never_offered_a_prerelease() -> None:
+    """End to end: the clamp in front of the check that would have offered it."""
+    channel = updater.effective_channel("beta", in_flatpak=True)
+    release = check_for_update("2.28.0", client=_channel_client(), channel=channel)
+    assert release is not None
+    assert release.version == "2.29.0", "a Flatpak client was offered a prerelease"
+
+
+def test_a_stored_beta_preference_is_not_rewritten_by_the_clamp() -> None:
+    """The clamp is a read, not a migration.
+
+    Settings outlive the install that wrote them in both directions: a beta
+    preference carried into a Flatpak install must not take effect, and must
+    still be there if the same settings directory is used by a tarball install
+    again.
+    """
+    settings = Settings()
+    settings.general.update_channel = "beta"
+    assert (
+        updater.effective_channel(settings.general.update_channel, in_flatpak=True)
+        is updater.UpdateChannel.STABLE
+    )
+    assert settings.general.update_channel == "beta"
+
+
+# --- the tray's own path (#186 review: cover BOTH checks) -------------------
+
+
+def test_the_tray_update_check_uses_the_effective_channel() -> None:
+    """The tray reads the same clamp the settings window does.
+
+    Called unbound against a stub rather than through a real ``NomnsParse``:
+    the tray is a QApplication subclass, and what is under test is which
+    channel it resolves, not Qt. Two consumers of one rule is exactly the
+    shape that rots when only one of them is covered.
+    """
+    from types import SimpleNamespace
+
+    from nparseplus.helpers.application import NomnsParse
+
+    def resolve(configured: str, *, sandboxed: bool) -> updater.UpdateChannel:
+        stub = SimpleNamespace(
+            _backend=SimpleNamespace(
+                settings=SimpleNamespace(general=SimpleNamespace(update_channel=configured))
+            )
+        )
+        original = updater.running_in_flatpak
+        updater.running_in_flatpak = lambda: sandboxed
+        try:
+            return NomnsParse._update_channel(stub)
+        finally:
+            updater.running_in_flatpak = original
+
+    assert resolve("beta", sandboxed=False) is updater.UpdateChannel.BETA
+    assert resolve("beta", sandboxed=True) is updater.UpdateChannel.STABLE
+    assert resolve("stable", sandboxed=False) is updater.UpdateChannel.STABLE
+    assert resolve("nonsense", sandboxed=False) is updater.UpdateChannel.STABLE
+
+
+# --- what a beta reports as its own version (#186) --------------------------
+
+
+def test_the_displayed_version_keeps_the_spelling_the_release_used() -> None:
+    """The tray, About box and update dialog show ``__version__`` verbatim.
+
+    ``packaging.Version`` normalises a SemVer prerelease into its PEP 440
+    spelling — ``"2.30.0-beta.1"`` becomes ``"2.30.0b1"`` — so rendering a
+    parsed version would make a beta build disagree with its own git tag, its
+    DMG filename and its release page. It would also disagree with Settings >
+    General, which renders ``__version__`` raw: one build reporting two
+    versions of itself, in the string people paste into bug reports, to the
+    population most likely to be filing them.
+
+    The ``isinstance`` check is the load-bearing one. Comparing values alone
+    would pass on a stable version whatever the code did, because ``Version``
+    round-trips ``"2.28.2"`` unchanged — the regression would only appear once
+    a beta was cut, which is precisely when nobody is looking.
+    """
+    import nparseplus
+    from nparseplus.helpers.application import CURRENT_VERSION
+
+    assert isinstance(CURRENT_VERSION, str), "must be the literal, not a parsed Version"
+    assert nparseplus.__version__ == CURRENT_VERSION
+
+    # Why this matters, stated so the test explains itself: the two spellings
+    # genuinely differ for a prerelease, and agree for a stable release.
+    assert str(Version("2.30.0-beta.1")) == "2.30.0b1"
+    assert str(Version("2.28.2")) == "2.28.2"
+
+
+def test_the_settings_window_and_the_about_box_agree_on_the_version() -> None:
+    """Two surfaces, one string. They rotted apart once (#186 review)."""
+    import nparseplus
+    from nparseplus.helpers.application import CURRENT_VERSION
+
+    settings_window_text = f"nParse+ {nparseplus.__version__}"
+    assert CURRENT_VERSION in settings_window_text
