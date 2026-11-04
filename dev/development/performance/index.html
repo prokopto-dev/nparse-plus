@@ -3152,37 +3152,37 @@ because hosted runners are shared VMs and a nightly that cried wolf would
 be muted inside a week. Read it for trends, not for single runs.</p>
 <h2 id="latest-run">Latest run<a class="headerlink" href="#latest-run" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>When</strong>: 2026-11-03T11:52:15.204329+00:00</li>
+<li><strong>When</strong>: 2026-11-04T12:01:33.504251+00:00</li>
 <li><strong>Commit</strong>: <code>f8bc4e8e5f3e</code> (refs/heads/master)</li>
 <li><strong>Runner</strong>: ubuntu-latest, Python 3.12.16</li>
-<li><strong>Recorded runs in history</strong>: 74</li>
+<li><strong>Recorded runs in history</strong>: 75</li>
 </ul>
 <p>Percentages compare against the baseline recorded on <strong>ubuntu-latest</strong> (2026-08-21, <code>d690d3e8acfa</code>).</p>
 <div class="admonition warning">
 <p class="admonition-title">22 benchmark(s) more than 15% slower than baseline</p>
 <ul>
-<li><code>test_bench_bus_publish[0]</code> (+77.1%)</li>
-<li><code>test_bench_bus_publish[10]</code> (+87.3%)</li>
-<li><code>test_bench_bus_publish[1]</code> (+92.6%)</li>
-<li><code>test_bench_bus_publish[50]</code> (+105.9%)</li>
-<li><code>test_bench_bus_publish_to_firehose</code> (+84.2%)</li>
-<li><code>test_bench_latency_parse_to_ui</code> (+152.1%)</li>
-<li><code>test_bench_map_location_burst</code> (+75.0%)</li>
-<li><code>test_bench_pipeline_cold_backend</code> (+47.3%)</li>
-<li><code>test_bench_pipeline_corpus</code> (+61.1%)</li>
-<li><code>test_bench_pipeline_profile[group]</code> (+60.0%)</li>
-<li><code>test_bench_pipeline_profile[raid]</code> (+63.4%)</li>
-<li><code>test_bench_pipeline_profile[solo]</code> (+64.8%)</li>
-<li><code>test_bench_plugin_dispatch[1-off]</code> (+98.7%)</li>
-<li><code>test_bench_plugin_dispatch[1-on]</code> (+50.4%)</li>
-<li><code>test_bench_plugin_dispatch[10-off]</code> (+106.4%)</li>
-<li><code>test_bench_plugin_dispatch[10-on]</code> (+60.9%)</li>
-<li><code>test_bench_plugin_dispatch[50-off]</code> (+92.0%)</li>
-<li><code>test_bench_plugin_dispatch[50-on]</code> (+63.7%)</li>
-<li><code>test_bench_plugin_parser[off]</code> (+57.1%)</li>
-<li><code>test_bench_plugin_parser[on]</code> (+57.3%)</li>
-<li><code>test_bench_qt_bridge_batch_only</code> (+63.0%)</li>
-<li><code>test_bench_qt_bridge_burst</code> (+58.6%)</li>
+<li><code>test_bench_bus_publish[0]</code> (+70.1%)</li>
+<li><code>test_bench_bus_publish[10]</code> (+119.1%)</li>
+<li><code>test_bench_bus_publish[1]</code> (+94.5%)</li>
+<li><code>test_bench_bus_publish[50]</code> (+146.7%)</li>
+<li><code>test_bench_bus_publish_to_firehose</code> (+80.6%)</li>
+<li><code>test_bench_latency_parse_to_ui</code> (+177.5%)</li>
+<li><code>test_bench_map_location_burst</code> (+78.4%)</li>
+<li><code>test_bench_pipeline_cold_backend</code> (+58.2%)</li>
+<li><code>test_bench_pipeline_corpus</code> (+82.4%)</li>
+<li><code>test_bench_pipeline_profile[group]</code> (+76.4%)</li>
+<li><code>test_bench_pipeline_profile[raid]</code> (+79.5%)</li>
+<li><code>test_bench_pipeline_profile[solo]</code> (+76.3%)</li>
+<li><code>test_bench_plugin_dispatch[1-off]</code> (+103.7%)</li>
+<li><code>test_bench_plugin_dispatch[1-on]</code> (+65.2%)</li>
+<li><code>test_bench_plugin_dispatch[10-off]</code> (+131.0%)</li>
+<li><code>test_bench_plugin_dispatch[10-on]</code> (+87.6%)</li>
+<li><code>test_bench_plugin_dispatch[50-off]</code> (+129.1%)</li>
+<li><code>test_bench_plugin_dispatch[50-on]</code> (+91.4%)</li>
+<li><code>test_bench_plugin_parser[off]</code> (+75.6%)</li>
+<li><code>test_bench_plugin_parser[on]</code> (+77.8%)</li>
+<li><code>test_bench_qt_bridge_batch_only</code> (+77.9%)</li>
+<li><code>test_bench_qt_bridge_burst</code> (+76.3%)</li>
 </ul>
 </div>
 <h2 id="eventbuspublish">EventBus.publish<a class="headerlink" href="#eventbuspublish" title="Permanent link">&para;</a></h2>
@@ -3199,32 +3199,32 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_bus_publish[0]</code></td>
-<td>241 ns</td>
-<td>+77.1%</td>
+<td>231 ns</td>
+<td>+70.1%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish[10]</code></td>
-<td>992 ns</td>
-<td>+87.3%</td>
+<td>1.16 µs</td>
+<td>+119.1%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish[1]</code></td>
-<td>351 ns</td>
-<td>+92.6%</td>
+<td>354 ns</td>
+<td>+94.5%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish[50]</code></td>
-<td>3.89 µs</td>
-<td>+105.9%</td>
+<td>4.66 µs</td>
+<td>+146.7%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_bus_publish_to_firehose</code></td>
-<td>356 ns</td>
-<td>+84.2%</td>
+<td>349 ns</td>
+<td>+80.6%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
@@ -3245,37 +3245,37 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_pipeline_cold_backend</code></td>
-<td>228.16 ms</td>
-<td>+47.3%</td>
+<td>245.11 ms</td>
+<td>+58.2%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_corpus</code></td>
-<td>3.24 ms</td>
-<td>+61.1%</td>
+<td>3.66 ms</td>
+<td>+82.4%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_profile[group]</code></td>
-<td>21.10 ms</td>
-<td>+60.0%</td>
+<td>23.25 ms</td>
+<td>+76.4%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_profile[raid]</code></td>
-<td>57.61 ms</td>
-<td>+63.4%</td>
+<td>63.27 ms</td>
+<td>+79.5%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_pipeline_profile[solo]</code></td>
-<td>8.33 ms</td>
-<td>+64.8%</td>
+<td>8.90 ms</td>
+<td>+76.3%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
 </table>
-<p>Per line: <code>test_bench_pipeline_corpus</code>: 93 lines, 34.79 µs/line; <code>test_bench_pipeline_profile[group]</code>: 440 lines, 47.95 µs/line; <code>test_bench_pipeline_profile[raid]</code>: 1264 lines, 45.57 µs/line; <code>test_bench_pipeline_profile[solo]</code>: 167 lines, 49.85 µs/line.</p>
+<p>Per line: <code>test_bench_pipeline_corpus</code>: 93 lines, 39.38 µs/line; <code>test_bench_pipeline_profile[group]</code>: 440 lines, 52.83 µs/line; <code>test_bench_pipeline_profile[raid]</code>: 1264 lines, 50.05 µs/line; <code>test_bench_pipeline_profile[solo]</code>: 167 lines, 53.32 µs/line.</p>
 <p><img alt="LogPipeline.process (full backend) trend" src="../../assets/perf/pipeline.svg" /></p>
 <p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="plugin-subscriber-dispatch">Plugin subscriber dispatch<a class="headerlink" href="#plugin-subscriber-dispatch" title="Permanent link">&para;</a></h2>
@@ -3292,38 +3292,38 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_plugin_dispatch[1-off]</code></td>
-<td>398 ns</td>
-<td>+98.7%</td>
+<td>408 ns</td>
+<td>+103.7%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[1-on]</code></td>
-<td>893 ns</td>
-<td>+50.4%</td>
+<td>981 ns</td>
+<td>+65.2%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[10-off]</code></td>
-<td>1.47 µs</td>
-<td>+106.4%</td>
+<td>1.65 µs</td>
+<td>+131.0%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[10-on]</code></td>
-<td>5.50 µs</td>
-<td>+60.9%</td>
+<td>6.42 µs</td>
+<td>+87.6%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[50-off]</code></td>
-<td>6.22 µs</td>
-<td>+92.0%</td>
+<td>7.42 µs</td>
+<td>+129.1%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_dispatch[50-on]</code></td>
-<td>26.05 µs</td>
-<td>+63.7%</td>
+<td>30.46 µs</td>
+<td>+91.4%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
@@ -3344,19 +3344,19 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_plugin_parser[off]</code></td>
-<td>28.45 ms</td>
-<td>+57.1%</td>
+<td>31.80 ms</td>
+<td>+75.6%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_plugin_parser[on]</code></td>
-<td>28.17 ms</td>
-<td>+57.3%</td>
+<td>31.83 ms</td>
+<td>+77.8%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
 </table>
-<p>Per line: <code>test_bench_plugin_parser[off]</code>: 633 lines, 44.95 µs/line; <code>test_bench_plugin_parser[on]</code>: 633 lines, 44.50 µs/line.</p>
+<p>Per line: <code>test_bench_plugin_parser[off]</code>: 633 lines, 50.24 µs/line; <code>test_bench_plugin_parser[on]</code>: 633 lines, 50.29 µs/line.</p>
 <p><img alt="Plugin parser in the chain trend" src="../../assets/perf/plugin-parser.svg" /></p>
 <p><em>Mean duration relative to the first recorded run; 1.00x is that run.</em></p>
 <h2 id="qt-bridge-buffer-coalesced-flush">Qt bridge (buffer + coalesced flush)<a class="headerlink" href="#qt-bridge-buffer-coalesced-flush" title="Permanent link">&para;</a></h2>
@@ -3373,14 +3373,14 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_qt_bridge_batch_only</code></td>
-<td>1.94 ms</td>
-<td>+63.0%</td>
+<td>2.12 ms</td>
+<td>+77.9%</td>
 <td>⚠️</td>
 </tr>
 <tr>
 <td><code>test_bench_qt_bridge_burst</code></td>
-<td>2.30 ms</td>
-<td>+58.6%</td>
+<td>2.56 ms</td>
+<td>+76.3%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
@@ -3401,8 +3401,8 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_map_location_burst</code></td>
-<td>772.86 µs</td>
-<td>+75.0%</td>
+<td>787.90 µs</td>
+<td>+78.4%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
@@ -3423,14 +3423,14 @@ be muted inside a week. Read it for trends, not for single runs.</p>
 <tbody>
 <tr>
 <td><code>test_bench_latency_append_to_ui</code></td>
-<td>100.55 ms</td>
+<td>100.57 ms</td>
 <td>+0.3%</td>
 <td></td>
 </tr>
 <tr>
 <td><code>test_bench_latency_parse_to_ui</code></td>
-<td>223.35 µs</td>
-<td>+152.1%</td>
+<td>245.87 µs</td>
+<td>+177.5%</td>
 <td>⚠️</td>
 </tr>
 </tbody>
